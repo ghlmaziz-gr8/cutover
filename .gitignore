@@ -1,0 +1,20 @@
+# Secrets and credentials
+.env
+.env.*
+*.pem
+*.key
+credentials*.json
+
+# Terraform state and local caches
+*.tfstate
+*.tfstate.*
+.terraform/
+
+# Exported logs and generated reports
+exports/
+*.hl7.log
+reports/
+
+# Common build output
+node_modules/
+dist/
