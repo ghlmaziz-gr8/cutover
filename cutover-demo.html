@@ -1,0 +1,609 @@
+<title>Cutover Migration Demo</title>
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600..800&family=DM+Sans:wght@400;500;700&family=JetBrains+Mono:wght@500&display=swap" rel="stylesheet">
+<style>
+/* Layout: a single-column flow with a sticky progress header. Colors and type are tokens. */
+:root{
+  --bg:#f7f6ff; --fg:#1d1640; --muted:#66607f; --card:#ffffff; --line:#e4e0f6;
+  --accent:#6d28d9; --accent2:#ec4899; --accent3:#0891b2; --ok:#059669; --warn:#d97706;
+  --soft:#efeafd; --grad:linear-gradient(120deg,#6d28d9,#ec4899 55%,#f59e0b);
+  --display:"Bricolage Grotesque",system-ui,sans-serif; --body:"DM Sans",system-ui,sans-serif; --mono:"JetBrains Mono",ui-monospace,monospace;
+  color-scheme:light;
+}
+@media (prefers-color-scheme:dark){
+  :root:not([data-theme="light"]){
+    --bg:#120e26; --fg:#f3f0ff; --muted:#a9a2c9; --card:#1c1735; --line:#2f2857;
+    --accent:#a78bfa; --accent2:#f472b6; --accent3:#22d3ee; --ok:#34d399; --warn:#fbbf24;
+    --soft:#2a2150; color-scheme:dark;
+  }
+}
+:root[data-theme="dark"]{
+  --bg:#120e26; --fg:#f3f0ff; --muted:#a9a2c9; --card:#1c1735; --line:#2f2857;
+  --accent:#a78bfa; --accent2:#f472b6; --accent3:#22d3ee; --ok:#34d399; --warn:#fbbf24;
+  --soft:#2a2150; color-scheme:dark;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);font:400 15px/1.55 var(--body);min-height:100%}
+main{padding-inline:16px;padding-block:20px 48px;max-width:1080px;margin-inline:auto}
+h1,h2,h3{font-family:var(--display);line-height:1.15;text-wrap:balance;margin:0}
+h1{font-size:clamp(28px,6vw,44px);font-weight:800;letter-spacing:-.02em}
+h2{font-size:clamp(22px,4vw,30px);font-weight:700}
+h3{font-size:18px;font-weight:700}
+p{margin:0}
+.muted{color:var(--muted)}
+.eyebrow{font-size:12px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:var(--accent)}
+.grad{background:var(--grad);-webkit-background-clip:text;background-clip:text;color:transparent}
+.mono{font-family:var(--mono);font-size:12.5px}
+button,.btn{font:700 15px var(--body);border:0;border-radius:999px;padding:12px 22px;background:var(--grad);color:#fff;cursor:pointer;transition:transform .2s,box-shadow .2s;box-shadow:0 8px 24px -10px #6d28d9aa;text-decoration:none;display:inline-block}
+button:hover:not(:disabled){transform:translateY(-2px);box-shadow:0 14px 28px -12px #6d28d9cc}
+button:disabled{opacity:.45;cursor:not-allowed}
+button.ghost{background:transparent;color:var(--fg);box-shadow:none;border:1.5px solid var(--line)}
+:focus-visible{outline:3px solid var(--accent3);outline-offset:3px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:20px;padding:20px}
+.row{display:flex;flex-wrap:wrap;gap:12px;align-items:center}
+.grid{display:grid;gap:16px;grid-template-columns:repeat(auto-fit,minmax(min(100%,240px),1fr))}
+.screen{animation:rise .5s cubic-bezier(.2,.8,.2,1)}
+.screen[hidden]{display:none}
+@keyframes rise{from{opacity:0;transform:translateY(14px)}to{opacity:1;transform:none}}
+
+/* Header and progress */
+.top{position:sticky;top:env(safe-area-inset-top,0px);z-index:5;background:color-mix(in srgb,var(--bg) 88%,transparent);backdrop-filter:blur(10px);border-bottom:1px solid var(--line);padding:12px 16px}
+.top-in{max-width:1080px;margin:auto;display:grid;gap:10px;grid-template-columns:auto 1fr;align-items:center}
+.brand{display:flex;align-items:center;gap:10px;font:800 20px var(--display)}
+.logo{width:34px;height:34px;border-radius:11px;background:var(--grad);display:grid;place-items:center;color:#fff;font-weight:800;animation:wob 4s ease-in-out infinite}
+@keyframes wob{0%,100%{transform:rotate(0)}50%{transform:rotate(-8deg)}}
+.pmeta{display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;font-size:13px;font-weight:700}
+.pmeta .pct{font-family:var(--display);font-size:18px;color:var(--accent)}
+.track{height:10px;border-radius:99px;background:var(--soft);overflow:hidden;margin-top:6px}
+.fill{height:100%;width:0;border-radius:99px;background:var(--grad);transition:width .6s cubic-bezier(.2,.8,.2,1);position:relative}
+.fill::after{content:"";position:absolute;inset:0;background:linear-gradient(90deg,transparent,#ffffff66,transparent);animation:shine 2.2s linear infinite}
+@keyframes shine{from{transform:translateX(-100%)}to{transform:translateX(100%)}}
+.dots{grid-column:1/-1;display:flex;gap:6px;flex-wrap:wrap}
+.dots i{flex:1 1 0;min-width:18px;height:6px;border-radius:9px;background:var(--line);transition:background .4s}
+.dots i.done{background:var(--ok)} .dots i.now{background:var(--accent2);animation:pulse 1.4s ease-in-out infinite}
+@keyframes pulse{50%{opacity:.4}}
+
+/* Login */
+.hero{display:grid;gap:28px;grid-template-columns:1.1fr .9fr;align-items:center;padding-block:24px}
+.hero-art{position:relative;aspect-ratio:1/1;max-width:100%}
+.blob{position:absolute;border-radius:50%;filter:blur(2px);opacity:.9;animation:float 6s ease-in-out infinite}
+.blob.b1{width:58%;height:58%;left:8%;top:10%;background:var(--accent)}
+.blob.b2{width:44%;height:44%;right:4%;top:4%;background:var(--accent2);animation-delay:-2s}
+.blob.b3{width:36%;height:36%;left:30%;bottom:2%;background:var(--warn);animation-delay:-4s}
+@keyframes float{50%{transform:translateY(-14px) rotate(6deg)}}
+.sso{display:grid;gap:12px;margin-top:20px}
+.sso button{width:100%;border-radius:16px;text-align:left}
+@media (max-width:760px){.hero{grid-template-columns:1fr}.hero-art{max-width:260px;margin:auto}}
+
+/* Persona */
+.persona{text-align:left;background:var(--card);color:var(--fg);border:1.5px solid var(--line);box-shadow:none;border-radius:20px;padding:18px;display:grid;gap:6px;transition:border-color .2s,transform .2s}
+.persona:hover:not(:disabled){transform:translateY(-3px);box-shadow:none}
+.persona[aria-pressed="true"]{border-color:var(--accent2);background:color-mix(in srgb,var(--accent2) 10%,var(--card))}
+.persona .av{width:44px;height:44px;border-radius:14px;display:grid;place-items:center;font-size:20px;color:#fff;margin-bottom:6px}
+.you{margin-top:18px;padding:16px;border-radius:16px;background:var(--soft);min-height:56px}
+
+/* Form controls */
+.opt{display:flex;gap:12px;align-items:flex-start;padding:14px 16px;border:1.5px solid var(--line);border-radius:16px;cursor:pointer;background:var(--card)}
+.opt:has(input:checked){border-color:var(--accent);background:var(--soft)}
+.opt input{margin-top:4px;accent-color:var(--accent);width:18px;height:18px}
+.opt small{display:block;color:var(--muted)}
+.lock{font-size:11px;font-weight:700;background:var(--line);padding:2px 8px;border-radius:99px;margin-left:6px;vertical-align:middle}
+input[type=text]{font:500 15px var(--body);padding:12px 14px;border-radius:14px;border:1.5px solid var(--line);background:var(--card);color:var(--fg);width:100%}
+
+/* Analysis */
+.run{display:grid;gap:20px;grid-template-columns:240px 1fr;align-items:center}
+.ring{position:relative;width:220px;height:220px;max-width:100%}
+.ring svg{width:100%;height:100%;transform:rotate(-90deg)}
+.ring .c{position:absolute;inset:0;display:grid;place-content:center;text-align:center}
+.ring .c b{font:800 44px var(--display);color:var(--fg)}
+#steps{list-style:none;margin:0;padding:0;display:grid;gap:10px}
+#steps li{display:flex;gap:12px;align-items:center;padding:10px 14px;border-radius:14px;background:var(--card);border:1px solid var(--line);opacity:.5;transition:opacity .3s,transform .3s}
+#steps li.active{opacity:1;transform:translateX(4px);border-color:var(--accent3)}
+#steps li.done{opacity:1}
+.tick{width:22px;height:22px;border-radius:50%;border:2px solid var(--line);flex:none;display:grid;place-items:center;font-size:12px;color:#fff}
+#steps li.active .tick{border-color:var(--accent3);border-top-color:transparent;animation:spin .8s linear infinite}
+#steps li.done .tick{background:var(--ok);border-color:var(--ok)}
+#steps li.done .tick::after{content:"✓"}
+@keyframes spin{to{transform:rotate(360deg)}}
+@media (max-width:760px){.run{grid-template-columns:1fr;justify-items:center}#steps{width:100%}}
+
+/* Findings */
+.bento{display:grid;gap:16px;grid-template-columns:repeat(auto-fit,minmax(min(100%,300px),1fr))}
+.tag{display:inline-block;font-size:11.5px;font-weight:700;padding:3px 10px;border-radius:99px;margin-right:4px}
+.t-ok{background:#d1fae5;color:#065f46}.t-inf{background:#fef3c7;color:#92400e}.t-cy{background:#cffafe;color:#155e75}
+[data-theme="dark"] .t-ok,:root:not([data-theme="light"]) .t-ok{background:#064e3b;color:#a7f3d0}
+[data-theme="dark"] .t-inf,:root:not([data-theme="light"]) .t-inf{background:#78350f;color:#fde68a}
+[data-theme="dark"] .t-cy,:root:not([data-theme="light"]) .t-cy{background:#164e63;color:#a5f3fc}
+.kv{display:grid;grid-template-columns:auto 1fr;gap:6px 14px;margin-top:12px;font-size:14px}
+.kv span:nth-child(odd){color:var(--muted)}
+.hbar{margin-top:10px;display:grid;gap:8px}
+.hbar div{display:grid;grid-template-columns:90px 1fr 36px;gap:8px;align-items:center;font-size:13px}
+.hbar i{height:12px;border-radius:99px;background:var(--soft);overflow:hidden;display:block}
+.hbar i b{display:block;height:100%;width:var(--w);border-radius:99px;background:var(--c);animation:grow 1.2s cubic-bezier(.2,.8,.2,1) both}
+@keyframes grow{from{width:0}}
+.donut{display:flex;gap:16px;align-items:center;margin-top:12px;flex-wrap:wrap}
+.legend{display:grid;gap:6px;font-size:13px}
+.legend span::before{content:"";display:inline-block;width:10px;height:10px;border-radius:3px;margin-right:8px;background:var(--c)}
+
+/* Targets */
+.targets{display:grid;gap:16px;grid-template-columns:repeat(3,1fr)}
+@media (max-width:860px){.targets{grid-template-columns:1fr}}
+.tgt{display:grid;gap:12px;align-content:start;border-top:6px solid var(--c)}
+.tgt .name{font:800 22px var(--display)}
+.svc{display:grid;gap:6px}
+.svc div{display:flex;justify-content:space-between;gap:10px;font-size:13.5px;border-bottom:1px dashed var(--line);padding-bottom:6px}
+.svc div span:last-child{font-weight:700;text-align:right}
+pre{margin:0;background:var(--soft);border-radius:14px;padding:12px;overflow-x:auto;font:500 12px/1.6 var(--mono);color:var(--fg)}
+.effort{display:flex;align-items:center;gap:10px;font-size:13px}
+.effort i{flex:1;height:10px;border-radius:99px;background:var(--soft);overflow:hidden}
+.effort i b{display:block;height:100%;width:var(--w);background:var(--c);border-radius:99px;animation:grow 1.2s both}
+
+/* Approve */
+.split{display:grid;gap:16px;grid-template-columns:1fr 1fr}
+@media (max-width:760px){.split{grid-template-columns:1fr}}
+.check{display:flex;gap:10px;align-items:center;margin-top:12px}
+.done-box{margin-top:14px;padding:16px;border-radius:16px;background:linear-gradient(120deg,#d1fae5,#fce7f3);color:#064e3b;display:none;animation:rise .5s}
+.done-box.on{display:block}
+.pdf{border:2px dashed var(--line);border-radius:18px;padding:18px;display:grid;gap:6px;opacity:.9}
+
+/* Book */
+.copyrow{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:10px}
+.copyrow code{font:500 14px var(--mono);background:var(--soft);padding:8px 12px;border-radius:12px;user-select:all;overflow-wrap:anywhere}
+.copyrow button{padding:8px 14px;font-size:13px}
+.shots{display:grid;gap:14px;grid-template-columns:repeat(auto-fit,minmax(min(100%,200px),1fr))}
+.shots figure{margin:0;display:grid;gap:6px}
+.shots figcaption{font-size:12.5px;color:var(--muted)}
+.spark{display:flex;align-items:flex-end;gap:5px;height:90px;margin-top:12px}
+.spark div{flex:1;display:grid;gap:4px;align-items:end;height:100%;grid-template-rows:1fr auto}
+.spark i{display:block;border-radius:6px 6px 2px 2px;background:var(--grad);min-height:3px;align-self:end}
+.spark span{font-size:10px;color:var(--muted);text-align:center}
+.roles{width:100%;border-collapse:collapse;font-size:13.5px}
+.roles th,.roles td{text-align:left;padding:8px 6px;border-bottom:1px solid var(--line)}
+.roles th{color:var(--muted);font-weight:700;font-size:12px;text-transform:uppercase;letter-spacing:.06em}
+.roles td:nth-child(n+2){text-align:center}
+.tbl-wrap{overflow-x:auto}
+.footer{margin-top:40px;font-size:12px;color:var(--muted);text-align:center}
+.pop{animation:pop .6s cubic-bezier(.2,1.6,.4,1)}
+@keyframes pop{from{transform:scale(.6);opacity:0}}
+@media (prefers-reduced-motion:reduce){*,*::before,*::after{animation:none!important;transition:none!important}}
+</style>
+
+<header class="top">
+  <div class="top-in">
+    <div class="brand"><span class="logo">C</span>Cutover <span class="muted" style="font:600 12px var(--body)">demo</span></div>
+    <div>
+      <div class="pmeta"><span id="stageName">Sign in</span><span id="stepCount" class="muted"></span><span class="pct" id="pct">0%</span><span id="eta" class="muted"></span></div>
+      <div class="track"><div class="fill" id="barFill"></div></div>
+    </div>
+    <div class="dots" id="dots"></div>
+  </div>
+</header>
+
+<main>
+  <!-- 1. Sign in -->
+  <section id="s-login" class="screen">
+    <div class="hero">
+      <div>
+        <p class="eyebrow">Migration intelligence for hospitals</p>
+        <h1 style="margin-top:10px">Move your <span class="grad">clinical apps</span> to the cloud, one approved step at a time.</h1>
+        <p class="muted" style="margin-top:14px;font-size:17px">Cutover reads your code, data and infrastructure, then drafts a plan you approve before anything changes.</p>
+        <div class="sso">
+          <button onclick="signIn('Microsoft Entra ID')">Continue with Microsoft Entra ID</button>
+          <button class="ghost" onclick="signIn('Okta')">Continue with Okta</button>
+          <button class="ghost" onclick="signIn('local test account')">Use a local test account</button>
+        </div>
+        <p class="muted" id="signinMsg" style="margin-top:12px;font-size:13px">Demo only. No real sign-in happens here.</p>
+      </div>
+      <div class="hero-art" aria-hidden="true">
+        <div class="blob b1"></div><div class="blob b2"></div><div class="blob b3"></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 2. Persona -->
+  <section id="s-persona" class="screen" hidden>
+    <p class="eyebrow">Step 2</p>
+    <h2 style="margin:8px 0 6px">Who are you today?</h2>
+    <p class="muted">Cutover shows each role the views and decisions it owns.</p>
+    <div class="grid" style="margin-top:20px" id="personas"></div>
+    <div class="you card" id="youSee"><span class="muted">Pick a role to see what you will review.</span></div>
+    <div class="row" style="margin-top:18px;justify-content:space-between"><button class="ghost" onclick="go('s-login')">Back</button><button id="toScope" disabled onclick="go('s-scope')">Continue</button></div>
+  </section>
+
+  <!-- 3. Scope -->
+  <section id="s-scope" class="screen" hidden>
+    <p class="eyebrow">Step 3</p>
+    <h2 style="margin:8px 0 6px">Define the migration</h2>
+    <p class="muted">The sample app is pre-loaded. Choose the options that match your plan.</p>
+    <div class="split" style="margin-top:20px">
+      <div class="card" style="display:grid;gap:10px">
+        <h3>Source application</h3>
+        <label class="opt"><input type="radio" name="src" checked><div><b>Riverside Patient Portal</b><small>Java 11, Spring Boot 2.7, SQL Server, on Linux VMs (sample app)</small></div></label>
+        <label class="opt" style="opacity:.55"><input type="radio" name="src" disabled><div><b>Containerized sample</b><span class="lock">Not in demo</span><small>Docker and Kubernetes workloads</small></div></label>
+        <h3 style="margin-top:8px">Epic inputs</h3>
+        <label class="opt"><input type="checkbox" checked><div><b>Bridges and HL7 v2 interface exports</b><small>Mapped to the target environment</small></div></label>
+        <label class="opt"><input type="checkbox" checked disabled><div><b>Redact HL7 message logs</b><span class="lock">Required</span><small>Identifiers are removed before analysis</small></div></label>
+      </div>
+      <div class="card" style="display:grid;gap:10px">
+        <h3>Target and scope</h3>
+        <label class="opt"><input type="radio" name="model" checked><div><b>Managed containers</b><small>Maps to App Service, ECS Fargate, or Cloud Run</small></div></label>
+        <label class="opt"><input type="radio" name="model"><div><b>Managed Kubernetes</b><small>Maps to AKS, EKS, or GKE</small></div></label>
+        <label class="opt"><input type="checkbox" id="incData"><div><b>Include database and data migration</b><small>Adds schema conversion and cutover planning</small></div></label>
+        <h3 style="margin-top:8px">Run mode</h3>
+        <label class="opt"><input type="radio" name="mode" checked><div><b>Generate only</b><small>You review and apply the Terraform yourself</small></div></label>
+        <label class="opt"><input type="radio" name="mode"><div><b>Generate and apply to staging</b><small>Needs a named approver before production</small></div></label>
+      </div>
+    </div>
+    <div class="row" style="margin-top:18px;justify-content:space-between"><button class="ghost" onclick="go('s-persona')">Back</button><button onclick="go('s-run')">Start analysis</button></div>
+  </section>
+
+  <!-- 4. Analysis -->
+  <section id="s-run" class="screen" hidden>
+    <p class="eyebrow">Step 4</p>
+    <h2 style="margin:8px 0 6px">Analyzing Riverside Patient Portal</h2>
+    <p class="muted">Pinned to commit a3f9c21. Read-only access. Every finding links back to its source.</p>
+    <div class="run" style="margin-top:22px">
+      <div class="ring">
+        <svg viewBox="0 0 120 120" aria-hidden="true">
+          <defs><linearGradient id="rg" x1="0" x2="1"><stop offset="0" stop-color="#6d28d9"/><stop offset=".55" stop-color="#ec4899"/><stop offset="1" stop-color="#f59e0b"/></linearGradient></defs>
+          <circle cx="60" cy="60" r="54" fill="none" stroke="var(--soft)" stroke-width="10"/>
+          <circle id="ringArc" cx="60" cy="60" r="54" fill="none" stroke="url(#rg)" stroke-width="10" stroke-linecap="round" stroke-dasharray="339.29" stroke-dashoffset="339.29" style="transition:stroke-dashoffset .4s"/>
+        </svg>
+        <div class="c"><b id="ringPct">0%</b><span class="muted" id="ringEta" style="font-size:13px">Ready to start</span></div>
+      </div>
+      <div>
+        <ol id="steps" style="list-style:none;padding:0;margin:0"></ol>
+        <div class="row" style="margin-top:16px"><button id="runBtn" onclick="runAnalysis()">Run analysis</button><button id="toFind" class="ghost" disabled onclick="go('s-findings')">View findings</button></div>
+        <p class="muted" id="runNote" style="margin-top:10px;font-size:13px"></p>
+      </div>
+    </div>
+  </section>
+
+  <!-- 5. Findings -->
+  <section id="s-findings" class="screen" hidden>
+    <p class="eyebrow">Step 5</p>
+    <h2 style="margin:8px 0 6px">What the platform found</h2>
+    <p class="muted">Each card shows how confident the analysis is. Verified means found in code or config. Inferred means reasoned from patterns and needs your review.</p>
+    <div class="bento" style="margin-top:20px">
+      <div class="card pop">
+        <p class="eyebrow">Application</p><h3 style="margin-top:6px">What it does</h3>
+        <p style="margin-top:8px">A patient-facing portal for appointments, lab results and secure messages, built as three Gradle modules.</p>
+        <div class="kv"><span>Runtime</span><span>Java 11, Spring Boot 2.7.18</span><span>Hosting</span><span>3 Linux VMs (RHEL 8)</span><span>Entry points</span><span>41 REST routes</span><span>Client-facing</span><span>Yes, patient portal</span></div>
+        <div style="margin-top:12px"><span class="tag t-ok">Verified</span><span class="tag t-inf">Inferred: purpose</span></div>
+      </div>
+      <div class="card">
+        <p class="eyebrow">Age and history</p><h3 style="margin-top:6px">11 years, 27 releases</h3>
+        <div class="kv"><span>First commit</span><span>March 2015</span><span>Tagged versions</span><span>27 (v1.0 to v4.6)</span><span>Last code change</span><span>18 Sep 2026 (19 days ago)</span><span>Commits, last 12 months</span><span>412</span></div>
+        <p class="muted" style="margin-top:12px;font-size:13px">Tagged releases per year</p>
+        <div class="spark" id="ageChart"></div>
+        <div style="margin-top:10px"><span class="tag t-ok">Verified from git history</span></div>
+      </div>
+      <div class="card">
+        <p class="eyebrow">Data structure</p><h3 style="margin-top:6px">34 schema migrations</h3>
+        <p class="muted" style="margin-top:6px;font-size:13.5px">Tables grouped by domain, from Flyway migrations.</p>
+        <div class="hbar" id="tables"></div>
+        <div style="margin-top:10px"><span class="tag t-ok">Verified from migrations</span></div>
+      </div>
+      <div class="card">
+        <p class="eyebrow">Epic integrations</p><h3 style="margin-top:6px">3 FHIR clients, 14 interfaces</h3>
+        <div class="kv"><span>FHIR clients</span><span>Patient, Encounter, Observation (SMART backend)</span><span>HL7 v2 feeds</span><span>ADT A01/A03, ORU R01</span><span>Log sample</span><span>128,400 messages, redacted</span></div>
+        <div style="margin-top:12px"><span class="tag t-ok">Verified</span><span class="tag t-cy">Redacted before analysis</span></div>
+      </div>
+      <div class="card">
+        <p class="eyebrow">Infrastructure</p><h3 style="margin-top:6px">Observed vs declared</h3>
+        <div class="donut">
+          <svg width="130" height="130" viewBox="0 0 42 42" aria-label="Infrastructure mix">
+            <circle cx="21" cy="21" r="15.9" fill="none" stroke="#6d28d9" stroke-width="6" stroke-dasharray="50 50" stroke-dashoffset="25"/>
+            <circle cx="21" cy="21" r="15.9" fill="none" stroke="#ec4899" stroke-width="6" stroke-dasharray="25 75" stroke-dashoffset="75"/>
+            <circle cx="21" cy="21" r="15.9" fill="none" stroke="#0891b2" stroke-width="6" stroke-dasharray="17 83" stroke-dashoffset="50"/>
+            <circle cx="21" cy="21" r="15.9" fill="none" stroke="#d97706" stroke-width="6" stroke-dasharray="8 92" stroke-dashoffset="33"/>
+          </svg>
+          <div class="legend">
+            <span style="--c:#6d28d9">6 app VMs (50%)</span>
+            <span style="--c:#ec4899">2 SQL Server hosts</span>
+            <span style="--c:#0891b2">1 load balancer</span>
+            <span style="--c:#d97706">1 file share</span>
+          </div>
+        </div>
+        <div style="margin-top:12px"><span class="tag t-inf">Drift: 1 VM not in Terraform</span><span class="tag t-ok">Snapshot 2 hours old</span></div>
+      </div>
+      <div class="card">
+        <p class="eyebrow">Image and build</p><h3 style="margin-top:6px">Base image and pipeline</h3>
+        <div class="kv"><span>Base image</span><span class="mono">rhel:8.9 (pinned by tag)</span><span>Unpinned refs</span><span>2 found, flagged</span><span>CI</span><span>Azure DevOps pipeline</span></div>
+        <div style="margin-top:12px"><span class="tag t-inf">Pin by digest before migrating</span></div>
+      </div>
+    </div>
+    <div class="card" style="margin-top:20px;display:grid;gap:18px">
+      <div class="row" style="justify-content:space-between;align-items:flex-start">
+        <div>
+          <p class="eyebrow">Client-facing portal</p>
+          <h3 style="margin-top:6px">Patient portal interface, rebuilt from code</h3>
+          <p class="muted" style="font-size:13.5px;margin-top:4px">Screens come from 14 controller routes and their Thymeleaf templates.</p>
+        </div>
+        <div class="row" style="gap:8px">
+          <span class="tag t-cy">14 screens</span><span class="tag t-cy">5 roles</span><span class="tag t-inf">Preview, not live</span>
+        </div>
+      </div>
+      <div class="shots" id="shots"></div>
+      <p class="muted" style="font-size:12.5px">Previews are drawn from route and template names in the code. They are not screenshots of a live system.</p>
+      <div class="tbl-wrap">
+        <table class="roles">
+          <thead><tr><th>Role</th><th>Screens</th><th>Can</th></tr></thead>
+          <tbody>
+            <tr><td><b>Patient</b></td><td>8</td><td>View results, book visits, message care team</td></tr>
+            <tr><td><b>Proxy (guardian)</b></td><td>5</td><td>Act for a linked patient, read-only results</td></tr>
+            <tr><td><b>Clinician</b></td><td>6</td><td>Review messages, sign off results</td></tr>
+            <tr><td><b>Front-desk staff</b></td><td>4</td><td>Check in patients, edit appointments</td></tr>
+            <tr><td><b>Administrator</b></td><td>7</td><td>Manage users, roles and audit reports</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+    <div class="row" style="margin-top:20px;justify-content:space-between"><button class="ghost" onclick="go('s-run')">Back</button><button onclick="go('s-targets')">Compare target plans</button></div>
+  </section>
+
+  <!-- 6. Targets side by side -->
+  <section id="s-targets" class="screen" hidden>
+    <p class="eyebrow">Step 6</p>
+    <h2 style="margin:8px 0 6px">Three target plans, side by side</h2>
+    <p class="muted">Same design, generated for each cloud. Terraform by default. Costs are synthetic estimates for this demo.</p>
+    <div class="targets" style="margin-top:20px" id="targetCards"></div>
+    <div class="row" style="margin-top:20px;justify-content:space-between"><button class="ghost" onclick="go('s-findings')">Back</button><button onclick="go('s-approve')">Review and approve</button></div>
+  </section>
+
+  <!-- 7. Approve -->
+  <section id="s-approve" class="screen" hidden>
+    <p class="eyebrow">Step 7</p>
+    <h2 style="margin:8px 0 6px">Approve the plan</h2>
+    <p class="muted">Nothing changes until a named approver signs off.</p>
+    <div class="split" style="margin-top:20px">
+      <div class="card" style="display:grid;gap:12px;align-content:start">
+        <h3>Approver</h3>
+        <input type="text" id="approver" placeholder="Your name, as it should appear on the report" oninput="checkApprove()">
+        <label class="check"><input type="checkbox" id="reviewed" onchange="checkApprove()"> I reviewed the findings and the Terraform output.</label>
+        <div class="row"><button id="approveBtn" disabled onclick="approve()">Approve plan</button></div>
+        <div class="done-box" id="approvedBox"><b>Approved (demo).</b> In the live product, this records the approver, time and plan hash in the audit log, then unlocks staging apply.</div>
+      </div>
+      <div class="pdf">
+        <p class="eyebrow">Signed report</p>
+        <h3>Riverside Patient Portal migration plan</h3>
+        <p class="muted" style="font-size:13.5px">Includes findings, the chosen target, the Terraform summary, risks and rollback steps, with a signature block and plan hash.</p>
+        <span class="tag t-cy" style="width:max-content">Available in the live product</span>
+      </div>
+    </div>
+    <div class="row" style="margin-top:20px;justify-content:space-between"><button class="ghost" onclick="go('s-targets')">Back</button><button id="toBook" class="ghost" onclick="go('s-book')">Continue to next step</button></div>
+    <div class="card" style="margin-top:20px;display:grid;gap:12px">
+      <h3>Share this plan</h3>
+      <p class="muted" style="font-size:13.5px">Enter the recipient's email. The live product sends a read-only link to the plan and the signed report.</p>
+      <div class="row">
+        <input type="email" id="shareTo" placeholder="name@hospital.org" autocomplete="email" style="flex:1 1 240px;width:auto" oninput="checkShare()">
+        <button id="shareBtn" class="ghost" disabled onclick="shareIt()">Share</button>
+      </div>
+      <p class="muted" id="shareMsg" style="font-size:13px"></p>
+    </div>
+  </section>
+
+  <!-- 8. Book -->
+  <section id="s-book" class="screen" hidden>
+    <p class="eyebrow">Step 8</p>
+    <h2 style="margin:8px 0 6px">Book a discovery call</h2>
+    <p class="muted">Walk through this plan with the Cutover team and get it scoped for your environment.</p>
+    <div class="card" style="margin-top:20px;display:grid;gap:14px">
+      <div>
+        <label class="eyebrow" for="myEmail">Your work email</label>
+        <input type="email" id="myEmail" placeholder="you@yourcompany.org" autocomplete="email" style="margin-top:6px" oninput="updateMail()">
+        <p class="muted" id="bookBtnNote" style="font-size:13px;margin-top:6px"></p>
+      </div>
+      <div>
+        <p class="muted" style="font-size:13px">Send your request to</p>
+        <div class="copyrow"><code id="addr">hello@cutover.site</code><button class="ghost" onclick="copyAddr()">Copy</button></div>
+      </div>
+      <div>
+        <p class="muted" style="font-size:13px">Subject line</p>
+        <p class="mono" style="margin-top:4px">Discovery call request: Cutover demo</p>
+      </div>
+      <div class="row">
+        <a class="btn" id="mailLink" href="#" target="_blank" rel="noopener">Open pre-filled email</a>
+        <span class="muted" style="font-size:13px">If your email app doesn't open, copy the address above.</span>
+      </div>
+    </div>
+    <div class="row" style="margin-top:20px;justify-content:space-between"><button class="ghost" onclick="go('s-approve')">Back</button><button class="ghost" onclick="go('s-login')">Restart demo</button></div>
+  </section>
+
+  <p class="footer">All data in this demo is synthetic. Riverside Patient Portal is a fictional sample application.</p>
+</main>
+
+<script>
+const $=s=>document.querySelector(s), $$=s=>[...document.querySelectorAll(s)];
+const STAGES=[
+  {id:'s-login',name:'Sign in',w:5,min:.5},
+  {id:'s-persona',name:'Choose your role',w:5,min:.5},
+  {id:'s-scope',name:'Define the migration',w:10,min:1.5},
+  {id:'s-run',name:'Analyze code and infrastructure',w:30,min:4},
+  {id:'s-findings',name:'Review findings',w:15,min:2},
+  {id:'s-targets',name:'Compare target plans',w:15,min:3},
+  {id:'s-approve',name:'Approve the plan',w:12,min:1.5},
+  {id:'s-book',name:'Book a discovery call',w:8,min:.5}
+];
+let cur=0, inner=0, runDone=false;
+
+// Stage dots
+$('#dots').innerHTML=STAGES.map(()=>'<i></i>').join('');
+
+function pct(){
+  let p=0; for(let i=0;i<cur;i++) p+=STAGES[i].w;
+  p+=STAGES[cur].w*inner; return Math.round(p);
+}
+function eta(){
+  if(pct()>=100) return 'Complete';
+  let m=STAGES[cur].min*(1-inner);
+  for(let i=cur+1;i<STAGES.length;i++) m+=STAGES[i].min;
+  if(m<.25) return 'Almost done';
+  const lo=Math.max(1,Math.round(m*.8)), hi=Math.max(lo+1,Math.round(m*1.25));
+  return `About ${lo}–${hi} min left`;
+}
+function render(){
+  $('#stageName').textContent=STAGES[cur].name;
+  $('#stepCount').textContent=`Step ${cur+1} of ${STAGES.length}`;
+  $('#pct').textContent=pct()+'%';
+  $('#eta').textContent=eta();
+  $('#barFill').style.width=pct()+'%';
+  $('#ringPct').textContent=Math.round(inner*100)+'%';
+  $('#ringArc').style.strokeDashoffset=339.29*(1-inner);
+  $$('#dots i').forEach((d,i)=>d.className=i<cur?'done':i===cur?'now':'');
+}
+function go(id){
+  cur=STAGES.findIndex(s=>s.id===id);
+  // Earlier stages count as fully done through their weights; only the analysis keeps partial progress.
+  inner = id==='s-run' ? (runDone?1:0) : 0;
+  $$('.screen').forEach(s=>s.hidden=s.id!==id);
+  render();
+  window.scrollTo({top:0,behavior:'smooth'});
+}
+// Sign in
+function signIn(method){
+  $('#signinMsg').textContent=`Signing in with ${method} (simulated)…`;
+  setTimeout(()=>go('s-persona'),700);
+}
+
+// Personas
+const PERSONAS=[
+  {n:'Platform engineer',e:'PE',c:'#6d28d9',t:'You will review generated Terraform, run the plan and manage the target environment.'},
+  {n:'Security officer',e:'SO',c:'#0891b2',t:'You will check the target design against HIPAA controls and review audit logs for PHI handling.'},
+  {n:'Informatics lead',e:'IL',c:'#ec4899',t:'You will review Epic integration risk and make the go or no-go call on each interface.'},
+  {n:'CIO or CTO',e:'CX',c:'#d97706',t:'You will see portfolio status, cost ranges and progress across every migration.'},
+  {n:'Auditor',e:'AU',c:'#059669',t:'You will get read-only access to plans, approvals and the full audit trail.'}
+];
+let persona=null;
+$('#personas').innerHTML=PERSONAS.map((p,i)=>`<button class="persona" aria-pressed="false" onclick="pickPersona(${i})"><span class="av" style="background:${p.c}">${p.e}</span><b style="font:700 17px var(--display)">${p.n}</b></button>`).join('');
+function pickPersona(i){
+  persona=i;
+  $$('.persona').forEach((b,j)=>b.setAttribute('aria-pressed',j===i));
+  $('#youSee').innerHTML=`<b>${PERSONAS[i].n}:</b> ${PERSONAS[i].t}`;
+  $('#toScope').disabled=false;
+}
+
+// Tables chart
+const TABLES=[['Patients & identity',9,'#6d28d9'],['Appointments',7,'#ec4899'],['Encounters & orders',8,'#0891b2'],['Results & messages',6,'#d97706'],['Audit & config',4,'#059669']];
+$('#tables').innerHTML=TABLES.map(([n,v,c])=>`<div><span>${n}</span><i><b style="--w:${v*10}%;--c:${c}"></b></i><span class="mono">${v}</span></div>`).join('');
+
+// Analysis
+const STEPS=[
+  ['Cloning pinned commit a3f9c21',800],
+  ['Detecting Spring Boot 2.7 and Java 11',700],
+  ['Mapping data model from 34 migrations',1000],
+  ['Finding 3 Epic FHIR clients and SMART scopes',900],
+  ['Parsing Bridges export and 14 HL7 interfaces',900],
+  ['Redacting HL7 log sample (required)',800],
+  ['Inventorying infrastructure (read-only)',800],
+  ['Generating Azure, AWS and GCP plans',1000]
+];
+function runAnalysis(){
+  const list=$('#steps');
+  list.innerHTML=STEPS.map(([t])=>`<li><span class="tick"></span><span>${t}</span></li>`).join('');
+  $('#runBtn').disabled=true; $('#toFind').disabled=true;
+  $('#runNote').textContent='';
+  inner=0; runDone=false; render();
+  let k=0;
+  const share=1/STEPS.length;
+  function next(){
+    if(k>0){ list.children[k-1].classList.remove('active'); list.children[k-1].classList.add('done'); }
+    if(k>=STEPS.length){
+      inner=1; runDone=true; render();
+      $('#ringEta').textContent='Complete';
+      $('#toFind').disabled=false; $('#runBtn').disabled=false;
+      $('#runNote').textContent='Analysis complete. 0 items need your review before planning.';
+      return;
+    }
+    list.children[k].classList.add('active');
+    const dur=STEPS[k][1], t0=performance.now();
+    function tick(now){
+      const f=Math.min(1,(now-t0)/dur);
+      inner=(k+f)*share; render();
+      $('#ringEta').textContent=eta();
+      if(f<1) requestAnimationFrame(tick); else { k++; next(); }
+    }
+    requestAnimationFrame(tick);
+  }
+  next();
+}
+
+// Targets
+const TARGETS=[
+  {n:'Microsoft Azure',c:'#0078d4',svc:[['Compute','App Service (Linux)'],['Database','Azure SQL Managed Instance'],['Secrets','Key Vault'],['Identity','Entra ID'],['Network','VNet + Private Endpoints']],
+   tf:'resource "azurerm_linux_web_app" "portal" {\n  name                = "riverside-portal"\n  service_plan_id     = azurerm_service_plan.plan.id\n  https_only          = true\n}',
+   effort:[72,'Effort'],cost:'$3.1k–$4.4k / mo',hip:'HIPAA BAA available'},
+  {n:'AWS',c:'#ff9900',svc:[['Compute','ECS on Fargate'],['Database','RDS for SQL Server'],['Secrets','Secrets Manager'],['Identity','IAM Identity Center'],['Network','VPC + PrivateLink']],
+   tf:'resource "aws_ecs_service" "portal" {\n  name            = "riverside-portal"\n  launch_type     = "FARGATE"\n  desired_count   = 3\n}',
+   effort:[68,'Effort'],cost:'$2.8k–$4.0k / mo',hip:'HIPAA BAA available'},
+  {n:'Google Cloud',c:'#34a853',svc:[['Compute','Cloud Run'],['Database','Cloud SQL for SQL Server'],['Secrets','Secret Manager'],['Identity','Cloud Identity + IAP'],['Network','VPC + Private Service Connect']],
+   tf:'resource "google_cloud_run_v2_service" "portal" {\n  name     = "riverside-portal"\n  location = var.region\n}',
+   effort:[76,'Effort'],cost:'$2.9k–$4.2k / mo',hip:'HIPAA BAA available'}
+];
+$('#targetCards').innerHTML=TARGETS.map(t=>`
+  <div class="card tgt" style="--c:${t.c}">
+    <div class="name">${t.n}</div>
+    <span class="tag t-cy" style="width:max-content">Managed containers</span>
+    <div class="svc">${t.svc.map(([a,b])=>`<div><span class="muted">${a}</span><span>${b}</span></div>`).join('')}</div>
+    <pre>${t.tf.replace(/</g,'&lt;')}</pre>
+    <div class="effort"><span class="muted">Effort</span><i><b style="--w:${t.effort[0]}%;--c:${t.c}"></b></i></div>
+    <div class="row" style="justify-content:space-between"><b>${t.cost}</b><span class="tag t-ok">${t.hip}</span></div>
+  </div>`).join('');
+
+// Approval
+function checkApprove(){
+  $('#approveBtn').disabled=!($('#approver').value.trim().length>1 && $('#reviewed').checked);
+}
+function approve(){
+  $('#approvedBox').classList.add('on');
+  $('#approveBtn').disabled=true;
+  inner=1; render();
+}
+
+// Book
+const subject=encodeURIComponent('Discovery call request: Cutover demo');
+const body=encodeURIComponent('Hi Cutover team,\n\nI ran the demo for Riverside Patient Portal (Managed containers, Azure, AWS and GCP plans compared). I would like to book a discovery call.\n\nThanks');
+const validEmail=s=>/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(s.trim());
+function updateMail(){
+  const mine=$('#myEmail').value.trim();
+  $('#bookBtnNote').textContent = validEmail(mine) ? 'Your reply address is included in the email.' : 'Enter your email above so the team can reply.';
+  const b = body + (validEmail(mine) ? encodeURIComponent('\n\nReply to: '+mine) : '');
+  $('#mailLink').href=`mailto:hello@cutover.site?subject=${subject}&body=${b}`;
+}
+updateMail();
+function checkShare(){ $('#shareBtn').disabled=!validEmail($('#shareTo').value); }
+function shareIt(){
+  const to=$('#shareTo').value.trim();
+  $('#shareMsg').textContent=`Demo: a read-only link would be sent to ${to}. Nothing was sent.`;
+}
+function ageChart(){
+  const data=[[2015,3],[2016,4],[2017,2],[2018,3],[2019,2],[2020,3],[2021,2],[2022,3],[2023,2],[2024,1],[2025,1],[2026,1]];
+  $('#ageChart').innerHTML=data.map(([y,n])=>`<div title="${y}: ${n} releases"><i style="height:${n*18}px"></i><span>${String(y).slice(2)}</span></div>`).join('');
+}
+ageChart();
+function mock(title,kind){
+  let b='';
+  if(kind==='form'){ b=`<rect x="40" y="46" width="160" height="16" rx="8" style="fill:var(--soft)"/><rect x="40" y="70" width="160" height="16" rx="8" style="fill:var(--soft)"/><rect x="70" y="100" width="100" height="20" rx="10" style="fill:var(--accent)"/>`; }
+  else if(kind==='cards'){ for(let i=0;i<3;i++){ b+=`<rect x="${12+i*76}" y="38" width="70" height="56" rx="8" style="fill:var(--soft)"/><rect x="${12+i*76}" y="38" width="70" height="6" rx="3" style="fill:${['var(--accent)','var(--accent2)','var(--accent3)'][i]}"/>`; } b+=`<rect x="12" y="104" width="216" height="8" rx="4" style="fill:var(--soft)"/><rect x="12" y="120" width="150" height="8" rx="4" style="fill:var(--soft)"/>`; }
+  else if(kind==='chart'){ const v=[10,25,18,34,28,40,30]; const p=v.map((h,i)=>`${12+i*36},${124-h*1.4}`).join(' '); b=`<polygon points="12,126 ${p} 228,126" style="fill:var(--accent);opacity:.15"/><polyline points="${p}" style="fill:none;stroke:var(--accent);stroke-width:2.5;stroke-linejoin:round"/>`; }
+  else if(kind==='table'){ for(let r=0;r<5;r++){ b+=`<rect x="12" y="${38+r*18}" width="216" height="12" rx="4" style="fill:var(--soft)"/><rect x="16" y="${41+r*18}" width="${50+(r*17)%60}" height="6" rx="3" style="fill:var(--accent3);opacity:.7"/>`; } }
+  else if(kind==='msg'){ for(let r=0;r<3;r++){ b+=`<rect x="${r%2?90:12}" y="${36+r*30}" width="138" height="22" rx="10" style="fill:${r%2?'var(--accent)':'var(--soft)'}"/>`; } }
+  return `<figure><svg viewBox="0 0 240 150" role="img" aria-label="${title} screen preview" style="width:100%;height:auto;display:block"><rect x="1" y="1" width="238" height="148" rx="12" style="fill:var(--card);stroke:var(--line)"/><rect x="1" y="1" width="238" height="24" rx="12" style="fill:var(--soft)"/><circle cx="12" cy="13" r="3" style="fill:var(--accent2)"/><text x="22" y="16" style="font:700 9px var(--body);fill:var(--fg)">${title}</text>${b}</svg><figcaption>${title}</figcaption></figure>`;
+}
+$('#shots').innerHTML=[
+  mock('Sign in (SSO)','form'),
+  mock('Appointments','table'),
+  mock('Lab results','chart'),
+  mock('Secure messages','msg')
+].join('');
+function copyAddr(){
+  const t=$('#addr').textContent;
+  navigator.clipboard?.writeText(t).catch(()=>{
+    const r=document.createRange(); r.selectNodeContents($('#addr'));
+    const s=getSelection(); s.removeAllRanges(); s.addRange(r);
+  });
+}
+
+// Initial render
+go('s-login');
+</script>
