@@ -1,0 +1,6 @@
+# Copy to terraform.tfvars and fill in. Do not commit terraform.tfvars.
+prefix                    = "riverside"
+environment               = "staging"
+location                  = "eastus2"
+sql_admin_group_name      = "<entra-group-display-name>"
+sql_admin_group_object_id = "00000000-0000-0000-0000-000000000000"
