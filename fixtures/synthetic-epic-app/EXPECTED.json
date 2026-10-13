@@ -1,0 +1,32 @@
+{
+  "findings": {
+    "runtime.spring_boot": "2.7.18",
+    "runtime.java": "11",
+    "stack.languages": ["Java/JVM"],
+    "stack.spring_modules": ["spring-boot-starter-data-jpa", "spring-boot-starter-security", "spring-boot-starter-thymeleaf", "spring-boot-starter-web"],
+    "data.database_engines": ["SQL Server"],
+    "data.tables": {"count": 2, "names": ["appointments", "patients"]},
+    "data.migrations": {"tool": "Flyway", "scripts": 2},
+    "data.entities": {"count": 1, "table_names": ["patients"]},
+    "ui.endpoints": {"controllers": 2, "endpoint_annotations": 4},
+    "ui.screens": 3,
+    "ui.client_facing": "yes",
+    "security.roles": ["ADMIN", "CLINICIAN", "FRONTDESK", "PATIENT"],
+    "epic.fhir_versions": ["R4"],
+    "epic.fhir_endpoints": 1,
+    "epic.epic_specific": "yes",
+    "epic.smart_auth_signals": "yes",
+    "epic.hl7_message_types": ["ADT^A01"],
+    "privacy.hl7_patient_segments": 1,
+    "containers.images": [
+      {"file": "docker/Dockerfile", "source": "Dockerfile", "image": "eclipse-temurin:11-jre", "tag": "11-jre", "pinned_by_digest": false, "uses_latest_or_no_tag": false}
+    ],
+    "delivery.ci": ["GitHub Actions"],
+    "infrastructure.as_code": {
+      "terraform_files": 0, "terraform_providers": [], "bicep_files": 0, "helm_charts": 0,
+      "cloudformation_templates": 0, "kubernetes_manifests": 0, "kubernetes_kinds": [], "compose_files": 0
+    }
+  },
+  "flags": ["containers.images", "infrastructure.as_code", "privacy.hl7_patient_segments"],
+  "must_not_appear": ["FAKE123", "DOE^JANE"]
+}

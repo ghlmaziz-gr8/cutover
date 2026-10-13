@@ -5,8 +5,8 @@ Cutover is a planning and migration platform for hospitals and provider groups. 
 ## Folders
 
 - `docs/`: the public demo site, served by GitHub Pages at https://cutover.site. Uses synthetic data only.
-- `engine/`: the discovery engine (command-line tool). Added in a later step.
-- `fixtures/`: test applications and synthetic HL7 messages. Contains no real patient data.
+- `engine/`: the discovery engine (command-line tool). See `engine/README.md`.
+- `fixtures/`: test applications and synthetic HL7 messages, with answer keys. Contains no real patient data.
 - `planning/`: internal notes, the answer key for discovery testing, and trademark notes.
 
 ## Rules for this repo

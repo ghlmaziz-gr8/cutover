@@ -1,0 +1,4 @@
+CREATE TABLE patients (
+  id BIGINT PRIMARY KEY,
+  full_name VARCHAR(200) NOT NULL
+);
