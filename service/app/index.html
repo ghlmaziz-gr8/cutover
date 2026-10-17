@@ -473,11 +473,22 @@ pre{white-space:pre-wrap;word-break:break-word;background:var(--soft);padding:12
   const REPO_FORMAT = /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/;
   // Step 7: the four review cards and the categories each shows.
   const REVIEW_CARDS = [
-    { title: "What it is", cats: ["ui_portal", "security", "epic"] },
+    { title: "What it is", cats: ["ui_portal", "security"] },
     { title: "How it is built", cats: ["stack", "delivery"] },
-    { title: "Its data", cats: ["data", "privacy"] },
+    { title: "Its data", cats: ["data"] },
+    { title: "Personal data", cats: ["privacy"], empty: "No personal data detected in the code reviewed." },
     { title: "How it is hosted", cats: ["containers", "infrastructure"] },
+    { title: "Healthcare standards", cats: ["epic"], onlyWhenFound: true },
   ];
+  // Mirrors ROLE_CATEGORIES in the Worker. The server filters; this only decides what to say.
+  const ROLE_SEES = {
+    platform_engineer: "all",
+    security_officer: ["security", "privacy"],
+    informatics_lead: ["data", "epic"],
+    cio_cto: ["stack", "ui_portal", "containers", "delivery", "infrastructure"],
+    auditor: [],
+  };
+  const sees = (role, cat) => ROLE_SEES[role] === "all" || (ROLE_SEES[role] || []).includes(cat);
 
   let token = null;
   let me = null;          // { email, is_operator, workspaces }
@@ -915,7 +926,7 @@ pre{white-space:pre-wrap;word-break:break-word;background:var(--soft);padding:12
   }
 
   // ---- Review charts. Drawn only from the findings this viewer may see. ----
-  const EYEBROW = { "What it is": "Application", "How it is built": "Build", "Its data": "Data", "How it is hosted": "Hosting" };
+  const EYEBROW = { "What it is": "Application", "How it is built": "Build", "Its data": "Data", "Personal data": "Privacy", "How it is hosted": "Hosting", "Healthcare standards": "Standards" };
   const CAT_TITLE = { stack: "Stack", data: "Data", ui_portal: "Screens", security: "Security", epic: "Epic", privacy: "Privacy", containers: "Containers", delivery: "Delivery", infrastructure: "Infrastructure" };
   const CAT_COLOR = { stack: "var(--accent)", data: "var(--accent2)", ui_portal: "var(--accent3)", security: "var(--bad)", epic: "var(--warn)", privacy: "#7c3aed", containers: "var(--ok)", delivery: "#64748b", infrastructure: "#0e7490" };
 
@@ -1004,13 +1015,16 @@ pre{white-space:pre-wrap;word-break:break-word;background:var(--soft);padding:12
   }
 
   // One card per topic: the facts as label and value, the confidence mix, and the details.
-  function reviewCard(card, all, counts) {
+  function reviewCard(card, all, role) {
+    const found = all.filter((item) => card.cats.includes(item.category));
+    // Optional cards show only when there is something to show, so a generic app never sees healthcare wording.
+    if (card.onlyWhenFound && !found.length) return null;
     const c = el("div", null, "rcard");
     c.appendChild(el("p", EYEBROW[card.title] || card.title, "eyebrow-sm"));
     c.appendChild(el("h3", card.title));
-    const found = all.filter((item) => card.cats.includes(item.category));
     if (!found.length) {
-      c.appendChild(el("p", counts.total > counts.shown ? "Not shown for your role." : "Nothing found for this part.", "muted small"));
+      const visible = card.cats.some((cat) => sees(role, cat));
+      c.appendChild(el("p", visible ? (card.empty || "Nothing detected in the code reviewed.") : "Not shown for your role.", "muted small"));
       return c;
     }
     const kv = el("div", null, "kv");
@@ -1109,7 +1123,10 @@ pre{white-space:pre-wrap;word-break:break-word;background:var(--soft);padding:12
     heading.style.marginTop = "28px";
     box.appendChild(heading);
     const grid = el("div", null, "rgrid");
-    for (const card of REVIEW_CARDS) grid.appendChild(reviewCard(card, all, counts));
+    for (const card of REVIEW_CARDS) {
+      const node = reviewCard(card, all, cur.viewer_role);
+      if (node) grid.appendChild(node);
+    }
     box.appendChild(grid);
 
     if (report.limitations && report.limitations.length) {
