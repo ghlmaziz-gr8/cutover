@@ -42,6 +42,13 @@
     details { margin: 8px 0; }
     details summary { cursor: pointer; color: var(--muted); }
     pre.raw { white-space: pre-wrap; word-break: break-word; font-size: 12px; max-height: 360px; overflow: auto; }
+    .wz h2 { margin: 6px 0 10px; font-size: 20px; }
+    .wz label { display: block; margin: 14px 0 0; font-weight: 600; }
+    .wz input { width: 100%; margin-top: 6px; }
+    .wz .check { display: flex; gap: 10px; align-items: flex-start; font-weight: 400; }
+    .wz .check input { width: auto; margin-top: 3px; }
+    .wzNav { margin-top: 18px; justify-content: space-between; }
+    button:disabled { opacity: 0.5; cursor: not-allowed; }
   </style>
 </head>
 <body>
@@ -62,13 +69,49 @@
 
   <section id="signedIn" hidden>
     <div class="card">
-      <form id="startForm" class="row">
-        <input id="repo" name="repo" placeholder="owner/name" required autocomplete="off">
-        <input id="ref" name="ref" placeholder="branch, tag or commit (optional)" autocomplete="off">
-        <button type="submit" id="startBtn">Analyze</button>
-        <button type="button" class="ghost" id="signOut">Sign out</button>
-      </form>
+      <div class="wz">
+        <p id="wizStep" class="muted small">Step 1 of 4</p>
+
+        <div id="wz1">
+          <h2>Start an assessment</h2>
+          <p>Cutover reads the code of one application and reports what it finds: its stack, its data, its screens, and how it is hosted. It does not change the code.</p>
+          <p class="muted">Only sample or public code. No patient data.</p>
+          <button type="button" id="wzStart">Start a new assessment</button>
+        </div>
+
+        <div id="wz2" hidden>
+          <h2>Name the application</h2>
+          <label for="appName">Application name</label>
+          <input id="appName" maxlength="200" placeholder="For example: Patient portal (2019)" autocomplete="off">
+          <div class="row wzNav">
+            <button type="button" class="ghost" id="wzBack2">Back</button>
+            <button type="button" id="wzNext2">Next</button>
+          </div>
+        </div>
+
+        <div id="wz3" hidden>
+          <h2>Connect the code</h2>
+          <label for="repo">Code location (GitHub)</label>
+          <input id="repo" placeholder="owner/name" autocomplete="off">
+          <label for="ref">Branch, tag or commit (optional)</label>
+          <input id="ref" placeholder="Leave blank for the default branch" autocomplete="off">
+          <div class="row wzNav">
+            <button type="button" class="ghost" id="wzBack3">Back</button>
+            <button type="button" id="wzNext3">Next</button>
+          </div>
+        </div>
+
+        <div id="wz4" hidden>
+          <h2>Confirm the data rules</h2>
+          <label class="check"><input type="checkbox" id="dataRules"> This code and its settings contain no patient information.</label>
+          <div class="row wzNav">
+            <button type="button" class="ghost" id="wzBack4">Back</button>
+            <button type="button" id="startNow" disabled>Start analysis</button>
+          </div>
+        </div>
+      </div>
       <p id="formMsg" class="muted" role="status"></p>
+      <button type="button" class="ghost" id="signOut">Sign out</button>
     </div>
 
     <div class="card">
@@ -169,6 +212,11 @@
     $("signedIn").hidden = screen !== "app";
   }
 
+  function appLabel(r) {
+    const code = r.ref ? `${r.repo} @ ${r.ref}` : r.repo;
+    return r.app_name ? `${r.app_name} (${code})` : code;
+  }
+
   async function loadList() {
     try {
       const rows = await api("/api/analyses");
@@ -178,7 +226,7 @@
       for (const r of rows) {
         const tr = document.createElement("tr");
         tr.innerHTML = `<td></td><td></td><td class="status"></td><td></td><td><button class="ghost">Open</button></td>`;
-        tr.children[0].textContent = r.ref ? `${r.repo} @ ${r.ref}` : r.repo;
+        tr.children[0].textContent = appLabel(r);
         tr.children[1].textContent = r.is_mine ? "You" : "Teammate";
         tr.children[2].textContent = r.status;
         tr.children[3].textContent = new Date(r.created_at).toLocaleString();
@@ -309,7 +357,7 @@
 
   function renderDetail(row) {
     $("detail").hidden = false;
-    $("detailTitle").textContent = row.ref ? `${row.repo} @ ${row.ref}` : row.repo;
+    $("detailTitle").textContent = appLabel(row);
     $("detailMeta").textContent = `Status: ${row.status}. Commit: ${row.commit_sha || "not known yet"}. Started by: ${row.is_mine ? "you" : "a teammate"}. Deleted after: ${new Date(row.expires_at).toLocaleDateString()}.`;
     renderFindings(row);
 
@@ -460,24 +508,65 @@
     }
   }
 
-  $("startForm").addEventListener("submit", async (e) => {
-    e.preventDefault();
-    $("startBtn").disabled = true;
+  // Assessment wizard: four steps, then the analysis starts.
+  const wizSteps = [$("wz1"), $("wz2"), $("wz3"), $("wz4")];
+  const REPO_FORMAT = /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/;
+
+  function showStep(n) {
+    wizSteps.forEach((box, i) => { box.hidden = i !== n; });
+    $("wizStep").textContent = `Step ${n + 1} of 4`;
+    $("formMsg").textContent = "";
+    $("formMsg").className = "muted";
+  }
+
+  function wizardError(msg) {
+    $("formMsg").textContent = msg;
+    $("formMsg").className = "err";
+  }
+
+  function resetWizard() {
+    $("appName").value = "";
+    $("repo").value = "";
+    $("ref").value = "";
+    $("dataRules").checked = false;
+    $("startNow").disabled = true;
+    showStep(0);
+  }
+
+  $("wzStart").addEventListener("click", () => showStep(1));
+  $("wzBack2").addEventListener("click", () => showStep(0));
+  $("wzNext2").addEventListener("click", () => {
+    if (!$("appName").value.trim()) return wizardError("Give the application a name, for example: Patient portal (2019).");
+    showStep(2);
+  });
+  $("wzBack3").addEventListener("click", () => showStep(1));
+  $("wzNext3").addEventListener("click", () => {
+    if (!REPO_FORMAT.test($("repo").value.trim())) return wizardError("Use the form owner/name, for example: acme/patient-portal.");
+    showStep(3);
+  });
+  $("wzBack4").addEventListener("click", () => showStep(2));
+  $("dataRules").addEventListener("change", () => { $("startNow").disabled = !$("dataRules").checked; });
+
+  $("startNow").addEventListener("click", async () => {
+    $("startNow").disabled = true;
     $("formMsg").textContent = "Starting analysis...";
     $("formMsg").className = "muted";
     try {
-      const body = { repo: $("repo").value.trim() };
+      const body = {
+        app_name: $("appName").value.trim(),
+        repo: $("repo").value.trim(),
+        data_rules_confirmed: true,
+      };
       const ref = $("ref").value.trim();
       if (ref) body.ref = ref;
       const res = await api("/api/analyses", { method: "POST", body: JSON.stringify(body) });
+      resetWizard();
       $("formMsg").textContent = "Analysis queued.";
       await loadList();
       openOne(res.id);
     } catch (err) {
-      $("formMsg").textContent = err.message;
-      $("formMsg").className = "err";
-    } finally {
-      $("startBtn").disabled = false;
+      wizardError(err.message);
+      $("startNow").disabled = !$("dataRules").checked;
     }
   });
 

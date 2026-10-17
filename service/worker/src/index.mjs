@@ -171,19 +171,32 @@ async function startAnalysis(request, env) {
 
   const parsed = await readJson(request);
   if (parsed.error) return json({ error: parsed.error }, 400);
-  const { repo, ref } = parsed.value || {};
+  const { repo, ref, app_name, data_rules_confirmed } = parsed.value || {};
   if (typeof repo !== "string" || !REPO_PATTERN.test(repo)) {
     return json({ error: "repo must look like owner/name." }, 400);
   }
   if (ref !== undefined && ref !== null && (typeof ref !== "string" || !REF_PATTERN.test(ref))) {
     return json({ error: "ref must be a branch, tag, or commit name." }, 400);
   }
+  const name = typeof app_name === "string" ? app_name.trim() : "";
+  if (!name || name.length > MAX_TITLE) {
+    return json({ error: `Give the application a name of 1 to ${MAX_TITLE} characters.` }, 400);
+  }
+  if (data_rules_confirmed !== true) {
+    return json({ error: "Confirm that the code and its settings contain no patient information." }, 400);
+  }
 
   // Create the row as the user, so RLS enforces owner_id = auth.uid().
   const created = await userRest(env, token, "analyses", {
     method: "POST",
     headers: { prefer: "return=representation" },
-    body: JSON.stringify({ owner_id: gate.user.id, repo, ref: ref || null }),
+    body: JSON.stringify({
+      owner_id: gate.user.id,
+      repo,
+      ref: ref || null,
+      app_name: name,
+      data_rules_confirmed_at: new Date().toISOString(),
+    }),
   });
   if (!created.ok) return json({ error: "Could not create the analysis." }, 502);
   const [row] = await created.json();
@@ -222,7 +235,7 @@ async function listAnalyses(request, env) {
   const gate = await requireMember(env, request);
   if (gate.response) return gate.response;
   const res = await serviceRest(env,
-    "analyses?select=id,owner_id,repo,ref,status,commit_sha,created_at,finished_at,expires_at&order=created_at.desc&limit=100");
+    "analyses?select=id,owner_id,repo,ref,app_name,status,commit_sha,created_at,finished_at,expires_at&order=created_at.desc&limit=100");
   if (!res.ok) return json({ error: "Could not load analyses." }, 502);
   const rows = await res.json();
   return json(rows.map(({ owner_id, ...rest }) => ({ ...rest, is_mine: owner_id === gate.user.id })));
