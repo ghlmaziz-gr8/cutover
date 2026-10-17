@@ -1,0 +1,174 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Cutover: analyses</title>
+  <style>
+    :root { --bg:#f7f6ff; --fg:#1d1640; --muted:#66607f; --card:#fff; --line:#e4e0f6; --accent:#6d28d9; --bad:#b91c1c; color-scheme: light; }
+    @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --bg:#120e26; --fg:#f3f0ff; --muted:#a9a2c9; --card:#1c1735; --line:#2f2857; --accent:#a78bfa; --bad:#fca5a5; color-scheme: dark; } }
+    body { margin:0; background:var(--bg); color:var(--fg); font:15px/1.5 system-ui, sans-serif; }
+    main { max-width: 880px; margin: 0 auto; padding: 24px 16px 56px; }
+    h1 { font-size: 26px; margin: 0 0 4px; }
+    .muted { color: var(--muted); }
+    .card { background: var(--card); border: 1px solid var(--line); border-radius: 16px; padding: 18px; margin-top: 16px; }
+    input { font: inherit; padding: 10px 12px; border-radius: 10px; border: 1px solid var(--line); background: var(--card); color: var(--fg); min-width: 0; flex: 1 1 240px; }
+    button { font: 600 15px inherit; padding: 10px 16px; border-radius: 999px; border: 0; background: var(--accent); color: #fff; cursor: pointer; }
+    button.ghost { background: transparent; color: var(--fg); border: 1px solid var(--line); }
+    button:disabled { opacity: .5; cursor: not-allowed; }
+    .row { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+    table { width: 100%; border-collapse: collapse; font-size: 14px; }
+    th, td { text-align: left; padding: 8px 6px; border-bottom: 1px solid var(--line); }
+    .status { font-weight: 600; }
+    .err { color: var(--bad); }
+    pre { white-space: pre-wrap; word-break: break-word; background: var(--bg); padding: 12px; border-radius: 10px; font-size: 13px; }
+    [hidden] { display: none !important; }
+  </style>
+</head>
+<body>
+<main>
+  <h1>Cutover</h1>
+  <p class="muted">Analyze a GitHub repository. Only findings are kept, and they are deleted after the retention period.</p>
+
+  <section id="signedOut" class="card" hidden>
+    <p>Sign in with Google to start an analysis.</p>
+    <button id="signIn">Sign in with Google</button>
+  </section>
+
+  <section id="signedIn" hidden>
+    <div class="card">
+      <form id="startForm" class="row">
+        <input id="repo" name="repo" placeholder="owner/name" required pattern="[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+" autocomplete="off">
+        <input id="ref" name="ref" placeholder="branch, tag or commit (optional)" autocomplete="off">
+        <button type="submit" id="startBtn">Analyze</button>
+        <button type="button" class="ghost" id="signOut">Sign out</button>
+      </form>
+      <p id="formMsg" class="muted" role="status"></p>
+    </div>
+
+    <div class="card">
+      <h2 style="font-size:18px;margin:0 0 8px">Your analyses</h2>
+      <table>
+        <thead><tr><th>Repository</th><th>Status</th><th>Created</th><th></th></tr></thead>
+        <tbody id="rows"></tbody>
+      </table>
+      <p id="listMsg" class="muted"></p>
+    </div>
+
+    <div class="card" id="detail" hidden>
+      <div class="row" style="justify-content:space-between">
+        <h2 id="detailTitle" style="font-size:18px;margin:0"></h2>
+        <button class="ghost" id="deleteBtn">Delete</button>
+      </div>
+      <p id="detailMeta" class="muted"></p>
+      <pre id="detailBody"></pre>
+    </div>
+  </section>
+</main>
+
+<!-- Pinned to an exact version. Only the browser client is loaded here. -->
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.39.0/dist/umd/supabase.js"></script>
+<script src="config.js"></script>
+<script>
+(() => {
+  const $ = (id) => document.getElementById(id);
+  const cfg = window.CUTOVER_CONFIG;
+  const sb = supabase.createClient(cfg.SUPABASE_URL, cfg.SUPABASE_ANON_KEY);
+  let token = null;
+  let timer = null;
+
+  async function api(path, options = {}) {
+    const res = await fetch(`${cfg.API_BASE}${path}`, {
+      ...options,
+      headers: { "content-type": "application/json", authorization: `Bearer ${token}`, ...(options.headers || {}) },
+    });
+    const body = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(body.error || `Request failed (${res.status})`);
+    return body;
+  }
+
+  function show(signedIn) {
+    $("signedOut").hidden = signedIn;
+    $("signedIn").hidden = !signedIn;
+  }
+
+  async function loadList() {
+    try {
+      const rows = await api("/api/analyses");
+      $("listMsg").textContent = rows.length ? "" : "No analyses yet.";
+      $("rows").innerHTML = "";
+      for (const r of rows) {
+        const tr = document.createElement("tr");
+        tr.innerHTML = `<td></td><td class="status"></td><td></td><td><button class="ghost">Open</button></td>`;
+        tr.children[0].textContent = r.ref ? `${r.repo} @ ${r.ref}` : r.repo;
+        tr.children[1].textContent = r.status;
+        tr.children[2].textContent = new Date(r.created_at).toLocaleString();
+        tr.querySelector("button").addEventListener("click", () => openOne(r.id));
+        $("rows").appendChild(tr);
+      }
+      if (rows.some((r) => r.status === "queued" || r.status === "running")) {
+        clearTimeout(timer);
+        timer = setTimeout(loadList, 5000);
+      }
+    } catch (err) {
+      $("listMsg").textContent = err.message;
+      $("listMsg").className = "err";
+    }
+  }
+
+  async function openOne(id) {
+    try {
+      const row = await api(`/api/analyses/${id}`);
+      $("detail").hidden = false;
+      $("detailTitle").textContent = row.repo;
+      $("detailMeta").textContent = `Status: ${row.status}. Commit: ${row.commit_sha || "not known yet"}. Deleted after: ${new Date(row.expires_at).toLocaleDateString()}.`;
+      $("detailBody").textContent = row.error ? row.error : row.findings ? JSON.stringify(row.findings, null, 2) : "Waiting for results.";
+      $("deleteBtn").onclick = async () => {
+        if (!confirm("Delete this analysis and its findings?")) return;
+        await api(`/api/analyses/${id}`, { method: "DELETE" });
+        $("detail").hidden = true;
+        loadList();
+      };
+    } catch (err) {
+      $("formMsg").textContent = err.message;
+    }
+  }
+
+  $("startForm").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    $("startBtn").disabled = true;
+    $("formMsg").textContent = "Starting analysis...";
+    try {
+      const body = { repo: $("repo").value.trim() };
+      const ref = $("ref").value.trim();
+      if (ref) body.ref = ref;
+      const res = await api("/api/analyses", { method: "POST", body: JSON.stringify(body) });
+      $("formMsg").textContent = "Analysis queued.";
+      await loadList();
+      openOne(res.id);
+    } catch (err) {
+      $("formMsg").textContent = err.message;
+      $("formMsg").className = "err";
+    } finally {
+      $("startBtn").disabled = false;
+    }
+  });
+
+  $("signIn").addEventListener("click", () => {
+    sb.auth.signInWithOAuth({ provider: "google", options: { redirectTo: window.location.href.split("#")[0] } });
+  });
+  $("signOut").addEventListener("click", async () => {
+    await sb.auth.signOut();
+    token = null;
+    show(false);
+  });
+
+  sb.auth.onAuthStateChange((_event, session) => {
+    token = session ? session.access_token : null;
+    show(Boolean(session));
+    if (session) loadList();
+  });
+})();
+</script>
+</body>
+</html>
