@@ -126,3 +126,8 @@ revoke all on public.analysis_comments from anon, authenticated;
 revoke all on public.action_items from anon, authenticated;
 grant select, insert, update, delete on public.analysis_comments to service_role;
 grant select, insert, update, delete on public.action_items to service_role;
+
+-- Assessment wizard: application name and the data-rules confirmation.
+-- Safe to run once. Existing rows keep these values empty.
+alter table public.analyses add column if not exists app_name text;
+alter table public.analyses add column if not exists data_rules_confirmed_at timestamptz;

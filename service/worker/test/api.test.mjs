@@ -21,6 +21,7 @@ const COMMENT_ID = "44444444-4444-4444-8444-444444444444";
 const ACTION_ID = "55555555-5555-4555-8555-555555555555";
 
 // Access list replies. A member is someone with a row in the members table.
+const START = { app_name: "Test application", data_rules_confirmed: true };
 const AS_DEVELOPER = ["/rest/v1/members?user_id=", reply(200, [{ user_id: USER.id, email: USER.email, role: "developer" }])];
 const AS_ADMIN = ["/rest/v1/members?user_id=", reply(200, [{ user_id: USER.id, email: USER.email, role: "workspace_admin" }])];
 const AS_COMPLIANCE = ["/rest/v1/members?user_id=", reply(200, [{ user_id: USER.id, email: USER.email, role: "compliance_reviewer" }])];
@@ -69,14 +70,14 @@ test.afterEach(() => {
 
 test("starting an analysis requires a signed-in user", async () => {
   mockFetch([]);
-  const res = await worker.fetch(request("/api/analyses", { method: "POST", body: { repo: "a/b" } }), env);
+  const res = await worker.fetch(request("/api/analyses", { method: "POST", body: { ...START, repo: "a/b" } }), env);
   assert.equal(res.status, 401);
   assert.equal(calls.length, 0, "no outbound calls for anonymous requests");
 });
 
 test("an invalid token is rejected", async () => {
   mockFetch([["/auth/v1/user", reply(401, { message: "bad token" })]]);
-  const res = await worker.fetch(request("/api/analyses", { method: "POST", token: "bad", body: { repo: "a/b" } }), env);
+  const res = await worker.fetch(request("/api/analyses", { method: "POST", token: "bad", body: { ...START, repo: "a/b" } }), env);
   assert.equal(res.status, 401);
 });
 
@@ -89,7 +90,7 @@ test("signed-in users who were not invited are refused", async () => {
 
 test("an uninvited user cannot start an analysis", async () => {
   mockFetch([["/auth/v1/user", reply(200, USER)], NOT_MEMBER, NO_INVITE]);
-  const res = await worker.fetch(request("/api/analyses", { method: "POST", token: "ok", body: { repo: "acme/app" } }), env);
+  const res = await worker.fetch(request("/api/analyses", { method: "POST", token: "ok", body: { ...START, repo: "acme/app" } }), env);
   assert.equal(res.status, 403);
   assert.equal(calls.filter((c) => c.url.includes("api.github.com")).length, 0, "runner not started");
 });
@@ -130,7 +131,7 @@ test("every member sees every analysis in the workspace, without owner ids", asy
 
 test("repo names are validated before anything is created", async () => {
   mockFetch([["/auth/v1/user", reply(200, USER)], AS_DEVELOPER]);
-  const res = await worker.fetch(request("/api/analyses", { method: "POST", token: "ok", body: { repo: "../etc" } }), env);
+  const res = await worker.fetch(request("/api/analyses", { method: "POST", token: "ok", body: { ...START, repo: "../etc" } }), env);
   assert.equal(res.status, 400);
   assert.equal(calls.filter((c) => c.url.includes("/rest/v1/analyses")).length, 0);
 });
@@ -142,7 +143,7 @@ test("a valid request creates a row as the user and starts the runner", async ()
     ["/rest/v1/analyses", reply(201, [{ id: ANALYSIS_ID, status: "queued" }])],
     ["api.github.com", reply(204)],
   ]);
-  const res = await worker.fetch(request("/api/analyses", { method: "POST", token: "ok", body: { repo: "acme/app", ref: "main" } }), env);
+  const res = await worker.fetch(request("/api/analyses", { method: "POST", token: "ok", body: { ...START, repo: "acme/app", ref: "main" } }), env);
   assert.equal(res.status, 202);
   const insert = calls.find((c) => c.url.includes("/rest/v1/analyses"));
   assert.equal(insert.init.headers.authorization, "Bearer ok", "insert uses the user's token so row-level security applies");
@@ -154,7 +155,7 @@ test("a valid request creates a row as the user and starts the runner", async ()
 
 test("compliance reviewers cannot start analyses", async () => {
   mockFetch([["/auth/v1/user", reply(200, USER)], AS_COMPLIANCE]);
-  const res = await worker.fetch(request("/api/analyses", { method: "POST", token: "ok", body: { repo: "acme/app" } }), env);
+  const res = await worker.fetch(request("/api/analyses", { method: "POST", token: "ok", body: { ...START, repo: "acme/app" } }), env);
   assert.equal(res.status, 403);
   assert.equal(calls.filter((c) => c.url.includes("api.github.com")).length, 0);
 });
@@ -167,7 +168,7 @@ test("a failed runner start marks the analysis failed instead of leaving it queu
     ["/rest/v1/analyses", reply(201, [{ id: ANALYSIS_ID, status: "queued" }])],
     ["api.github.com", reply(500)],
   ]);
-  const res = await worker.fetch(request("/api/analyses", { method: "POST", token: "ok", body: { repo: "acme/app" } }), env);
+  const res = await worker.fetch(request("/api/analyses", { method: "POST", token: "ok", body: { ...START, repo: "acme/app" } }), env);
   assert.equal(res.status, 502);
   const patch = calls.find((c) => c.init.method === "PATCH");
   assert.equal(JSON.parse(patch.init.body).status, "failed");
@@ -407,8 +408,36 @@ test("other websites get no cross-origin permission", async () => {
 test("responses to the app's address carry the cross-origin header", async () => {
   mockFetch([["/auth/v1/user", reply(401, { message: "bad" })]]);
   const res = await worker.fetch(new Request("https://api.test/api/analyses", {
-    method: "POST", headers: { origin: "http://localhost:8000", authorization: "Bearer x", "content-type": "application/json" }, body: JSON.stringify({ repo: "a/b" }),
+    method: "POST", headers: { origin: "http://localhost:8000", authorization: "Bearer x", "content-type": "application/json" }, body: JSON.stringify({ ...START, repo: "a/b" }),
   }), env);
   assert.equal(res.status, 401);
   assert.equal(res.headers.get("access-control-allow-origin"), "http://localhost:8000");
+});
+
+test("starting an analysis requires an application name", async () => {
+  mockFetch([["/auth/v1/user", reply(200, USER)], AS_DEVELOPER]);
+  const res = await worker.fetch(request("/api/analyses", { method: "POST", token: "ok", body: { repo: "acme/app", data_rules_confirmed: true } }), env);
+  assert.equal(res.status, 400);
+  assert.equal(calls.filter((c) => c.url.includes("/rest/v1/analyses")).length, 0, "nothing is written without a name");
+});
+
+test("starting an analysis requires the data-rules confirmation", async () => {
+  mockFetch([["/auth/v1/user", reply(200, USER)], AS_DEVELOPER]);
+  const res = await worker.fetch(request("/api/analyses", { method: "POST", token: "ok", body: { repo: "acme/app", app_name: "Portal" } }), env);
+  assert.equal(res.status, 400);
+  assert.equal(calls.filter((c) => c.url.includes("/rest/v1/analyses")).length, 0, "nothing is written without the confirmation");
+});
+
+test("the name and confirmation time are stored with the analysis", async () => {
+  mockFetch([
+    ["/auth/v1/user", reply(200, USER)],
+    AS_DEVELOPER,
+    ["/rest/v1/analyses", reply(201, [{ id: ANALYSIS_ID, repo: "acme/app", status: "queued" }])],
+    ["api.github.com", reply(204)],
+  ]);
+  const res = await worker.fetch(request("/api/analyses", { method: "POST", token: "ok", body: { repo: "acme/app", app_name: "  Patient portal (2019)  ", data_rules_confirmed: true } }), env);
+  assert.equal(res.status, 202);
+  const insert = JSON.parse(calls.find((c) => c.url.includes("/rest/v1/analyses")).init.body);
+  assert.equal(insert.app_name, "Patient portal (2019)");
+  assert.match(insert.data_rules_confirmed_at, /^\d{4}-\d{2}-\d{2}T/);
 });
