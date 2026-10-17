@@ -131,6 +131,36 @@ pre{white-space:pre-wrap;word-break:break-word;background:var(--soft);padding:12
 @keyframes spin{to{transform:rotate(360deg)}}
 @media (max-width:760px){.run{grid-template-columns:1fr;justify-items:center}.steps{width:100%}}
 @media (prefers-reduced-motion:reduce){.ring.running #ringArc,#s-run.is-running .tick{animation:none}}
+
+/* Review: summary numbers, charts and topic cards. Headings use the accent color. */
+.stats{display:grid;gap:14px;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));margin-top:18px}
+.stat{background:var(--card);border:1px solid var(--line);border-radius:18px;padding:16px}
+.stat b{display:block;font:800 30px var(--display);color:var(--fg)}
+.stat span{font-size:13px;color:var(--muted);font-weight:700}
+.charts{display:grid;gap:16px;grid-template-columns:repeat(auto-fit,minmax(min(100%,280px),1fr));margin-top:16px}
+.panel{background:var(--card);border:1px solid var(--line);border-radius:20px;padding:18px}
+.eyebrow-sm{font-size:12px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:var(--accent)}
+.panel h3,.rcard h3{color:var(--accent);margin-top:6px}
+.hbar{display:grid;gap:10px;margin-top:12px}
+.hrow{display:grid;grid-template-columns:110px 1fr 34px;gap:8px;align-items:center;font-size:13px}
+.hrow i{height:12px;border-radius:99px;background:var(--soft);overflow:hidden;display:block}
+.hrow i b{display:block;height:100%;width:var(--w);background:var(--c);border-radius:99px;transition:width .8s cubic-bezier(.2,.8,.2,1)}
+.donut{display:flex;gap:16px;align-items:center;flex-wrap:wrap;margin-top:12px}
+.donut-n{fill:var(--fg);font:800 28px var(--display)}
+.legend{display:grid;gap:6px;font-size:13px}
+.legend span::before{content:"";display:inline-block;width:10px;height:10px;border-radius:3px;margin-right:8px;background:var(--c)}
+.cols{display:flex;gap:6px;align-items:stretch;height:150px;margin-top:14px}
+.cols>div{flex:1;display:grid;grid-template-rows:1fr auto;gap:4px;min-width:0;text-align:center;font-size:11px;color:var(--muted)}
+.cols>div>i{align-self:end;display:block;height:var(--h);min-height:3px;border-radius:6px 6px 2px 2px;background:var(--grad)}
+.rgrid{display:grid;gap:16px;grid-template-columns:repeat(auto-fit,minmax(min(100%,300px),1fr));margin-top:14px}
+.rcard{background:var(--card);border:1px solid var(--line);border-radius:20px;padding:18px}
+.kv{display:grid;grid-template-columns:auto 1fr;gap:6px 14px;margin-top:10px;font-size:14px}
+.kv span:nth-child(odd){color:var(--muted)}
+.tags{margin-top:10px}
+.tag{display:inline-block;font-size:11.5px;font-weight:700;padding:3px 10px;border-radius:99px;margin:0 4px 4px 0}
+.t-ok{background:#d1fae5;color:#065f46}
+.t-inf{background:#fef3c7;color:#92400e}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]) .t-ok{background:#064e3b;color:#a7f3d0}:root:not([data-theme="light"]) .t-inf{background:#78350f;color:#fde68a}}
   </style>
 </head>
 <body>
@@ -884,6 +914,121 @@ pre{white-space:pre-wrap;word-break:break-word;background:var(--soft);padding:12
     return card;
   }
 
+  // ---- Review charts. Drawn only from the findings this viewer may see. ----
+  const EYEBROW = { "What it is": "Application", "How it is built": "Build", "Its data": "Data", "How it is hosted": "Hosting" };
+  const CAT_TITLE = { stack: "Stack", data: "Data", ui_portal: "Screens", security: "Security", epic: "Epic", privacy: "Privacy", containers: "Containers", delivery: "Delivery", infrastructure: "Infrastructure" };
+  const CAT_COLOR = { stack: "var(--accent)", data: "var(--accent2)", ui_portal: "var(--accent3)", security: "var(--bad)", epic: "var(--warn)", privacy: "#7c3aed", containers: "var(--ok)", delivery: "#64748b", infrastructure: "#0e7490" };
+
+  function svgEl(tag, attrs) {
+    const node = document.createElementNS("http://www.w3.org/2000/svg", tag);
+    for (const [k, v] of Object.entries(attrs)) node.setAttribute(k, v);
+    return node;
+  }
+
+  function panel(title, eyebrow) {
+    const p = el("div", null, "panel");
+    p.appendChild(el("p", eyebrow, "eyebrow-sm"));
+    p.appendChild(el("h3", title));
+    return p;
+  }
+
+  function stat(parent, value, label) {
+    const s = el("div", null, "stat");
+    s.append(el("b", String(value)), el("span", label));
+    parent.appendChild(s);
+  }
+
+  // Horizontal bars: one row per label.
+  function hbars(rows) {
+    const box = el("div", null, "hbar");
+    const max = Math.max(1, ...rows.map((r) => r.value));
+    for (const r of rows) {
+      const line = el("div", null, "hrow");
+      const track = el("i");
+      const fill = el("b");
+      fill.style.setProperty("--w", `${Math.round((100 * r.value) / max)}%`);
+      fill.style.setProperty("--c", r.color);
+      track.appendChild(fill);
+      line.append(el("span", r.label), track, el("span", String(r.value), "mono"));
+      box.appendChild(line);
+    }
+    return box;
+  }
+
+  // Ring chart with a legend. Parts are {label, value, color}.
+  function donut(parts) {
+    const total = parts.reduce((n, p) => n + p.value, 0);
+    const wrap = el("div", null, "donut");
+    const svg = svgEl("svg", { viewBox: "0 0 160 160", width: "150", height: "150", role: "img", "aria-label": `${total} findings by confidence` });
+    const r = 60;
+    const c = 2 * Math.PI * r;
+    svg.appendChild(svgEl("circle", { cx: 80, cy: 80, r, fill: "none", "stroke-width": 22, stroke: "var(--soft)" }));
+    let at = 0;
+    if (total) {
+      for (const p of parts) {
+        if (!p.value) continue;
+        const len = (c * p.value) / total;
+        const seg = svgEl("circle", { cx: 80, cy: 80, r, fill: "none", "stroke-width": 22, "stroke-dasharray": `${len} ${c - len}`, "stroke-dashoffset": String(-at), transform: "rotate(-90 80 80)" });
+        seg.style.stroke = p.color;
+        svg.appendChild(seg);
+        at += len;
+      }
+    }
+    const label = svgEl("text", { x: 80, y: 90, "text-anchor": "middle", class: "donut-n" });
+    label.textContent = String(total);
+    svg.appendChild(label);
+    wrap.appendChild(svg);
+    const legend = el("div", null, "legend");
+    for (const p of parts) {
+      const s = el("span", `${p.label}: ${p.value}`);
+      s.style.setProperty("--c", p.color);
+      legend.appendChild(s);
+    }
+    wrap.appendChild(legend);
+    return wrap;
+  }
+
+  // Columns: one bar per year.
+  function columns(points) {
+    const box = el("div", null, "cols");
+    const max = Math.max(1, ...points.map((p) => p.value));
+    for (const p of points) {
+      const col = el("div");
+      const bar = el("i");
+      bar.style.setProperty("--h", `${Math.max(3, Math.round((100 * p.value) / max))}%`);
+      bar.title = `${p.label}: ${p.value}`;
+      col.append(bar, el("span", p.label));
+      box.appendChild(col);
+    }
+    return box;
+  }
+
+  // One card per topic: the facts as label and value, the confidence mix, and the details.
+  function reviewCard(card, all, counts) {
+    const c = el("div", null, "rcard");
+    c.appendChild(el("p", EYEBROW[card.title] || card.title, "eyebrow-sm"));
+    c.appendChild(el("h3", card.title));
+    const found = all.filter((item) => card.cats.includes(item.category));
+    if (!found.length) {
+      c.appendChild(el("p", counts.total > counts.shown ? "Not shown for your role." : "Nothing found for this part.", "muted small"));
+      return c;
+    }
+    const kv = el("div", null, "kv");
+    for (const item of found) kv.append(el("span", item.title), el("span", fmtValue(item.value)));
+    c.appendChild(kv);
+    const verified = found.filter((i) => i.confidence === "verified").length;
+    const inferred = found.length - verified;
+    const tags = el("div", null, "tags");
+    if (verified) tags.appendChild(el("span", `${verified} verified in code`, "tag t-ok"));
+    if (inferred) tags.appendChild(el("span", `${inferred} inferred, needs review`, "tag t-inf"));
+    c.appendChild(tags);
+    const details = document.createElement("details");
+    details.appendChild(el("summary", found.length === 1 ? "Show 1 finding" : `Show ${found.length} findings`));
+    found.forEach((item) => details.appendChild(renderFindingItem(item)));
+    c.appendChild(details);
+    return c;
+  }
+
   function renderReview(row) {
     const box = $("reviewBody");
     box.innerHTML = "";
@@ -901,6 +1046,9 @@ pre{white-space:pre-wrap;word-break:break-word;background:var(--soft);padding:12
     const counts = report.counts || { total: all.length, shown: all.length };
     const history = report.history || {};
     const flagged = (report.flags || []).map((id) => shown[id]).filter(Boolean);
+    const confidence = {};
+    for (const i of all) confidence[i.confidence] = (confidence[i.confidence] || 0) + 1;
+    const verified = confidence.verified || 0;
 
     let summary = `Cutover found ${counts.total} points about this application.`;
     summary += flagged.length
@@ -910,28 +1058,59 @@ pre{white-space:pre-wrap;word-break:break-word;background:var(--soft);padding:12
     if (counts.shown < counts.total) {
       box.appendChild(el("p", `You can see ${counts.shown} of them. The rest belong to other roles in this workspace.`, "muted small"));
     }
-
     const facts = history.available
       ? [`Age: ${history.application_age_years} years`, `Commits: ${history.total_commits}`, `Last commit: ${history.days_since_last_commit} days ago`]
       : [history.reason || "Repository history not available."];
     box.appendChild(el("p", facts.join("  ·  "), "muted small"));
-
     if (flagged.length) {
       const wrap = document.createElement("div");
+      wrap.style.marginTop = "10px";
       wrap.appendChild(el("strong", "Needs review: "));
       flagged.forEach((f) => wrap.appendChild(el("span", f.title, "chip")));
       box.appendChild(wrap);
     }
 
-    for (const card of REVIEW_CARDS) {
-      box.appendChild(el("h3", card.title));
-      const found = all.filter((item) => card.cats.includes(item.category));
-      if (!found.length) {
-        box.appendChild(el("p", counts.total > counts.shown ? "Not shown for your role." : "Nothing found for this part.", "muted small"));
-        continue;
-      }
-      found.forEach((item) => box.appendChild(renderFindingItem(item)));
+    // Summary numbers
+    const stats = el("div", null, "stats");
+    stat(stats, counts.total, "points found");
+    stat(stats, counts.shown, "you can see");
+    stat(stats, flagged.length, "need review");
+    stat(stats, verified, "verified in code");
+    box.appendChild(stats);
+
+    // Charts
+    const charts = el("div", null, "charts");
+    const byCat = {};
+    for (const i of all) byCat[i.category] = (byCat[i.category] || 0) + 1;
+    const catRows = Object.keys(byCat).map((c) => ({ label: CAT_TITLE[c] || c, value: byCat[c], color: CAT_COLOR[c] || "var(--accent)" }));
+    if (catRows.length) {
+      const p = panel("Where the findings are", "Overview");
+      p.appendChild(hbars(catRows));
+      charts.appendChild(p);
     }
+    if (all.length) {
+      const p = panel("How sure we are", "Confidence");
+      p.appendChild(donut([
+        { label: "Verified in code", value: verified, color: "var(--ok)" },
+        { label: "Inferred, needs review", value: all.length - verified, color: "var(--warn)" },
+      ]));
+      charts.appendChild(p);
+    }
+    const years = Object.entries(history.release_tags_per_year || {});
+    if (years.length) {
+      const p = panel("Tagged releases per year", "History");
+      p.appendChild(columns(years.map(([y, v]) => ({ label: y.slice(-2), value: v }))));
+      charts.appendChild(p);
+    }
+    if (charts.childElementCount) box.appendChild(charts);
+
+    // Cards
+    const heading = el("h2", "What we found");
+    heading.style.marginTop = "28px";
+    box.appendChild(heading);
+    const grid = el("div", null, "rgrid");
+    for (const card of REVIEW_CARDS) grid.appendChild(reviewCard(card, all, counts));
+    box.appendChild(grid);
 
     if (report.limitations && report.limitations.length) {
       box.appendChild(el("h3", "What this review does not cover"));
