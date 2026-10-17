@@ -7,6 +7,11 @@ import assert from "node:assert/strict";
 import { generateKeyPairSync, createVerify } from "node:crypto";
 import worker from "../src/index.mjs";
 
+const appKeys = generateKeyPairSync("rsa", {
+  modulusLength: 2048,
+  publicKeyEncoding: { type: "spki", format: "pem" },
+  privateKeyEncoding: { type: "pkcs1", format: "pem" },
+});
 const env = {
   SUPABASE_URL: "https://example.supabase.test",
   SUPABASE_ANON_KEY: "anon-test",
@@ -14,6 +19,8 @@ const env = {
   GITHUB_DISPATCH_TOKEN: "gh-test",
   RUNNER_SECRET: "runner-secret-test",
   RUNNER_REPO: "owner/cutover",
+  GITHUB_APP_ID: "5361797",
+  GITHUB_APP_PRIVATE_KEY: appKeys.privateKey,
 };
 const USER = { id: "11111111-1111-4111-8111-111111111111", email: "member@example.test" };
 const OTHER = { id: "33333333-3333-4333-8333-333333333333", email: "other@example.test" };
@@ -22,6 +29,10 @@ const COMMENT_ID = "44444444-4444-4444-8444-444444444444";
 const ACTION_ID = "55555555-5555-4555-8555-555555555555";
 
 // Access list replies. A member is someone with a row in the members table.
+const APP_READ_ROUTES = [
+  ["/installation", reply(200, { id: 99 })],
+  ["/access_tokens", reply(201, { token: "ghs_test" })],
+];
 const START = { app_name: "Test application", data_rules_confirmed: true };
 const AS_DEVELOPER = ["/rest/v1/members?user_id=", reply(200, [{ user_id: USER.id, email: USER.email, role: "developer" }])];
 const AS_ADMIN = ["/rest/v1/members?user_id=", reply(200, [{ user_id: USER.id, email: USER.email, role: "workspace_admin" }])];
@@ -138,7 +149,7 @@ test("repo names are validated before anything is created", async () => {
 });
 
 test("a valid request creates a row as the user and starts the runner", async () => {
-  mockFetch([
+  mockFetch([...APP_READ_ROUTES,
     ["/auth/v1/user", reply(200, USER)],
     AS_DEVELOPER,
     ["/rest/v1/analyses", reply(201, [{ id: ANALYSIS_ID, status: "queued" }])],
@@ -149,7 +160,7 @@ test("a valid request creates a row as the user and starts the runner", async ()
   const insert = calls.find((c) => c.url.includes("/rest/v1/analyses"));
   assert.equal(insert.init.headers.authorization, "Bearer ok", "insert uses the user's token so row-level security applies");
   assert.equal(JSON.parse(insert.init.body).owner_id, USER.id);
-  const dispatch = calls.find((c) => c.url.includes("api.github.com"));
+  const dispatch = calls.find((c) => c.url.includes("/actions/workflows/"));
   assert.match(dispatch.url, /repos\/owner\/cutover\/actions\/workflows\/analyze\.yml\/dispatches$/);
   assert.equal(JSON.parse(dispatch.init.body).inputs.analysis_id, ANALYSIS_ID);
 });
@@ -163,6 +174,7 @@ test("compliance reviewers cannot start analyses", async () => {
 
 test("a failed runner start marks the analysis failed instead of leaving it queued", async () => {
   mockFetch([
+    ...APP_READ_ROUTES,
     ["/auth/v1/user", reply(200, USER)],
     AS_DEVELOPER,
     ["/rest/v1/analyses?id=", reply(204)],
@@ -432,7 +444,7 @@ test("starting an analysis requires the data-rules confirmation", async () => {
 });
 
 test("the name and confirmation time are stored with the analysis", async () => {
-  mockFetch([
+  mockFetch([...APP_READ_ROUTES,
     ["/auth/v1/user", reply(200, USER)],
     AS_DEVELOPER,
     ["/rest/v1/analyses", reply(201, [{ id: ANALYSIS_ID, repo: "acme/app", status: "queued" }])],
@@ -502,12 +514,7 @@ test("a failed deletion record stops a user delete", async () => {
 });
 
 // ---- Repository check (GitHub App) ----
-const appKeys = generateKeyPairSync("rsa", {
-  modulusLength: 2048,
-  publicKeyEncoding: { type: "spki", format: "pem" },
-  privateKeyEncoding: { type: "pkcs1", format: "pem" },
-});
-const appEnv = { ...env, GITHUB_APP_ID: "5361797", GITHUB_APP_PRIVATE_KEY: appKeys.privateKey };
+const appEnv = env;
 
 test("repo check reads the file count and last change with an app token", async () => {
   mockFetch([
@@ -551,5 +558,17 @@ test("repo check refuses a malformed repository name", async () => {
   mockFetch([["/auth/v1/user", reply(200, USER)], AS_DEVELOPER]);
   const res = await worker.fetch(request("/api/repo-check?repo=..%2Fetc", { token: "ok" }), appEnv);
   assert.equal(res.status, 400);
+});
+
+test("starting an analysis is refused when the app cannot read the repository", async () => {
+  mockFetch([
+    ["/auth/v1/user", reply(200, USER)],
+    AS_DEVELOPER,
+    ["/repos/acme/app/installation", reply(404, { message: "Not Found" })],
+  ]);
+  const res = await worker.fetch(request("/api/analyses", { method: "POST", token: "ok", body: { ...START, repo: "acme/app" } }), env);
+  assert.equal(res.status, 400);
+  assert.equal(calls.filter((c) => c.url.includes("/rest/v1/analyses")).length, 0, "no row is created");
+  assert.equal(calls.filter((c) => c.url.includes("api.github.com/repos/owner")).length, 0, "no runner is started");
 });
 

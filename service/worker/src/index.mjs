@@ -186,6 +186,18 @@ async function startAnalysis(request, env) {
     return json({ error: "Confirm that the code and its settings contain no patient information." }, 400);
   }
 
+  // The app must be able to read the repository, the same check the wizard shows in step 3.
+  let access;
+  try {
+    access = await readToken(env, repo);
+  } catch {
+    return json({ error: "Cutover could not check the repository right now. Try again in a minute." }, 502);
+  }
+  if (access.notInstalled) {
+    return json({ error: "Cutover cannot read this repository yet. Check the name, or install the Cutover reader on it." }, 400);
+  }
+  if (access.failed) return json({ error: "Cutover could not check the repository right now. Try again in a minute." }, 502);
+
   // Create the row as the user, so RLS enforces owner_id = auth.uid().
   const created = await userRest(env, token, "analyses", {
     method: "POST",
