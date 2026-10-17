@@ -203,8 +203,24 @@ async function purgeExpired(env) {
   if (!res.ok) throw new Error(`Retention purge failed with status ${res.status}`);
 }
 
-export default {
-  async fetch(request, env) {
+// Browsers only let the app call the API from an allowed address.
+// Local testing uses localhost; the live app address is set in wrangler.toml as APP_ORIGIN.
+const DEV_ORIGINS = ["http://localhost:8000", "http://127.0.0.1:8000"];
+
+function allowedOrigin(origin, env) {
+  const list = [...DEV_ORIGINS, ...(env.APP_ORIGIN ? [env.APP_ORIGIN] : [])];
+  return list.includes(origin) ? origin : null;
+}
+
+function withCors(res, origin) {
+  if (!origin) return res;
+  const headers = new Headers(res.headers);
+  headers.set("access-control-allow-origin", origin);
+  headers.set("vary", "Origin");
+  return new Response(res.body, { status: res.status, headers });
+}
+
+async function route(request, env) {
     const url = new URL(request.url);
     const path = url.pathname.replace(/\/+$/, "");
     const method = request.method;
@@ -221,8 +237,26 @@ export default {
       return runnerResult(request, env, callback[1]);
     }
 
-    if (path.startsWith("/api/")) return json({ error: "Not found." }, 404);
     return json({ error: "Not found." }, 404);
+}
+
+export default {
+  async fetch(request, env) {
+    const origin = allowedOrigin(request.headers.get("origin") || "", env);
+    if (request.method === "OPTIONS") {
+      if (!origin) return new Response(null, { status: 403 });
+      return new Response(null, {
+        status: 204,
+        headers: {
+          "access-control-allow-origin": origin,
+          "access-control-allow-methods": "GET, POST, DELETE, OPTIONS",
+          "access-control-allow-headers": "authorization, content-type",
+          "access-control-max-age": "600",
+          vary: "Origin",
+        },
+      });
+    }
+    return withCors(await route(request, env), origin);
   },
 
   async scheduled(event, env, ctx) {

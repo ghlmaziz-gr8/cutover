@@ -155,3 +155,31 @@ test("retention purge deletes expired rows with the service key", async () => {
   assert.match(calls[0].url, /expires_at=lt\./);
   assert.equal(calls[0].init.headers.authorization, `Bearer ${env.SUPABASE_SERVICE_ROLE_KEY}`);
 });
+
+test("the app's local address gets cross-origin permission", async () => {
+  mockFetch([]);
+  const res = await worker.fetch(new Request("https://api.test/api/analyses", {
+    method: "OPTIONS", headers: { origin: "http://localhost:8000" },
+  }), env);
+  assert.equal(res.status, 204);
+  assert.equal(res.headers.get("access-control-allow-origin"), "http://localhost:8000");
+  assert.match(res.headers.get("access-control-allow-headers"), /authorization/);
+});
+
+test("other websites get no cross-origin permission", async () => {
+  mockFetch([]);
+  const res = await worker.fetch(new Request("https://api.test/api/analyses", {
+    method: "OPTIONS", headers: { origin: "https://evil.example" },
+  }), env);
+  assert.equal(res.status, 403);
+  assert.equal(res.headers.get("access-control-allow-origin"), null);
+});
+
+test("responses to the app's address carry the cross-origin header", async () => {
+  mockFetch([["/auth/v1/user", reply(401, { message: "bad" })]]);
+  const res = await worker.fetch(new Request("https://api.test/api/analyses", {
+    method: "POST", headers: { origin: "http://localhost:8000", authorization: "Bearer x", "content-type": "application/json" }, body: JSON.stringify({ repo: "a/b" }),
+  }), env);
+  assert.equal(res.status, 401);
+  assert.equal(res.headers.get("access-control-allow-origin"), "http://localhost:8000");
+});
