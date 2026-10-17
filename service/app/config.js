@@ -3,6 +3,6 @@
 // and with the URL of the deployed API.
 window.CUTOVER_CONFIG = {
   SUPABASE_URL: "https://tietnfdwkiiitgzuchra.supabase.co",
-  SUPABASE_ANON_KEY: "YOUR-SUPABASE-ANON-KEY",
+  SUPABASE_ANON_KEY: "sb_publishable_3A5EqrZZ1Xv-JNcS79-9hg_wHi6h9wQ",
   API_BASE: "",
 };
