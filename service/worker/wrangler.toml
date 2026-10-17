@@ -1,0 +1,20 @@
+# Cloudflare Worker for the Cutover API.
+# Secrets are never stored here. Set them with:
+#   wrangler secret put SUPABASE_ANON_KEY
+#   wrangler secret put SUPABASE_SERVICE_ROLE_KEY
+#   wrangler secret put GITHUB_DISPATCH_TOKEN
+#   wrangler secret put RUNNER_SECRET
+
+name = "cutover-api"
+main = "src/index.mjs"
+compatibility_date = "2025-01-01"
+
+# Retention: delete expired analyses every day at 03:17 UTC.
+[triggers]
+crons = ["17 3 * * *"]
+
+[vars]
+# Replace with your Supabase project URL (not a secret).
+SUPABASE_URL = "https://YOUR-PROJECT-REF.supabase.co"
+# The GitHub repository that contains the analysis workflow (owner/name).
+RUNNER_REPO = "YOUR-GITHUB-OWNER/cutover"
