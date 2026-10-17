@@ -113,6 +113,24 @@ pre{white-space:pre-wrap;word-break:break-word;background:var(--soft);padding:12
 .wzNav{justify-content:space-between;margin-top:22px}
 .cards2{display:grid;gap:16px;grid-template-columns:repeat(auto-fit,minmax(min(100%,240px),1fr))}
 .hint{margin-top:12px}
+
+/* Run screen: progress ring and stage checklist, as in the demo */
+.run{display:grid;gap:24px;grid-template-columns:240px 1fr;align-items:center;margin-top:18px}
+.ring{position:relative;width:220px;height:220px;max-width:100%}
+.ring svg{width:100%;height:100%;transform:rotate(-90deg)}
+.ring .c{position:absolute;inset:0;display:grid;place-content:center;text-align:center}
+.ring .c b{font:800 44px var(--display);color:var(--fg)}
+.ring.running #ringArc{animation:orbit 1.4s linear infinite;transform-origin:110px 110px}
+@keyframes orbit{to{transform:rotate(360deg)}}
+.steps{list-style:none;padding:0;margin:0;display:grid;gap:10px}
+.steps li{display:flex;gap:12px;align-items:center;padding:10px 14px;border-radius:14px;background:var(--card);border:1px solid var(--line)}
+.tick{width:22px;height:22px;border-radius:50%;border:2px solid var(--line);flex:0 0 auto;display:grid;place-items:center}
+#s-run.is-running .tick{border-color:var(--accent3);border-top-color:transparent;animation:spin .8s linear infinite}
+#s-run.is-done .tick{background:var(--ok);border-color:var(--ok)}
+#s-run.is-done .tick::after{content:"✓";color:#fff;font-size:12px;font-weight:800}
+@keyframes spin{to{transform:rotate(360deg)}}
+@media (max-width:760px){.run{grid-template-columns:1fr;justify-items:center}.steps{width:100%}}
+@media (prefers-reduced-motion:reduce){.ring.running #ringArc,#s-run.is-running .tick{animation:none}}
   </style>
 </head>
 <body>
@@ -279,13 +297,25 @@ pre{white-space:pre-wrap;word-break:break-word;background:var(--soft);padding:12
     <p class="eyebrow">Step 6</p>
     <h2 style="margin:8px 0 6px" id="runTitle">Analyzing</h2>
     <p class="muted" id="runStatus"></p>
-    <div class="card">
-      <ol class="stages" id="stageList"></ol>
-      <p class="muted small">The stages run in this order. Cutover does not report each stage separately yet, so this list shows the order, not live progress.</p>
+    <div class="run">
+      <div class="ring" id="ring">
+        <svg viewBox="0 0 220 220" aria-hidden="true">
+          <defs>
+            <linearGradient id="ringGrad" x1="0" y1="0" x2="1" y2="1">
+              <stop offset="0" stop-color="#6d28d9"/><stop offset=".55" stop-color="#ec4899"/><stop offset="1" stop-color="#f59e0b"/>
+            </linearGradient>
+          </defs>
+          <circle cx="110" cy="110" r="97" fill="none" stroke="var(--soft)" stroke-width="14"/>
+          <circle id="ringArc" cx="110" cy="110" r="97" fill="none" stroke="url(#ringGrad)" stroke-width="14" stroke-linecap="round" stroke-dasharray="609.5 609.5" stroke-dashoffset="609.5"/>
+        </svg>
+        <div class="c"><b id="ringText"></b><span class="muted small" id="ringLabel"></span></div>
+      </div>
+      <ol class="steps" id="stageList"></ol>
     </div>
+    <p class="muted small hint">The stages run in this order. Cutover does not report each stage separately yet, so the ticks show the overall state, not each stage.</p>
     <div class="row wzNav">
       <button type="button" class="ghost" id="runBack">Back to analyses</button>
-      <span></span>
+      <button type="button" id="viewFindings" disabled>View findings</button>
     </div>
   </section>
 
@@ -735,14 +765,50 @@ pre{white-space:pre-wrap;word-break:break-word;background:var(--soft);padding:12
 
   function showRun() {
     show("s-run");
-    $("runTitle").textContent = `Analyzing ${cur.app_name || cur.repo}`;
-    $("runStatus").textContent = cur.status === "queued"
-      ? "Waiting to start. This page updates by itself."
-      : "Running. This page updates by itself. You can leave and come back.";
-    const list = $("stageList");
-    list.innerHTML = "";
-    for (const s of RUN_STAGES) list.appendChild(el("li", s));
+    renderRun();
     watchRun();
+  }
+
+  // Shows the state the server reports. The ring and ticks show the overall state, not each stage.
+  function renderRun() {
+    const s = $("s-run");
+    const st = cur.status;
+    const running = st === "queued" || st === "running";
+    const done = st === "complete";
+    const failed = st === "failed";
+    s.classList.toggle("is-running", running);
+    s.classList.toggle("is-done", done);
+
+    $("runTitle").textContent = `Analyzing ${cur.app_name || cur.repo}`;
+    const flags = cur.findings && cur.findings.flags ? cur.findings.flags.length : 0;
+    $("runStatus").textContent = st === "queued" ? "Waiting to start. This page updates by itself."
+      : st === "running" ? "Running. This page updates by itself. You can leave and come back."
+      : done ? `Analysis complete. ${flags === 0 ? "Nothing needs your review right now." : `${flags} ${flags === 1 ? "item needs" : "items need"} your review.`}`
+      : (cur.error || "The analysis failed.");
+
+    const arc = $("ringArc");
+    $("ring").classList.toggle("running", st === "running");
+    arc.style.stroke = failed ? "var(--bad)" : "url(#ringGrad)";
+    if (st === "running") {
+      arc.setAttribute("stroke-dasharray", "150 460");
+      arc.setAttribute("stroke-dashoffset", "0");
+    } else {
+      arc.setAttribute("stroke-dasharray", "609.5 609.5");
+      arc.setAttribute("stroke-dashoffset", done || failed ? "0" : "609.5");
+    }
+    $("ringText").textContent = done ? "100%" : failed ? "!" : st === "running" ? "…" : "0%";
+    $("ringLabel").textContent = { queued: "Waiting to start", running: "Running", complete: "Complete", failed: "Failed" }[st] || "";
+    $("viewFindings").disabled = !(done || failed);
+
+    const list = $("stageList");
+    if (!list.childElementCount) {
+      for (const name of RUN_STAGES) {
+        const li = el("li");
+        li.appendChild(el("span", null, "tick"));
+        li.appendChild(el("span", name));
+        list.appendChild(li);
+      }
+    }
   }
 
   function watchRun() {
@@ -755,12 +821,13 @@ pre{white-space:pre-wrap;word-break:break-word;background:var(--soft);padding:12
         $("runStatus").textContent = err.message;
         return watchRun();
       }
-      if (cur.status === "queued" || cur.status === "running") return watchRun();
-      showReview();
+      renderRun();
+      if (cur.status === "queued" || cur.status === "running") watchRun();
     }, 5000);
   }
 
   $("runBack").addEventListener("click", () => showHome());
+  $("viewFindings").addEventListener("click", () => showReview());
 
   // ---- Step 7: review ----
 
