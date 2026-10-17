@@ -49,6 +49,8 @@
     .wz .check input { width: auto; margin-top: 3px; }
     .wzNav { margin-top: 18px; justify-content: space-between; }
     button:disabled { opacity: 0.5; cursor: not-allowed; }
+    h3 { margin-top: 22px; }
+    ol { padding-left: 22px; }
   </style>
 </head>
 <body>
@@ -236,6 +238,7 @@
       if (rows.some((r) => r.status === "queued" || r.status === "running")) {
         clearTimeout(timer);
         timer = setTimeout(loadList, 5000);
+        if (currentId) openOne(currentId);
       }
     } catch (err) {
       $("listMsg").textContent = err.message;
@@ -285,15 +288,62 @@
     return node;
   }
 
-  function renderFindings(row) {
-    const box = $("detailBody");
-    box.innerHTML = "";
-    if (row.error) { box.appendChild(el("p", row.error, "err")); return; }
-    if (!row.findings) { box.appendChild(el("p", "Waiting for results.", "muted")); return; }
+  // Step 6: the four review cards, and which categories each one shows.
+  const REVIEW_CARDS = [
+    { title: "What it is", cats: ["ui_portal", "security", "epic"] },
+    { title: "How it is built", cats: ["stack", "delivery"] },
+    { title: "Its data", cats: ["data", "privacy"] },
+    { title: "How it is hosted", cats: ["containers", "infrastructure"] },
+  ];
+  // Step 5: the stages the analysis runs through, in order.
+  const STAGES = ["Reading files", "Finding the stack", "Finding the data", "Finding the infrastructure", "Writing the report"];
 
+  function renderProgress(row, box) {
+    box.appendChild(el("p", "Step 5 of 7: Run the analysis", "muted small"));
+    box.appendChild(el("p", row.status === "queued"
+      ? "Waiting to start. This page updates by itself."
+      : "Running. This page updates by itself. You can leave and come back."));
+    const list = document.createElement("ol");
+    STAGES.forEach((stage) => list.appendChild(el("li", stage)));
+    box.appendChild(list);
+    box.appendChild(el("p", "The stages run in this order. Cutover does not report each stage separately yet, so this list shows the order, not live progress.", "muted small"));
+  }
+
+  function renderFindingItem(item) {
+    const card = document.createElement("div");
+    card.className = "finding" + (item.severity ? " sev-" + item.severity : "");
+    card.appendChild(el("h4", item.title));
+    card.appendChild(el("p", fmtValue(item.value)));
+    if (item.note) card.appendChild(el("p", item.note, "muted small"));
+    const details = document.createElement("details");
+    details.appendChild(el("summary", "Show details"));
+    const facts = `Confidence: ${item.confidence}` +
+      (item.severity ? ` · Severity: ${item.severity}` : "") +
+      ` · Evidence files: ${item.evidence_count}`;
+    details.appendChild(el("p", facts, "muted small"));
+    if (item.evidence && item.evidence.length) {
+      const list = document.createElement("ul");
+      list.className = "plain";
+      item.evidence.forEach((path) => list.appendChild(el("li", path, "mono")));
+      details.appendChild(list);
+    }
+    card.appendChild(details);
+    return card;
+  }
+
+  function renderReview(row, box) {
     const report = row.findings;
     const items = report.findings || {};
     const history = report.history || {};
+    const all = Object.values(items);
+    const flagged = (report.flags || []).map((id) => items[id]).filter(Boolean);
+
+    box.appendChild(el("p", "Step 6 of 7: Review what we found", "muted small"));
+    let summary = `${row.app_name || row.repo}: Cutover found ${all.length} points about this application.`;
+    summary += flagged.length
+      ? ` ${flagged.length === 1 ? "One item needs" : `${flagged.length} items need`} review before any decisions.`
+      : " Nothing needs review right now.";
+    box.appendChild(el("p", summary));
 
     const facts = history.available
       ? [`Age: ${history.application_age_years} years`, `Commits: ${history.total_commits}`,
@@ -301,7 +351,6 @@
       : [history.reason || "Repository history not available."];
     box.appendChild(el("p", facts.join("  ·  "), "muted"));
 
-    const flagged = (report.flags || []).map((id) => items[id]).filter(Boolean);
     if (flagged.length) {
       const wrap = document.createElement("div");
       wrap.className = "flags";
@@ -310,36 +359,14 @@
       box.appendChild(wrap);
     }
 
-    const groups = new Map();
-    for (const item of Object.values(items)) {
-      const key = CATEGORY_ORDER.includes(item.category) ? item.category : "other";
-      if (!groups.has(key)) groups.set(key, []);
-      groups.get(key).push(item);
-    }
-    const keys = [...CATEGORY_ORDER.filter((k) => groups.has(k)), ...(groups.has("other") ? ["other"] : [])];
-    for (const key of keys) {
-      box.appendChild(el("h3", CATEGORY_TITLES[key] || "Other"));
-      for (const item of groups.get(key)) {
-        const card = document.createElement("div");
-        card.className = "finding" + (item.severity ? " sev-" + item.severity : "");
-        card.appendChild(el("h4", item.title));
-        card.appendChild(el("p", fmtValue(item.value)));
-        const meta = `Confidence: ${item.confidence}` +
-          (item.severity ? ` · Severity: ${item.severity}` : "") +
-          ` · Evidence files: ${item.evidence_count}`;
-        card.appendChild(el("p", meta, "muted small"));
-        if (item.note) card.appendChild(el("p", item.note, "muted small"));
-        if (item.evidence && item.evidence.length) {
-          const details = document.createElement("details");
-          details.appendChild(el("summary", "Show evidence files"));
-          const list = document.createElement("ul");
-          list.className = "plain";
-          item.evidence.forEach((path) => list.appendChild(el("li", path, "mono")));
-          details.appendChild(list);
-          card.appendChild(details);
-        }
-        box.appendChild(card);
+    for (const card of REVIEW_CARDS) {
+      box.appendChild(el("h3", card.title));
+      const found = all.filter((item) => card.cats.includes(item.category));
+      if (!found.length) {
+        box.appendChild(el("p", "Nothing found for this part.", "muted small"));
+        continue;
       }
+      found.forEach((item) => box.appendChild(renderFindingItem(item)));
     }
 
     if (report.limitations && report.limitations.length) {
@@ -349,10 +376,61 @@
       box.appendChild(ul);
     }
 
+    renderNextSteps(row, box, report);
+
     const raw = document.createElement("details");
     raw.appendChild(el("summary", "Raw data (for auditors)"));
     raw.appendChild(el("pre", JSON.stringify(report, null, 2), "raw"));
     box.appendChild(raw);
+  }
+
+  // Step 7: what to do with the result.
+  function renderNextSteps(row, box, report) {
+    box.appendChild(el("h3", "Step 7 of 7: What next?"));
+    const bar = document.createElement("div");
+    bar.className = "row";
+
+    const download = el("button", "Download report (JSON)", "ghost");
+    download.type = "button";
+    download.addEventListener("click", () => {
+      const blob = new Blob([JSON.stringify(report, null, 2)], { type: "application/json" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `${(row.app_name || row.repo).replace(/[^A-Za-z0-9_-]+/g, "-").replace(/^-+|-+$/g, "")}-findings.json`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+    });
+    bar.appendChild(download);
+
+    if (row.viewer_role === "workspace_admin") {
+      const invite = el("button", "Invite a reviewer", "ghost");
+      invite.type = "button";
+      invite.addEventListener("click", () => {
+        $("adminPanel").scrollIntoView({ behavior: "smooth" });
+        $("inviteEmail").focus();
+      });
+      bar.appendChild(invite);
+    }
+
+    const planning = el("button", "Continue to planning (coming soon)", "ghost");
+    planning.type = "button";
+    planning.disabled = true;
+    bar.appendChild(planning);
+
+    box.appendChild(bar);
+    box.appendChild(el("p", "To delete these results, use Delete at the top right. It asks you to confirm.", "muted small"));
+  }
+
+  function renderFindings(row) {
+    const box = $("detailBody");
+    box.innerHTML = "";
+    if (row.error) { box.appendChild(el("p", row.error, "err")); return; }
+    if (row.status === "queued" || row.status === "running") { renderProgress(row, box); return; }
+    if (!row.findings) { box.appendChild(el("p", "No findings were saved for this analysis.", "muted")); return; }
+    renderReview(row, box);
   }
 
   function renderDetail(row) {
