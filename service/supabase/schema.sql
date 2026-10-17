@@ -54,3 +54,75 @@ create policy "analyses: owners delete"
 
 -- No update policy for users. Status changes come from the runner callback,
 -- which uses the service role key on the server side only.
+
+-- Access list. Only people listed here can use the portal.
+-- An invitation is created by a workspace admin. The first time the invited person signs in,
+-- the Worker turns the invitation into a row in members and deletes the invitation.
+-- Nobody reaches these tables directly. Only the Worker, using the service role, reads and writes them.
+
+create table if not exists public.members (
+  user_id     uuid primary key references auth.users (id) on delete cascade,
+  email       text not null,
+  role        text not null
+              check (role in ('platform_engineer', 'application_owner', 'developer', 'compliance_reviewer', 'workspace_admin')),
+  created_at  timestamptz not null default now()
+);
+
+create table if not exists public.invitations (
+  email       text primary key
+              check (email = lower(email) and length(email) <= 320),
+  role        text not null
+              check (role in ('platform_engineer', 'application_owner', 'developer', 'compliance_reviewer', 'workspace_admin')),
+  invited_by  uuid references auth.users (id) on delete set null,
+  created_at  timestamptz not null default now()
+);
+
+alter table public.members enable row level security;
+alter table public.invitations enable row level security;
+
+revoke all on public.members from anon, authenticated;
+revoke all on public.invitations from anon, authenticated;
+grant select, insert, update, delete on public.members to service_role;
+grant select, insert, update, delete on public.invitations to service_role;
+
+-- First admin (run once in the SQL editor, after schema.sql):
+--   insert into public.invitations (email, role)
+--   values ('ghlmaziz@gmail.com', 'workspace_admin')
+--   on conflict (email) do update set role = excluded.role;
+
+-- Discussion on an analysis. Every member can read these, through the Worker.
+create table if not exists public.analysis_comments (
+  id           uuid primary key default gen_random_uuid(),
+  analysis_id  uuid not null references public.analyses (id) on delete cascade,
+  author_id    uuid references auth.users (id) on delete set null,
+  author_email text not null,
+  body         text not null check (length(body) between 1 and 2000),
+  created_at   timestamptz not null default now()
+);
+
+create index if not exists analysis_comments_analysis_idx
+  on public.analysis_comments (analysis_id, created_at);
+
+-- Action items on an analysis. Any member except a compliance reviewer can add and close them.
+create table if not exists public.action_items (
+  id               uuid primary key default gen_random_uuid(),
+  analysis_id      uuid not null references public.analyses (id) on delete cascade,
+  title            text not null check (length(title) between 1 and 200),
+  status           text not null default 'open' check (status in ('open', 'done')),
+  created_by       uuid references auth.users (id) on delete set null,
+  created_by_email text not null,
+  done_by_email    text,
+  created_at       timestamptz not null default now(),
+  done_at          timestamptz
+);
+
+create index if not exists action_items_analysis_idx
+  on public.action_items (analysis_id, created_at);
+
+alter table public.analysis_comments enable row level security;
+alter table public.action_items enable row level security;
+
+revoke all on public.analysis_comments from anon, authenticated;
+revoke all on public.action_items from anon, authenticated;
+grant select, insert, update, delete on public.analysis_comments to service_role;
+grant select, insert, update, delete on public.action_items to service_role;
