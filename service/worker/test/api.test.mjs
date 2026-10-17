@@ -1,10 +1,11 @@
-// Tests for the Worker's request handling. Run with:
+// Tests for the Worker's behavior: who can see and change what, and what is recorded.
 //   node --test service/worker/test/api.test.mjs
-// These tests mock Supabase and GitHub, so no real account or secret is needed.
+// Supabase is replaced by a small in-memory stand-in (it understands the filters the Worker uses),
+// and GitHub is mocked. No real account, database or secret is needed.
 
-import { test } from "node:test";
+import { test, beforeEach, afterEach } from "node:test";
 import assert from "node:assert/strict";
-import { generateKeyPairSync, createVerify } from "node:crypto";
+import { generateKeyPairSync, randomUUID } from "node:crypto";
 import worker from "../src/index.mjs";
 
 const appKeys = generateKeyPairSync("rsa", {
@@ -12,6 +13,7 @@ const appKeys = generateKeyPairSync("rsa", {
   publicKeyEncoding: { type: "spki", format: "pem" },
   privateKeyEncoding: { type: "pkcs1", format: "pem" },
 });
+
 const env = {
   SUPABASE_URL: "https://example.supabase.test",
   SUPABASE_ANON_KEY: "anon-test",
@@ -21,53 +23,230 @@ const env = {
   RUNNER_REPO: "owner/cutover",
   GITHUB_APP_ID: "5361797",
   GITHUB_APP_PRIVATE_KEY: appKeys.privateKey,
+  OPERATOR_EMAILS: "operator@cutover.test",
 };
-const USER = { id: "11111111-1111-4111-8111-111111111111", email: "member@example.test" };
-const OTHER = { id: "33333333-3333-4333-8333-333333333333", email: "other@example.test" };
-const ANALYSIS_ID = "22222222-2222-4222-8222-222222222222";
-const COMMENT_ID = "44444444-4444-4444-8444-444444444444";
-const ACTION_ID = "55555555-5555-4555-8555-555555555555";
 
-// Access list replies. A member is someone with a row in the members table.
-const APP_READ_ROUTES = [
-  ["/installation", reply(200, { id: 99 })],
-  ["/access_tokens", reply(201, { token: "ghs_test" })],
-];
-const START = { app_name: "Test application", data_rules_confirmed: true };
-const AS_DEVELOPER = ["/rest/v1/members?user_id=", reply(200, [{ user_id: USER.id, email: USER.email, role: "developer" }])];
-const AS_ADMIN = ["/rest/v1/members?user_id=", reply(200, [{ user_id: USER.id, email: USER.email, role: "workspace_admin" }])];
-const AS_COMPLIANCE = ["/rest/v1/members?user_id=", reply(200, [{ user_id: USER.id, email: USER.email, role: "compliance_reviewer" }])];
-const NOT_MEMBER = ["/rest/v1/members?user_id=", reply(200, [])];
-const NO_INVITE = ["/rest/v1/invitations?email=", reply(200, [])];
+// ---- Fixed identities and records ----
+const uid = (n) => `00000000-0000-4000-8000-${String(n).padStart(12, "0")}`;
+const W_ACME = uid(101);
+const W_BETA = uid(102);
+const PEOPLE = {
+  admin_a: { id: uid(1), email: "admin@acme.test" },
+  eng_a: { id: uid(2), email: "engineer@acme.test" },
+  sec_a: { id: uid(3), email: "security@acme.test" },
+  inf_a: { id: uid(4), email: "informatics@acme.test" },
+  cio_a: { id: uid(5), email: "cio@acme.test" },
+  aud_a: { id: uid(6), email: "auditor@acme.test" },
+  eng_b: { id: uid(7), email: "engineer@beta.test" },
+  operator: { id: uid(8), email: "operator@cutover.test" },
+  newhire: { id: uid(9), email: "newhire@acme.test" },
+  stranger: { id: uid(10), email: "stranger@example.test" },
+};
+const AN_ACME = uid(201);
+const AN_BETA = uid(202);
+const COMMENT_ACME = uid(301);
+const ACTION_ACME = uid(401);
+const NOW = "2026-10-17T12:00:00.000Z";
+const FAR_FUTURE = "2099-01-01T00:00:00.000Z";
+const LONG_AGO = "2020-01-01T00:00:00.000Z";
 
-// An analysis started by someone else, so the signed-in member is not its owner.
-const OTHERS_ANALYSIS = { id: ANALYSIS_ID, owner_id: OTHER.id, repo: "acme/app", ref: null, status: "complete", commit_sha: "abc", findings: { ok: true }, error: null, created_at: "2026-10-17T00:00:00Z", finished_at: null, expires_at: "2026-11-16T00:00:00Z" };
-const MINE_ANALYSIS = { ...OTHERS_ANALYSIS, owner_id: USER.id };
+const item = (category, title, extra = {}) => ({
+  category, title, value: true, confidence: "high", evidence: ["src/file.cs"], evidence_count: 1, ...extra,
+});
+const REPORT = {
+  schema_version: 1,
+  generated_at: NOW,
+  source: { type: "github", url: "https://github.com/acme/app", ref: null, commit: "abc123" },
+  history: { available: true, total_commits: 10 },
+  findings: {
+    sec1: item("security", "Admin role has no MFA check", { severity: "high" }),
+    priv1: item("privacy", "Logs contain identifiers"),
+    data1: item("data", "Patient table has 40 columns", { severity: "medium" }),
+    epic1: item("epic", "Bridges interface found"),
+    stack1: item("stack", "Java 11"),
+    ui1: item("ui_portal", "Login page"),
+    cont1: item("containers", "Dockerfile found"),
+    del1: item("delivery", "CI pipeline found"),
+    inf1: item("infrastructure", "Linux VMs described"),
+  },
+  flags: ["sec1", "data1"],
+  limitations: ["Only the code in this repository is read."],
+};
 
-const realFetch = globalThis.fetch;
-let calls;
-
-function mockFetch(routes) {
-  calls = [];
-  globalThis.fetch = async (url, init = {}) => {
-    calls.push({ url: String(url), init });
-    for (const [pattern, reply] of routes) {
-      if (String(url).includes(pattern)) return reply(init);
-    }
-    return new Response("unexpected", { status: 599 });
+function seed() {
+  return {
+    workspaces: [
+      { id: W_ACME, name: "Acme Health", created_at: NOW },
+      { id: W_BETA, name: "Beta Clinic", created_at: NOW },
+    ],
+    members: [
+      { workspace_id: W_ACME, user_id: PEOPLE.admin_a.id, email: PEOPLE.admin_a.email, role: "platform_engineer", is_admin: true, created_at: NOW },
+      { workspace_id: W_ACME, user_id: PEOPLE.eng_a.id, email: PEOPLE.eng_a.email, role: "platform_engineer", is_admin: false, created_at: NOW },
+      { workspace_id: W_ACME, user_id: PEOPLE.sec_a.id, email: PEOPLE.sec_a.email, role: "security_officer", is_admin: false, created_at: NOW },
+      { workspace_id: W_ACME, user_id: PEOPLE.inf_a.id, email: PEOPLE.inf_a.email, role: "informatics_lead", is_admin: false, created_at: NOW },
+      { workspace_id: W_ACME, user_id: PEOPLE.cio_a.id, email: PEOPLE.cio_a.email, role: "cio_cto", is_admin: false, created_at: NOW },
+      { workspace_id: W_ACME, user_id: PEOPLE.aud_a.id, email: PEOPLE.aud_a.email, role: "auditor", is_admin: false, created_at: NOW },
+      { workspace_id: W_BETA, user_id: PEOPLE.eng_b.id, email: PEOPLE.eng_b.email, role: "platform_engineer", is_admin: true, created_at: NOW },
+    ],
+    invitations: [
+      { workspace_id: W_ACME, email: PEOPLE.newhire.email, role: "auditor", is_admin: false, created_at: NOW },
+    ],
+    analyses: [
+      { id: AN_ACME, workspace_id: W_ACME, owner_id: PEOPLE.eng_a.id, repo: "acme/app", ref: null, app_name: "Acme app",
+        status: "complete", commit_sha: "abc123", findings: structuredClone(REPORT), error: null,
+        created_at: NOW, finished_at: NOW, expires_at: FAR_FUTURE },
+      { id: AN_BETA, workspace_id: W_BETA, owner_id: PEOPLE.eng_b.id, repo: "beta/app", ref: null, app_name: "Beta app",
+        status: "complete", commit_sha: "def456", findings: structuredClone(REPORT), error: null,
+        created_at: NOW, finished_at: NOW, expires_at: FAR_FUTURE },
+    ],
+    analysis_comments: [
+      { id: COMMENT_ACME, analysis_id: AN_ACME, author_id: PEOPLE.eng_a.id, author_email: PEOPLE.eng_a.email, body: "Start here.", created_at: NOW },
+    ],
+    action_items: [
+      { id: ACTION_ACME, analysis_id: AN_ACME, title: "Confirm HL7 scope", status: "open", created_by: PEOPLE.eng_a.id, created_by_email: PEOPLE.eng_a.email, created_at: NOW, done_at: null, done_by_email: null },
+    ],
+    deletion_log: [],
   };
 }
 
-function reply(status, body) {
-  return () => new Response(body === undefined ? null : JSON.stringify(body), {
-    status,
-    headers: { "content-type": "application/json" },
-  });
+// ---- A small stand-in for Supabase's REST API ----
+let state;
+let outbound;
+let github;
+let failLog;
+const realFetch = globalThis.fetch;
+
+const j = (body, status = 200) => new Response(body === undefined ? null : JSON.stringify(body), {
+  status,
+  headers: { "content-type": "application/json" },
+});
+
+const SKIP_PARAMS = ["select", "order", "limit", "on_conflict"];
+
+function matches(row, key, value) {
+  if (value.startsWith("eq.")) return String(row[key]) === value.slice(3);
+  if (value.startsWith("in.(")) return value.slice(4, -1).split(",").includes(String(row[key]));
+  if (value.startsWith("lt.")) return String(row[key]) < value.slice(3);
+  throw new Error(`Unsupported filter ${value}`);
 }
 
-function request(path, { method = "GET", token, body, secret } = {}) {
+function defaultsFor(table) {
+  const base = { id: randomUUID(), created_at: NOW };
+  if (table === "analyses") return { ...base, status: "queued", findings: null, error: null, commit_sha: null, finished_at: null, expires_at: FAR_FUTURE };
+  if (table === "action_items") return { ...base, status: "open", done_at: null, done_by_email: null };
+  if (table === "members" || table === "invitations") return { is_admin: false, ...base };
+  return base;
+}
+
+function handleRest(url, init) {
+  const u = new URL(url);
+  const table = u.pathname.replace("/rest/v1/", "");
+  const method = init.method || "GET";
+  const prefer = init.headers?.prefer || "";
+  const rows = state[table];
+  const filters = [...u.searchParams.entries()].filter(([k]) => !SKIP_PARAMS.includes(k));
+  const hit = (row) => filters.every(([k, v]) => matches(row, k, v));
+
+  if (method === "GET") {
+    let out = rows.filter(hit).map((r) => ({ ...r }));
+    if ((u.searchParams.get("select") || "").includes("workspace:workspaces")) {
+      out = out.map((r) => {
+        const ws = state.workspaces.find((w) => w.id === r.workspace_id);
+        return { ...r, workspace: ws ? { id: ws.id, name: ws.name } : null };
+      });
+    }
+    return j(out);
+  }
+
+  if (method === "POST") {
+    if (table === "deletion_log" && failLog) return j({ message: "forced failure" }, 500);
+    const body = JSON.parse(init.body);
+    const list = Array.isArray(body) ? body : [body];
+    const onConflict = u.searchParams.get("on_conflict")?.split(",");
+    const inserted = [];
+    for (const b of list) {
+      if (table === "deletion_log") {
+        const row = { id: state.deletion_log.length + 1, deleted_at: NOW, ...b };
+        state.deletion_log.push(row);
+        inserted.push(row);
+        continue;
+      }
+      if (onConflict) {
+        const existing = rows.find((r) => onConflict.every((c) => String(r[c]) === String(b[c])));
+        if (existing) {
+          if (!prefer.includes("merge-duplicates")) return j({ message: "duplicate" }, 409);
+          Object.assign(existing, b);
+          inserted.push(existing);
+          continue;
+        }
+      }
+      const row = { ...defaultsFor(table), ...b };
+      rows.push(row);
+      inserted.push(row);
+    }
+    return prefer.includes("return=representation") ? j(inserted, 201) : new Response(null, { status: 201 });
+  }
+
+  if (method === "PATCH") {
+    for (const row of rows.filter(hit)) Object.assign(row, JSON.parse(init.body));
+    return new Response(null, { status: 204 });
+  }
+
+  if (method === "DELETE") {
+    state[table] = rows.filter((r) => !hit(r));
+    return new Response(null, { status: 204 });
+  }
+  return j({ message: "unsupported" }, 405);
+}
+
+function handleGithub(url, init) {
+  const path = url.split("?")[0];
+  if (path.endsWith("/installation")) {
+    if (path.includes("/repos/private/missing/")) return j({ message: "Not Found" }, 404);
+    return j({ id: 99 });
+  }
+  if (path.endsWith("/app/installations/99/access_tokens")) return j({ token: "ghs_test" }, 201);
+  if (path.endsWith("/actions/workflows/analyze.yml/dispatches")) {
+    github.dispatches.push(JSON.parse(init.body));
+    return github.dispatchOk ? new Response(null, { status: 204 }) : j({ message: "failed" }, 500);
+  }
+  if (path.includes("/git/trees/")) return j({ tree: [{ type: "blob" }, { type: "blob" }, { type: "tree" }], truncated: false });
+  if (path.endsWith("/commits")) return j([{ commit: { committer: { date: "2026-10-01T00:00:00Z" } } }]);
+  if (/^https:\/\/api\.github\.com\/repos\/[^/]+\/[^/]+$/.test(path)) return j({ default_branch: "main" });
+  return j({ message: "unmocked" }, 599);
+}
+
+function userForToken(authHeader) {
+  const token = String(authHeader || "").replace("Bearer ", "");
+  return Object.values(PEOPLE).find((p) => `tok-${p.email}` === token) || null;
+}
+
+beforeEach(() => {
+  state = seed();
+  outbound = [];
+  failLog = false;
+  github = { dispatches: [], dispatchOk: true };
+  globalThis.fetch = async (url, init = {}) => {
+    const u = String(url);
+    outbound.push({ url: u, method: init.method || "GET" });
+    if (u.startsWith(`${env.SUPABASE_URL}/auth/v1/user`)) {
+      const person = userForToken(init.headers?.authorization);
+      return person ? j({ id: person.id, email: person.email }) : j({ message: "bad token" }, 401);
+    }
+    if (u.startsWith(`${env.SUPABASE_URL}/rest/v1/`)) return handleRest(u, init);
+    if (u.startsWith("https://api.github.com/")) return handleGithub(u, init);
+    return j({ message: "unmocked" }, 599);
+  };
+});
+
+afterEach(() => {
+  globalThis.fetch = realFetch;
+});
+
+// ---- Helpers ----
+function request(path, { method = "GET", as, body, secret } = {}) {
   const headers = { "content-type": "application/json" };
-  if (token) headers.authorization = `Bearer ${token}`;
+  if (as) headers.authorization = `Bearer tok-${PEOPLE[as].email}`;
   if (secret) headers["x-runner-secret"] = secret;
   return new Request(`https://api.test${path}`, {
     method,
@@ -76,499 +255,339 @@ function request(path, { method = "GET", token, body, secret } = {}) {
   });
 }
 
-test.afterEach(() => {
-  globalThis.fetch = realFetch;
-});
+async function call(path, options = {}) {
+  const res = await worker.fetch(request(path, options), env);
+  const text = await res.text();
+  return { status: res.status, body: text ? JSON.parse(text) : null };
+}
 
-test("starting an analysis requires a signed-in user", async () => {
-  mockFetch([]);
-  const res = await worker.fetch(request("/api/analyses", { method: "POST", body: { ...START, repo: "a/b" } }), env);
+const START = { app_name: "Test application", data_rules_confirmed: true, repo: "acme/app" };
+const visibleIds = (findings) => Object.keys(findings || {}).sort();
+
+// ---- Signing in and access ----
+
+test("anonymous requests are refused without any outbound call", async () => {
+  const res = await worker.fetch(new Request("https://api.test/api/me"), env);
   assert.equal(res.status, 401);
-  assert.equal(calls.length, 0, "no outbound calls for anonymous requests");
+  assert.equal(outbound.length, 0);
 });
 
-test("an invalid token is rejected", async () => {
-  mockFetch([["/auth/v1/user", reply(401, { message: "bad token" })]]);
-  const res = await worker.fetch(request("/api/analyses", { method: "POST", token: "bad", body: { ...START, repo: "a/b" } }), env);
+test("an invalid token is refused", async () => {
+  const res = await worker.fetch(new Request("https://api.test/api/me", { headers: { authorization: "Bearer nope" } }), env);
   assert.equal(res.status, 401);
 });
 
-test("signed-in users who were not invited are refused", async () => {
-  mockFetch([["/auth/v1/user", reply(200, USER)], NOT_MEMBER, NO_INVITE]);
-  const res = await worker.fetch(request("/api/analyses", { token: "ok" }), env);
-  assert.equal(res.status, 403);
-  assert.equal(calls.filter((c) => c.url.includes("/rest/v1/analyses")).length, 0);
+test("me lists only the workspaces the person was invited to, with their role in each", async () => {
+  const eng = await call("/api/me", { as: "eng_a" });
+  assert.equal(eng.status, 200);
+  assert.equal(eng.body.is_operator, false);
+  assert.deepEqual(eng.body.workspaces, [{ id: W_ACME, name: "Acme Health", role: "platform_engineer", is_admin: false }]);
 });
 
-test("an uninvited user cannot start an analysis", async () => {
-  mockFetch([["/auth/v1/user", reply(200, USER)], NOT_MEMBER, NO_INVITE]);
-  const res = await worker.fetch(request("/api/analyses", { method: "POST", token: "ok", body: { ...START, repo: "acme/app" } }), env);
-  assert.equal(res.status, 403);
-  assert.equal(calls.filter((c) => c.url.includes("api.github.com")).length, 0, "runner not started");
+test("a person with no invitation sees no workspaces and cannot open any", async () => {
+  const me = await call("/api/me", { as: "stranger" });
+  assert.equal(me.status, 200);
+  assert.deepEqual(me.body.workspaces, []);
+  const list = await call(`/api/analyses?workspace=${W_ACME}`, { as: "stranger" });
+  assert.equal(list.status, 404);
 });
 
-test("an invitation becomes membership on first sign-in", async () => {
-  mockFetch([
-    ["/auth/v1/user", reply(200, USER)],
-    NOT_MEMBER,
-    ["/rest/v1/invitations?email=", reply(200, [{ email: USER.email, role: "developer" }])],
-    ["/rest/v1/members", reply(201, [{ user_id: USER.id, email: USER.email, role: "developer" }])],
-    ["/rest/v1/analyses", reply(200, [])],
-  ]);
-  const res = await worker.fetch(request("/api/analyses", { token: "ok" }), env);
+test("an invitation becomes membership on first sign-in, and is used up", async () => {
+  const me = await call("/api/me", { as: "newhire" });
+  assert.deepEqual(me.body.workspaces, [{ id: W_ACME, name: "Acme Health", role: "auditor", is_admin: false }]);
+  assert.equal(state.invitations.length, 0, "invitation removed");
+  assert.ok(state.members.find((m) => m.user_id === PEOPLE.newhire.id), "membership created");
+});
+
+test("the operator sees the operator flag but no customer data", async () => {
+  const me = await call("/api/me", { as: "operator" });
+  assert.equal(me.body.is_operator, true);
+  assert.deepEqual(me.body.workspaces, []);
+  const list = await call(`/api/analyses?workspace=${W_ACME}`, { as: "operator" });
+  assert.equal(list.status, 404);
+});
+
+// ---- Separation between customers ----
+
+test("analyses are listed only for the workspace asked for, and only to its members", async () => {
+  const mine = await call(`/api/analyses?workspace=${W_ACME}`, { as: "eng_a" });
+  assert.equal(mine.status, 200);
+  assert.deepEqual(mine.body.map((a) => a.id), [AN_ACME]);
+  assert.equal(mine.body[0].is_mine, true);
+  assert.equal(mine.body[0].owner_id, undefined, "owner id is not sent");
+
+  const other = await call(`/api/analyses?workspace=${W_ACME}`, { as: "eng_b" });
+  assert.equal(other.status, 404);
+});
+
+test("another customer's analysis answers Not found, the same as a missing one", async () => {
+  const foreign = await call(`/api/analyses/${AN_BETA}`, { as: "eng_a" });
+  const missing = await call(`/api/analyses/${uid(999)}`, { as: "eng_a" });
+  assert.equal(foreign.status, 404);
+  assert.equal(missing.status, 404);
+  assert.deepEqual(foreign.body, missing.body, "no hint that the record exists");
+});
+
+test("a member of one workspace cannot comment on, act on, or delete another workspace's work", async () => {
+  const comment = await call(`/api/analyses/${AN_BETA}/comments`, { as: "eng_a", method: "POST", body: { body: "hello" } });
+  assert.equal(comment.status, 404);
+  const action = await call(`/api/analyses/${AN_BETA}/actions`, { as: "eng_a", method: "POST", body: { title: "x" } });
+  assert.equal(action.status, 404);
+  const del = await call(`/api/analyses/${AN_BETA}`, { as: "admin_a", method: "DELETE" });
+  assert.equal(del.status, 404, "an admin of Acme cannot delete Beta's analysis");
+  assert.equal(state.analyses.length, 2);
+});
+
+test("workspace admins can see people in their own workspace only", async () => {
+  const own = await call(`/api/workspaces/${W_ACME}/members`, { as: "admin_a" });
+  assert.equal(own.status, 200);
+  assert.ok(own.body.some((m) => m.email === PEOPLE.sec_a.email));
+
+  const notAdmin = await call(`/api/workspaces/${W_ACME}/members`, { as: "eng_a" });
+  assert.equal(notAdmin.status, 403);
+
+  const otherCustomer = await call(`/api/workspaces/${W_ACME}/members`, { as: "eng_b" });
+  assert.equal(otherCustomer.status, 404);
+});
+
+// ---- Roles: what each role may see and do ----
+
+test("the platform engineer sees every finding and every flag", async () => {
+  const res = await call(`/api/analyses/${AN_ACME}`, { as: "eng_a" });
   assert.equal(res.status, 200);
-  const created = calls.find((c) => c.url.endsWith("/rest/v1/members") && c.init.method === "POST");
-  assert.ok(created, "membership row created");
-  assert.equal(JSON.parse(created.init.body).role, "developer");
-  assert.equal(JSON.parse(created.init.body).user_id, USER.id);
-  const removed = calls.find((c) => c.url.includes("/rest/v1/invitations") && c.init.method === "DELETE");
-  assert.ok(removed, "invitation used up");
+  assert.deepEqual(visibleIds(res.body.findings.findings), Object.keys(REPORT.findings).sort());
+  assert.deepEqual(res.body.findings.flags, ["sec1", "data1"]);
+  assert.deepEqual(res.body.findings.counts, { total: 9, shown: 9 });
 });
 
-test("every member sees every analysis in the workspace, without owner ids", async () => {
-  mockFetch([
-    ["/auth/v1/user", reply(200, USER)],
-    AS_DEVELOPER,
-    ["/rest/v1/analyses?select=", reply(200, [{ ...OTHERS_ANALYSIS, owner_id: OTHER.id }])],
-  ]);
-  const res = await worker.fetch(request("/api/analyses", { token: "ok" }), env);
+test("the security officer sees security and privacy findings only", async () => {
+  const res = await call(`/api/analyses/${AN_ACME}`, { as: "sec_a" });
+  assert.deepEqual(visibleIds(res.body.findings.findings), ["priv1", "sec1"]);
+  assert.deepEqual(res.body.findings.flags, ["sec1"]);
+  assert.deepEqual(res.body.findings.counts, { total: 9, shown: 2 });
+});
+
+test("the informatics lead sees data and Epic findings only", async () => {
+  const res = await call(`/api/analyses/${AN_ACME}`, { as: "inf_a" });
+  assert.deepEqual(visibleIds(res.body.findings.findings), ["data1", "epic1"]);
+  assert.deepEqual(res.body.findings.flags, ["data1"]);
+});
+
+test("the CIO or CTO sees the overview categories, not security or data detail", async () => {
+  const res = await call(`/api/analyses/${AN_ACME}`, { as: "cio_a" });
+  assert.deepEqual(visibleIds(res.body.findings.findings), ["cont1", "del1", "inf1", "stack1", "ui1"]);
+  assert.deepEqual(res.body.findings.flags, []);
+});
+
+test("the auditor sees the summary and no finding detail", async () => {
+  const res = await call(`/api/analyses/${AN_ACME}`, { as: "aud_a" });
   assert.equal(res.status, 200);
-  const rows = await res.json();
-  assert.equal(rows.length, 1, "someone else's analysis is included");
-  assert.equal(rows[0].owner_id, undefined, "owner id is not exposed");
-  assert.equal(rows[0].is_mine, false);
-  const list = calls.find((c) => c.url.includes("/rest/v1/analyses?select="));
-  assert.equal(list.init.headers.apikey, env.SUPABASE_SERVICE_ROLE_KEY, "read uses the service role after the member check");
+  assert.deepEqual(res.body.findings.findings, {});
+  assert.deepEqual(res.body.findings.flags, []);
+  assert.deepEqual(res.body.findings.limitations, REPORT.limitations);
+  assert.equal(res.body.can_work_items, false);
 });
 
-test("repo names are validated before anything is created", async () => {
-  mockFetch([["/auth/v1/user", reply(200, USER)], AS_DEVELOPER]);
-  const res = await worker.fetch(request("/api/analyses", { method: "POST", token: "ok", body: { ...START, repo: "../etc" } }), env);
-  assert.equal(res.status, 400);
-  assert.equal(calls.filter((c) => c.url.includes("/rest/v1/analyses")).length, 0);
+test("hidden findings are not sent in the downloadable report either", async () => {
+  const res = await call(`/api/analyses/${AN_ACME}`, { as: "sec_a" });
+  const text = JSON.stringify(res.body);
+  assert.ok(!text.includes("Patient table has 40 columns"), "data finding must not reach the security officer");
 });
 
-test("a valid request creates a row as the user and starts the runner", async () => {
-  mockFetch([...APP_READ_ROUTES,
-    ["/auth/v1/user", reply(200, USER)],
-    AS_DEVELOPER,
-    ["/rest/v1/analyses", reply(201, [{ id: ANALYSIS_ID, status: "queued" }])],
-    ["api.github.com", reply(204)],
-  ]);
-  const res = await worker.fetch(request("/api/analyses", { method: "POST", token: "ok", body: { ...START, repo: "acme/app", ref: "main" } }), env);
+test("only platform engineers start analyses", async () => {
+  const body = { ...START, workspace_id: W_ACME };
+  for (const as of ["sec_a", "inf_a", "cio_a", "aud_a"]) {
+    const res = await call("/api/analyses", { as, method: "POST", body });
+    assert.equal(res.status, 403, `${as} must not start an analysis`);
+  }
+  assert.equal(github.dispatches.length, 0);
+});
+
+test("a platform engineer starts an analysis in their workspace, and the runner is dispatched", async () => {
+  const res = await call("/api/analyses", { as: "eng_a", method: "POST", body: { ...START, workspace_id: W_ACME } });
   assert.equal(res.status, 202);
-  const insert = calls.find((c) => c.url.includes("/rest/v1/analyses"));
-  assert.equal(insert.init.headers.authorization, "Bearer ok", "insert uses the user's token so row-level security applies");
-  assert.equal(JSON.parse(insert.init.body).owner_id, USER.id);
-  const dispatch = calls.find((c) => c.url.includes("/actions/workflows/"));
-  assert.match(dispatch.url, /repos\/owner\/cutover\/actions\/workflows\/analyze\.yml\/dispatches$/);
-  assert.equal(JSON.parse(dispatch.init.body).inputs.analysis_id, ANALYSIS_ID);
+  const row = state.analyses.find((a) => a.id === res.body.id);
+  assert.equal(row.workspace_id, W_ACME);
+  assert.equal(row.owner_id, PEOPLE.eng_a.id);
+  assert.equal(github.dispatches.length, 1);
 });
 
-test("compliance reviewers cannot start analyses", async () => {
-  mockFetch([["/auth/v1/user", reply(200, USER)], AS_COMPLIANCE]);
-  const res = await worker.fetch(request("/api/analyses", { method: "POST", token: "ok", body: { ...START, repo: "acme/app" } }), env);
-  assert.equal(res.status, 403);
-  assert.equal(calls.filter((c) => c.url.includes("api.github.com")).length, 0);
-});
-
-test("a failed runner start marks the analysis failed instead of leaving it queued", async () => {
-  mockFetch([
-    ...APP_READ_ROUTES,
-    ["/auth/v1/user", reply(200, USER)],
-    AS_DEVELOPER,
-    ["/rest/v1/analyses?id=", reply(204)],
-    ["/rest/v1/analyses", reply(201, [{ id: ANALYSIS_ID, status: "queued" }])],
-    ["api.github.com", reply(500)],
-  ]);
-  const res = await worker.fetch(request("/api/analyses", { method: "POST", token: "ok", body: { ...START, repo: "acme/app" } }), env);
-  assert.equal(res.status, 502);
-  const patch = calls.find((c) => c.init.method === "PATCH");
-  assert.equal(JSON.parse(patch.init.body).status, "failed");
-});
-
-test("runner callbacks need the shared secret", async () => {
-  mockFetch([]);
-  const res = await worker.fetch(request(`/api/runner/${ANALYSIS_ID}/result`, {
-    method: "POST", secret: "wrong", body: { status: "complete", findings: {} },
-  }), env);
-  assert.equal(res.status, 401);
-  assert.equal(calls.length, 0);
-});
-
-test("runner callbacks save findings with the service key", async () => {
-  mockFetch([["/rest/v1/analyses", reply(204)]]);
-  const res = await worker.fetch(request(`/api/runner/${ANALYSIS_ID}/result`, {
-    method: "POST", secret: env.RUNNER_SECRET, body: { status: "complete", commit_sha: "abc123", findings: { ok: true } },
-  }), env);
-  assert.equal(res.status, 200);
-  const patch = calls[0];
-  assert.equal(patch.init.headers.authorization, `Bearer ${env.SUPABASE_SERVICE_ROLE_KEY}`);
-  assert.equal(JSON.parse(patch.init.body).status, "complete");
-});
-
-test("runner callbacks reject unknown statuses", async () => {
-  mockFetch([]);
-  const res = await worker.fetch(request(`/api/runner/${ANALYSIS_ID}/result`, {
-    method: "POST", secret: env.RUNNER_SECRET, body: { status: "running" },
-  }), env);
-  assert.equal(res.status, 400);
-});
-
-test("a member can open an analysis started by someone else, with its comments and action items", async () => {
-  mockFetch([
-    ["/auth/v1/user", reply(200, USER)],
-    AS_DEVELOPER,
-    ["/rest/v1/analyses?id=", reply(200, [OTHERS_ANALYSIS])],
-    ["/rest/v1/analysis_comments?", reply(200, [{ id: COMMENT_ID, author_email: OTHER.email, body: "Check the HL7 export", created_at: "2026-10-17T01:00:00Z" }])],
-    ["/rest/v1/action_items?", reply(200, [{ id: ACTION_ID, title: "Confirm scope", status: "open" }])],
-  ]);
-  const res = await worker.fetch(request(`/api/analyses/${ANALYSIS_ID}`, { token: "ok" }), env);
-  assert.equal(res.status, 200);
-  const body = await res.json();
-  assert.equal(body.repo, "acme/app");
-  assert.equal(body.comments.length, 1);
-  assert.equal(body.action_items.length, 1);
-  assert.equal(body.can_delete, false, "a developer cannot delete someone else's analysis");
-  assert.equal(body.owner_id, undefined);
-});
-
-test("a missing analysis is not found", async () => {
-  mockFetch([
-    ["/auth/v1/user", reply(200, USER)],
-    AS_DEVELOPER,
-    ["/rest/v1/analyses?id=", reply(200, [])],
-  ]);
-  const res = await worker.fetch(request(`/api/analyses/${ANALYSIS_ID}`, { token: "ok" }), env);
+test("starting an analysis in a workspace the engineer is not in is refused", async () => {
+  const res = await call("/api/analyses", { as: "eng_b", method: "POST", body: { ...START, workspace_id: W_ACME } });
   assert.equal(res.status, 404);
+  assert.equal(state.analyses.length, 2);
 });
 
-test("only the starter or an admin can delete an analysis", async () => {
-  mockFetch([
-    ["/auth/v1/user", reply(200, USER)],
-    AS_DEVELOPER,
-    ["/rest/v1/analyses?id=", reply(200, [OTHERS_ANALYSIS])],
-  ]);
-  const res = await worker.fetch(request(`/api/analyses/${ANALYSIS_ID}`, { method: "DELETE", token: "ok" }), env);
-  assert.equal(res.status, 403);
-  assert.equal(calls.filter((c) => c.init.method === "DELETE").length, 0);
+test("a start request needs a workspace, a name and the data-rules confirmation", async () => {
+  const noWorkspace = await call("/api/analyses", { as: "eng_a", method: "POST", body: { ...START } });
+  assert.equal(noWorkspace.status, 400);
+  const noRules = await call("/api/analyses", { as: "eng_a", method: "POST", body: { ...START, workspace_id: W_ACME, data_rules_confirmed: false } });
+  assert.equal(noRules.status, 400);
 });
 
-test("the person who started an analysis can delete it", async () => {
-  mockFetch([
-    ["/auth/v1/user", reply(200, USER)],
-    AS_DEVELOPER,
-    ["/rest/v1/analyses?id=", reply(200, [MINE_ANALYSIS])],
-    ["deletion_log", reply(201)],
-    ["/rest/v1/analyses?id=eq", reply(204)],
-  ]);
-  const res = await worker.fetch(request(`/api/analyses/${ANALYSIS_ID}`, { method: "DELETE", token: "ok" }), env);
-  assert.equal(res.status, 200);
+test("a repository Cutover cannot read is refused with the install instruction", async () => {
+  const res = await call("/api/analyses", { as: "eng_a", method: "POST", body: { ...START, workspace_id: W_ACME, repo: "private/missing" } });
+  assert.equal(res.status, 400);
+  assert.match(res.body.error, /install the Cutover reader/);
+  assert.equal(github.dispatches.length, 0);
 });
 
-test("an admin can delete any analysis", async () => {
-  mockFetch([
-    ["/auth/v1/user", reply(200, USER)],
-    AS_ADMIN,
-    ["/rest/v1/analyses?id=", reply(200, [OTHERS_ANALYSIS])],
-    ["deletion_log", reply(201)],
-    ["/rest/v1/analyses?id=eq", reply(204)],
-  ]);
-  const res = await worker.fetch(request(`/api/analyses/${ANALYSIS_ID}`, { method: "DELETE", token: "ok" }), env);
-  assert.equal(res.status, 200);
-});
-
-test("members can comment, and an empty comment is refused", async () => {
-  mockFetch([
-    ["/auth/v1/user", reply(200, USER)],
-    AS_DEVELOPER,
-    ["/rest/v1/analyses?id=", reply(200, [OTHERS_ANALYSIS])],
-    ["/rest/v1/analysis_comments", reply(201, [{ id: COMMENT_ID }])],
-  ]);
-  const empty = await worker.fetch(request(`/api/analyses/${ANALYSIS_ID}/comments`, { method: "POST", token: "ok", body: { body: "   " } }), env);
-  assert.equal(empty.status, 400);
-  const ok = await worker.fetch(request(`/api/analyses/${ANALYSIS_ID}/comments`, { method: "POST", token: "ok", body: { body: "Please confirm the scope." } }), env);
-  assert.equal(ok.status, 201);
-  const save = calls.find((c) => c.url.includes("/rest/v1/analysis_comments") && c.init.method === "POST");
-  assert.equal(JSON.parse(save.init.body).author_email, USER.email);
-  assert.equal(JSON.parse(save.init.body).body, "Please confirm the scope.");
-});
-
-test("you can delete your own comment, but not someone else's", async () => {
-  mockFetch([
-    ["/auth/v1/user", reply(200, USER)],
-    AS_DEVELOPER,
-    ["/rest/v1/analysis_comments?id=", reply(200, [{ id: COMMENT_ID, author_id: OTHER.id }])],
-  ]);
-  const res = await worker.fetch(request(`/api/comments/${COMMENT_ID}`, { method: "DELETE", token: "ok" }), env);
-  assert.equal(res.status, 403);
-});
-
-test("members can add an action item, and compliance reviewers cannot", async () => {
-  mockFetch([
-    ["/auth/v1/user", reply(200, USER)],
-    AS_DEVELOPER,
-    ["/rest/v1/analyses?id=", reply(200, [OTHERS_ANALYSIS])],
-    ["/rest/v1/action_items", reply(201, [{ id: ACTION_ID }])],
-  ]);
-  const ok = await worker.fetch(request(`/api/analyses/${ANALYSIS_ID}/actions`, { method: "POST", token: "ok", body: { title: "Confirm scope with the owner" } }), env);
-  assert.equal(ok.status, 201);
-
-  mockFetch([["/auth/v1/user", reply(200, USER)], AS_COMPLIANCE]);
-  const refused = await worker.fetch(request(`/api/analyses/${ANALYSIS_ID}/actions`, { method: "POST", token: "ok", body: { title: "Nope" } }), env);
+test("repo check: a platform engineer sees the file count, others are refused", async () => {
+  const ok = await call(`/api/repo-check?workspace=${W_ACME}&repo=acme/app`, { as: "eng_a" });
+  assert.equal(ok.status, 200);
+  assert.equal(ok.body.ok, true);
+  assert.equal(ok.body.files, 2);
+  const refused = await call(`/api/repo-check?workspace=${W_ACME}&repo=acme/app`, { as: "sec_a" });
   assert.equal(refused.status, 403);
 });
 
-test("an action item can be marked done and reopened, with who did it recorded", async () => {
-  mockFetch([
-    ["/auth/v1/user", reply(200, USER)],
-    AS_DEVELOPER,
-    ["/rest/v1/action_items?id=", reply(204)],
-  ]);
-  const res = await worker.fetch(request(`/api/actions/${ACTION_ID}`, { method: "PATCH", token: "ok", body: { status: "done" } }), env);
-  assert.equal(res.status, 200);
-  const patch = calls.find((c) => c.init.method === "PATCH");
-  assert.equal(JSON.parse(patch.init.body).status, "done");
-  assert.equal(JSON.parse(patch.init.body).done_by_email, USER.email);
-
-  const bad = await worker.fetch(request(`/api/actions/${ACTION_ID}`, { method: "PATCH", token: "ok", body: { status: "archived" } }), env);
-  assert.equal(bad.status, 400);
+test("repo check explains a repository that needs the install", async () => {
+  const res = await call(`/api/repo-check?workspace=${W_ACME}&repo=private/missing`, { as: "eng_a" });
+  assert.equal(res.body.ok, false);
+  assert.equal(res.body.reason, "not_readable");
+  assert.match(res.body.install_url, /cutover-reader-portal\/installations\/new/);
 });
 
-test("unknown routes return 404", async () => {
-  mockFetch([]);
-  const res = await worker.fetch(request("/api/nope"), env);
-  assert.equal(res.status, 404);
-});
+// ---- Discussion and action items ----
 
-test("retention with nothing expired makes one lookup and deletes nothing", async () => {
-  mockFetch([["expires_at=lt.", reply(200, [])]]);
-  const waits = [];
-  await worker.scheduled({}, env, { waitUntil: (p) => waits.push(p) });
-  await Promise.all(waits);
-  assert.equal(calls.length, 1);
-  assert.ok(!calls[0].init.method || calls[0].init.method === "GET", "the lookup is a read");
-  assert.match(calls[0].url, /expires_at=lt\./);
-  assert.equal(calls[0].init.headers.authorization, `Bearer ${env.SUPABASE_SERVICE_ROLE_KEY}`);
-});
-
-test("only workspace admins can see the invitation list", async () => {
-  mockFetch([["/auth/v1/user", reply(200, USER)], AS_DEVELOPER]);
-  const res = await worker.fetch(request("/api/admin/invitations", { token: "ok" }), env);
-  assert.equal(res.status, 403);
-});
-
-test("a workspace admin can invite someone with a role", async () => {
-  mockFetch([
-    ["/auth/v1/user", reply(200, USER)],
-    AS_ADMIN,
-    ["/rest/v1/invitations", reply(201)],
-  ]);
-  const res = await worker.fetch(request("/api/admin/invitations", {
-    method: "POST", token: "ok", body: { email: "Nurse.Lead@Example.org", role: "compliance_reviewer" },
-  }), env);
+test("every member can comment, the auditor included", async () => {
+  const res = await call(`/api/analyses/${AN_ACME}/comments`, { as: "aud_a", method: "POST", body: { body: "Please add the retention date." } });
   assert.equal(res.status, 201);
-  const save = calls.find((c) => c.url.includes("/rest/v1/invitations"));
-  assert.equal(JSON.parse(save.init.body).email, "nurse.lead@example.org", "emails are stored in lower case");
-  assert.equal(JSON.parse(save.init.body).role, "compliance_reviewer");
-  assert.equal(JSON.parse(save.init.body).invited_by, USER.id);
 });
 
-test("invitations need a valid email and a known role", async () => {
-  mockFetch([["/auth/v1/user", reply(200, USER)], AS_ADMIN]);
-  const badEmail = await worker.fetch(request("/api/admin/invitations", {
-    method: "POST", token: "ok", body: { email: "not-an-email", role: "developer" },
-  }), env);
-  assert.equal(badEmail.status, 400);
-  const badRole = await worker.fetch(request("/api/admin/invitations", {
-    method: "POST", token: "ok", body: { email: "a@example.org", role: "superuser" },
-  }), env);
-  assert.equal(badRole.status, 400);
-  assert.equal(calls.filter((c) => c.url.includes("/rest/v1/invitations")).length, 0, "nothing saved");
+test("the auditor cannot add or change action items", async () => {
+  const add = await call(`/api/analyses/${AN_ACME}/actions`, { as: "aud_a", method: "POST", body: { title: "Review" } });
+  assert.equal(add.status, 403);
+  const change = await call(`/api/actions/${ACTION_ACME}`, { as: "aud_a", method: "PATCH", body: { status: "done" } });
+  assert.equal(change.status, 403);
+  assert.equal(state.action_items[0].status, "open");
 });
 
-test("a workspace admin can remove a pending invitation", async () => {
-  mockFetch([
-    ["/auth/v1/user", reply(200, USER)],
-    AS_ADMIN,
-    ["/rest/v1/invitations", reply(204)],
-  ]);
-  const res = await worker.fetch(request(`/api/admin/invitations/${encodeURIComponent("Nurse.Lead@Example.org")}`, {
-    method: "DELETE", token: "ok",
-  }), env);
+test("other members can add and close action items", async () => {
+  const add = await call(`/api/analyses/${AN_ACME}/actions`, { as: "sec_a", method: "POST", body: { title: "Check logs" } });
+  assert.equal(add.status, 201);
+  const close = await call(`/api/actions/${ACTION_ACME}`, { as: "inf_a", method: "PATCH", body: { status: "done" } });
+  assert.equal(close.status, 200);
+  assert.equal(state.action_items.find((a) => a.id === ACTION_ACME).done_by_email, PEOPLE.inf_a.email);
+});
+
+test("a comment can be deleted by its author or a workspace admin, not by others", async () => {
+  const other = await call(`/api/comments/${COMMENT_ACME}`, { as: "sec_a", method: "DELETE" });
+  assert.equal(other.status, 403);
+  const admin = await call(`/api/comments/${COMMENT_ACME}`, { as: "admin_a", method: "DELETE" });
+  assert.equal(admin.status, 200);
+});
+
+// ---- Deleting and retention ----
+
+test("an analysis is deleted only after its deletion record is saved", async () => {
+  const res = await call(`/api/analyses/${AN_ACME}`, { as: "eng_a", method: "DELETE" });
   assert.equal(res.status, 200);
-  const del = calls.find((c) => c.url.includes("/rest/v1/invitations"));
-  assert.match(del.url, /email=eq\.nurse\.lead%40example\.org/);
+  assert.equal(state.deletion_log.length, 1);
+  assert.equal(state.deletion_log[0].reason, "requested");
+  assert.equal(state.analyses.some((a) => a.id === AN_ACME), false);
 });
 
-test("the app's local address gets cross-origin permission", async () => {
-  mockFetch([]);
-  const res = await worker.fetch(new Request("https://api.test/api/analyses", {
-    method: "OPTIONS", headers: { origin: "http://localhost:8000" },
-  }), env);
-  assert.equal(res.status, 204);
-  assert.equal(res.headers.get("access-control-allow-origin"), "http://localhost:8000");
-  assert.match(res.headers.get("access-control-allow-headers"), /authorization/);
+test("if the deletion record cannot be saved, the analysis is kept", async () => {
+  failLog = true;
+  const res = await call(`/api/analyses/${AN_ACME}`, { as: "eng_a", method: "DELETE" });
+  assert.equal(res.status, 502);
+  assert.equal(state.analyses.some((a) => a.id === AN_ACME), true);
 });
 
-test("other websites get no cross-origin permission", async () => {
-  mockFetch([]);
-  const res = await worker.fetch(new Request("https://api.test/api/analyses", {
-    method: "OPTIONS", headers: { origin: "https://evil.example" },
-  }), env);
-  assert.equal(res.status, 403);
-  assert.equal(res.headers.get("access-control-allow-origin"), null);
+test("an auditor cannot delete an analysis, and an admin can delete one from their workspace", async () => {
+  const aud = await call(`/api/analyses/${AN_ACME}`, { as: "aud_a", method: "DELETE" });
+  assert.equal(aud.status, 403);
+  const admin = await call(`/api/analyses/${AN_ACME}`, { as: "admin_a", method: "DELETE" });
+  assert.equal(admin.status, 200);
 });
 
-test("responses to the app's address carry the cross-origin header", async () => {
-  mockFetch([["/auth/v1/user", reply(401, { message: "bad" })]]);
-  const res = await worker.fetch(new Request("https://api.test/api/analyses", {
-    method: "POST", headers: { origin: "http://localhost:8000", authorization: "Bearer x", "content-type": "application/json" }, body: JSON.stringify({ ...START, repo: "a/b" }),
-  }), env);
-  assert.equal(res.status, 401);
-  assert.equal(res.headers.get("access-control-allow-origin"), "http://localhost:8000");
-});
-
-test("starting an analysis requires an application name", async () => {
-  mockFetch([["/auth/v1/user", reply(200, USER)], AS_DEVELOPER]);
-  const res = await worker.fetch(request("/api/analyses", { method: "POST", token: "ok", body: { repo: "acme/app", data_rules_confirmed: true } }), env);
-  assert.equal(res.status, 400);
-  assert.equal(calls.filter((c) => c.url.includes("/rest/v1/analyses")).length, 0, "nothing is written without a name");
-});
-
-test("starting an analysis requires the data-rules confirmation", async () => {
-  mockFetch([["/auth/v1/user", reply(200, USER)], AS_DEVELOPER]);
-  const res = await worker.fetch(request("/api/analyses", { method: "POST", token: "ok", body: { repo: "acme/app", app_name: "Portal" } }), env);
-  assert.equal(res.status, 400);
-  assert.equal(calls.filter((c) => c.url.includes("/rest/v1/analyses")).length, 0, "nothing is written without the confirmation");
-});
-
-test("the name and confirmation time are stored with the analysis", async () => {
-  mockFetch([...APP_READ_ROUTES,
-    ["/auth/v1/user", reply(200, USER)],
-    AS_DEVELOPER,
-    ["/rest/v1/analyses", reply(201, [{ id: ANALYSIS_ID, repo: "acme/app", status: "queued" }])],
-    ["api.github.com", reply(204)],
-  ]);
-  const res = await worker.fetch(request("/api/analyses", { method: "POST", token: "ok", body: { repo: "acme/app", app_name: "  Patient portal (2019)  ", data_rules_confirmed: true } }), env);
-  assert.equal(res.status, 202);
-  const insert = JSON.parse(calls.find((c) => c.url.includes("/rest/v1/analyses")).init.body);
-  assert.equal(insert.app_name, "Patient portal (2019)");
-  assert.match(insert.data_rules_confirmed_at, /^\d{4}-\d{2}-\d{2}T/);
-});
-
-test("retention writes a deletion record before it deletes expired analyses", async () => {
-  mockFetch([
-    ["expires_at=lt.", reply(200, [{ id: ANALYSIS_ID, repo: "acme/app" }])],
-    ["deletion_log", reply(201)],
-    ["id=in.(", reply(204)],
-  ]);
+test("retention writes a deletion record before it removes expired analyses", async () => {
+  state.analyses[0].expires_at = LONG_AGO;
   let pending;
   await worker.scheduled({}, env, { waitUntil: (p) => { pending = p; } });
   await pending;
-  const logAt = calls.findIndex((c) => c.url.includes("deletion_log"));
-  const delAt = calls.findIndex((c) => c.url.includes("id=in.("));
-  assert.ok(logAt > -1 && delAt > logAt, "the record is written before the delete");
-  assert.equal(JSON.parse(calls[logAt].init.body)[0].reason, "expired");
+  assert.equal(state.deletion_log.length, 1);
+  assert.equal(state.deletion_log[0].reason, "expired");
+  assert.equal(state.analyses.some((a) => a.id === AN_ACME), false);
+  assert.equal(state.analyses.some((a) => a.id === AN_BETA), true, "unexpired analyses stay");
 });
 
-test("retention deletes nothing if the deletion records cannot be saved", async () => {
-  mockFetch([
-    ["expires_at=lt.", reply(200, [{ id: ANALYSIS_ID, repo: "acme/app" }])],
-    ["deletion_log", reply(500)],
-    ["id=in.(", reply(204)],
-  ]);
+test("retention keeps expired analyses when its records cannot be saved", async () => {
+  state.analyses[0].expires_at = LONG_AGO;
+  failLog = true;
   let pending;
   await worker.scheduled({}, env, { waitUntil: (p) => { pending = p; } });
   await assert.rejects(pending);
-  assert.equal(calls.filter((c) => c.url.includes("id=in.(")).length, 0, "no rows are deleted");
+  assert.equal(state.analyses.some((a) => a.id === AN_ACME), true);
 });
 
-test("deleting an analysis records the deletion first", async () => {
-  mockFetch([
-    ["/auth/v1/user", reply(200, USER)],
-    AS_DEVELOPER,
-    ["&select=*", reply(200, [{ id: ANALYSIS_ID, owner_id: USER.id, repo: "acme/app" }])],
-    ["deletion_log", reply(201)],
-    [`analyses?id=eq.${ANALYSIS_ID}`, reply(204)],
-  ]);
-  const res = await worker.fetch(request(`/api/analyses/${ANALYSIS_ID}`, { method: "DELETE", token: "ok" }), env);
-  assert.equal(res.status, 200);
-  const logAt = calls.findIndex((c) => c.url.includes("deletion_log"));
-  const delAt = calls.findIndex((c) => c.url.endsWith(`analyses?id=eq.${ANALYSIS_ID}`));
-  assert.ok(logAt > -1 && delAt > logAt, "the record is written before the delete");
-  assert.equal(JSON.parse(calls[logAt].init.body)[0].reason, "requested");
+// ---- Managing people ----
+
+test("an admin invites a person into their workspace with a role and admin flag", async () => {
+  const res = await call(`/api/workspaces/${W_ACME}/invitations`, {
+    as: "admin_a", method: "POST", body: { email: "Lead@Acme.test", role: "informatics_lead", is_admin: false },
+  });
+  assert.equal(res.status, 201);
+  assert.equal(res.body.invited, "lead@acme.test");
+  assert.ok(state.invitations.find((i) => i.email === "lead@acme.test" && i.workspace_id === W_ACME));
 });
 
-test("a failed deletion record stops a user delete", async () => {
-  mockFetch([
-    ["/auth/v1/user", reply(200, USER)],
-    AS_DEVELOPER,
-    ["&select=*", reply(200, [{ id: ANALYSIS_ID, owner_id: USER.id, repo: "acme/app" }])],
-    ["deletion_log", reply(500)],
-    [`analyses?id=eq.${ANALYSIS_ID}`, reply(204)],
-  ]);
-  const res = await worker.fetch(request(`/api/analyses/${ANALYSIS_ID}`, { method: "DELETE", token: "ok" }), env);
+test("an invitation with an unknown role is refused", async () => {
+  const res = await call(`/api/workspaces/${W_ACME}/invitations`, {
+    as: "admin_a", method: "POST", body: { email: "x@acme.test", role: "workspace_admin" },
+  });
+  assert.equal(res.status, 400);
+});
+
+test("a non-admin cannot invite, and an admin of one workspace cannot invite into another", async () => {
+  const notAdmin = await call(`/api/workspaces/${W_ACME}/invitations`, {
+    as: "eng_a", method: "POST", body: { email: "x@acme.test", role: "auditor" },
+  });
+  assert.equal(notAdmin.status, 403);
+  const otherWorkspace = await call(`/api/workspaces/${W_ACME}/invitations`, {
+    as: "eng_b", method: "POST", body: { email: "x@acme.test", role: "auditor" },
+  });
+  assert.equal(otherWorkspace.status, 404);
+});
+
+test("an admin can remove a member, but not themselves", async () => {
+  const self = await call(`/api/workspaces/${W_ACME}/members/${PEOPLE.admin_a.id}`, { as: "admin_a", method: "DELETE" });
+  assert.equal(self.status, 400);
+  const other = await call(`/api/workspaces/${W_ACME}/members/${PEOPLE.sec_a.id}`, { as: "admin_a", method: "DELETE" });
+  assert.equal(other.status, 200);
+  assert.equal(state.members.some((m) => m.user_id === PEOPLE.sec_a.id && m.workspace_id === W_ACME), false);
+});
+
+test("only Cutover operators can create a customer workspace, and it starts with its first admin", async () => {
+  const body = { name: "Riverside Health", admin_email: "it@riverside.test" };
+  const refused = await call("/api/workspaces", { as: "admin_a", method: "POST", body });
+  assert.equal(refused.status, 403);
+
+  const created = await call("/api/workspaces", { as: "operator", method: "POST", body });
+  assert.equal(created.status, 201);
+  const invite = state.invitations.find((i) => i.workspace_id === created.body.id);
+  assert.equal(invite.email, "it@riverside.test");
+  assert.equal(invite.is_admin, true);
+  assert.equal(invite.role, "platform_engineer");
+});
+
+test("a workspace is not left behind when its first admin cannot be invited", async () => {
+  const mocked = globalThis.fetch;
+  globalThis.fetch = async (url, init = {}) => {
+    if (String(url).includes("/rest/v1/invitations") && init.method === "POST") return j({ message: "down" }, 500);
+    return mocked(url, init);
+  };
+  const res = await call("/api/workspaces", { as: "operator", method: "POST", body: { name: "Lost", admin_email: "it@lost.test" } });
   assert.equal(res.status, 502);
-  assert.equal(calls.filter((c) => c.url.endsWith(`analyses?id=eq.${ANALYSIS_ID}`)).length, 0, "nothing is deleted");
+  assert.equal(state.workspaces.some((w) => w.name === "Lost"), false);
 });
 
-// ---- Repository check (GitHub App) ----
-const appEnv = env;
+// ---- Runner callback ----
 
-test("repo check reads the file count and last change with an app token", async () => {
-  mockFetch([
-    ["/auth/v1/user", reply(200, USER)],
-    AS_DEVELOPER,
-    ["/repos/acme/app/installation", reply(200, { id: 99 })],
-    ["/app/installations/99/access_tokens", reply(201, { token: "ghs_test" })],
-    ["/git/trees/", reply(200, { tree: [{ type: "blob" }, { type: "blob" }, { type: "tree" }], truncated: false })],
-    ["/commits?", reply(200, [{ commit: { committer: { date: "2026-07-01T00:00:00Z" } } }])],
-    ["https://api.github.com/repos/acme/app", reply(200, { default_branch: "main" })],
-  ]);
-  const res = await worker.fetch(request("/api/repo-check?repo=acme/app", { token: "ok" }), appEnv);
-  const body = await res.json();
-  assert.equal(body.ok, true);
-  assert.equal(body.files, 2, "only files are counted");
-  assert.equal(body.branch, "main");
-  assert.equal(body.last_changed, "2026-07-01T00:00:00Z");
-  const tokenCall = calls.find((c) => c.url.includes("/access_tokens"));
-  const bearer = tokenCall.init.headers.authorization.replace("Bearer ", "");
-  const [h, p, sig] = bearer.split(".");
-  const verifier = createVerify("RSA-SHA256");
-  verifier.update(`${h}.${p}`);
-  assert.ok(verifier.verify(appKeys.publicKey, Buffer.from(sig, "base64url")), "the app token is signed by the app key");
-  assert.equal(JSON.parse(Buffer.from(p, "base64url").toString()).iss, "5361797");
+test("the runner callback needs the shared secret", async () => {
+  const bad = await call(`/api/runner/${AN_ACME}/result`, { method: "POST", body: { status: "failed", error: "x" }, secret: "wrong" });
+  assert.equal(bad.status, 401);
+  const good = await call(`/api/runner/${AN_ACME}/result`, { method: "POST", body: { status: "failed", error: "x" }, secret: env.RUNNER_SECRET });
+  assert.equal(good.status, 200);
 });
-
-test("repo check explains how to fix a repository the app cannot read", async () => {
-  mockFetch([
-    ["/auth/v1/user", reply(200, USER)],
-    AS_DEVELOPER,
-    ["/repos/acme/app/installation", reply(404, { message: "Not Found" })],
-  ]);
-  const res = await worker.fetch(request("/api/repo-check?repo=acme/app", { token: "ok" }), appEnv);
-  const body = await res.json();
-  assert.equal(body.ok, false);
-  assert.equal(body.reason, "not_readable");
-  assert.match(body.install_url, /cutover-reader-portal\/installations\/new$/);
-});
-
-test("repo check refuses a malformed repository name", async () => {
-  mockFetch([["/auth/v1/user", reply(200, USER)], AS_DEVELOPER]);
-  const res = await worker.fetch(request("/api/repo-check?repo=..%2Fetc", { token: "ok" }), appEnv);
-  assert.equal(res.status, 400);
-});
-
-test("starting an analysis is refused when the app cannot read the repository", async () => {
-  mockFetch([
-    ["/auth/v1/user", reply(200, USER)],
-    AS_DEVELOPER,
-    ["/repos/acme/app/installation", reply(404, { message: "Not Found" })],
-  ]);
-  const res = await worker.fetch(request("/api/analyses", { method: "POST", token: "ok", body: { ...START, repo: "acme/app" } }), env);
-  assert.equal(res.status, 400);
-  assert.equal(calls.filter((c) => c.url.includes("/rest/v1/analyses")).length, 0, "no row is created");
-  assert.equal(calls.filter((c) => c.url.includes("api.github.com/repos/owner")).length, 0, "no runner is started");
-});
-

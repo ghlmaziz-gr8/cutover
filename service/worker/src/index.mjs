@@ -1,36 +1,55 @@
 // Cutover SaaS API (Cloudflare Worker).
 //
-// Routes (all under /api). Every route needs a signed-in member, except the runner callback.
-//   GET    /api/me                               your role
-//   POST   /api/analyses                         start an analysis (not compliance reviewers)
-//   GET    /api/analyses                         every analysis in the workspace
-//   GET    /api/analyses/:id                     one analysis, with its comments and action items
-//   DELETE /api/analyses/:id                     delete (the person who started it, or a workspace admin)
-//   POST   /api/analyses/:id/comments            add a comment
-//   DELETE /api/comments/:id                     delete a comment (its author, or a workspace admin)
-//   POST   /api/analyses/:id/actions             add an action item (not compliance reviewers)
-//   PATCH  /api/actions/:id                      mark an action item open or done (not compliance reviewers)
-//   GET    /api/admin/invitations                list pending invitations (workspace admins)
-//   POST   /api/admin/invitations                invite an email address with a role (workspace admins)
-//   DELETE /api/admin/invitations/:email         remove a pending invitation (workspace admins)
-//   POST   /api/runner/:id/result                runner callback with findings (shared secret)
+// Each customer has a workspace. A person sees only the workspaces they were invited to,
+// and holds one role in each. Every route that touches data checks membership in the
+// workspace that owns the record. A workspace the person is not in answers "Not found",
+// so nothing reveals that the record exists.
 //
-// Only invited people can use the portal. An invitation turns into membership the first time
-// the invited person signs in. A scheduled job deletes analyses past their expires_at (retention).
+// Routes (all under /api). Every route needs a signed-in person, except the runner callback.
+//   GET    /api/me                                        your email, operator flag, and your workspaces with roles
+//   POST   /api/workspaces                                create a customer workspace and invite its first admin (Cutover operators)
+//   GET    /api/workspaces/:id/members                    list members (workspace admins)
+//   DELETE /api/workspaces/:id/members/:userId            remove a member (workspace admins)
+//   GET    /api/workspaces/:id/invitations                list pending invitations (workspace admins)
+//   POST   /api/workspaces/:id/invitations                invite an email with a role (workspace admins)
+//   DELETE /api/workspaces/:id/invitations/:email         remove a pending invitation (workspace admins)
+//   GET    /api/repo-check?workspace=&repo=&ref=          check Cutover can read a repository (platform engineers)
+//   GET    /api/analyses?workspace=                       analyses in one workspace (members)
+//   POST   /api/analyses                                  start an analysis (platform engineers)
+//   GET    /api/analyses/:id                              one analysis, limited to what your role may see
+//   DELETE /api/analyses/:id                              delete (the person who started it, or a workspace admin)
+//   POST   /api/analyses/:id/comments                     add a comment (members)
+//   DELETE /api/comments/:id                              delete a comment (its author, or a workspace admin)
+//   POST   /api/analyses/:id/actions                      add an action item (not auditors)
+//   PATCH  /api/actions/:id                               open or close an action item (not auditors)
+//   POST   /api/runner/:id/result                         runner callback with findings (shared secret)
+//
+// A scheduled job deletes analyses past their expires_at, and writes a deletion record first.
 //
 // Required secrets (set with `wrangler secret put`, never in code):
-//   SUPABASE_ANON_KEY, SUPABASE_SERVICE_ROLE_KEY, GITHUB_DISPATCH_TOKEN, RUNNER_SECRET
-// Required vars (wrangler.toml): SUPABASE_URL, RUNNER_REPO
+//   SUPABASE_ANON_KEY, SUPABASE_SERVICE_ROLE_KEY, GITHUB_DISPATCH_TOKEN, RUNNER_SECRET,
+//   GITHUB_APP_ID, GITHUB_APP_PRIVATE_KEY
+// Required vars (wrangler.toml): SUPABASE_URL, RUNNER_REPO, APP_ORIGIN, OPERATOR_EMAILS
 
 // GitHub owner: letters, digits, hyphens. Repo name: no leading dot, so "." and ".." are rejected.
 const REPO_PATTERN = /^[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})\/[A-Za-z0-9_][A-Za-z0-9_.-]{0,99}$/;
 const REF_PATTERN = /^(?!.*\.\.)[A-Za-z0-9_./-]{1,200}$/;
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const EMAIL_PATTERN = /^[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}$/;
-const ROLES = ["platform_engineer", "application_owner", "developer", "compliance_reviewer", "workspace_admin"];
+const ROLES = ["platform_engineer", "security_officer", "informatics_lead", "cio_cto", "auditor"];
 const MAX_BODY_BYTES = 5_000_000; // findings can be large, but not unbounded
 const MAX_COMMENT = 2000;
 const MAX_TITLE = 200;
+
+// Which finding categories each role may see. "all" means every category.
+// Summary facts (source, history, limitations, counts) are shown to every member.
+const ROLE_CATEGORIES = {
+  platform_engineer: "all",
+  security_officer: ["security", "privacy"],
+  informatics_lead: ["data", "epic"],
+  cio_cto: ["stack", "ui_portal", "containers", "delivery", "infrastructure"],
+  auditor: [],
+};
 
 function json(body, status = 200) {
   return new Response(JSON.stringify(body), {
@@ -46,6 +65,19 @@ function timingSafeEqual(a, b) {
   return diff === 0;
 }
 
+function normalizeEmail(value) {
+  const email = typeof value === "string" ? value.trim().toLowerCase() : "";
+  return EMAIL_PATTERN.test(email) && email.length <= 320 ? email : null;
+}
+
+function isOperator(env, email) {
+  const list = String(env.OPERATOR_EMAILS || "")
+    .split(",")
+    .map((e) => e.trim().toLowerCase())
+    .filter(Boolean);
+  return list.includes(String(email || "").toLowerCase());
+}
+
 // Asks Supabase who the bearer token belongs to. Returns the user or null.
 async function currentUser(env, request) {
   const auth = request.headers.get("authorization") || "";
@@ -58,73 +90,118 @@ async function currentUser(env, request) {
   return user && user.id ? user : null;
 }
 
-// Looks up the member row for a user. If there is none but an invitation exists for their
-// email, the invitation becomes a member row and is used up. Returns the member row or null.
-async function findOrAcceptMember(env, user) {
-  const found = await serviceRest(env, `members?user_id=eq.${user.id}&select=user_id,email,role`);
-  if (!found.ok) return null;
-  const [existing] = await found.json();
-  if (existing) return existing;
-
-  const email = String(user.email || "").toLowerCase();
-  if (!email) return null;
-  const invite = await serviceRest(env, `invitations?email=eq.${encodeURIComponent(email)}&select=email,role`);
-  if (!invite.ok) return null;
-  const [pending] = await invite.json();
-  if (!pending) return null;
-
-  const created = await serviceRest(env, "members", {
-    method: "POST",
-    headers: { prefer: "return=representation" },
-    body: JSON.stringify({ user_id: user.id, email, role: pending.role }),
-  });
-  if (!created.ok) return null;
-  await serviceRest(env, `invitations?email=eq.${encodeURIComponent(email)}`, {
-    method: "DELETE",
-    headers: { prefer: "return=minimal" },
-  });
-  const [row] = await created.json();
-  return row || null;
+// Turns every pending invitation for this person's email into a membership, then uses it up.
+// Returns false if the check could not be completed.
+async function acceptInvitations(env, user) {
+  const email = normalizeEmail(user.email);
+  if (!email) return true;
+  const res = await serviceRest(env, `invitations?email=eq.${encodeURIComponent(email)}&select=workspace_id,email,role,is_admin`);
+  if (!res.ok) return false;
+  for (const inv of await res.json()) {
+    const made = await serviceRest(env, "members?on_conflict=workspace_id,user_id", {
+      method: "POST",
+      headers: { prefer: "resolution=merge-duplicates,return=minimal" },
+      body: JSON.stringify({
+        workspace_id: inv.workspace_id,
+        user_id: user.id,
+        email,
+        role: inv.role,
+        is_admin: inv.is_admin === true,
+      }),
+    });
+    if (!made.ok) return false;
+    await serviceRest(env, `invitations?workspace_id=eq.${inv.workspace_id}&email=eq.${encodeURIComponent(email)}`, {
+      method: "DELETE",
+      headers: { prefer: "return=minimal" },
+    });
+  }
+  return true;
 }
 
-// Gate for every signed-in route. Responds with 401 (not signed in) or 403 (signed in, not invited).
-async function requireMember(env, request) {
+// Gate for every signed-in route. Responds 401 when not signed in.
+async function requireUser(env, request) {
   const user = await currentUser(env, request);
   if (!user) return { response: json({ error: "Sign in first." }, 401) };
-  const member = await findOrAcceptMember(env, user);
-  if (!member) return { response: json({ error: "Your account has not been invited to Cutover." }, 403) };
-  return { user, member };
-}
-
-// Gate for admin routes: members with the workspace_admin role only.
-async function requireAdmin(env, request) {
-  const gate = await requireMember(env, request);
-  if (gate.response) return gate;
-  if (gate.member.role !== "workspace_admin") {
-    return { response: json({ error: "Only workspace admins can do this." }, 403) };
+  if (!(await acceptInvitations(env, user))) {
+    return { response: json({ error: "Could not check your invitations. Try again in a minute." }, 502) };
   }
-  return gate;
+  return { user };
 }
 
-// Compliance reviewers read and comment. They do not start analyses or change the work.
-function isReviewerOnly(member) {
-  return member.role === "compliance_reviewer";
+// The person's membership in one workspace. Not being a member answers 404, not 403,
+// so a workspace the person is not in cannot be detected.
+async function membershipIn(env, userId, workspaceId) {
+  const res = await serviceRest(env, `members?workspace_id=eq.${workspaceId}&user_id=eq.${userId}&select=workspace_id,user_id,email,role,is_admin`);
+  if (!res.ok) return { failed: true };
+  const [member] = await res.json();
+  return { member: member || null };
 }
 
-// Calls PostgREST as the signed-in user, so row-level security applies.
-function userRest(env, token, path, init = {}) {
-  return fetch(`${env.SUPABASE_URL}/rest/v1/${path}`, {
-    ...init,
-    headers: {
-      apikey: env.SUPABASE_ANON_KEY,
-      authorization: `Bearer ${token}`,
-      "content-type": "application/json",
-      ...(init.headers || {}),
-    },
-  });
+// Access to a workspace named in a request body or query, for a person already signed in.
+async function workspaceAccessAs(env, auth, workspaceId) {
+  if (typeof workspaceId !== "string" || !UUID_PATTERN.test(workspaceId)) {
+    return { response: json({ error: "Choose a workspace." }, 400) };
+  }
+  const found = await membershipIn(env, auth.user.id, workspaceId);
+  if (found.failed) return { response: json({ error: "Could not check access. Try again in a minute." }, 502) };
+  if (!found.member) return { response: json({ error: "Not found." }, 404) };
+  return { user: auth.user, member: found.member, workspace_id: workspaceId };
 }
 
-// Calls PostgREST with the service role. Only used after the member check in this file.
+// Access to a workspace named in the URL. Workspace admins only where noted.
+async function workspaceAccess(env, request, workspaceId) {
+  const auth = await requireUser(env, request);
+  if (auth.response) return auth;
+  return workspaceAccessAs(env, auth, workspaceId);
+}
+
+async function workspaceAdmin(env, request, workspaceId) {
+  const access = await workspaceAccess(env, request, workspaceId);
+  if (access.response) return access;
+  if (!access.member.is_admin) return { response: json({ error: "Only workspace admins can do this." }, 403) };
+  return access;
+}
+
+// Access to one analysis. Its workspace decides who may see it.
+async function analysisAccessAs(env, auth, analysisId) {
+  const found = await loadAnalysis(env, analysisId);
+  if (found.failed) return { response: json({ error: "Could not load the analysis." }, 502) };
+  if (found.missing) return { response: json({ error: "Not found." }, 404) };
+  const membership = await membershipIn(env, auth.user.id, found.row.workspace_id);
+  if (membership.failed) return { response: json({ error: "Could not check access. Try again in a minute." }, 502) };
+  if (!membership.member) return { response: json({ error: "Not found." }, 404) };
+  return { user: auth.user, member: membership.member, row: found.row };
+}
+
+async function analysisAccess(env, request, analysisId) {
+  const auth = await requireUser(env, request);
+  if (auth.response) return auth;
+  return analysisAccessAs(env, auth, analysisId);
+}
+
+// Only platform engineers start analyses and connect code. Auditors do not change the work.
+const canStart = (member) => member.role === "platform_engineer";
+const canWorkItems = (member) => member.role !== "auditor";
+
+// Keeps only the findings the role may see. Flags and counts follow the same rule.
+function visibleReport(report, role) {
+  if (!report || typeof report !== "object") return null;
+  const allowed = Object.prototype.hasOwnProperty.call(ROLE_CATEGORIES, role) ? ROLE_CATEGORIES[role] : [];
+  const all = report.findings || {};
+  const shown = {};
+  for (const [id, item] of Object.entries(all)) {
+    if (allowed === "all" || allowed.includes(item.category)) shown[id] = item;
+  }
+  const flags = (report.flags || []).filter((id) => Object.prototype.hasOwnProperty.call(shown, id));
+  return {
+    ...report,
+    findings: shown,
+    flags,
+    counts: { total: Object.keys(all).length, shown: Object.keys(shown).length },
+  };
+}
+
+// Calls PostgREST with the service role. Only used after the membership check in this file.
 function serviceRest(env, path, init = {}) {
   return fetch(`${env.SUPABASE_URL}/rest/v1/${path}`, {
     ...init,
@@ -155,23 +232,160 @@ async function loadAnalysis(env, id) {
   return row ? { row } : { missing: true };
 }
 
+// ---- Who am I, and which workspaces am I in ----
+
 async function me(request, env) {
-  const gate = await requireMember(env, request);
-  if (gate.response) return gate.response;
-  return json({ email: gate.user.email, role: gate.member.role });
+  const auth = await requireUser(env, request);
+  if (auth.response) return auth.response;
+  const res = await serviceRest(env,
+    `members?user_id=eq.${auth.user.id}&select=workspace_id,role,is_admin,created_at,workspace:workspaces(id,name)&order=created_at.asc`);
+  if (!res.ok) return json({ error: "Could not load your workspaces." }, 502);
+  const rows = await res.json();
+  return json({
+    email: auth.user.email,
+    is_operator: isOperator(env, auth.user.email),
+    workspaces: rows.map((r) => ({
+      id: r.workspace_id,
+      name: r.workspace?.name || "Workspace",
+      role: r.role,
+      is_admin: r.is_admin === true,
+    })),
+  });
+}
+
+// ---- Workspaces (operators create them; their admins manage people) ----
+
+async function createWorkspace(request, env) {
+  const auth = await requireUser(env, request);
+  if (auth.response) return auth.response;
+  if (!isOperator(env, auth.user.email)) return json({ error: "Only Cutover operators can create workspaces." }, 403);
+  const parsed = await readJson(request);
+  if (parsed.error) return json({ error: parsed.error }, 400);
+  const body = parsed.value || {};
+  const name = typeof body.name === "string" ? body.name.trim() : "";
+  if (!name || name.length > MAX_TITLE) {
+    return json({ error: `Give the workspace a name of 1 to ${MAX_TITLE} characters.` }, 400);
+  }
+  const email = normalizeEmail(body.admin_email);
+  if (!email) return json({ error: "Enter a valid email address for the first admin." }, 400);
+  const role = body.admin_role || "platform_engineer";
+  if (!ROLES.includes(role)) return json({ error: `Role must be one of: ${ROLES.join(", ")}.` }, 400);
+
+  const created = await serviceRest(env, "workspaces", {
+    method: "POST",
+    headers: { prefer: "return=representation" },
+    body: JSON.stringify({ name }),
+  });
+  if (!created.ok) return json({ error: "Could not create the workspace." }, 502);
+  const [ws] = await created.json();
+
+  const invite = await serviceRest(env, "invitations", {
+    method: "POST",
+    headers: { prefer: "return=minimal" },
+    body: JSON.stringify({ workspace_id: ws.id, email, role, is_admin: true, invited_by: auth.user.id }),
+  });
+  if (!invite.ok) {
+    // Do not leave an empty workspace behind.
+    await serviceRest(env, `workspaces?id=eq.${ws.id}`, { method: "DELETE", headers: { prefer: "return=minimal" } });
+    return json({ error: "Could not invite the first admin, so the workspace was not created." }, 502);
+  }
+  return json({ id: ws.id, name: ws.name, invited: email }, 201);
+}
+
+async function listMembers(request, env, workspaceId) {
+  const access = await workspaceAdmin(env, request, workspaceId);
+  if (access.response) return access.response;
+  const res = await serviceRest(env, `members?workspace_id=eq.${workspaceId}&select=user_id,email,role,is_admin,created_at&order=created_at.asc`);
+  if (!res.ok) return json({ error: "Could not load members." }, 502);
+  return json(await res.json());
+}
+
+async function removeMember(request, env, workspaceId, userId) {
+  const access = await workspaceAdmin(env, request, workspaceId);
+  if (access.response) return access.response;
+  if (!UUID_PATTERN.test(userId)) return json({ error: "Not found." }, 404);
+  if (userId === access.user.id) return json({ error: "You cannot remove yourself. Ask another admin." }, 400);
+  const res = await serviceRest(env, `members?workspace_id=eq.${workspaceId}&user_id=eq.${userId}`, {
+    method: "DELETE",
+    headers: { prefer: "return=minimal" },
+  });
+  if (!res.ok) return json({ error: "Could not remove the member." }, 502);
+  return json({ removed: true });
+}
+
+async function listInvitations(request, env, workspaceId) {
+  const access = await workspaceAdmin(env, request, workspaceId);
+  if (access.response) return access.response;
+  const res = await serviceRest(env, `invitations?workspace_id=eq.${workspaceId}&select=email,role,is_admin,created_at&order=created_at.desc`);
+  if (!res.ok) return json({ error: "Could not load invitations." }, 502);
+  return json(await res.json());
+}
+
+async function createInvitation(request, env, workspaceId) {
+  const access = await workspaceAdmin(env, request, workspaceId);
+  if (access.response) return access.response;
+  const parsed = await readJson(request);
+  if (parsed.error) return json({ error: parsed.error }, 400);
+  const body = parsed.value || {};
+  const email = normalizeEmail(body.email);
+  if (!email) return json({ error: "Enter a valid email address." }, 400);
+  if (!ROLES.includes(body.role)) return json({ error: `Role must be one of: ${ROLES.join(", ")}.` }, 400);
+  const isAdmin = body.is_admin === true;
+
+  const res = await serviceRest(env, "invitations?on_conflict=workspace_id,email", {
+    method: "POST",
+    headers: { prefer: "resolution=merge-duplicates,return=minimal" },
+    body: JSON.stringify({ workspace_id: workspaceId, email, role: body.role, is_admin: isAdmin, invited_by: access.user.id }),
+  });
+  if (!res.ok) return json({ error: "Could not save the invitation." }, 502);
+  // If this person already has access, update their role now as well.
+  await serviceRest(env, `members?workspace_id=eq.${workspaceId}&email=eq.${encodeURIComponent(email)}`, {
+    method: "PATCH",
+    headers: { prefer: "return=minimal" },
+    body: JSON.stringify({ role: body.role, is_admin: isAdmin }),
+  });
+  return json({ invited: email, role: body.role, is_admin: isAdmin }, 201);
+}
+
+async function deleteInvitation(request, env, workspaceId, email) {
+  const access = await workspaceAdmin(env, request, workspaceId);
+  if (access.response) return access.response;
+  const clean = normalizeEmail(email);
+  if (!clean) return json({ error: "Not found." }, 404);
+  const res = await serviceRest(env, `invitations?workspace_id=eq.${workspaceId}&email=eq.${encodeURIComponent(clean)}`, {
+    method: "DELETE",
+    headers: { prefer: "return=minimal" },
+  });
+  if (!res.ok) return json({ error: "Could not remove the invitation." }, 502);
+  return json({ removed: true });
+}
+
+// ---- Analyses ----
+
+async function listAnalyses(request, env) {
+  const url = new URL(request.url);
+  const access = await workspaceAccess(env, request, url.searchParams.get("workspace") || "");
+  if (access.response) return access.response;
+  const res = await serviceRest(env,
+    `analyses?workspace_id=eq.${access.workspace_id}&select=id,owner_id,repo,ref,app_name,status,commit_sha,created_at,finished_at,expires_at&order=created_at.desc&limit=100`);
+  if (!res.ok) return json({ error: "Could not load analyses." }, 502);
+  const rows = await res.json();
+  // The owner id is not sent. is_mine says whether the analysis is yours.
+  return json(rows.map(({ owner_id, ...rest }) => ({ ...rest, is_mine: owner_id === access.user.id })));
 }
 
 async function startAnalysis(request, env) {
-  const gate = await requireMember(env, request);
-  if (gate.response) return gate.response;
-  if (isReviewerOnly(gate.member)) {
-    return json({ error: "Compliance reviewers cannot start analyses." }, 403);
-  }
-  const token = request.headers.get("authorization").slice(7);
+  const auth = await requireUser(env, request);
+  if (auth.response) return auth.response;
 
   const parsed = await readJson(request);
   if (parsed.error) return json({ error: parsed.error }, 400);
-  const { repo, ref, app_name, data_rules_confirmed } = parsed.value || {};
+  const body = parsed.value || {};
+  const access = await workspaceAccessAs(env, auth, body.workspace_id);
+  if (access.response) return access.response;
+  if (!canStart(access.member)) return json({ error: "Only platform engineers can start analyses." }, 403);
+
+  const { repo, ref, app_name, data_rules_confirmed } = body;
   if (typeof repo !== "string" || !REPO_PATTERN.test(repo)) {
     return json({ error: "repo must look like owner/name." }, 400);
   }
@@ -186,24 +400,24 @@ async function startAnalysis(request, env) {
     return json({ error: "Confirm that the code and its settings contain no patient information." }, 400);
   }
 
-  // The app must be able to read the repository, the same check the wizard shows in step 3.
-  let access;
+  // The app must be able to read the repository, the same check the wizard shows in step 4.
+  let readable;
   try {
-    access = await readToken(env, repo);
+    readable = await readToken(env, repo);
   } catch {
     return json({ error: "Cutover could not check the repository right now. Try again in a minute." }, 502);
   }
-  if (access.notInstalled) {
+  if (readable.notInstalled) {
     return json({ error: "Cutover cannot read this repository yet. Check the name, or install the Cutover reader on it." }, 400);
   }
-  if (access.failed) return json({ error: "Cutover could not check the repository right now. Try again in a minute." }, 502);
+  if (readable.failed) return json({ error: "Cutover could not check the repository right now. Try again in a minute." }, 502);
 
-  // Create the row as the user, so RLS enforces owner_id = auth.uid().
-  const created = await userRest(env, token, "analyses", {
+  const created = await serviceRest(env, "analyses", {
     method: "POST",
     headers: { prefer: "return=representation" },
     body: JSON.stringify({
-      owner_id: gate.user.id,
+      owner_id: auth.user.id,
+      workspace_id: access.workspace_id,
       repo,
       ref: ref || null,
       app_name: name,
@@ -242,23 +456,10 @@ async function startAnalysis(request, env) {
   return json({ id: row.id, status: row.status }, 202);
 }
 
-// Every member sees every analysis in the workspace. The owner id is not exposed; is_mine says if it is yours.
-async function listAnalyses(request, env) {
-  const gate = await requireMember(env, request);
-  if (gate.response) return gate.response;
-  const res = await serviceRest(env,
-    "analyses?select=id,owner_id,repo,ref,app_name,status,commit_sha,created_at,finished_at,expires_at&order=created_at.desc&limit=100");
-  if (!res.ok) return json({ error: "Could not load analyses." }, 502);
-  const rows = await res.json();
-  return json(rows.map(({ owner_id, ...rest }) => ({ ...rest, is_mine: owner_id === gate.user.id })));
-}
-
 async function getAnalysis(request, env, id) {
-  const gate = await requireMember(env, request);
-  if (gate.response) return gate.response;
-  const found = await loadAnalysis(env, id);
-  if (found.failed) return json({ error: "Could not load the analysis." }, 502);
-  if (found.missing) return json({ error: "Not found." }, 404);
+  const access = await analysisAccess(env, request, id);
+  if (access.response) return access.response;
+  const { row, member, user } = access;
 
   const [commentsRes, actionsRes] = await Promise.all([
     serviceRest(env, `analysis_comments?analysis_id=eq.${id}&select=id,author_id,author_email,body,created_at&order=created_at.asc`),
@@ -266,34 +467,33 @@ async function getAnalysis(request, env, id) {
   ]);
   if (!commentsRes.ok || !actionsRes.ok) return json({ error: "Could not load the analysis." }, 502);
 
-  const isAdmin = gate.member.role === "workspace_admin";
-  const { owner_id, ...analysis } = found.row;
+  const isAdmin = member.is_admin === true;
+  const { owner_id, findings, ...analysis } = row;
   const comments = (await commentsRes.json()).map(({ author_id, ...c }) => ({
     ...c,
-    can_delete: author_id === gate.user.id || isAdmin,
+    can_delete: author_id === user.id || isAdmin,
   }));
   return json({
     ...analysis,
-    is_mine: owner_id === gate.user.id,
-    can_delete: owner_id === gate.user.id || isAdmin,
-    viewer_role: gate.member.role,
+    findings: visibleReport(findings, member.role),
+    is_mine: owner_id === user.id,
+    can_delete: owner_id === user.id || isAdmin,
+    viewer_role: member.role,
+    viewer_is_admin: isAdmin,
+    can_work_items: canWorkItems(member),
     comments,
     action_items: await actionsRes.json(),
   });
 }
 
 async function deleteAnalysis(request, env, id) {
-  const gate = await requireMember(env, request);
-  if (gate.response) return gate.response;
-  const found = await loadAnalysis(env, id);
-  if (found.failed) return json({ error: "Could not load the analysis." }, 502);
-  if (found.missing) return json({ error: "Not found." }, 404);
-
-  const isOwner = found.row.owner_id === gate.user.id;
-  if (!isOwner && gate.member.role !== "workspace_admin") {
+  const access = await analysisAccess(env, request, id);
+  if (access.response) return access.response;
+  const isOwner = access.row.owner_id === access.user.id;
+  if (!isOwner && !access.member.is_admin) {
     return json({ error: "Only the person who started this analysis or a workspace admin can delete it." }, 403);
   }
-  if (!(await recordDeletion(env, [{ id, repo: found.row.repo }], "requested"))) {
+  if (!(await recordDeletion(env, [{ id, repo: access.row.repo }], "requested"))) {
     return json({ error: "Could not record the deletion, so nothing was deleted." }, 502);
   }
   const res = await serviceRest(env, `analyses?id=eq.${id}`, {
@@ -305,35 +505,33 @@ async function deleteAnalysis(request, env, id) {
 }
 
 async function addComment(request, env, id) {
-  const gate = await requireMember(env, request);
-  if (gate.response) return gate.response;
+  const access = await analysisAccess(env, request, id);
+  if (access.response) return access.response;
   const parsed = await readJson(request);
   if (parsed.error) return json({ error: parsed.error }, 400);
   const text = typeof parsed.value?.body === "string" ? parsed.value.body.trim() : "";
   if (!text || text.length > MAX_COMMENT) {
     return json({ error: `Comments must be 1 to ${MAX_COMMENT} characters.` }, 400);
   }
-  const found = await loadAnalysis(env, id);
-  if (found.failed) return json({ error: "Could not load the analysis." }, 502);
-  if (found.missing) return json({ error: "Not found." }, 404);
-
   const res = await serviceRest(env, "analysis_comments", {
     method: "POST",
     headers: { prefer: "return=minimal" },
-    body: JSON.stringify({ analysis_id: id, author_id: gate.user.id, author_email: gate.user.email, body: text }),
+    body: JSON.stringify({ analysis_id: id, author_id: access.user.id, author_email: access.user.email, body: text }),
   });
   if (!res.ok) return json({ error: "Could not save the comment." }, 502);
   return json({ saved: true }, 201);
 }
 
 async function deleteComment(request, env, id) {
-  const gate = await requireMember(env, request);
-  if (gate.response) return gate.response;
-  const res = await serviceRest(env, `analysis_comments?id=eq.${id}&select=id,author_id`);
+  const auth = await requireUser(env, request);
+  if (auth.response) return auth.response;
+  const res = await serviceRest(env, `analysis_comments?id=eq.${id}&select=id,author_id,analysis_id`);
   if (!res.ok) return json({ error: "Could not load the comment." }, 502);
   const [comment] = await res.json();
   if (!comment) return json({ error: "Not found." }, 404);
-  if (comment.author_id !== gate.user.id && gate.member.role !== "workspace_admin") {
+  const access = await analysisAccessAs(env, auth, comment.analysis_id);
+  if (access.response) return access.response;
+  if (comment.author_id !== auth.user.id && !access.member.is_admin) {
     return json({ error: "Only the author or a workspace admin can delete this comment." }, 403);
   }
   const del = await serviceRest(env, `analysis_comments?id=eq.${id}`, {
@@ -345,10 +543,10 @@ async function deleteComment(request, env, id) {
 }
 
 async function addAction(request, env, id) {
-  const gate = await requireMember(env, request);
-  if (gate.response) return gate.response;
-  if (isReviewerOnly(gate.member)) {
-    return json({ error: "Compliance reviewers can read and comment, but cannot add action items." }, 403);
+  const access = await analysisAccess(env, request, id);
+  if (access.response) return access.response;
+  if (!canWorkItems(access.member)) {
+    return json({ error: "Auditors can read and comment, but cannot add action items." }, 403);
   }
   const parsed = await readJson(request);
   if (parsed.error) return json({ error: parsed.error }, 400);
@@ -356,24 +554,26 @@ async function addAction(request, env, id) {
   if (!title || title.length > MAX_TITLE) {
     return json({ error: `Action items must be 1 to ${MAX_TITLE} characters.` }, 400);
   }
-  const found = await loadAnalysis(env, id);
-  if (found.failed) return json({ error: "Could not load the analysis." }, 502);
-  if (found.missing) return json({ error: "Not found." }, 404);
-
   const res = await serviceRest(env, "action_items", {
     method: "POST",
     headers: { prefer: "return=minimal" },
-    body: JSON.stringify({ analysis_id: id, title, created_by: gate.user.id, created_by_email: gate.user.email }),
+    body: JSON.stringify({ analysis_id: id, title, created_by: access.user.id, created_by_email: access.user.email }),
   });
   if (!res.ok) return json({ error: "Could not save the action item." }, 502);
   return json({ saved: true }, 201);
 }
 
 async function updateAction(request, env, id) {
-  const gate = await requireMember(env, request);
-  if (gate.response) return gate.response;
-  if (isReviewerOnly(gate.member)) {
-    return json({ error: "Compliance reviewers can read and comment, but cannot change action items." }, 403);
+  const auth = await requireUser(env, request);
+  if (auth.response) return auth.response;
+  const found = await serviceRest(env, `action_items?id=eq.${id}&select=id,analysis_id`);
+  if (!found.ok) return json({ error: "Could not load the action item." }, 502);
+  const [item] = await found.json();
+  if (!item) return json({ error: "Not found." }, 404);
+  const access = await analysisAccessAs(env, auth, item.analysis_id);
+  if (access.response) return access.response;
+  if (!canWorkItems(access.member)) {
+    return json({ error: "Auditors can read and comment, but cannot change action items." }, 403);
   }
   const parsed = await readJson(request);
   if (parsed.error) return json({ error: parsed.error }, 400);
@@ -382,7 +582,7 @@ async function updateAction(request, env, id) {
     return json({ error: "status must be open or done." }, 400);
   }
   const change = status === "done"
-    ? { status, done_by_email: gate.user.email, done_at: new Date().toISOString() }
+    ? { status, done_by_email: auth.user.email, done_at: new Date().toISOString() }
     : { status, done_by_email: null, done_at: null };
   const res = await serviceRest(env, `action_items?id=eq.${id}`, {
     method: "PATCH",
@@ -391,47 +591,6 @@ async function updateAction(request, env, id) {
   });
   if (!res.ok) return json({ error: "Could not update the action item." }, 502);
   return json({ updated: true });
-}
-
-async function listInvitations(request, env) {
-  const gate = await requireAdmin(env, request);
-  if (gate.response) return gate.response;
-  const res = await serviceRest(env, "invitations?select=email,role,created_at&order=created_at.desc");
-  if (!res.ok) return json({ error: "Could not load invitations." }, 502);
-  return json(await res.json());
-}
-
-async function createInvitation(request, env) {
-  const gate = await requireAdmin(env, request);
-  if (gate.response) return gate.response;
-  const parsed = await readJson(request);
-  if (parsed.error) return json({ error: parsed.error }, 400);
-  const body = parsed.value || {};
-  const email = typeof body.email === "string" ? body.email.trim().toLowerCase() : "";
-  if (!EMAIL_PATTERN.test(email) || email.length > 320) {
-    return json({ error: "Enter a valid email address." }, 400);
-  }
-  if (!ROLES.includes(body.role)) {
-    return json({ error: `Role must be one of: ${ROLES.join(", ")}.` }, 400);
-  }
-  const res = await serviceRest(env, "invitations?on_conflict=email", {
-    method: "POST",
-    headers: { prefer: "resolution=merge-duplicates,return=minimal" },
-    body: JSON.stringify({ email, role: body.role, invited_by: gate.user.id }),
-  });
-  if (!res.ok) return json({ error: "Could not save the invitation." }, 502);
-  return json({ invited: email, role: body.role }, 201);
-}
-
-async function deleteInvitation(request, env, email) {
-  const gate = await requireAdmin(env, request);
-  if (gate.response) return gate.response;
-  const res = await serviceRest(env, `invitations?email=eq.${encodeURIComponent(email.trim().toLowerCase())}`, {
-    method: "DELETE",
-    headers: { prefer: "return=minimal" },
-  });
-  if (!res.ok) return json({ error: "Could not remove the invitation." }, 502);
-  return json({ removed: true });
 }
 
 async function runnerResult(request, env, id) {
@@ -570,16 +729,20 @@ async function readToken(env, repo) {
 }
 
 async function repoCheck(request, env) {
-  const gate = await requireMember(env, request);
-  if (gate.response) return gate.response;
   const url = new URL(request.url);
+  const auth = await requireUser(env, request);
+  if (auth.response) return auth.response;
+  const access = await workspaceAccessAs(env, auth, url.searchParams.get("workspace") || "");
+  if (access.response) return access.response;
+  if (!canStart(access.member)) return json({ error: "Only platform engineers can connect code." }, 403);
+
   const repo = url.searchParams.get("repo") || "";
   const ref = url.searchParams.get("ref") || "";
   if (!REPO_PATTERN.test(repo)) return json({ error: "Use the form owner/name." }, 400);
   if (ref && !REF_PATTERN.test(ref)) return json({ error: "The branch, tag or commit name is not valid." }, 400);
 
-  const access = await readToken(env, repo);
-  if (access.notInstalled) {
+  const readable = await readToken(env, repo);
+  if (readable.notInstalled) {
     return json({
       ok: false,
       reason: "not_readable",
@@ -587,9 +750,9 @@ async function repoCheck(request, env) {
       install_url: `https://github.com/apps/${APP_SLUG}/installations/new`,
     });
   }
-  if (access.failed) return json({ ok: false, reason: "failed", message: "Cutover could not check the repository right now. Try again in a minute." });
+  if (readable.failed) return json({ ok: false, reason: "failed", message: "Cutover could not check the repository right now. Try again in a minute." });
 
-  const h = { ...GH_HEADERS, authorization: `Bearer ${access.token}` };
+  const h = { ...GH_HEADERS, authorization: `Bearer ${readable.token}` };
   const meta = await fetch(`https://api.github.com/repos/${repo}`, { headers: h });
   if (!meta.ok) return json({ ok: false, reason: "not_found", message: "We could not read that repository. Check the name, or install the Cutover reader on it." });
   const info = await meta.json();
@@ -635,10 +798,11 @@ async function route(request, env) {
     const method = request.method;
 
     if (path === "/api/me" && method === "GET") return me(request, env);
+    if (path === "/api/workspaces" && method === "POST") return createWorkspace(request, env);
+    if (path === "/api/repo-check" && method === "GET") return repoCheck(request, env);
 
     if (path === "/api/analyses" && method === "POST") return startAnalysis(request, env);
     if (path === "/api/analyses" && method === "GET") return listAnalyses(request, env);
-    if (path === "/api/repo-check" && method === "GET") return repoCheck(request, env);
 
     const one = path.match(/^\/api\/analyses\/([^/]+)$/);
     if (one && UUID_PATTERN.test(one[1]) && method === "GET") return getAnalysis(request, env, one[1]);
@@ -656,10 +820,15 @@ async function route(request, env) {
     const oneAction = path.match(/^\/api\/actions\/([^/]+)$/);
     if (oneAction && UUID_PATTERN.test(oneAction[1]) && method === "PATCH") return updateAction(request, env, oneAction[1]);
 
-    if (path === "/api/admin/invitations" && method === "GET") return listInvitations(request, env);
-    if (path === "/api/admin/invitations" && method === "POST") return createInvitation(request, env);
-    const invite = path.match(/^\/api\/admin\/invitations\/([^/]+)$/);
-    if (invite && method === "DELETE") return deleteInvitation(request, env, decodeURIComponent(invite[1]));
+    const ws = path.match(/^\/api\/workspaces\/([^/]+)\/(members|invitations)(?:\/(.+))?$/);
+    if (ws && UUID_PATTERN.test(ws[1])) {
+      const [, workspaceId, kind, child] = ws;
+      if (kind === "members" && !child && method === "GET") return listMembers(request, env, workspaceId);
+      if (kind === "members" && child && method === "DELETE") return removeMember(request, env, workspaceId, decodeURIComponent(child));
+      if (kind === "invitations" && !child && method === "GET") return listInvitations(request, env, workspaceId);
+      if (kind === "invitations" && !child && method === "POST") return createInvitation(request, env, workspaceId);
+      if (kind === "invitations" && child && method === "DELETE") return deleteInvitation(request, env, workspaceId, decodeURIComponent(child));
+    }
 
     const callback = path.match(/^\/api\/runner\/([^/]+)\/result$/);
     if (callback && UUID_PATTERN.test(callback[1]) && method === "POST") {

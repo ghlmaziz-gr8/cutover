@@ -1,179 +1,361 @@
 <!doctype html>
-<!-- Deploy check: this comment changes nothing on screen. Pages should redeploy from main on merge. -->
 <html lang="en">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Cutover: analyses</title>
+  <title>Cutover portal</title>
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600..800&family=DM+Sans:wght@400;500;700&display=swap" rel="stylesheet">
   <style>
-    :root { --bg:#f7f6ff; --fg:#1d1640; --muted:#66607f; --card:#fff; --line:#e4e0f6; --accent:#6d28d9; --bad:#b91c1c; color-scheme: light; }
-    @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --bg:#120e26; --fg:#f3f0ff; --muted:#a9a2c9; --card:#1c1735; --line:#2f2857; --accent:#a78bfa; --bad:#fca5a5; color-scheme: dark; } }
-    body { margin:0; background:var(--bg); color:var(--fg); font:15px/1.5 system-ui, sans-serif; }
-    main { max-width: 880px; margin: 0 auto; padding: 24px 16px 56px; }
-    h1 { font-size: 26px; margin: 0 0 4px; }
-    h2 { font-size: 18px; margin: 0 0 8px; }
-    h3 { font-size: 15px; margin: 20px 0 6px; }
-    .muted { color: var(--muted); }
-    .card { background: var(--card); border: 1px solid var(--line); border-radius: 16px; padding: 18px; margin-top: 16px; }
-    input, select, textarea { font: inherit; padding: 10px 12px; border-radius: 10px; border: 1px solid var(--line); background: var(--card); color: var(--fg); min-width: 0; flex: 1 1 240px; }
-    textarea { resize: vertical; }
-    button { font: 600 15px inherit; padding: 10px 16px; border-radius: 999px; border: 0; background: var(--accent); color: #fff; cursor: pointer; }
-    button.ghost { background: transparent; color: var(--fg); border: 1px solid var(--line); }
-    button:disabled { opacity: .5; cursor: not-allowed; }
-    .row { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
-    table { width: 100%; border-collapse: collapse; font-size: 14px; }
-    th, td { text-align: left; padding: 8px 6px; border-bottom: 1px solid var(--line); }
-    .status { font-weight: 600; }
-    .err { color: var(--bad); }
-    .done { text-decoration: line-through; color: var(--muted); }
-    ul.plain { list-style: none; padding: 0; margin: 8px 0; }
-    li.item { display: flex; flex-wrap: wrap; gap: 6px 10px; align-items: center; padding: 10px 0; border-bottom: 1px solid var(--line); }
-    li.item .body { flex-basis: 100%; white-space: pre-wrap; word-break: break-word; }
-    pre { white-space: pre-wrap; word-break: break-word; background: var(--bg); padding: 12px; border-radius: 10px; font-size: 13px; }
-    [hidden] { display: none !important; }
-    .flags { margin: 8px 0 4px; display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
-    .chip { display: inline-block; padding: 3px 10px; border-radius: 999px; border: 1px solid var(--line); font-size: 13px; }
-    .finding { border: 1px solid var(--line); border-radius: 12px; padding: 12px 14px; margin: 10px 0; }
-    .finding h4 { margin: 0 0 6px; font-size: 16px; }
-    .finding p { margin: 4px 0; }
-    .finding.sev-high { border-color: var(--bad); }
-    .small { font-size: 13px; }
-    .mono { font-family: ui-monospace, Consolas, monospace; font-size: 13px; }
-    details { margin: 8px 0; }
-    details summary { cursor: pointer; color: var(--muted); }
-    pre.raw { white-space: pre-wrap; word-break: break-word; font-size: 12px; max-height: 360px; overflow: auto; }
-    .wz h2 { margin: 6px 0 10px; font-size: 20px; }
-    .wz label { display: block; margin: 14px 0 0; font-weight: 600; }
-    .wz input { width: 100%; margin-top: 6px; }
-    .wz .check { display: flex; gap: 10px; align-items: flex-start; font-weight: 400; }
-    .wz label.check { display: flex; justify-content: flex-start; align-items: flex-start; gap: 10px; margin-top: 14px; font-weight: 400; }
-    .wz label.check input[type="checkbox"] { flex: 0 0 auto; width: auto; margin: 3px 0 0; }
-    .wzNav { margin-top: 18px; justify-content: space-between; }
-    button:disabled { opacity: 0.5; cursor: not-allowed; }
-    h3 { margin-top: 22px; }
-    ol { padding-left: 22px; }
+/* Same look as the Cutover demo: one column, a sticky progress header, colors and type as tokens. */
+:root{
+  --bg:#f7f6ff; --fg:#1d1640; --muted:#66607f; --card:#ffffff; --line:#e4e0f6;
+  --accent:#6d28d9; --accent2:#ec4899; --accent3:#0891b2; --ok:#059669; --warn:#d97706; --bad:#b91c1c;
+  --soft:#efeafd; --grad:linear-gradient(120deg,#6d28d9,#ec4899 55%,#f59e0b);
+  --display:"Bricolage Grotesque",system-ui,sans-serif; --body:"DM Sans",system-ui,sans-serif;
+  color-scheme:light;
+}
+@media (prefers-color-scheme:dark){
+  :root:not([data-theme="light"]){
+    --bg:#120e26; --fg:#f3f0ff; --muted:#a9a2c9; --card:#1c1735; --line:#2f2857;
+    --accent:#a78bfa; --accent2:#f472b6; --accent3:#22d3ee; --ok:#34d399; --warn:#fbbf24; --bad:#fca5a5;
+    --soft:#2a2150; color-scheme:dark;
+  }
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);font:400 15px/1.55 var(--body);min-height:100%}
+main{padding-inline:16px;padding-block:20px 48px;max-width:1080px;margin-inline:auto}
+h1,h2,h3{font-family:var(--display);line-height:1.15;text-wrap:balance;margin:0}
+h1{font-size:clamp(28px,6vw,44px);font-weight:800;letter-spacing:-.02em}
+h2{font-size:clamp(22px,4vw,30px);font-weight:700}
+h3{font-size:18px;font-weight:700;margin-top:18px}
+p{margin:0}
+.muted{color:var(--muted)}
+.small{font-size:13.5px}
+.eyebrow{font-size:12px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:var(--accent)}
+.grad{background:var(--grad);-webkit-background-clip:text;background-clip:text;color:transparent}
+button{font:700 15px var(--body);border:0;border-radius:999px;padding:12px 22px;background:var(--grad);color:#fff;cursor:pointer;transition:transform .2s,box-shadow .2s;box-shadow:0 8px 24px -10px #6d28d9aa}
+button:hover:not(:disabled){transform:translateY(-2px);box-shadow:0 14px 28px -12px #6d28d9cc}
+button:disabled{opacity:.45;cursor:not-allowed}
+button.ghost,button[aria-pressed="true"].ghost{background:transparent;color:var(--fg);box-shadow:none;border:1.5px solid var(--line)}
+button.ghost[aria-pressed="true"]{border-color:var(--accent2);background:color-mix(in srgb,var(--accent2) 10%,var(--card))}
+button.small-btn{padding:8px 14px;font-size:13px}
+button.danger{background:transparent;color:var(--bad);box-shadow:none;border:1.5px solid var(--line)}
+:focus-visible{outline:3px solid var(--accent3);outline-offset:3px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:20px;padding:20px;margin-top:18px}
+.row{display:flex;flex-wrap:wrap;gap:12px;align-items:center}
+.between{justify-content:space-between}
+.grow{flex:1 1 220px;min-width:0}
+.grid{display:grid;gap:16px;grid-template-columns:repeat(auto-fit,minmax(min(100%,200px),1fr))}
+.screen{animation:rise .5s cubic-bezier(.2,.8,.2,1)}
+.screen[hidden]{display:none}
+[hidden]{display:none !important}
+@keyframes rise{from{opacity:0;transform:translateY(14px)}to{opacity:1;transform:none}}
+
+/* Header and progress */
+.top{position:sticky;top:0;z-index:5;background:color-mix(in srgb,var(--bg) 88%,transparent);backdrop-filter:blur(10px);border-bottom:1px solid var(--line);padding:12px 16px}
+.top-in{max-width:1080px;margin:auto;display:grid;gap:10px;grid-template-columns:auto 1fr;align-items:center}
+.brand{display:flex;align-items:center;gap:10px;font:800 20px var(--display)}
+.logo{width:34px;height:34px;border-radius:11px;background:var(--grad);display:grid;place-items:center;color:#fff;font-weight:800}
+.pmeta{display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;font-size:13px;font-weight:700}
+.pmeta .pct{font-family:var(--display);font-size:18px;color:var(--accent)}
+.track{height:10px;border-radius:99px;background:var(--soft);overflow:hidden;margin-top:6px}
+.fill{height:100%;width:0;border-radius:99px;background:var(--grad);transition:width .6s cubic-bezier(.2,.8,.2,1)}
+.dots{grid-column:1/-1;display:flex;gap:6px;flex-wrap:wrap}
+.dots i{flex:1 1 0;min-width:18px;height:6px;border-radius:9px;background:var(--line);transition:background .4s}
+.dots i.done{background:var(--ok)} .dots i.now{background:var(--accent2)}
+@media (max-width:640px){.top-in{grid-template-columns:1fr}}
+
+/* Sign in */
+.hero{display:grid;gap:28px;grid-template-columns:1.1fr .9fr;align-items:center;padding-block:24px}
+.hero-art{position:relative;aspect-ratio:1/1;max-width:100%}
+.blob{position:absolute;border-radius:50%;opacity:.9;animation:float 6s ease-in-out infinite}
+.blob.b1{width:58%;height:58%;left:8%;top:10%;background:var(--accent)}
+.blob.b2{width:44%;height:44%;right:4%;top:4%;background:var(--accent2);animation-delay:-2s}
+.blob.b3{width:36%;height:36%;left:30%;bottom:2%;background:var(--warn);animation-delay:-4s}
+@keyframes float{50%{transform:translateY(-14px) rotate(6deg)}}
+@media (max-width:760px){.hero{grid-template-columns:1fr}.hero-art{max-width:240px;margin:auto}}
+
+/* Role cards */
+.persona{text-align:left;background:var(--card);color:var(--fg);border:1.5px solid var(--line);box-shadow:none;border-radius:20px;padding:18px;display:grid;gap:6px;align-content:start}
+.persona:hover:not(:disabled){transform:translateY(-3px);box-shadow:none}
+.persona[aria-pressed="true"]{border-color:var(--accent2);background:color-mix(in srgb,var(--accent2) 10%,var(--card))}
+.persona:disabled{opacity:.55}
+.persona b{font:700 17px var(--display)}
+.av{width:44px;height:44px;border-radius:14px;display:grid;place-items:center;font-size:17px;font-weight:800;color:#fff;margin-bottom:6px}
+.you{margin-top:18px;padding:16px;border-radius:16px;background:var(--soft);min-height:56px}
+.lock{font-size:11px;font-weight:700;background:var(--line);padding:2px 8px;border-radius:99px;justify-self:start}
+
+/* Form controls */
+input,select,textarea{font:500 15px var(--body);padding:12px 14px;border-radius:14px;border:1.5px solid var(--line);background:var(--card);color:var(--fg);width:100%;min-width:0}
+label{font-weight:700;display:block;margin-top:14px}
+label.check{display:flex;gap:10px;align-items:flex-start;font-weight:400;margin-top:16px}
+label.check input[type="checkbox"]{flex:0 0 auto;width:18px;height:18px;margin:3px 0 0;accent-color:var(--accent)}
+.err{color:var(--bad)}
+.ok{color:var(--ok)}
+
+/* Lists */
+.item{display:flex;flex-wrap:wrap;gap:10px 14px;align-items:center;padding:14px 0;border-bottom:1px solid var(--line)}
+.item:last-child{border-bottom:0}
+.item .body{flex-basis:100%;white-space:pre-wrap;word-break:break-word}
+.item.done b{text-decoration:line-through;color:var(--muted)}
+.chip{display:inline-block;font-size:12.5px;font-weight:700;padding:4px 11px;border-radius:99px;background:#fef3c7;color:#92400e;margin:2px 4px 2px 0}
+.stages{padding-left:22px;margin:10px 0}
+.stages li{padding:4px 0}
+.finding{border:1px solid var(--line);border-radius:16px;padding:14px 16px;margin:10px 0;background:var(--card)}
+.finding h4{margin:0 0 6px;font:700 16px var(--display)}
+.finding p{margin:4px 0}
+.finding.sev-high{border-color:var(--bad)}
+details{margin:8px 0}
+details summary{cursor:pointer;color:var(--muted);font-weight:700}
+.mono{font-family:ui-monospace,Consolas,monospace;font-size:13px;word-break:break-all}
+pre{white-space:pre-wrap;word-break:break-word;background:var(--soft);padding:12px;border-radius:14px;font-size:12px;max-height:360px;overflow:auto}
+.wzNav{justify-content:space-between;margin-top:22px}
+.cards2{display:grid;gap:16px;grid-template-columns:repeat(auto-fit,minmax(min(100%,240px),1fr))}
+.hint{margin-top:12px}
   </style>
 </head>
 <body>
+<header class="top">
+  <div class="top-in">
+    <div class="brand"><span class="logo">C</span>Cutover <span class="muted" style="font:600 12px var(--body)">portal</span></div>
+    <div>
+      <div class="pmeta"><span id="stageName">Sign in</span><span id="stepCount" class="muted"></span><span class="pct" id="pct"></span><span id="eta" class="muted"></span></div>
+      <div class="track"><div class="fill" id="barFill"></div></div>
+    </div>
+    <div class="dots" id="dots"></div>
+  </div>
+</header>
+
 <main>
-  <h1>Cutover</h1>
-  <p class="muted">Analyze a GitHub repository. Only findings are kept, and they are deleted after the retention period.</p>
-
-  <section id="signedOut" class="card" hidden>
-    <p>Sign in with the Google account your Cutover administrator invited.</p>
-    <button id="signIn">Sign in with Google</button>
+  <!-- 1. Sign in -->
+  <section id="s-login" class="screen" hidden>
+    <div class="hero">
+      <div>
+        <p class="eyebrow">Migration intelligence for hospitals</p>
+        <h1 style="margin-top:10px">Assess your <span class="grad">clinical apps</span> for the cloud, one approved step at a time.</h1>
+        <p class="muted" style="margin-top:14px;font-size:17px">Cutover reads the code of one application and reports what it finds. It does not change anything.</p>
+        <div class="row" style="margin-top:22px">
+          <button type="button" id="signIn">Continue with Google</button>
+        </div>
+        <p class="muted small hint">Only people invited to a workspace can sign in. Each workspace is private to its own organization.</p>
+        <p id="loginMsg" class="small hint" role="status"></p>
+      </div>
+      <div class="hero-art" aria-hidden="true">
+        <div class="blob b1"></div><div class="blob b2"></div><div class="blob b3"></div>
+      </div>
+    </div>
   </section>
 
-  <section id="denied" class="card" hidden>
-    <p class="err">This Google account is not on the Cutover access list.</p>
-    <p class="muted">Ask a Cutover workspace admin to invite this email address, then sign in again.</p>
-    <button class="ghost" id="signOutDenied">Sign out</button>
+  <!-- Not invited to any workspace -->
+  <section id="s-denied" class="screen card" hidden>
+    <p class="eyebrow">Access</p>
+    <h2 style="margin:8px 0 6px">You are not invited yet</h2>
+    <p class="muted">This Google account is not invited to any Cutover workspace. Ask your workspace admin to invite this email address, then sign in again.</p>
+    <div class="row wzNav"><span></span><button type="button" class="ghost" data-signout>Sign out</button></div>
   </section>
 
-  <section id="signedIn" hidden>
-    <div class="card">
-      <div class="wz">
-        <p id="wizStep" class="muted small">Step 1 of 4</p>
+  <!-- 2. Choose your role -->
+  <section id="s-role" class="screen" hidden>
+    <p class="eyebrow">Step 2</p>
+    <h2 style="margin:8px 0 6px">Who are you today?</h2>
+    <p class="muted">Cutover shows each role the views and decisions it owns. Your role in a workspace is set by its admin.</p>
+    <div class="row" id="wsPicks" style="margin-top:18px" hidden></div>
+    <div class="grid" style="margin-top:18px" id="personas"></div>
+    <div class="you card" id="youSee" style="margin-top:18px"></div>
+    <div class="row wzNav">
+      <button type="button" class="ghost" data-signout>Sign out</button>
+      <button type="button" id="toHome">Continue</button>
+    </div>
+  </section>
 
-        <div id="wz1">
-          <h2>Start an assessment</h2>
-          <p>Cutover reads the code of one application and reports what it finds: its stack, its data, its screens, and how it is hosted. It does not change the code.</p>
-          <p class="muted">Only sample or public code. No patient data.</p>
-          <button type="button" id="wzStart">Start a new assessment</button>
-        </div>
+  <!-- Your workspace -->
+  <section id="s-home" class="screen" hidden>
+    <p class="eyebrow">Your workspace</p>
+    <div class="row between" style="margin-top:8px">
+      <h2 id="homeTitle">Cutover</h2>
+      <span class="row">
+        <button type="button" class="ghost small-btn" id="changeRole">Change role</button>
+        <button type="button" class="ghost small-btn" data-signout>Sign out</button>
+      </span>
+    </div>
+    <p class="muted" id="homeSub" style="margin-top:6px"></p>
+    <p id="homeRole" class="chip" style="margin-top:10px" hidden></p>
 
-        <div id="wz2" hidden>
-          <h2>Name the application</h2>
-          <label for="appName">Application name</label>
-          <input id="appName" maxlength="200" placeholder="For example: Patient portal (2019)" autocomplete="off">
-          <div class="row wzNav">
-            <button type="button" class="ghost" id="wzBack2">Back</button>
-            <button type="button" id="wzNext2">Next</button>
-          </div>
-        </div>
-
-        <div id="wz3" hidden>
-          <h2>Connect the code</h2>
-          <label for="repo">Code location (GitHub)</label>
-          <input id="repo" placeholder="owner/name" autocomplete="off">
-          <label for="ref">Branch, tag or commit (optional)</label>
-          <input id="ref" placeholder="Leave blank for the default branch" autocomplete="off">
-          <p id="repoResult" class="muted small" role="status"></p>
-          <div class="row wzNav">
-            <button type="button" class="ghost" id="wzBack3">Back</button>
-            <button type="button" id="wzNext3">Next</button>
-          </div>
-        </div>
-
-        <div id="wz4" hidden>
-          <h2>Confirm the data rules</h2>
-          <p id="repoSummary" class="muted small"></p>
-          <label class="check"><input type="checkbox" id="dataRules"> This code and its settings contain no patient information.</label>
-          <div class="row wzNav">
-            <button type="button" class="ghost" id="wzBack4">Back</button>
-            <button type="button" id="startNow" disabled>Start analysis</button>
-          </div>
-        </div>
+    <div class="card" id="analysesCard">
+      <div class="row between">
+        <h2>Analyses</h2>
+        <button type="button" id="startNew">Start a new assessment</button>
       </div>
-      <p id="formMsg" class="muted" role="status"></p>
-      <button type="button" class="ghost" id="signOut">Sign out</button>
+      <p class="muted small" style="margin-top:6px">Only sample or public code. No patient data.</p>
+      <div id="analysisList" style="margin-top:10px"></div>
+      <p id="listMsg" class="muted small" role="status"></p>
     </div>
 
-    <div class="card">
-      <h2>Analyses</h2>
-      <table>
-        <thead><tr><th>Repository</th><th>Started by</th><th>Status</th><th>Created</th><th></th></tr></thead>
-        <tbody id="rows"></tbody>
-      </table>
-      <p id="listMsg" class="muted"></p>
-    </div>
-
-    <div class="card" id="detail" hidden>
-      <div class="row" style="justify-content:space-between">
-        <h2 id="detailTitle" style="margin:0"></h2>
-        <button class="ghost" id="deleteBtn" hidden>Delete</button>
-      </div>
-      <p id="detailMeta" class="muted"></p>
-      <div id="detailBody"></div>
-
-      <h3>Action items</h3>
-      <ul id="actionList" class="plain"></ul>
-      <form id="actionForm" class="row">
-        <input id="actionTitle" maxlength="200" placeholder="What needs to happen? For example: confirm the HL7 scope with the owner" required autocomplete="off">
-        <button type="submit" id="actionBtn">Add action item</button>
-      </form>
-      <p id="actionMsg" class="muted" role="status"></p>
-
-      <h3>Comments</h3>
-      <ul id="commentList" class="plain"></ul>
-      <form id="commentForm" class="row">
-        <textarea id="commentBody" rows="3" maxlength="2000" placeholder="Add a comment for the team" required></textarea>
-        <button type="submit" id="commentBtn">Post comment</button>
-      </form>
-      <p id="commentMsg" class="muted" role="status"></p>
-    </div>
-
-    <div class="card" id="adminPanel" hidden>
-      <h2>Invite people</h2>
-      <p class="muted">Invited people can sign in with Google using that exact email address.</p>
-      <form id="inviteForm" class="row">
-        <input id="inviteEmail" type="email" placeholder="name@organization.org" required autocomplete="off">
-        <select id="inviteRole" aria-label="Role">
-          <option value="platform_engineer">Platform engineer</option>
-          <option value="application_owner">Application owner</option>
-          <option value="developer">Developer</option>
-          <option value="compliance_reviewer">Compliance reviewer</option>
-          <option value="workspace_admin">Workspace admin</option>
-        </select>
+    <div class="card" id="adminCard" hidden>
+      <h2>People in this workspace</h2>
+      <p class="muted small" style="margin-top:6px">Invited people can sign in with Google, using that exact email address. They see only this workspace.</p>
+      <form id="inviteForm" class="row" style="margin-top:14px;align-items:flex-end">
+        <div class="grow"><label for="inviteEmail">Email</label><input id="inviteEmail" type="email" placeholder="name@organization.org" required autocomplete="off"></div>
+        <div class="grow"><label for="inviteRole">Role</label><select id="inviteRole"></select></div>
+        <label class="check" style="margin-top:0"><input type="checkbox" id="inviteAdmin"> Also a workspace admin</label>
         <button type="submit" id="inviteBtn">Invite</button>
       </form>
-      <p id="inviteMsg" class="muted" role="status"></p>
-      <table>
-        <thead><tr><th>Email</th><th>Role</th><th>Pending since</th><th></th></tr></thead>
-        <tbody id="inviteRows"></tbody>
-      </table>
+      <p id="inviteMsg" class="muted small hint" role="status"></p>
+      <h3>Pending invitations</h3>
+      <div id="inviteList"></div>
+      <h3>Members</h3>
+      <div id="memberList"></div>
+    </div>
+
+    <div class="card" id="operatorCard" hidden>
+      <h2>New customer workspace</h2>
+      <p class="muted small" style="margin-top:6px">Creates a separate workspace for one customer and invites its first admin. You cannot see a customer's data unless you are invited into that workspace.</p>
+      <form id="opForm" style="margin-top:14px">
+        <label for="opName">Customer name</label>
+        <input id="opName" maxlength="200" placeholder="For example: Riverside Health" required autocomplete="off">
+        <div class="row" style="align-items:flex-end;margin-top:0">
+          <div class="grow"><label for="opAdmin">First admin email</label><input id="opAdmin" type="email" placeholder="it@organization.org" required autocomplete="off"></div>
+          <div class="grow"><label for="opRole">Their role</label><select id="opRole"></select></div>
+          <button type="submit" id="opBtn">Create workspace</button>
+        </div>
+      </form>
+      <p id="opMsg" class="small hint" role="status"></p>
     </div>
   </section>
+
+  <!-- 3. Name the application -->
+  <section id="s-name" class="screen" hidden>
+    <p class="eyebrow">Step 3</p>
+    <h2 style="margin:8px 0 6px">Name the application</h2>
+    <p class="muted">Use a name your team will recognise. It appears on the analysis list.</p>
+    <div class="card">
+      <label for="appName">Application name</label>
+      <input id="appName" maxlength="200" placeholder="For example: Patient portal (2019)" autocomplete="off">
+      <p class="muted small hint">Optional detail can go in the comments later.</p>
+    </div>
+    <p id="nameMsg" class="err small hint" role="status"></p>
+    <div class="row wzNav">
+      <button type="button" class="ghost" id="nameBack">Back</button>
+      <button type="button" id="nameNext">Next</button>
+    </div>
+  </section>
+
+  <!-- 4. Connect the code -->
+  <section id="s-connect" class="screen" hidden>
+    <p class="eyebrow">Step 4</p>
+    <h2 style="margin:8px 0 6px">Connect the code</h2>
+    <p class="muted">Paste the GitHub location of the code. Cutover checks that it can read it before going on.</p>
+    <div class="card">
+      <label for="repo">Code location (GitHub)</label>
+      <input id="repo" placeholder="owner/name" autocomplete="off">
+      <label for="ref">Branch, tag or commit (optional)</label>
+      <input id="ref" placeholder="Leave blank for the default branch" autocomplete="off">
+      <p id="repoResult" class="small hint" role="status"></p>
+    </div>
+    <div class="row wzNav">
+      <button type="button" class="ghost" id="connectBack">Back</button>
+      <button type="button" id="connectNext">Check and continue</button>
+    </div>
+  </section>
+
+  <!-- 5. Confirm the data rules -->
+  <section id="s-rules" class="screen" hidden>
+    <p class="eyebrow">Step 5</p>
+    <h2 style="margin:8px 0 6px">Confirm the data rules</h2>
+    <p class="muted" id="repoSummary"></p>
+    <div class="card">
+      <label class="check"><input type="checkbox" id="dataRules"> This code and its settings contain no patient information.</label>
+    </div>
+    <p id="rulesMsg" class="small hint" role="status"></p>
+    <div class="row wzNav">
+      <button type="button" class="ghost" id="rulesBack">Back</button>
+      <button type="button" id="startNow" disabled>Start analysis</button>
+    </div>
+  </section>
+
+  <!-- 6. Run the analysis -->
+  <section id="s-run" class="screen" hidden>
+    <p class="eyebrow">Step 6</p>
+    <h2 style="margin:8px 0 6px" id="runTitle">Analyzing</h2>
+    <p class="muted" id="runStatus"></p>
+    <div class="card">
+      <ol class="stages" id="stageList"></ol>
+      <p class="muted small">The stages run in this order. Cutover does not report each stage separately yet, so this list shows the order, not live progress.</p>
+    </div>
+    <div class="row wzNav">
+      <button type="button" class="ghost" id="runBack">Back to analyses</button>
+      <span></span>
+    </div>
+  </section>
+
+  <!-- 7. Review findings -->
+  <section id="s-review" class="screen" hidden>
+    <p class="eyebrow">Step 7</p>
+    <h2 style="margin:8px 0 6px" id="reviewTitle"></h2>
+    <p class="muted small" id="reviewMeta"></p>
+    <div class="card" id="reviewBody"></div>
+
+    <div class="card" id="discussion">
+      <h2>Action items</h2>
+      <p class="muted small" id="actionNote" style="margin-top:6px"></p>
+      <ul id="actionList" style="list-style:none;padding:0;margin:10px 0 0"></ul>
+      <form id="actionForm" class="row" style="margin-top:12px">
+        <input id="actionTitle" maxlength="200" placeholder="What needs to happen? For example: confirm the HL7 scope with the owner" autocomplete="off" class="grow">
+        <button type="submit" id="actionBtn">Add action item</button>
+      </form>
+      <p id="actionMsg" class="small hint" role="status"></p>
+
+      <h2 style="margin-top:28px">Comments</h2>
+      <ul id="commentList" style="list-style:none;padding:0;margin:10px 0 0"></ul>
+      <form id="commentForm" style="margin-top:12px">
+        <textarea id="commentBody" rows="3" maxlength="2000" placeholder="Add a comment for the team" required></textarea>
+        <div class="row" style="justify-content:flex-end;margin-top:10px"><button type="submit" id="commentBtn">Post comment</button></div>
+      </form>
+      <p id="commentMsg" class="small hint" role="status"></p>
+    </div>
+
+    <div class="row wzNav">
+      <button type="button" class="ghost" id="reviewBack">Back to analyses</button>
+      <button type="button" id="toNext">Next steps</button>
+    </div>
+  </section>
+
+  <!-- 8. Next steps -->
+  <section id="s-next" class="screen" hidden>
+    <p class="eyebrow">Step 8</p>
+    <h2 style="margin:8px 0 6px">What next?</h2>
+    <p class="muted">Choose one. You can come back to the findings at any time.</p>
+    <div class="cards2" style="margin-top:20px">
+      <div class="card" style="margin-top:0">
+        <h3 style="margin-top:0">Download the report</h3>
+        <p class="muted small" style="margin:6px 0 12px">The report contains only what your role may see.</p>
+        <button type="button" class="ghost" id="downloadBtn">Download report (JSON)</button>
+      </div>
+      <div class="card" style="margin-top:0" id="inviteCardNext">
+        <h3 style="margin-top:0">Invite a reviewer</h3>
+        <p class="muted small" style="margin:6px 0 12px">Workspace admins add people from the workspace page.</p>
+        <button type="button" class="ghost" id="inviteNext">Go to people</button>
+      </div>
+      <div class="card" style="margin-top:0">
+        <h3 style="margin-top:0">Continue to planning</h3>
+        <p class="muted small" style="margin:6px 0 12px">Coming in a later phase.</p>
+        <button type="button" class="ghost" disabled>Coming soon</button>
+      </div>
+      <div class="card" style="margin-top:0" id="deleteCardNext">
+        <h3 style="margin-top:0">Delete these results</h3>
+        <p class="muted small" style="margin:6px 0 12px">Removes the analysis, its comments and its action items. This cannot be undone.</p>
+        <button type="button" class="danger" id="deleteBtn">Delete</button>
+      </div>
+    </div>
+    <p id="nextMsg" class="err small hint" role="status"></p>
+    <div class="row wzNav">
+      <button type="button" class="ghost" id="nextBackReview">Back to findings</button>
+      <button type="button" class="ghost" id="nextBackHome">Back to analyses</button>
+    </div>
+  </section>
+
+  <p class="muted small" style="text-align:center;margin-top:40px">Cutover reads code only. Source code is not stored, and results are deleted after the retention period.</p>
 </main>
 
 <!-- Pinned to an exact version. Only the browser client is loaded here. -->
@@ -181,26 +363,63 @@
 <script src="config.js"></script>
 <script>
 (() => {
+  "use strict";
   const $ = (id) => document.getElementById(id);
   const cfg = window.CUTOVER_CONFIG;
   const sb = supabase.createClient(cfg.SUPABASE_URL, cfg.SUPABASE_ANON_KEY);
-  const ROLE_LABELS = {
-    platform_engineer: "Platform engineer",
-    application_owner: "Application owner",
-    developer: "Developer",
-    compliance_reviewer: "Compliance reviewer",
-    workspace_admin: "Workspace admin",
+
+  // Roles, in the demo's order. The text says what the role does in this portal.
+  const ROLE_ORDER = ["platform_engineer", "security_officer", "informatics_lead", "cio_cto", "auditor"];
+  const ROLES = {
+    platform_engineer: { name: "Platform engineer", code: "PE", color: "#6d28d9",
+      text: "You connect code, start analyses and review the full technical findings." },
+    security_officer: { name: "Security officer", code: "SO", color: "#0891b2",
+      text: "You review the security and privacy findings, and track the actions that close them." },
+    informatics_lead: { name: "Informatics lead", code: "IL", color: "#ec4899",
+      text: "You review the data and Epic integration findings, and track the actions on them." },
+    cio_cto: { name: "CIO or CTO", code: "CX", color: "#d97706",
+      text: "You see the overview of each application: what it is, how it is built and where it is hosted." },
+    auditor: { name: "Auditor", code: "AU", color: "#059669",
+      text: "You get read-only access to the summary and limitations. You can comment, but you cannot change action items." },
   };
+  const roleName = (key) => (ROLES[key] ? ROLES[key].name : key);
+
+  // The eight steps shown in the header. Weights add up to 100.
+  const STAGES = [
+    { id: "s-login", name: "Sign in", w: 5, min: 0.5 },
+    { id: "s-role", name: "Choose your role", w: 5, min: 0.5 },
+    { id: "s-name", name: "Name the application", w: 10, min: 1 },
+    { id: "s-connect", name: "Connect the code", w: 15, min: 1 },
+    { id: "s-rules", name: "Confirm the data rules", w: 5, min: 0.5 },
+    { id: "s-run", name: "Run the analysis", w: 35, min: 4 },
+    { id: "s-review", name: "Review findings", w: 15, min: 2 },
+    { id: "s-next", name: "Next steps", w: 10, min: 0.5 },
+  ];
+  const SCREENS = ["s-login", "s-denied", "s-role", "s-home", "s-name", "s-connect", "s-rules", "s-run", "s-review", "s-next"];
+  const RUN_STAGES = ["Reading files", "Finding the stack", "Finding the data", "Finding the infrastructure", "Writing the report"];
+  const STATUS_TEXT = { queued: "Waiting to start", running: "Running", complete: "Review ready", failed: "Failed" };
+  const REPO_FORMAT = /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/;
+  // Step 7: the four review cards and the categories each shows.
+  const REVIEW_CARDS = [
+    { title: "What it is", cats: ["ui_portal", "security", "epic"] },
+    { title: "How it is built", cats: ["stack", "delivery"] },
+    { title: "Its data", cats: ["data", "privacy"] },
+    { title: "How it is hosted", cats: ["containers", "infrastructure"] },
+  ];
+
   let token = null;
-  let timer = null;
-  let currentId = null;
-  let viewerRole = null;
+  let me = null;          // { email, is_operator, workspaces }
+  let ws = null;          // the workspace the person is working in
+  let cur = null;         // the analysis on screen
+  let wizard = { appName: "", repo: "", ref: "" };
+  let started = false;
+  let runTimer = null;
+  let homeTimer = null;
 
   async function api(path, options = {}) {
-    const res = await fetch(`${cfg.API_BASE}${path}`, {
-      ...options,
-      headers: { "content-type": "application/json", authorization: `Bearer ${token}`, ...(options.headers || {}) },
-    });
+    const headers = { "content-type": "application/json", ...(options.headers || {}) };
+    if (token) headers.authorization = `Bearer ${token}`;
+    const res = await fetch(`${cfg.API_BASE}${path}`, { ...options, headers });
     const body = await res.json().catch(() => ({}));
     if (!res.ok) {
       const err = new Error(body.error || `Request failed (${res.status})`);
@@ -210,63 +429,348 @@
     return body;
   }
 
-  // Which screen to show: "out" (signed out), "denied" (signed in, not invited), or "app".
-  function show(screen) {
-    $("signedOut").hidden = screen !== "out";
-    $("denied").hidden = screen !== "denied";
-    $("signedIn").hidden = screen !== "app";
+  function el(tag, text, cls) {
+    const node = document.createElement(tag);
+    if (text !== undefined && text !== null) node.textContent = text;
+    if (cls) node.className = cls;
+    return node;
   }
 
-  function appLabel(r) {
-    const code = r.ref ? `${r.repo} @ ${r.ref}` : r.repo;
-    return r.app_name ? `${r.app_name} (${code})` : code;
+  function setMsg(id, text, bad) {
+    const node = $(id);
+    node.textContent = text || "";
+    node.className = bad ? "err small hint" : "muted small hint";
+  }
+
+  function etaFrom(idx) {
+    let m = 0;
+    for (let i = idx; i < STAGES.length; i++) m += STAGES[i].min;
+    if (m < 0.25) return "Almost done";
+    const lo = Math.max(1, Math.round(m * 0.8));
+    const hi = Math.max(lo + 1, Math.round(m * 1.25));
+    return `About ${lo}–${hi} min left`;
+  }
+
+  // The header shows the step in the wizard, or the workspace elsewhere.
+  function renderHeader(id) {
+    const dots = $("dots");
+    const idx = STAGES.findIndex((s) => s.id === id);
+    if (idx < 0) {
+      $("stageName").textContent = id === "s-home" && ws ? ws.name : id === "s-denied" ? "Access" : "Cutover";
+      $("stepCount").textContent = id === "s-home" && ws ? `Signed in as ${roleName(ws.role)}` : "";
+      $("pct").textContent = "";
+      $("eta").textContent = "";
+      $("barFill").style.width = "0%";
+      dots.innerHTML = "";
+      return;
+    }
+    if (!dots.childElementCount) for (let i = 0; i < STAGES.length; i++) dots.appendChild(document.createElement("i"));
+    [...dots.children].forEach((d, i) => { d.className = i < idx ? "done" : i === idx ? "now" : ""; });
+    let p = 0;
+    for (let i = 0; i < idx; i++) p += STAGES[i].w;
+    $("stageName").textContent = STAGES[idx].name;
+    $("stepCount").textContent = `Step ${idx + 1} of ${STAGES.length}`;
+    $("pct").textContent = `${p}%`;
+    $("barFill").style.width = `${p}%`;
+    $("eta").textContent = etaFrom(idx);
+  }
+
+  function show(id) {
+    if (id !== "s-run") clearTimeout(runTimer);
+    if (id !== "s-home") clearTimeout(homeTimer);
+    for (const s of SCREENS) $(s).hidden = s !== id;
+    renderHeader(id);
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  }
+
+  // ---- Sign in and the role step ----
+
+  $("signIn").addEventListener("click", () => {
+    sb.auth.signInWithOAuth({ provider: "google", options: { redirectTo: window.location.href.split("#")[0] } });
+  });
+
+  async function signOut() {
+    await sb.auth.signOut();
+    token = null; me = null; ws = null; cur = null; started = false;
+    show("s-login");
+  }
+  document.querySelectorAll("[data-signout]").forEach((b) => b.addEventListener("click", signOut));
+
+  sb.auth.onAuthStateChange((event, session) => {
+    token = session ? session.access_token : null;
+    if (!session) {
+      started = false;
+      show("s-login");
+      return;
+    }
+    // Token refreshes must not send someone back to the start of the flow.
+    if (event === "TOKEN_REFRESHED" || started) return;
+    started = true;
+    enter();
+  });
+
+  async function enter() {
+    try {
+      me = await api("/api/me");
+    } catch (err) {
+      started = false;
+      setMsg("loginMsg", err.message, true);
+      show("s-login");
+      return;
+    }
+    if (!me.workspaces.length && !me.is_operator) {
+      show("s-denied");
+      return;
+    }
+    ws = (ws && me.workspaces.find((w) => w.id === ws.id)) || me.workspaces[0] || null;
+    if (!ws) { showHome(); return; }
+    renderWorkspacePicks();
+    renderPersonas();
+    show("s-role");
+  }
+
+  function renderWorkspacePicks() {
+    const box = $("wsPicks");
+    box.innerHTML = "";
+    box.hidden = me.workspaces.length < 2;
+    for (const w of me.workspaces) {
+      const b = el("button", w.name, "ghost");
+      b.type = "button";
+      b.setAttribute("aria-pressed", String(!!ws && w.id === ws.id));
+      b.addEventListener("click", () => { ws = w; renderWorkspacePicks(); renderPersonas(); });
+      box.appendChild(b);
+    }
+  }
+
+  // Only the role the admin gave in this workspace can be chosen. The others are shown locked.
+  function renderPersonas() {
+    const grid = $("personas");
+    grid.innerHTML = "";
+    for (const key of ROLE_ORDER) {
+      const r = ROLES[key];
+      const mine = !!ws && ws.role === key;
+      const b = el("button", null, "persona");
+      b.type = "button";
+      b.disabled = !mine;
+      b.setAttribute("aria-pressed", String(mine));
+      const av = el("span", r.code, "av");
+      av.style.background = r.color;
+      b.append(av, el("b", r.name));
+      if (!mine) b.appendChild(el("span", "Not in your access", "lock"));
+      grid.appendChild(b);
+    }
+    const you = $("youSee");
+    you.innerHTML = "";
+    if (ws) {
+      const r = ROLES[ws.role];
+      you.append(el("b", `${r.name} in ${ws.name}: `), document.createTextNode(r.text));
+    }
+    $("toHome").disabled = !ws;
+  }
+
+  $("toHome").addEventListener("click", () => showHome());
+  $("changeRole").addEventListener("click", () => {
+    renderWorkspacePicks();
+    renderPersonas();
+    show("s-role");
+  });
+
+  // ---- Your workspace ----
+
+  function showHome() {
+    show("s-home");
+    $("homeTitle").textContent = ws ? ws.name : "Cutover";
+    $("homeRole").textContent = ws ? `${roleName(ws.role)}${ws.is_admin ? " · workspace admin" : ""}` : "";
+    $("homeRole").hidden = !ws;
+    $("changeRole").hidden = !ws;
+    $("homeSub").textContent = ws ? "" : "You have no workspace yet. Create one below.";
+    $("analysesCard").hidden = !ws;
+    $("startNew").hidden = !(ws && ws.role === "platform_engineer");
+    $("adminCard").hidden = !(ws && ws.is_admin);
+    $("operatorCard").hidden = !me.is_operator;
+    if (ws) {
+      loadList();
+      if (ws.is_admin) loadPeople();
+    }
   }
 
   async function loadList() {
+    const box = $("analysisList");
+    const msg = $("listMsg");
     try {
-      const rows = await api("/api/analyses");
-      $("listMsg").textContent = rows.length ? "" : "No analyses yet.";
-      $("listMsg").className = "muted";
-      $("rows").innerHTML = "";
+      const rows = await api(`/api/analyses?workspace=${encodeURIComponent(ws.id)}`);
+      box.innerHTML = "";
+      msg.textContent = rows.length ? "" : "No analyses in this workspace yet.";
+      msg.className = "muted small";
       for (const r of rows) {
-        const tr = document.createElement("tr");
-        tr.innerHTML = `<td></td><td></td><td class="status"></td><td></td><td><button class="ghost">Open</button></td>`;
-        tr.children[0].textContent = appLabel(r);
-        tr.children[1].textContent = r.is_mine ? "You" : "Teammate";
-        tr.children[2].textContent = r.status;
-        tr.children[3].textContent = new Date(r.created_at).toLocaleString();
-        tr.querySelector("button").addEventListener("click", () => openOne(r.id));
-        $("rows").appendChild(tr);
+        const item = el("div", null, "item");
+        const text = el("div", null, "grow");
+        text.append(
+          el("b", r.app_name || r.repo),
+          el("div", `${r.repo}${r.ref ? " @ " + r.ref : ""} · ${STATUS_TEXT[r.status] || r.status} · ${r.is_mine ? "started by you" : "started by a teammate"} · ${new Date(r.created_at).toLocaleDateString()}`, "muted small"),
+        );
+        const open = el("button", "Open", "ghost small-btn");
+        open.type = "button";
+        open.addEventListener("click", () => openAnalysis(r.id));
+        item.append(text, open);
+        box.appendChild(item);
       }
       if (rows.some((r) => r.status === "queued" || r.status === "running")) {
-        clearTimeout(timer);
-        timer = setTimeout(loadList, 5000);
-        if (currentId) openOne(currentId);
+        clearTimeout(homeTimer);
+        homeTimer = setTimeout(() => { if ($("s-home").hidden === false) loadList(); }, 5000);
       }
     } catch (err) {
-      $("listMsg").textContent = err.message;
-      $("listMsg").className = "err";
+      msg.textContent = err.message;
+      msg.className = "err small";
     }
   }
 
-  async function openOne(id) {
-    currentId = id;
+  // Workspace admins: invite, see, and remove people in this workspace only.
+  function listRow(container, text, sub, button, onClick, disabled) {
+    const item = el("div", null, "item");
+    const body = el("div", null, "grow");
+    body.append(el("b", text), el("div", sub, "muted small"));
+    const btn = el("button", button, "ghost small-btn");
+    btn.type = "button";
+    btn.disabled = !!disabled;
+    btn.addEventListener("click", onClick);
+    item.append(body, btn);
+    container.appendChild(item);
+  }
+
+  async function loadPeople() {
+    const id = ws.id;
     try {
-      const row = await api(`/api/analyses/${id}`);
-      renderDetail(row);
+      const [invites, members] = await Promise.all([
+        api(`/api/workspaces/${id}/invitations`),
+        api(`/api/workspaces/${id}/members`),
+      ]);
+      const invBox = $("inviteList");
+      invBox.innerHTML = "";
+      if (!invites.length) invBox.appendChild(el("p", "No pending invitations.", "muted small"));
+      for (const inv of invites) {
+        listRow(invBox, inv.email, `${roleName(inv.role)}${inv.is_admin ? " · admin" : ""} · waiting for first sign-in`, "Remove", async () => {
+          try {
+            await api(`/api/workspaces/${id}/invitations/${encodeURIComponent(inv.email)}`, { method: "DELETE" });
+            loadPeople();
+          } catch (err) { setMsg("inviteMsg", err.message, true); }
+        });
+      }
+      const memBox = $("memberList");
+      memBox.innerHTML = "";
+      for (const m of members) {
+        const isMe = me && m.email === me.email;
+        listRow(memBox, m.email, `${roleName(m.role)}${m.is_admin ? " · admin" : ""}${isMe ? " · you" : ""}`, "Remove", async () => {
+          try {
+            await api(`/api/workspaces/${id}/members/${m.user_id}`, { method: "DELETE" });
+            loadPeople();
+          } catch (err) { setMsg("inviteMsg", err.message, true); }
+        }, isMe);
+      }
     } catch (err) {
-      $("formMsg").textContent = err.message;
-      $("formMsg").className = "err";
+      setMsg("inviteMsg", err.message, true);
     }
   }
 
-  // Category order and labels match the discovery engine.
-  const CATEGORY_ORDER = ["stack", "data", "ui_portal", "security", "epic", "privacy", "containers", "delivery", "infrastructure"];
-  const CATEGORY_TITLES = {
-    stack: "Stack", data: "Data model", ui_portal: "User interface and portal",
-    security: "Roles and access", epic: "Epic integration", privacy: "Privacy",
-    containers: "Images and containers", delivery: "Delivery", infrastructure: "Infrastructure",
-  };
+  function fillRoleSelect(select) {
+    select.innerHTML = "";
+    for (const key of ROLE_ORDER) select.appendChild(el("option", ROLES[key].name)).value = key;
+  }
+  fillRoleSelect($("inviteRole"));
+  fillRoleSelect($("opRole"));
+
+  $("inviteForm").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    $("inviteBtn").disabled = true;
+    const email = $("inviteEmail").value.trim();
+    try {
+      await api(`/api/workspaces/${ws.id}/invitations`, {
+        method: "POST",
+        body: JSON.stringify({ email, role: $("inviteRole").value, is_admin: $("inviteAdmin").checked }),
+      });
+      setMsg("inviteMsg", `Invited ${email}.`, false);
+      $("inviteEmail").value = "";
+      $("inviteAdmin").checked = false;
+      loadPeople();
+    } catch (err) {
+      setMsg("inviteMsg", err.message, true);
+    } finally {
+      $("inviteBtn").disabled = false;
+    }
+  });
+
+  // Cutover operators: create a customer workspace and its first admin.
+  $("opForm").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    $("opBtn").disabled = true;
+    const name = $("opName").value.trim();
+    const admin = $("opAdmin").value.trim();
+    try {
+      await api("/api/workspaces", {
+        method: "POST",
+        body: JSON.stringify({ name, admin_email: admin, admin_role: $("opRole").value }),
+      });
+      setMsg("opMsg", `Created ${name}. ${admin} can now sign in as its first admin.`, false);
+      $("opName").value = "";
+      $("opAdmin").value = "";
+    } catch (err) {
+      setMsg("opMsg", err.message, true);
+    } finally {
+      $("opBtn").disabled = false;
+    }
+  });
+
+  // ---- Opening an analysis ----
+
+  async function openAnalysis(id) {
+    try {
+      cur = await api(`/api/analyses/${id}`);
+    } catch (err) {
+      setMsg("listMsg", err.message, true);
+      return;
+    }
+    if (cur.status === "queued" || cur.status === "running") showRun();
+    else showReview();
+  }
+
+  function showRun() {
+    show("s-run");
+    $("runTitle").textContent = `Analyzing ${cur.app_name || cur.repo}`;
+    $("runStatus").textContent = cur.status === "queued"
+      ? "Waiting to start. This page updates by itself."
+      : "Running. This page updates by itself. You can leave and come back.";
+    const list = $("stageList");
+    list.innerHTML = "";
+    for (const s of RUN_STAGES) list.appendChild(el("li", s));
+    watchRun();
+  }
+
+  function watchRun() {
+    clearTimeout(runTimer);
+    runTimer = setTimeout(async () => {
+      if ($("s-run").hidden || !cur) return;
+      try {
+        cur = await api(`/api/analyses/${cur.id}`);
+      } catch (err) {
+        $("runStatus").textContent = err.message;
+        return watchRun();
+      }
+      if (cur.status === "queued" || cur.status === "running") return watchRun();
+      showReview();
+    }, 5000);
+  }
+
+  $("runBack").addEventListener("click", () => showHome());
+
+  // ---- Step 7: review ----
+
+  function showReview() {
+    show("s-review");
+    $("reviewTitle").textContent = cur.app_name || cur.repo;
+    $("reviewMeta").textContent = `${cur.repo}${cur.ref ? " @ " + cur.ref : ""} · Commit: ${cur.commit_sha || "not known yet"} · Started by: ${cur.is_mine ? "you" : "a teammate"} · Deleted after: ${new Date(cur.expires_at).toLocaleDateString()}`;
+    renderReview(cur);
+    renderDiscussion(cur);
+  }
 
   // Turn a finding value into readable text, the same way the engine does.
   function fmtValue(v) {
@@ -278,55 +782,21 @@
       }
       return v.join(", ");
     }
-    if (v && typeof v === "object") {
-      return Object.entries(v).map(([k, x]) => `${k}: ${fmtValue(x)}`).join("; ");
-    }
+    if (v && typeof v === "object") return Object.entries(v).map(([k, x]) => `${k}: ${fmtValue(x)}`).join("; ");
     return String(v);
   }
 
-  function el(tag, text, cls) {
-    const node = document.createElement(tag);
-    node.textContent = text;
-    if (cls) node.className = cls;
-    return node;
-  }
-
-  // Step 6: the four review cards, and which categories each one shows.
-  const REVIEW_CARDS = [
-    { title: "What it is", cats: ["ui_portal", "security", "epic"] },
-    { title: "How it is built", cats: ["stack", "delivery"] },
-    { title: "Its data", cats: ["data", "privacy"] },
-    { title: "How it is hosted", cats: ["containers", "infrastructure"] },
-  ];
-  // Step 5: the stages the analysis runs through, in order.
-  const STAGES = ["Reading files", "Finding the stack", "Finding the data", "Finding the infrastructure", "Writing the report"];
-
-  function renderProgress(row, box) {
-    box.appendChild(el("p", "Step 5 of 7: Run the analysis", "muted small"));
-    box.appendChild(el("p", row.status === "queued"
-      ? "Waiting to start. This page updates by itself."
-      : "Running. This page updates by itself. You can leave and come back."));
-    const list = document.createElement("ol");
-    STAGES.forEach((stage) => list.appendChild(el("li", stage)));
-    box.appendChild(list);
-    box.appendChild(el("p", "The stages run in this order. Cutover does not report each stage separately yet, so this list shows the order, not live progress.", "muted small"));
-  }
-
   function renderFindingItem(item) {
-    const card = document.createElement("div");
-    card.className = "finding" + (item.severity ? " sev-" + item.severity : "");
+    const card = el("div", null, "finding" + (item.severity ? " sev-" + item.severity : ""));
     card.appendChild(el("h4", item.title));
     card.appendChild(el("p", fmtValue(item.value)));
     if (item.note) card.appendChild(el("p", item.note, "muted small"));
     const details = document.createElement("details");
     details.appendChild(el("summary", "Show details"));
-    const facts = `Confidence: ${item.confidence}` +
-      (item.severity ? ` · Severity: ${item.severity}` : "") +
-      ` · Evidence files: ${item.evidence_count}`;
+    const facts = `Confidence: ${item.confidence}` + (item.severity ? ` · Severity: ${item.severity}` : "") + ` · Evidence files: ${item.evidence_count}`;
     details.appendChild(el("p", facts, "muted small"));
     if (item.evidence && item.evidence.length) {
       const list = document.createElement("ul");
-      list.className = "plain";
       item.evidence.forEach((path) => list.appendChild(el("li", path, "mono")));
       details.appendChild(list);
     }
@@ -334,29 +804,40 @@
     return card;
   }
 
-  function renderReview(row, box) {
+  function renderReview(row) {
+    const box = $("reviewBody");
+    box.innerHTML = "";
+    if (row.status === "failed") {
+      box.appendChild(el("p", row.error || "The analysis failed.", "err"));
+      return;
+    }
     const report = row.findings;
-    const items = report.findings || {};
+    if (!report) {
+      box.appendChild(el("p", "No findings were saved for this analysis.", "muted"));
+      return;
+    }
+    const shown = report.findings || {};
+    const all = Object.values(shown);
+    const counts = report.counts || { total: all.length, shown: all.length };
     const history = report.history || {};
-    const all = Object.values(items);
-    const flagged = (report.flags || []).map((id) => items[id]).filter(Boolean);
+    const flagged = (report.flags || []).map((id) => shown[id]).filter(Boolean);
 
-    box.appendChild(el("p", "Step 6 of 7: Review what we found", "muted small"));
-    let summary = `${row.app_name || row.repo}: Cutover found ${all.length} points about this application.`;
+    let summary = `Cutover found ${counts.total} points about this application.`;
     summary += flagged.length
       ? ` ${flagged.length === 1 ? "One item needs" : `${flagged.length} items need`} review before any decisions.`
       : " Nothing needs review right now.";
     box.appendChild(el("p", summary));
+    if (counts.shown < counts.total) {
+      box.appendChild(el("p", `You can see ${counts.shown} of them. The rest belong to other roles in this workspace.`, "muted small"));
+    }
 
     const facts = history.available
-      ? [`Age: ${history.application_age_years} years`, `Commits: ${history.total_commits}`,
-         `Last commit: ${history.days_since_last_commit} days ago`]
+      ? [`Age: ${history.application_age_years} years`, `Commits: ${history.total_commits}`, `Last commit: ${history.days_since_last_commit} days ago`]
       : [history.reason || "Repository history not available."];
-    box.appendChild(el("p", facts.join("  ·  "), "muted"));
+    box.appendChild(el("p", facts.join("  ·  "), "muted small"));
 
     if (flagged.length) {
       const wrap = document.createElement("div");
-      wrap.className = "flags";
       wrap.appendChild(el("strong", "Needs review: "));
       flagged.forEach((f) => wrap.appendChild(el("span", f.title, "chip")));
       box.appendChild(wrap);
@@ -366,7 +847,7 @@
       box.appendChild(el("h3", card.title));
       const found = all.filter((item) => card.cats.includes(item.category));
       if (!found.length) {
-        box.appendChild(el("p", "Nothing found for this part.", "muted small"));
+        box.appendChild(el("p", counts.total > counts.shown ? "Not shown for your role." : "Nothing found for this part.", "muted small"));
         continue;
       }
       found.forEach((item) => box.appendChild(renderFindingItem(item)));
@@ -379,383 +860,208 @@
       box.appendChild(ul);
     }
 
-    renderNextSteps(row, box, report);
-
     const raw = document.createElement("details");
     raw.appendChild(el("summary", "Raw data (for auditors)"));
-    raw.appendChild(el("pre", JSON.stringify(report, null, 2), "raw"));
+    raw.appendChild(el("pre", JSON.stringify(report, null, 2)));
     box.appendChild(raw);
   }
 
-  // Step 7: what to do with the result.
-  function renderNextSteps(row, box, report) {
-    box.appendChild(el("h3", "Step 7 of 7: What next?"));
-    const bar = document.createElement("div");
-    bar.className = "row";
-
-    const download = el("button", "Download report (JSON)", "ghost");
-    download.type = "button";
-    download.addEventListener("click", () => {
-      const blob = new Blob([JSON.stringify(report, null, 2)], { type: "application/json" });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = `${(row.app_name || row.repo).replace(/[^A-Za-z0-9_-]+/g, "-").replace(/^-+|-+$/g, "")}-findings.json`;
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      setTimeout(() => URL.revokeObjectURL(url), 1000);
-    });
-    bar.appendChild(download);
-
-    if (row.viewer_role === "workspace_admin") {
-      const invite = el("button", "Invite a reviewer", "ghost");
-      invite.type = "button";
-      invite.addEventListener("click", () => {
-        $("adminPanel").scrollIntoView({ behavior: "smooth" });
-        $("inviteEmail").focus();
-      });
-      bar.appendChild(invite);
-    }
-
-    const planning = el("button", "Continue to planning (coming soon)", "ghost");
-    planning.type = "button";
-    planning.disabled = true;
-    bar.appendChild(planning);
-
-    box.appendChild(bar);
-    box.appendChild(el("p", "To delete these results, use Delete at the top right. It asks you to confirm.", "muted small"));
-  }
-
-  function renderFindings(row) {
-    const box = $("detailBody");
-    box.innerHTML = "";
-    if (row.error) { box.appendChild(el("p", row.error, "err")); return; }
-    if (row.status === "queued" || row.status === "running") { renderProgress(row, box); return; }
-    if (!row.findings) { box.appendChild(el("p", "No findings were saved for this analysis.", "muted")); return; }
-    renderReview(row, box);
-  }
-
-  function renderDetail(row) {
-    $("detail").hidden = false;
-    $("detailTitle").textContent = appLabel(row);
-    $("detailMeta").textContent = `Status: ${row.status}. Commit: ${row.commit_sha || "not known yet"}. Started by: ${row.is_mine ? "you" : "a teammate"}. Deleted after: ${new Date(row.expires_at).toLocaleDateString()}.`;
-    renderFindings(row);
-
-    $("deleteBtn").hidden = !row.can_delete;
-    $("deleteBtn").onclick = async () => {
-      if (!confirm("Delete this analysis, its comments and its action items?")) return;
-      try {
-        await api(`/api/analyses/${row.id}`, { method: "DELETE" });
-        $("detail").hidden = true;
-        currentId = null;
-        loadList();
-      } catch (err) {
-        $("formMsg").textContent = err.message;
-        $("formMsg").className = "err";
-      }
-    };
-
-    // Compliance reviewers can read and comment, but not change action items.
-    const canWork = row.viewer_role !== "compliance_reviewer";
+  // Action items and comments, below the review.
+  function renderDiscussion(row) {
+    const canWork = !!row.can_work_items;
     $("actionForm").hidden = !canWork;
-    renderActions(row.action_items || [], canWork);
-    renderComments(row.comments || []);
-  }
+    $("actionNote").textContent = canWork
+      ? "Anyone in this workspace except auditors can add and close action items."
+      : "Auditors can read action items but cannot add or change them.";
 
-  function renderActions(items, canWork) {
-    const list = $("actionList");
-    list.innerHTML = "";
-    if (!items.length) {
-      const empty = document.createElement("li");
-      empty.className = "muted";
-      empty.textContent = "No action items yet.";
-      list.appendChild(empty);
-    }
-    for (const item of items) {
-      const li = document.createElement("li");
-      li.className = "item";
-      const label = document.createElement("span");
-      label.textContent = item.title;
-      if (item.status === "done") label.className = "done";
-      const meta = document.createElement("small");
-      meta.className = "muted";
-      meta.textContent = item.status === "done"
-        ? `Done by ${item.done_by_email}`
-        : `Added by ${item.created_by_email}`;
-      const btn = document.createElement("button");
-      btn.className = "ghost";
-      btn.textContent = item.status === "done" ? "Reopen" : "Mark done";
+    const actions = $("actionList");
+    actions.innerHTML = "";
+    if (!row.action_items || !row.action_items.length) actions.appendChild(el("li", "No action items yet.", "muted small"));
+    for (const item of row.action_items || []) {
+      const li = el("li", null, "item" + (item.status === "done" ? " done" : ""));
+      const body = el("div", null, "grow");
+      body.append(el("b", item.title), el("div", item.status === "done" ? `Done by ${item.done_by_email}` : `Added by ${item.created_by_email}`, "muted small"));
+      const btn = el("button", item.status === "done" ? "Reopen" : "Mark done", "ghost small-btn");
+      btn.type = "button";
       btn.disabled = !canWork;
       btn.addEventListener("click", async () => {
         try {
           await api(`/api/actions/${item.id}`, { method: "PATCH", body: JSON.stringify({ status: item.status === "done" ? "open" : "done" }) });
-          openOne(currentId);
-        } catch (err) {
-          $("actionMsg").textContent = err.message;
-          $("actionMsg").className = "err";
-        }
+          await refreshCurrent();
+        } catch (err) { setMsg("actionMsg", err.message, true); }
       });
-      li.append(label, meta, btn);
-      list.appendChild(li);
+      li.append(body, btn);
+      actions.appendChild(li);
     }
-  }
 
-  function renderComments(items) {
-    const list = $("commentList");
-    list.innerHTML = "";
-    if (!items.length) {
-      const empty = document.createElement("li");
-      empty.className = "muted";
-      empty.textContent = "No comments yet.";
-      list.appendChild(empty);
-    }
-    for (const c of items) {
-      const li = document.createElement("li");
-      li.className = "item";
-      const head = document.createElement("small");
-      head.className = "muted";
-      head.textContent = `${c.author_email} · ${new Date(c.created_at).toLocaleString()}`;
-      const body = document.createElement("div");
-      body.className = "body";
-      body.textContent = c.body;
-      li.append(head, body);
+    const comments = $("commentList");
+    comments.innerHTML = "";
+    if (!row.comments || !row.comments.length) comments.appendChild(el("li", "No comments yet.", "muted small"));
+    for (const c of row.comments || []) {
+      const li = el("li", null, "item");
+      const body = el("div", null, "body");
+      body.append(el("div", `${c.author_email} · ${new Date(c.created_at).toLocaleString()}`, "muted small"), el("div", c.body));
+      li.appendChild(body);
       if (c.can_delete) {
-        const del = document.createElement("button");
-        del.className = "ghost";
-        del.textContent = "Delete";
+        const del = el("button", "Delete", "ghost small-btn");
+        del.type = "button";
         del.addEventListener("click", async () => {
           try {
             await api(`/api/comments/${c.id}`, { method: "DELETE" });
-            openOne(currentId);
-          } catch (err) {
-            $("commentMsg").textContent = err.message;
-            $("commentMsg").className = "err";
-          }
+            await refreshCurrent();
+          } catch (err) { setMsg("commentMsg", err.message, true); }
         });
         li.appendChild(del);
       }
-      list.appendChild(li);
+      comments.appendChild(li);
     }
   }
 
-  async function loadInvites() {
+  async function refreshCurrent() {
+    cur = await api(`/api/analyses/${cur.id}`);
+    renderDiscussion(cur);
+  }
+
+  $("actionForm").addEventListener("submit", async (e) => {
+    e.preventDefault();
     try {
-      const rows = await api("/api/admin/invitations");
-      $("inviteMsg").textContent = rows.length ? "" : "No pending invitations.";
-      $("inviteMsg").className = "muted";
-      $("inviteRows").innerHTML = "";
-      for (const r of rows) {
-        const tr = document.createElement("tr");
-        tr.innerHTML = `<td></td><td></td><td></td><td><button class="ghost">Remove</button></td>`;
-        tr.children[0].textContent = r.email;
-        tr.children[1].textContent = ROLE_LABELS[r.role] || r.role;
-        tr.children[2].textContent = new Date(r.created_at).toLocaleDateString();
-        tr.querySelector("button").addEventListener("click", async () => {
-          try {
-            await api(`/api/admin/invitations/${encodeURIComponent(r.email)}`, { method: "DELETE" });
-            loadInvites();
-          } catch (err) {
-            $("inviteMsg").textContent = err.message;
-            $("inviteMsg").className = "err";
-          }
-        });
-        $("inviteRows").appendChild(tr);
-      }
-    } catch (err) {
-      $("inviteMsg").textContent = err.message;
-      $("inviteMsg").className = "err";
-    }
-  }
+      await api(`/api/analyses/${cur.id}/actions`, { method: "POST", body: JSON.stringify({ title: $("actionTitle").value.trim() }) });
+      $("actionTitle").value = "";
+      setMsg("actionMsg", "Action item added.", false);
+      await refreshCurrent();
+    } catch (err) { setMsg("actionMsg", err.message, true); }
+  });
 
-  // After sign-in, ask the API who this person is. The API decides access, not this page.
-  async function enter() {
+  $("commentForm").addEventListener("submit", async (e) => {
+    e.preventDefault();
     try {
-      const me = await api("/api/me");
-      viewerRole = me.role;
-      show("app");
-      const isAdmin = me.role === "workspace_admin";
-      $("adminPanel").hidden = !isAdmin;
-      if (isAdmin) loadInvites();
-      loadList();
+      await api(`/api/analyses/${cur.id}/comments`, { method: "POST", body: JSON.stringify({ body: $("commentBody").value.trim() }) });
+      $("commentBody").value = "";
+      setMsg("commentMsg", "Comment posted.", false);
+      await refreshCurrent();
+    } catch (err) { setMsg("commentMsg", err.message, true); }
+  });
+
+  $("reviewBack").addEventListener("click", () => showHome());
+  $("toNext").addEventListener("click", () => showNext());
+
+  // ---- Step 8: next steps ----
+
+  function showNext() {
+    show("s-next");
+    $("inviteCardNext").hidden = !(ws && ws.is_admin);
+    $("deleteCardNext").hidden = !cur.can_delete;
+  }
+
+  $("downloadBtn").addEventListener("click", () => {
+    const blob = new Blob([JSON.stringify(cur.findings, null, 2)], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `${(cur.app_name || cur.repo).replace(/[^A-Za-z0-9_-]+/g, "-").replace(/^-+|-+$/g, "")}-findings.json`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  });
+
+  $("inviteNext").addEventListener("click", () => {
+    showHome();
+    $("adminCard").scrollIntoView({ behavior: "smooth" });
+    $("inviteEmail").focus();
+  });
+
+  $("deleteBtn").addEventListener("click", async () => {
+    if (!confirm("Delete this analysis, its comments and its action items? This cannot be undone.")) return;
+    try {
+      await api(`/api/analyses/${cur.id}`, { method: "DELETE" });
+      cur = null;
+      showHome();
     } catch (err) {
-      if (err.status === 403) {
-        show("denied");
-      } else {
-        show("app");
-        $("listMsg").textContent = err.message;
-        $("listMsg").className = "err";
-      }
+      setMsg("nextMsg", err.message, true);
     }
-  }
+  });
 
-  // Assessment wizard: four steps, then the analysis starts.
-  const wizSteps = [$("wz1"), $("wz2"), $("wz3"), $("wz4")];
-  const REPO_FORMAT = /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/;
+  $("nextBackReview").addEventListener("click", () => showReview());
+  $("nextBackHome").addEventListener("click", () => showHome());
 
-  function showStep(n) {
-    if (n === 2) { $("repoResult").textContent = ""; $("repoSummary").textContent = ""; }
-    wizSteps.forEach((box, i) => { box.hidden = i !== n; });
-    $("wizStep").textContent = `Step ${n + 1} of 4`;
-    $("formMsg").textContent = "";
-    $("formMsg").className = "muted";
-  }
+  // ---- Steps 3 to 5: start a new assessment ----
 
-  function wizardError(msg) {
-    $("formMsg").textContent = msg;
-    $("formMsg").className = "err";
-  }
-
-  function resetWizard() {
+  $("startNew").addEventListener("click", () => {
+    wizard = { appName: "", repo: "", ref: "" };
     $("appName").value = "";
     $("repo").value = "";
     $("ref").value = "";
     $("dataRules").checked = false;
     $("startNow").disabled = true;
-    showStep(0);
-  }
-
-  $("wzStart").addEventListener("click", () => showStep(1));
-  $("wzBack2").addEventListener("click", () => showStep(0));
-  $("wzNext2").addEventListener("click", () => {
-    if (!$("appName").value.trim()) return wizardError("Give the application a name, for example: Patient portal (2019).");
-    showStep(2);
+    setMsg("nameMsg", "", false);
+    show("s-name");
   });
-  $("wzBack3").addEventListener("click", () => showStep(1));
-  // Step 3 checks that Cutover can read the repository before it moves on.
-  $("wzNext3").addEventListener("click", async () => {
+
+  $("nameBack").addEventListener("click", () => showHome());
+  $("nameNext").addEventListener("click", () => {
+    const name = $("appName").value.trim();
+    if (!name) return setMsg("nameMsg", "Give the application a name, for example: Patient portal (2019).", true);
+    wizard.appName = name;
+    setMsg("nameMsg", "", false);
+    show("s-connect");
+  });
+
+  $("connectBack").addEventListener("click", () => show("s-name"));
+
+  // Step 4 checks that Cutover can read the repository before it moves on.
+  $("connectNext").addEventListener("click", async () => {
     const repo = $("repo").value.trim();
     const ref = $("ref").value.trim();
-    if (!REPO_FORMAT.test(repo)) return wizardError("Use the form owner/name, for example: acme/patient-portal.");
-    const result = $("repoResult");
-    result.textContent = "Checking the repository...";
-    result.className = "muted small";
-    $("wzNext3").disabled = true;
+    if (!REPO_FORMAT.test(repo)) return setMsg("repoResult", "Use the form owner/name, for example: acme/patient-portal.", true);
+    setMsg("repoResult", "Checking the code...", false);
+    $("connectNext").disabled = true;
     try {
-      const params = new URLSearchParams({ repo, ref });
+      const params = new URLSearchParams({ workspace: ws.id, repo, ref });
       const r = await api(`/api/repo-check?${params.toString()}`);
       if (!r.ok) {
-        result.textContent = r.message;
-        result.className = "err";
+        setMsg("repoResult", r.message, true);
         if (r.install_url) {
-          const link = document.createElement("a");
+          const link = el("a", " Install the Cutover reader on this repository");
           link.href = r.install_url;
           link.target = "_blank";
           link.rel = "noopener";
-          link.textContent = " Install the Cutover reader on this repository";
-          result.appendChild(link);
+          $("repoResult").appendChild(link);
         }
         return;
       }
       const when = r.last_changed ? `, last changed ${new Date(r.last_changed).toLocaleDateString()}` : "";
       const partial = r.truncated ? " (very large repository: the count may be partial)" : "";
-      result.textContent = `Found: ${r.files} files${when}${partial}.`;
-      result.className = "muted small";
-      showStep(3);
-      $("repoSummary").textContent = result.textContent;
+      wizard.repo = repo;
+      wizard.ref = ref;
+      $("repoSummary").textContent = `${wizard.appName}: found ${r.files} files${when}${partial}.`;
+      $("dataRules").checked = false;
+      $("startNow").disabled = true;
+      setMsg("repoResult", "", false);
+      show("s-rules");
     } catch (err) {
-      result.textContent = err.message;
-      result.className = "err";
+      setMsg("repoResult", err.message, true);
     } finally {
-      $("wzNext3").disabled = false;
+      $("connectNext").disabled = false;
     }
   });
-  $("wzBack4").addEventListener("click", () => showStep(2));
+
+  $("rulesBack").addEventListener("click", () => show("s-connect"));
   $("dataRules").addEventListener("change", () => { $("startNow").disabled = !$("dataRules").checked; });
 
   $("startNow").addEventListener("click", async () => {
     $("startNow").disabled = true;
-    $("formMsg").textContent = "Starting analysis...";
-    $("formMsg").className = "muted";
+    setMsg("rulesMsg", "Starting analysis...", false);
     try {
-      const body = {
-        app_name: $("appName").value.trim(),
-        repo: $("repo").value.trim(),
-        data_rules_confirmed: true,
-      };
-      const ref = $("ref").value.trim();
-      if (ref) body.ref = ref;
+      const body = { workspace_id: ws.id, app_name: wizard.appName, repo: wizard.repo, data_rules_confirmed: true };
+      if (wizard.ref) body.ref = wizard.ref;
       const res = await api("/api/analyses", { method: "POST", body: JSON.stringify(body) });
-      resetWizard();
-      $("formMsg").textContent = "Analysis queued.";
-      await loadList();
-      openOne(res.id);
+      cur = await api(`/api/analyses/${res.id}`);
+      showRun();
     } catch (err) {
-      wizardError(err.message);
+      setMsg("rulesMsg", err.message, true);
       $("startNow").disabled = !$("dataRules").checked;
     }
-  });
-
-  $("actionForm").addEventListener("submit", async (e) => {
-    e.preventDefault();
-    if (!currentId) return;
-    try {
-      const title = $("actionTitle").value.trim();
-      await api(`/api/analyses/${currentId}/actions`, { method: "POST", body: JSON.stringify({ title }) });
-      $("actionTitle").value = "";
-      $("actionMsg").textContent = "Action item added.";
-      $("actionMsg").className = "muted";
-      openOne(currentId);
-    } catch (err) {
-      $("actionMsg").textContent = err.message;
-      $("actionMsg").className = "err";
-    }
-  });
-
-  $("commentForm").addEventListener("submit", async (e) => {
-    e.preventDefault();
-    if (!currentId) return;
-    try {
-      const body = $("commentBody").value.trim();
-      await api(`/api/analyses/${currentId}/comments`, { method: "POST", body: JSON.stringify({ body }) });
-      $("commentBody").value = "";
-      $("commentMsg").textContent = "Comment posted.";
-      $("commentMsg").className = "muted";
-      openOne(currentId);
-    } catch (err) {
-      $("commentMsg").textContent = err.message;
-      $("commentMsg").className = "err";
-    }
-  });
-
-  $("inviteForm").addEventListener("submit", async (e) => {
-    e.preventDefault();
-    $("inviteBtn").disabled = true;
-    try {
-      const email = $("inviteEmail").value.trim();
-      const role = $("inviteRole").value;
-      await api("/api/admin/invitations", { method: "POST", body: JSON.stringify({ email, role }) });
-      $("inviteMsg").textContent = `Invited ${email} as ${ROLE_LABELS[role]}.`;
-      $("inviteMsg").className = "muted";
-      $("inviteEmail").value = "";
-      loadInvites();
-    } catch (err) {
-      $("inviteMsg").textContent = err.message;
-      $("inviteMsg").className = "err";
-    } finally {
-      $("inviteBtn").disabled = false;
-    }
-  });
-
-  $("signIn").addEventListener("click", () => {
-    sb.auth.signInWithOAuth({ provider: "google", options: { redirectTo: window.location.href.split("#")[0] } });
-  });
-  async function signOut() {
-    await sb.auth.signOut();
-    token = null;
-    currentId = null;
-    show("out");
-  }
-  $("signOut").addEventListener("click", signOut);
-  $("signOutDenied").addEventListener("click", signOut);
-
-  sb.auth.onAuthStateChange((_event, session) => {
-    token = session ? session.access_token : null;
-    if (!session) {
-      show("out");
-      return;
-    }
-    enter();
   });
 })();
 </script>
