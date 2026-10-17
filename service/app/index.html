@@ -297,6 +297,10 @@ pre{white-space:pre-wrap;word-break:break-word;background:var(--soft);padding:12
     <p class="eyebrow">Step 6</p>
     <h2 style="margin:8px 0 6px" id="runTitle">Analyzing</h2>
     <p class="muted" id="runStatus"></p>
+    <div class="row wzNav" style="margin:14px 0 4px">
+      <button type="button" class="ghost" id="runBackTop">Back to analyses</button>
+      <button type="button" id="viewFindingsTop" disabled>View findings</button>
+    </div>
     <div class="run">
       <div class="ring" id="ring">
         <svg viewBox="0 0 220 220" aria-hidden="true">
@@ -324,6 +328,10 @@ pre{white-space:pre-wrap;word-break:break-word;background:var(--soft);padding:12
     <p class="eyebrow">Step 7</p>
     <h2 style="margin:8px 0 6px" id="reviewTitle"></h2>
     <p class="muted small" id="reviewMeta"></p>
+    <div class="row wzNav" style="margin:14px 0 4px">
+      <button type="button" class="ghost" id="reviewBackTop">Back to analyses</button>
+      <button type="button" id="toNextTop">Next steps</button>
+    </div>
     <div class="card" id="reviewBody"></div>
 
     <div class="card" id="discussion">
@@ -356,6 +364,10 @@ pre{white-space:pre-wrap;word-break:break-word;background:var(--soft);padding:12
     <p class="eyebrow">Step 8</p>
     <h2 style="margin:8px 0 6px">What next?</h2>
     <p class="muted">Choose one. You can come back to the findings at any time.</p>
+    <div class="row wzNav" style="margin:14px 0 4px">
+      <button type="button" class="ghost" id="nextBackReviewTop">Back to findings</button>
+      <button type="button" class="ghost" id="nextBackHomeTop">Back to analyses</button>
+    </div>
     <div class="cards2" style="margin-top:20px">
       <div class="card" style="margin-top:0">
         <h3 style="margin-top:0">Download the report</h3>
@@ -799,6 +811,7 @@ pre{white-space:pre-wrap;word-break:break-word;background:var(--soft);padding:12
     $("ringText").textContent = done ? "100%" : failed ? "!" : st === "running" ? "…" : "0%";
     $("ringLabel").textContent = { queued: "Waiting to start", running: "Running", complete: "Complete", failed: "Failed" }[st] || "";
     $("viewFindings").disabled = !(done || failed);
+    $("viewFindingsTop").disabled = $("viewFindings").disabled;
 
     const list = $("stageList");
     if (!list.childElementCount) {
@@ -1051,6 +1064,11 @@ pre{white-space:pre-wrap;word-break:break-word;background:var(--soft);padding:12
 
   $("nextBackReview").addEventListener("click", () => showReview());
   $("nextBackHome").addEventListener("click", () => showHome());
+
+  // The buttons at the top repeat the ones at the bottom, and do exactly what they do.
+  [["runBackTop", "runBack"], ["viewFindingsTop", "viewFindings"], ["reviewBackTop", "reviewBack"],
+   ["toNextTop", "toNext"], ["nextBackReviewTop", "nextBackReview"], ["nextBackHomeTop", "nextBackHome"]]
+    .forEach(([top, bottom]) => $(top).addEventListener("click", () => $(bottom).click()));
 
   // ---- Steps 3 to 5: start a new assessment ----
 
