@@ -1,0 +1,47 @@
+// Keeps the in-app guide in step with the page. Run: node --test service/app/test/guide.test.mjs
+import { test } from "node:test";
+import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import vm from "node:vm";
+
+const guideSrc = readFileSync(new URL("../guide.js", import.meta.url), "utf8");
+const html = readFileSync(new URL("../index.html", import.meta.url), "utf8");
+const sandbox = { window: {} };
+vm.runInNewContext(guideSrc, sandbox);
+const G = sandbox.window.CUTOVER_GUIDE;
+const WHO = ["everyone", "engineers", "admins", "operators"];
+const TABS = ["analyses", "workspaces", "guide"];
+
+test("guide has an update date and at least one whats-new line", () => {
+  assert.match(G.updated, /^\d{4}-\d{2}-\d{2}$/);
+  assert.ok(G.whatsNew.length >= 1);
+});
+
+test("step ids are unique and every step has a title and body", () => {
+  const ids = G.steps.map((s) => s.id);
+  assert.equal(new Set(ids).size, ids.length);
+  for (const s of G.steps) {
+    assert.ok(s.title && s.title.length > 0, `title for ${s.id}`);
+    assert.ok(Array.isArray(s.body) && s.body.length > 0, `body for ${s.id}`);
+    assert.ok(WHO.includes(s.who || "everyone"), `who for ${s.id}`);
+  }
+});
+
+test("every element id a step refers to exists on the page", () => {
+  for (const s of G.steps) {
+    for (const ref of s.refs || []) {
+      assert.ok(html.includes(`id="${ref}"`), `step ${s.id} refers to #${ref}, which is not in index.html`);
+    }
+  }
+});
+
+test("every action is well formed", () => {
+  for (const s of G.steps) {
+    for (const a of s.actions || []) {
+      assert.ok(a.label, `label in ${s.id}`);
+      if (a.type === "link") assert.match(a.href, /^https:\/\//, `https link in ${s.id}`);
+      else if (a.type === "go") assert.ok(TABS.includes(a.tab), `tab in ${s.id}`);
+      else assert.equal(a.type, "repo-check", `known action type in ${s.id}`);
+    }
+  }
+});

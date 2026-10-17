@@ -164,6 +164,13 @@ pre{white-space:pre-wrap;word-break:break-word;background:var(--soft);padding:12
 .t-ok{background:#d1fae5;color:#065f46}
 .t-inf{background:#fef3c7;color:#92400e}
 @media (prefers-color-scheme:dark){:root:not([data-theme="light"]) .t-ok{background:#064e3b;color:#a7f3d0}:root:not([data-theme="light"]) .t-inf{background:#78350f;color:#fde68a}}
+/* Guide */
+.guide-nav{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:14px}
+.guide-nav .is-done{border-color:var(--ok)}
+.guide-actions{display:flex;flex-wrap:wrap;gap:8px;margin-top:12px}
+.guide-check{display:flex;flex-wrap:wrap;gap:8px;align-items:center;width:100%}
+.guide-check input{flex:1 1 260px}
+.guide-check .hint{width:100%;margin:0}
   </style>
 </head>
 <body>
@@ -236,6 +243,11 @@ pre{white-space:pre-wrap;word-break:break-word;background:var(--soft);padding:12
     <div class="row" id="homeTabs" style="margin-top:18px;gap:8px" role="tablist">
       <button type="button" class="small-btn" id="tabAnalyses" role="tab">Analyses</button>
       <button type="button" class="ghost small-btn" id="tabWorkspaces" role="tab" hidden>Workspaces</button>
+      <button type="button" class="ghost small-btn" id="tabGuide" role="tab">Guide</button>
+    </div>
+
+    <div class="card" id="guideCard" hidden>
+      <div id="guideBody"></div>
     </div>
 
     <div class="card" id="analysesCard">
@@ -441,6 +453,7 @@ pre{white-space:pre-wrap;word-break:break-word;background:var(--soft);padding:12
 <!-- Pinned to an exact version. Only the browser client is loaded here. -->
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.39.0/dist/umd/supabase.js"></script>
 <script src="config.js"></script>
+<script src="guide.js"></script>
 <script>
 (() => {
   "use strict";
@@ -675,29 +688,169 @@ pre{white-space:pre-wrap;word-break:break-word;background:var(--soft);padding:12
     $("homeRole").hidden = !ws;
     $("changeRole").hidden = !ws;
     $("homeSub").textContent = ws ? "" : "You have no workspace yet. Create one below.";
-    // Two tabs: analyses (for this workspace) and workspaces (people, and new customer workspaces).
+    // Three tabs: analyses (this workspace), workspaces (people and new customer workspaces) and the guide.
     const canAnalyse = !!ws;
     const canWork = !!((ws && ws.is_admin) || me.is_operator);
-    if (!canAnalyse) homeTab = "workspaces";
-    if (!canWork) homeTab = "analyses";
-    const onAnalyses = homeTab === "analyses";
-    $("tabAnalyses").hidden = !canAnalyse;
-    $("tabWorkspaces").hidden = !canWork;
-    $("tabAnalyses").className = onAnalyses ? "small-btn" : "ghost small-btn";
-    $("tabWorkspaces").className = onAnalyses ? "ghost small-btn" : "small-btn";
-    $("tabAnalyses").setAttribute("aria-selected", String(onAnalyses));
-    $("tabWorkspaces").setAttribute("aria-selected", String(!onAnalyses));
-    $("analysesCard").hidden = !(canAnalyse && onAnalyses);
+    const available = ["guide"];
+    if (canAnalyse) available.push("analyses");
+    if (canWork) available.push("workspaces");
+    if (!available.includes(homeTab)) homeTab = canAnalyse ? "analyses" : canWork ? "workspaces" : "guide";
+    const setTab = (id, key) => {
+      $(id).hidden = !available.includes(key);
+      $(id).className = homeTab === key ? "small-btn" : "ghost small-btn";
+      $(id).setAttribute("aria-selected", String(homeTab === key));
+    };
+    setTab("tabAnalyses", "analyses");
+    setTab("tabWorkspaces", "workspaces");
+    setTab("tabGuide", "guide");
+    $("analysesCard").hidden = homeTab !== "analyses";
     $("startNew").hidden = !(ws && ws.role === "platform_engineer");
-    $("adminCard").hidden = !(ws && ws.is_admin && !onAnalyses);
-    $("operatorCard").hidden = !(me.is_operator && !onAnalyses);
-    if (ws && onAnalyses) loadList();
-    if (ws && ws.is_admin && !onAnalyses) loadPeople();
+    $("adminCard").hidden = !(ws && ws.is_admin && homeTab === "workspaces");
+    $("operatorCard").hidden = !(me.is_operator && homeTab === "workspaces");
+    $("guideCard").hidden = homeTab !== "guide";
+    if (homeTab === "analyses" && ws) loadList();
+    if (homeTab === "workspaces" && ws && ws.is_admin) loadPeople();
+    if (homeTab === "guide") renderGuide();
   }
 
   let homeTab = "analyses";
   $("tabAnalyses").addEventListener("click", () => { homeTab = "analyses"; showHome(); });
   $("tabWorkspaces").addEventListener("click", () => { homeTab = "workspaces"; showHome(); });
+  $("tabGuide").addEventListener("click", () => { homeTab = "guide"; showHome(); });
+
+  // ---- Guide: step by step, with actions. Content lives in guide.js. ----
+
+  let guideIndex = 0;
+
+  function guideVisible(step) {
+    const who = step.who || "everyone";
+    if (who === "everyone") return true;
+    if (who === "engineers") return !!(ws && ws.role === "platform_engineer");
+    if (who === "admins") return !!(ws && ws.is_admin);
+    if (who === "operators") return !!me.is_operator;
+    return false;
+  }
+
+  function guideDone() {
+    try { return new Set(JSON.parse(localStorage.getItem("cutover-guide-done") || "[]")); } catch { return new Set(); }
+  }
+
+  function guideSaveDone(set) {
+    try { localStorage.setItem("cutover-guide-done", JSON.stringify([...set])); } catch { /* private window: progress is not kept */ }
+  }
+
+  function guideAction(a) {
+    if (a.type === "link") {
+      const x = document.createElement("a");
+      x.href = a.href;
+      x.target = "_blank";
+      x.rel = "noopener";
+      x.className = "ghost small-btn";
+      x.textContent = `${a.label} ↗`;
+      return x;
+    }
+    if (a.type === "go") {
+      const b = el("button", a.label, "ghost small-btn");
+      b.type = "button";
+      b.addEventListener("click", () => { homeTab = a.tab; showHome(); window.scrollTo(0, 0); });
+      return b;
+    }
+    if (a.type === "repo-check") {
+      const wrap = el("div", null, "guide-check");
+      const input = document.createElement("input");
+      input.placeholder = "owner/name, for example ghlmaziz-gr8/voltcon";
+      input.autocomplete = "off";
+      input.setAttribute("aria-label", "Repository");
+      const btn = el("button", a.label);
+      btn.type = "button";
+      const msg = el("p", "", "small hint");
+      msg.setAttribute("role", "status");
+      btn.addEventListener("click", async () => {
+        const repo = input.value.trim();
+        if (!repo) return;
+        if (!ws) { msg.textContent = "Join a workspace first."; msg.className = "err small hint"; return; }
+        btn.disabled = true;
+        msg.textContent = "Checking…";
+        msg.className = "muted small hint";
+        try {
+          const r = await api(`/api/repo-check?workspace=${encodeURIComponent(ws.id)}&repo=${encodeURIComponent(repo)}`);
+          msg.textContent = r.ok ? `Cutover can read ${r.repo}. Default branch: ${r.branch}.` : r.message;
+          msg.className = r.ok ? "ok small hint" : "err small hint";
+        } catch (err) {
+          msg.textContent = err.message;
+          msg.className = "err small hint";
+        } finally {
+          btn.disabled = false;
+        }
+      });
+      wrap.append(input, btn, msg);
+      return wrap;
+    }
+    return document.createTextNode("");
+  }
+
+  function renderGuide() {
+    const box = $("guideBody");
+    box.innerHTML = "";
+    const all = (window.CUTOVER_GUIDE && CUTOVER_GUIDE.steps) || [];
+    const steps = all.filter(guideVisible);
+    if (!steps.length) { box.appendChild(el("p", "No guide steps apply to you yet.", "muted")); return; }
+    guideIndex = Math.max(0, Math.min(guideIndex, steps.length - 1));
+    const step = steps[guideIndex];
+    const done = guideDone();
+
+    const nav = el("div", null, "guide-nav");
+    steps.forEach((s, i) => {
+      const b = el("button", String(i + 1), (i === guideIndex ? "small-btn" : "ghost small-btn") + (done.has(s.id) ? " is-done" : ""));
+      b.type = "button";
+      b.setAttribute("aria-label", `Step ${i + 1}: ${s.title}`);
+      b.addEventListener("click", () => { guideIndex = i; renderGuide(); });
+      nav.appendChild(b);
+    });
+    box.appendChild(nav);
+
+    box.appendChild(el("p", `Step ${guideIndex + 1} of ${steps.length} · Guide updated ${CUTOVER_GUIDE.updated}`, "eyebrow-sm"));
+    box.appendChild(el("h2", step.title));
+    step.body.forEach((t) => box.appendChild(el("p", t)));
+    if (step.actions && step.actions.length) {
+      const acts = el("div", null, "guide-actions");
+      step.actions.forEach((a) => acts.appendChild(guideAction(a)));
+      box.appendChild(acts);
+    }
+
+    const mark = document.createElement("label");
+    mark.className = "check";
+    const cb = document.createElement("input");
+    cb.type = "checkbox";
+    cb.checked = done.has(step.id);
+    cb.addEventListener("change", () => {
+      const d = guideDone();
+      if (cb.checked) d.add(step.id); else d.delete(step.id);
+      guideSaveDone(d);
+      renderGuide();
+    });
+    mark.append(cb, document.createTextNode(" I've done this step"));
+    box.appendChild(mark);
+
+    const last = guideIndex === steps.length - 1;
+    const row = el("div", null, "row wzNav");
+    const back = el("button", "Back", "ghost");
+    back.type = "button";
+    back.disabled = guideIndex === 0;
+    back.addEventListener("click", () => { guideIndex--; renderGuide(); });
+    const next = el("button", last ? "Back to the start" : "Next");
+    next.type = "button";
+    next.addEventListener("click", () => { guideIndex = last ? 0 : guideIndex + 1; renderGuide(); });
+    row.append(back, next);
+    box.appendChild(row);
+
+    if (last && CUTOVER_GUIDE.whatsNew && CUTOVER_GUIDE.whatsNew.length) {
+      box.appendChild(el("h3", "What's new"));
+      const ul = document.createElement("ul");
+      CUTOVER_GUIDE.whatsNew.forEach((t) => ul.appendChild(el("li", t)));
+      box.appendChild(ul);
+    }
+  }
 
   async function loadList() {
     const box = $("analysisList");

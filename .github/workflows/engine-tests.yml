@@ -32,3 +32,5 @@ jobs:
           node-version: "22"
       - name: Run the Worker tests (access, roles, deletion records)
         run: node --test service/worker/test/api.test.mjs
+      - name: Check the in-app guide still matches the page
+        run: node --test service/app/test/guide.test.mjs
