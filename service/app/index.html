@@ -129,6 +129,9 @@ pre{white-space:pre-wrap;word-break:break-word;background:var(--soft);padding:12
 #s-run.is-done .tick{background:var(--ok);border-color:var(--ok)}
 #s-run.is-done .tick::after{content:"✓";color:#fff;font-size:12px;font-weight:800}
 @keyframes spin{to{transform:rotate(360deg)}}
+.steps li.on .tick{background:var(--ok);border-color:var(--ok);animation:pop .45s cubic-bezier(.2,.8,.2,1)}
+.steps li.on .tick::after{content:"✓";color:#fff;font-size:12px;font-weight:800}
+@keyframes pop{0%{transform:scale(.4);opacity:.3}70%{transform:scale(1.15)}100%{transform:scale(1);opacity:1}}
 @media (max-width:760px){.run{grid-template-columns:1fr;justify-items:center}.steps{width:100%}}
 @media (prefers-reduced-motion:reduce){.ring.running #ringArc,#s-run.is-running .tick{animation:none}}
 
@@ -817,6 +820,9 @@ pre{white-space:pre-wrap;word-break:break-word;background:var(--soft);padding:12
   }
 
   function showRun() {
+    animTimers.forEach(clearTimeout);
+    animTimers = [];
+    animating = false;
     show("s-run");
     renderRun();
     watchRun();
@@ -829,8 +835,10 @@ pre{white-space:pre-wrap;word-break:break-word;background:var(--soft);padding:12
     const running = st === "queued" || st === "running";
     const done = st === "complete";
     const failed = st === "failed";
+    if (running && cur.id) sawRunningId = cur.id;
+    const animate = done && sawRunningId === cur.id && animatedId !== cur.id;
     s.classList.toggle("is-running", running);
-    s.classList.toggle("is-done", done);
+    s.classList.toggle("is-done", done && !animate);
 
     $("runTitle").textContent = `Analyzing ${cur.app_name || cur.repo}`;
     const flags = cur.findings && cur.findings.flags ? cur.findings.flags.length : 0;
@@ -863,6 +871,62 @@ pre{white-space:pre-wrap;word-break:break-word;background:var(--soft);padding:12
         list.appendChild(li);
       }
     }
+    if (animate) {
+      animatedId = cur.id;
+      playFinish();
+    } else if (!animating) {
+      [...list.children].forEach((li) => li.classList.toggle("on", done));
+    }
+  }
+
+  // The finish animation: one stage at a time, with the percentage rising in steps.
+  let sawRunningId = null;
+  let animatedId = null;
+  let animating = false;
+  let animTimers = [];
+
+  function countTo(from, to, ms, set) {
+    const start = performance.now();
+    const frame = (t) => {
+      const k = Math.min(1, (t - start) / ms);
+      set(Math.round(from + (to - from) * k));
+      if (k < 1) requestAnimationFrame(frame);
+    };
+    requestAnimationFrame(frame);
+  }
+
+  function playFinish() {
+    animTimers.forEach(clearTimeout);
+    animTimers = [];
+    animating = true;
+    const items = [...$("stageList").children];
+    const n = items.length;
+    const arc = $("ringArc");
+    items.forEach((li) => li.classList.remove("on"));
+    arc.style.transition = "none";
+    arc.setAttribute("stroke-dashoffset", "609.5");
+    $("ringText").textContent = "0%";
+    $("ringLabel").textContent = "Finishing";
+    void arc.getBoundingClientRect();
+    arc.style.transition = "stroke-dashoffset 0.9s ease";
+
+    let prev = 0;
+    const step = (i) => {
+      if (i >= n) {
+        animating = false;
+        $("s-run").classList.add("is-done");
+        $("ringLabel").textContent = "Complete";
+        return;
+      }
+      const target = Math.round((100 * (i + 1)) / n);
+      items[i].classList.add("on");
+      $("runStatus").textContent = `${RUN_STAGES[i]}: done`;
+      arc.setAttribute("stroke-dashoffset", String(609.5 * (1 - target / 100)));
+      countTo(prev, target, 900, (v) => { $("ringText").textContent = `${v}%`; });
+      prev = target;
+      animTimers.push(setTimeout(() => step(i + 1), 1400));
+    };
+    animTimers.push(setTimeout(() => step(0), 400));
   }
 
   function watchRun() {
