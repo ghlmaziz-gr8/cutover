@@ -233,6 +233,11 @@ pre{white-space:pre-wrap;word-break:break-word;background:var(--soft);padding:12
     <p class="muted" id="homeSub" style="margin-top:6px"></p>
     <p id="homeRole" class="chip" style="margin-top:10px" hidden></p>
 
+    <div class="row" id="homeTabs" style="margin-top:18px;gap:8px" role="tablist">
+      <button type="button" class="small-btn" id="tabAnalyses" role="tab">Analyses</button>
+      <button type="button" class="ghost small-btn" id="tabWorkspaces" role="tab" hidden>Workspaces</button>
+    </div>
+
     <div class="card" id="analysesCard">
       <div class="row between">
         <h2>Analyses</h2>
@@ -670,15 +675,29 @@ pre{white-space:pre-wrap;word-break:break-word;background:var(--soft);padding:12
     $("homeRole").hidden = !ws;
     $("changeRole").hidden = !ws;
     $("homeSub").textContent = ws ? "" : "You have no workspace yet. Create one below.";
-    $("analysesCard").hidden = !ws;
+    // Two tabs: analyses (for this workspace) and workspaces (people, and new customer workspaces).
+    const canAnalyse = !!ws;
+    const canWork = !!((ws && ws.is_admin) || me.is_operator);
+    if (!canAnalyse) homeTab = "workspaces";
+    if (!canWork) homeTab = "analyses";
+    const onAnalyses = homeTab === "analyses";
+    $("tabAnalyses").hidden = !canAnalyse;
+    $("tabWorkspaces").hidden = !canWork;
+    $("tabAnalyses").className = onAnalyses ? "small-btn" : "ghost small-btn";
+    $("tabWorkspaces").className = onAnalyses ? "ghost small-btn" : "small-btn";
+    $("tabAnalyses").setAttribute("aria-selected", String(onAnalyses));
+    $("tabWorkspaces").setAttribute("aria-selected", String(!onAnalyses));
+    $("analysesCard").hidden = !(canAnalyse && onAnalyses);
     $("startNew").hidden = !(ws && ws.role === "platform_engineer");
-    $("adminCard").hidden = !(ws && ws.is_admin);
-    $("operatorCard").hidden = !me.is_operator;
-    if (ws) {
-      loadList();
-      if (ws.is_admin) loadPeople();
-    }
+    $("adminCard").hidden = !(ws && ws.is_admin && !onAnalyses);
+    $("operatorCard").hidden = !(me.is_operator && !onAnalyses);
+    if (ws && onAnalyses) loadList();
+    if (ws && ws.is_admin && !onAnalyses) loadPeople();
   }
+
+  let homeTab = "analyses";
+  $("tabAnalyses").addEventListener("click", () => { homeTab = "analyses"; showHome(); });
+  $("tabWorkspaces").addEventListener("click", () => { homeTab = "workspaces"; showHome(); });
 
   async function loadList() {
     const box = $("analysisList");
@@ -1306,6 +1325,7 @@ pre{white-space:pre-wrap;word-break:break-word;background:var(--soft);padding:12
   });
 
   $("inviteNext").addEventListener("click", () => {
+    homeTab = "workspaces";
     showHome();
     $("adminCard").scrollIntoView({ behavior: "smooth" });
     $("inviteEmail").focus();
