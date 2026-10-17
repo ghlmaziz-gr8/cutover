@@ -246,6 +246,7 @@ test("the person who started an analysis can delete it", async () => {
     ["/auth/v1/user", reply(200, USER)],
     AS_DEVELOPER,
     ["/rest/v1/analyses?id=", reply(200, [MINE_ANALYSIS])],
+    ["deletion_log", reply(201)],
     ["/rest/v1/analyses?id=eq", reply(204)],
   ]);
   const res = await worker.fetch(request(`/api/analyses/${ANALYSIS_ID}`, { method: "DELETE", token: "ok" }), env);
@@ -257,6 +258,7 @@ test("an admin can delete any analysis", async () => {
     ["/auth/v1/user", reply(200, USER)],
     AS_ADMIN,
     ["/rest/v1/analyses?id=", reply(200, [OTHERS_ANALYSIS])],
+    ["deletion_log", reply(201)],
     ["/rest/v1/analyses?id=eq", reply(204)],
   ]);
   const res = await worker.fetch(request(`/api/analyses/${ANALYSIS_ID}`, { method: "DELETE", token: "ok" }), env);
@@ -326,13 +328,13 @@ test("unknown routes return 404", async () => {
   assert.equal(res.status, 404);
 });
 
-test("retention purge deletes expired rows with the service key", async () => {
-  mockFetch([["/rest/v1/analyses", reply(204)]]);
+test("retention with nothing expired makes one lookup and deletes nothing", async () => {
+  mockFetch([["expires_at=lt.", reply(200, [])]]);
   const waits = [];
   await worker.scheduled({}, env, { waitUntil: (p) => waits.push(p) });
   await Promise.all(waits);
   assert.equal(calls.length, 1);
-  assert.equal(calls[0].init.method, "DELETE");
+  assert.ok(!calls[0].init.method || calls[0].init.method === "GET", "the lookup is a read");
   assert.match(calls[0].url, /expires_at=lt\./);
   assert.equal(calls[0].init.headers.authorization, `Bearer ${env.SUPABASE_SERVICE_ROLE_KEY}`);
 });
@@ -441,3 +443,60 @@ test("the name and confirmation time are stored with the analysis", async () => 
   assert.equal(insert.app_name, "Patient portal (2019)");
   assert.match(insert.data_rules_confirmed_at, /^\d{4}-\d{2}-\d{2}T/);
 });
+
+test("retention writes a deletion record before it deletes expired analyses", async () => {
+  mockFetch([
+    ["expires_at=lt.", reply(200, [{ id: ANALYSIS_ID, repo: "acme/app" }])],
+    ["deletion_log", reply(201)],
+    ["id=in.(", reply(204)],
+  ]);
+  let pending;
+  await worker.scheduled({}, env, { waitUntil: (p) => { pending = p; } });
+  await pending;
+  const logAt = calls.findIndex((c) => c.url.includes("deletion_log"));
+  const delAt = calls.findIndex((c) => c.url.includes("id=in.("));
+  assert.ok(logAt > -1 && delAt > logAt, "the record is written before the delete");
+  assert.equal(JSON.parse(calls[logAt].init.body)[0].reason, "expired");
+});
+
+test("retention deletes nothing if the deletion records cannot be saved", async () => {
+  mockFetch([
+    ["expires_at=lt.", reply(200, [{ id: ANALYSIS_ID, repo: "acme/app" }])],
+    ["deletion_log", reply(500)],
+    ["id=in.(", reply(204)],
+  ]);
+  let pending;
+  await worker.scheduled({}, env, { waitUntil: (p) => { pending = p; } });
+  await assert.rejects(pending);
+  assert.equal(calls.filter((c) => c.url.includes("id=in.(")).length, 0, "no rows are deleted");
+});
+
+test("deleting an analysis records the deletion first", async () => {
+  mockFetch([
+    ["/auth/v1/user", reply(200, USER)],
+    AS_DEVELOPER,
+    ["&select=*", reply(200, [{ id: ANALYSIS_ID, owner_id: USER.id, repo: "acme/app" }])],
+    ["deletion_log", reply(201)],
+    [`analyses?id=eq.${ANALYSIS_ID}`, reply(204)],
+  ]);
+  const res = await worker.fetch(request(`/api/analyses/${ANALYSIS_ID}`, { method: "DELETE", token: "ok" }), env);
+  assert.equal(res.status, 200);
+  const logAt = calls.findIndex((c) => c.url.includes("deletion_log"));
+  const delAt = calls.findIndex((c) => c.url.endsWith(`analyses?id=eq.${ANALYSIS_ID}`));
+  assert.ok(logAt > -1 && delAt > logAt, "the record is written before the delete");
+  assert.equal(JSON.parse(calls[logAt].init.body)[0].reason, "requested");
+});
+
+test("a failed deletion record stops a user delete", async () => {
+  mockFetch([
+    ["/auth/v1/user", reply(200, USER)],
+    AS_DEVELOPER,
+    ["&select=*", reply(200, [{ id: ANALYSIS_ID, owner_id: USER.id, repo: "acme/app" }])],
+    ["deletion_log", reply(500)],
+    [`analyses?id=eq.${ANALYSIS_ID}`, reply(204)],
+  ]);
+  const res = await worker.fetch(request(`/api/analyses/${ANALYSIS_ID}`, { method: "DELETE", token: "ok" }), env);
+  assert.equal(res.status, 502);
+  assert.equal(calls.filter((c) => c.url.endsWith(`analyses?id=eq.${ANALYSIS_ID}`)).length, 0, "nothing is deleted");
+});
+

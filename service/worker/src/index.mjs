@@ -281,6 +281,9 @@ async function deleteAnalysis(request, env, id) {
   if (!isOwner && gate.member.role !== "workspace_admin") {
     return json({ error: "Only the person who started this analysis or a workspace admin can delete it." }, 403);
   }
+  if (!(await recordDeletion(env, [{ id, repo: found.row.repo }], "requested"))) {
+    return json({ error: "Could not record the deletion, so nothing was deleted." }, 502);
+  }
   const res = await serviceRest(env, `analyses?id=eq.${id}`, {
     method: "DELETE",
     headers: { prefer: "return=minimal" },
@@ -445,9 +448,30 @@ async function runnerResult(request, env, id) {
   return json({ saved: true });
 }
 
+// Write one deletion record per analysis. Returns false if the records could not be saved.
+async function recordDeletion(env, rows, reason) {
+  if (rows.length === 0) return true;
+  const res = await serviceRest(env, "deletion_log", {
+    method: "POST",
+    headers: { prefer: "return=minimal" },
+    body: JSON.stringify(rows.map((r) => ({ analysis_id: r.id, repo: r.repo, reason }))),
+  });
+  return res.ok;
+}
+
+// Retention: find expired analyses, record the deletion, then delete them.
+// Nothing is deleted unless its deletion record was saved first.
 async function purgeExpired(env) {
   const now = new Date().toISOString();
-  const res = await serviceRest(env, `analyses?expires_at=lt.${encodeURIComponent(now)}`, {
+  const found = await serviceRest(env, `analyses?expires_at=lt.${encodeURIComponent(now)}&select=id,repo`);
+  if (!found.ok) throw new Error(`Retention lookup failed with status ${found.status}`);
+  const rows = await found.json();
+  if (rows.length === 0) return;
+  if (!(await recordDeletion(env, rows, "expired"))) {
+    throw new Error("Retention could not save the deletion records, so nothing was deleted.");
+  }
+  const ids = rows.map((r) => r.id).join(",");
+  const res = await serviceRest(env, `analyses?id=in.(${ids})`, {
     method: "DELETE",
     headers: { prefer: "return=minimal" },
   });

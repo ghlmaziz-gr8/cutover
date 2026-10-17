@@ -131,3 +131,16 @@ grant select, insert, update, delete on public.action_items to service_role;
 -- Safe to run once. Existing rows keep these values empty.
 alter table public.analyses add column if not exists app_name text;
 alter table public.analyses add column if not exists data_rules_confirmed_at timestamptz;
+
+-- Deletion records: one row each time an analysis is deleted, by the retention job or on request.
+-- Holds no findings and no patient data: only the analysis id, the repository name, the reason and the time.
+create table if not exists public.deletion_log (
+  id           bigint generated always as identity primary key,
+  analysis_id  uuid not null,
+  repo         text not null,
+  reason       text not null check (reason in ('expired', 'requested')),
+  deleted_at   timestamptz not null default now()
+);
+alter table public.deletion_log enable row level security;
+revoke all on public.deletion_log from anon, authenticated;
+grant select, insert on public.deletion_log to service_role;
