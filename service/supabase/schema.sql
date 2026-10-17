@@ -29,6 +29,14 @@ create index if not exists analyses_expires_idx
 
 alter table public.analyses enable row level security;
 
+-- Table privileges. The Data API does not expose new tables automatically
+-- (we turn that off in the project), so access is granted here explicitly.
+-- Anonymous visitors get nothing. Signed-in users get only what the policies
+-- below allow. Users cannot update rows. The service role handles status changes.
+revoke all on public.analyses from anon;
+grant select, insert, delete on public.analyses to authenticated;
+grant select, insert, update, delete on public.analyses to service_role;
+
 -- Users can create rows only for themselves.
 create policy "analyses: owners insert"
   on public.analyses for insert
