@@ -10,9 +10,12 @@
     body { margin:0; background:var(--bg); color:var(--fg); font:15px/1.5 system-ui, sans-serif; }
     main { max-width: 880px; margin: 0 auto; padding: 24px 16px 56px; }
     h1 { font-size: 26px; margin: 0 0 4px; }
+    h2 { font-size: 18px; margin: 0 0 8px; }
+    h3 { font-size: 15px; margin: 20px 0 6px; }
     .muted { color: var(--muted); }
     .card { background: var(--card); border: 1px solid var(--line); border-radius: 16px; padding: 18px; margin-top: 16px; }
-    input { font: inherit; padding: 10px 12px; border-radius: 10px; border: 1px solid var(--line); background: var(--card); color: var(--fg); min-width: 0; flex: 1 1 240px; }
+    input, select, textarea { font: inherit; padding: 10px 12px; border-radius: 10px; border: 1px solid var(--line); background: var(--card); color: var(--fg); min-width: 0; flex: 1 1 240px; }
+    textarea { resize: vertical; }
     button { font: 600 15px inherit; padding: 10px 16px; border-radius: 999px; border: 0; background: var(--accent); color: #fff; cursor: pointer; }
     button.ghost { background: transparent; color: var(--fg); border: 1px solid var(--line); }
     button:disabled { opacity: .5; cursor: not-allowed; }
@@ -21,6 +24,10 @@
     th, td { text-align: left; padding: 8px 6px; border-bottom: 1px solid var(--line); }
     .status { font-weight: 600; }
     .err { color: var(--bad); }
+    .done { text-decoration: line-through; color: var(--muted); }
+    ul.plain { list-style: none; padding: 0; margin: 8px 0; }
+    li.item { display: flex; flex-wrap: wrap; gap: 6px 10px; align-items: center; padding: 10px 0; border-bottom: 1px solid var(--line); }
+    li.item .body { flex-basis: 100%; white-space: pre-wrap; word-break: break-word; }
     pre { white-space: pre-wrap; word-break: break-word; background: var(--bg); padding: 12px; border-radius: 10px; font-size: 13px; }
     [hidden] { display: none !important; }
   </style>
@@ -31,14 +38,20 @@
   <p class="muted">Analyze a GitHub repository. Only findings are kept, and they are deleted after the retention period.</p>
 
   <section id="signedOut" class="card" hidden>
-    <p>Sign in with Google to start an analysis.</p>
+    <p>Sign in with the Google account your Cutover administrator invited.</p>
     <button id="signIn">Sign in with Google</button>
+  </section>
+
+  <section id="denied" class="card" hidden>
+    <p class="err">This Google account is not on the Cutover access list.</p>
+    <p class="muted">Ask a Cutover workspace admin to invite this email address, then sign in again.</p>
+    <button class="ghost" id="signOutDenied">Sign out</button>
   </section>
 
   <section id="signedIn" hidden>
     <div class="card">
       <form id="startForm" class="row">
-        <input id="repo" name="repo" placeholder="owner/name" required pattern="[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+" autocomplete="off">
+        <input id="repo" name="repo" placeholder="owner/name" required autocomplete="off">
         <input id="ref" name="ref" placeholder="branch, tag or commit (optional)" autocomplete="off">
         <button type="submit" id="startBtn">Analyze</button>
         <button type="button" class="ghost" id="signOut">Sign out</button>
@@ -47,9 +60,9 @@
     </div>
 
     <div class="card">
-      <h2 style="font-size:18px;margin:0 0 8px">Your analyses</h2>
+      <h2>Analyses</h2>
       <table>
-        <thead><tr><th>Repository</th><th>Status</th><th>Created</th><th></th></tr></thead>
+        <thead><tr><th>Repository</th><th>Started by</th><th>Status</th><th>Created</th><th></th></tr></thead>
         <tbody id="rows"></tbody>
       </table>
       <p id="listMsg" class="muted"></p>
@@ -57,11 +70,48 @@
 
     <div class="card" id="detail" hidden>
       <div class="row" style="justify-content:space-between">
-        <h2 id="detailTitle" style="font-size:18px;margin:0"></h2>
-        <button class="ghost" id="deleteBtn">Delete</button>
+        <h2 id="detailTitle" style="margin:0"></h2>
+        <button class="ghost" id="deleteBtn" hidden>Delete</button>
       </div>
       <p id="detailMeta" class="muted"></p>
       <pre id="detailBody"></pre>
+
+      <h3>Action items</h3>
+      <ul id="actionList" class="plain"></ul>
+      <form id="actionForm" class="row">
+        <input id="actionTitle" maxlength="200" placeholder="What needs to happen? For example: confirm the HL7 scope with the owner" required autocomplete="off">
+        <button type="submit" id="actionBtn">Add action item</button>
+      </form>
+      <p id="actionMsg" class="muted" role="status"></p>
+
+      <h3>Comments</h3>
+      <ul id="commentList" class="plain"></ul>
+      <form id="commentForm" class="row">
+        <textarea id="commentBody" rows="3" maxlength="2000" placeholder="Add a comment for the team" required></textarea>
+        <button type="submit" id="commentBtn">Post comment</button>
+      </form>
+      <p id="commentMsg" class="muted" role="status"></p>
+    </div>
+
+    <div class="card" id="adminPanel" hidden>
+      <h2>Invite people</h2>
+      <p class="muted">Invited people can sign in with Google using that exact email address.</p>
+      <form id="inviteForm" class="row">
+        <input id="inviteEmail" type="email" placeholder="name@organization.org" required autocomplete="off">
+        <select id="inviteRole" aria-label="Role">
+          <option value="platform_engineer">Platform engineer</option>
+          <option value="application_owner">Application owner</option>
+          <option value="developer">Developer</option>
+          <option value="compliance_reviewer">Compliance reviewer</option>
+          <option value="workspace_admin">Workspace admin</option>
+        </select>
+        <button type="submit" id="inviteBtn">Invite</button>
+      </form>
+      <p id="inviteMsg" class="muted" role="status"></p>
+      <table>
+        <thead><tr><th>Email</th><th>Role</th><th>Pending since</th><th></th></tr></thead>
+        <tbody id="inviteRows"></tbody>
+      </table>
     </div>
   </section>
 </main>
@@ -74,8 +124,17 @@
   const $ = (id) => document.getElementById(id);
   const cfg = window.CUTOVER_CONFIG;
   const sb = supabase.createClient(cfg.SUPABASE_URL, cfg.SUPABASE_ANON_KEY);
+  const ROLE_LABELS = {
+    platform_engineer: "Platform engineer",
+    application_owner: "Application owner",
+    developer: "Developer",
+    compliance_reviewer: "Compliance reviewer",
+    workspace_admin: "Workspace admin",
+  };
   let token = null;
   let timer = null;
+  let currentId = null;
+  let viewerRole = null;
 
   async function api(path, options = {}) {
     const res = await fetch(`${cfg.API_BASE}${path}`, {
@@ -83,26 +142,34 @@
       headers: { "content-type": "application/json", authorization: `Bearer ${token}`, ...(options.headers || {}) },
     });
     const body = await res.json().catch(() => ({}));
-    if (!res.ok) throw new Error(body.error || `Request failed (${res.status})`);
+    if (!res.ok) {
+      const err = new Error(body.error || `Request failed (${res.status})`);
+      err.status = res.status;
+      throw err;
+    }
     return body;
   }
 
-  function show(signedIn) {
-    $("signedOut").hidden = signedIn;
-    $("signedIn").hidden = !signedIn;
+  // Which screen to show: "out" (signed out), "denied" (signed in, not invited), or "app".
+  function show(screen) {
+    $("signedOut").hidden = screen !== "out";
+    $("denied").hidden = screen !== "denied";
+    $("signedIn").hidden = screen !== "app";
   }
 
   async function loadList() {
     try {
       const rows = await api("/api/analyses");
       $("listMsg").textContent = rows.length ? "" : "No analyses yet.";
+      $("listMsg").className = "muted";
       $("rows").innerHTML = "";
       for (const r of rows) {
         const tr = document.createElement("tr");
-        tr.innerHTML = `<td></td><td class="status"></td><td></td><td><button class="ghost">Open</button></td>`;
+        tr.innerHTML = `<td></td><td></td><td class="status"></td><td></td><td><button class="ghost">Open</button></td>`;
         tr.children[0].textContent = r.ref ? `${r.repo} @ ${r.ref}` : r.repo;
-        tr.children[1].textContent = r.status;
-        tr.children[2].textContent = new Date(r.created_at).toLocaleString();
+        tr.children[1].textContent = r.is_mine ? "You" : "Teammate";
+        tr.children[2].textContent = r.status;
+        tr.children[3].textContent = new Date(r.created_at).toLocaleString();
         tr.querySelector("button").addEventListener("click", () => openOne(r.id));
         $("rows").appendChild(tr);
       }
@@ -117,20 +184,166 @@
   }
 
   async function openOne(id) {
+    currentId = id;
     try {
       const row = await api(`/api/analyses/${id}`);
-      $("detail").hidden = false;
-      $("detailTitle").textContent = row.repo;
-      $("detailMeta").textContent = `Status: ${row.status}. Commit: ${row.commit_sha || "not known yet"}. Deleted after: ${new Date(row.expires_at).toLocaleDateString()}.`;
-      $("detailBody").textContent = row.error ? row.error : row.findings ? JSON.stringify(row.findings, null, 2) : "Waiting for results.";
-      $("deleteBtn").onclick = async () => {
-        if (!confirm("Delete this analysis and its findings?")) return;
-        await api(`/api/analyses/${id}`, { method: "DELETE" });
-        $("detail").hidden = true;
-        loadList();
-      };
+      renderDetail(row);
     } catch (err) {
       $("formMsg").textContent = err.message;
+      $("formMsg").className = "err";
+    }
+  }
+
+  function renderDetail(row) {
+    $("detail").hidden = false;
+    $("detailTitle").textContent = row.ref ? `${row.repo} @ ${row.ref}` : row.repo;
+    $("detailMeta").textContent = `Status: ${row.status}. Commit: ${row.commit_sha || "not known yet"}. Started by: ${row.is_mine ? "you" : "a teammate"}. Deleted after: ${new Date(row.expires_at).toLocaleDateString()}.`;
+    $("detailBody").textContent = row.error ? row.error : row.findings ? JSON.stringify(row.findings, null, 2) : "Waiting for results.";
+
+    $("deleteBtn").hidden = !row.can_delete;
+    $("deleteBtn").onclick = async () => {
+      if (!confirm("Delete this analysis, its comments and its action items?")) return;
+      try {
+        await api(`/api/analyses/${row.id}`, { method: "DELETE" });
+        $("detail").hidden = true;
+        currentId = null;
+        loadList();
+      } catch (err) {
+        $("formMsg").textContent = err.message;
+        $("formMsg").className = "err";
+      }
+    };
+
+    // Compliance reviewers can read and comment, but not change action items.
+    const canWork = row.viewer_role !== "compliance_reviewer";
+    $("actionForm").hidden = !canWork;
+    renderActions(row.action_items || [], canWork);
+    renderComments(row.comments || []);
+  }
+
+  function renderActions(items, canWork) {
+    const list = $("actionList");
+    list.innerHTML = "";
+    if (!items.length) {
+      const empty = document.createElement("li");
+      empty.className = "muted";
+      empty.textContent = "No action items yet.";
+      list.appendChild(empty);
+    }
+    for (const item of items) {
+      const li = document.createElement("li");
+      li.className = "item";
+      const label = document.createElement("span");
+      label.textContent = item.title;
+      if (item.status === "done") label.className = "done";
+      const meta = document.createElement("small");
+      meta.className = "muted";
+      meta.textContent = item.status === "done"
+        ? `Done by ${item.done_by_email}`
+        : `Added by ${item.created_by_email}`;
+      const btn = document.createElement("button");
+      btn.className = "ghost";
+      btn.textContent = item.status === "done" ? "Reopen" : "Mark done";
+      btn.disabled = !canWork;
+      btn.addEventListener("click", async () => {
+        try {
+          await api(`/api/actions/${item.id}`, { method: "PATCH", body: JSON.stringify({ status: item.status === "done" ? "open" : "done" }) });
+          openOne(currentId);
+        } catch (err) {
+          $("actionMsg").textContent = err.message;
+          $("actionMsg").className = "err";
+        }
+      });
+      li.append(label, meta, btn);
+      list.appendChild(li);
+    }
+  }
+
+  function renderComments(items) {
+    const list = $("commentList");
+    list.innerHTML = "";
+    if (!items.length) {
+      const empty = document.createElement("li");
+      empty.className = "muted";
+      empty.textContent = "No comments yet.";
+      list.appendChild(empty);
+    }
+    for (const c of items) {
+      const li = document.createElement("li");
+      li.className = "item";
+      const head = document.createElement("small");
+      head.className = "muted";
+      head.textContent = `${c.author_email} · ${new Date(c.created_at).toLocaleString()}`;
+      const body = document.createElement("div");
+      body.className = "body";
+      body.textContent = c.body;
+      li.append(head, body);
+      if (c.can_delete) {
+        const del = document.createElement("button");
+        del.className = "ghost";
+        del.textContent = "Delete";
+        del.addEventListener("click", async () => {
+          try {
+            await api(`/api/comments/${c.id}`, { method: "DELETE" });
+            openOne(currentId);
+          } catch (err) {
+            $("commentMsg").textContent = err.message;
+            $("commentMsg").className = "err";
+          }
+        });
+        li.appendChild(del);
+      }
+      list.appendChild(li);
+    }
+  }
+
+  async function loadInvites() {
+    try {
+      const rows = await api("/api/admin/invitations");
+      $("inviteMsg").textContent = rows.length ? "" : "No pending invitations.";
+      $("inviteMsg").className = "muted";
+      $("inviteRows").innerHTML = "";
+      for (const r of rows) {
+        const tr = document.createElement("tr");
+        tr.innerHTML = `<td></td><td></td><td></td><td><button class="ghost">Remove</button></td>`;
+        tr.children[0].textContent = r.email;
+        tr.children[1].textContent = ROLE_LABELS[r.role] || r.role;
+        tr.children[2].textContent = new Date(r.created_at).toLocaleDateString();
+        tr.querySelector("button").addEventListener("click", async () => {
+          try {
+            await api(`/api/admin/invitations/${encodeURIComponent(r.email)}`, { method: "DELETE" });
+            loadInvites();
+          } catch (err) {
+            $("inviteMsg").textContent = err.message;
+            $("inviteMsg").className = "err";
+          }
+        });
+        $("inviteRows").appendChild(tr);
+      }
+    } catch (err) {
+      $("inviteMsg").textContent = err.message;
+      $("inviteMsg").className = "err";
+    }
+  }
+
+  // After sign-in, ask the API who this person is. The API decides access, not this page.
+  async function enter() {
+    try {
+      const me = await api("/api/me");
+      viewerRole = me.role;
+      show("app");
+      const isAdmin = me.role === "workspace_admin";
+      $("adminPanel").hidden = !isAdmin;
+      if (isAdmin) loadInvites();
+      loadList();
+    } catch (err) {
+      if (err.status === 403) {
+        show("denied");
+      } else {
+        show("app");
+        $("listMsg").textContent = err.message;
+        $("listMsg").className = "err";
+      }
     }
   }
 
@@ -138,6 +351,7 @@
     e.preventDefault();
     $("startBtn").disabled = true;
     $("formMsg").textContent = "Starting analysis...";
+    $("formMsg").className = "muted";
     try {
       const body = { repo: $("repo").value.trim() };
       const ref = $("ref").value.trim();
@@ -154,19 +368,76 @@
     }
   });
 
+  $("actionForm").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    if (!currentId) return;
+    try {
+      const title = $("actionTitle").value.trim();
+      await api(`/api/analyses/${currentId}/actions`, { method: "POST", body: JSON.stringify({ title }) });
+      $("actionTitle").value = "";
+      $("actionMsg").textContent = "Action item added.";
+      $("actionMsg").className = "muted";
+      openOne(currentId);
+    } catch (err) {
+      $("actionMsg").textContent = err.message;
+      $("actionMsg").className = "err";
+    }
+  });
+
+  $("commentForm").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    if (!currentId) return;
+    try {
+      const body = $("commentBody").value.trim();
+      await api(`/api/analyses/${currentId}/comments`, { method: "POST", body: JSON.stringify({ body }) });
+      $("commentBody").value = "";
+      $("commentMsg").textContent = "Comment posted.";
+      $("commentMsg").className = "muted";
+      openOne(currentId);
+    } catch (err) {
+      $("commentMsg").textContent = err.message;
+      $("commentMsg").className = "err";
+    }
+  });
+
+  $("inviteForm").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    $("inviteBtn").disabled = true;
+    try {
+      const email = $("inviteEmail").value.trim();
+      const role = $("inviteRole").value;
+      await api("/api/admin/invitations", { method: "POST", body: JSON.stringify({ email, role }) });
+      $("inviteMsg").textContent = `Invited ${email} as ${ROLE_LABELS[role]}.`;
+      $("inviteMsg").className = "muted";
+      $("inviteEmail").value = "";
+      loadInvites();
+    } catch (err) {
+      $("inviteMsg").textContent = err.message;
+      $("inviteMsg").className = "err";
+    } finally {
+      $("inviteBtn").disabled = false;
+    }
+  });
+
   $("signIn").addEventListener("click", () => {
     sb.auth.signInWithOAuth({ provider: "google", options: { redirectTo: window.location.href.split("#")[0] } });
   });
-  $("signOut").addEventListener("click", async () => {
+  async function signOut() {
     await sb.auth.signOut();
     token = null;
-    show(false);
-  });
+    currentId = null;
+    show("out");
+  }
+  $("signOut").addEventListener("click", signOut);
+  $("signOutDenied").addEventListener("click", signOut);
 
   sb.auth.onAuthStateChange((_event, session) => {
     token = session ? session.access_token : null;
-    show(Boolean(session));
-    if (session) loadList();
+    if (!session) {
+      show("out");
+      return;
+    }
+    enter();
   });
 })();
 </script>
