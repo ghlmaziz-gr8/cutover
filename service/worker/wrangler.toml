@@ -4,6 +4,8 @@
 #   wrangler secret put SUPABASE_SERVICE_ROLE_KEY
 #   wrangler secret put GITHUB_DISPATCH_TOKEN
 #   wrangler secret put RUNNER_SECRET
+#   wrangler secret put GITHUB_APP_ID
+#   wrangler secret put GITHUB_APP_PRIVATE_KEY
 
 name = "cutover-api"
 main = "src/index.mjs"

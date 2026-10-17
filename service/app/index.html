@@ -95,6 +95,7 @@
           <input id="repo" placeholder="owner/name" autocomplete="off">
           <label for="ref">Branch, tag or commit (optional)</label>
           <input id="ref" placeholder="Leave blank for the default branch" autocomplete="off">
+          <p id="repoResult" class="muted small" role="status"></p>
           <div class="row wzNav">
             <button type="button" class="ghost" id="wzBack3">Back</button>
             <button type="button" id="wzNext3">Next</button>
@@ -103,6 +104,7 @@
 
         <div id="wz4" hidden>
           <h2>Confirm the data rules</h2>
+          <p id="repoSummary" class="muted small"></p>
           <label class="check"><input type="checkbox" id="dataRules"> This code and its settings contain no patient information.</label>
           <div class="row wzNav">
             <button type="button" class="ghost" id="wzBack4">Back</button>
@@ -513,6 +515,7 @@
   const REPO_FORMAT = /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/;
 
   function showStep(n) {
+    if (n === 2) { $("repoResult").textContent = ""; $("repoSummary").textContent = ""; }
     wizSteps.forEach((box, i) => { box.hidden = i !== n; });
     $("wizStep").textContent = `Step ${n + 1} of 4`;
     $("formMsg").textContent = "";
@@ -540,9 +543,43 @@
     showStep(2);
   });
   $("wzBack3").addEventListener("click", () => showStep(1));
-  $("wzNext3").addEventListener("click", () => {
-    if (!REPO_FORMAT.test($("repo").value.trim())) return wizardError("Use the form owner/name, for example: acme/patient-portal.");
-    showStep(3);
+  // Step 3 checks that Cutover can read the repository before it moves on.
+  $("wzNext3").addEventListener("click", async () => {
+    const repo = $("repo").value.trim();
+    const ref = $("ref").value.trim();
+    if (!REPO_FORMAT.test(repo)) return wizardError("Use the form owner/name, for example: acme/patient-portal.");
+    const result = $("repoResult");
+    result.textContent = "Checking the repository...";
+    result.className = "muted small";
+    $("wzNext3").disabled = true;
+    try {
+      const params = new URLSearchParams({ repo, ref });
+      const r = await api(`/api/repo-check?${params.toString()}`);
+      if (!r.ok) {
+        result.textContent = r.message;
+        result.className = "err";
+        if (r.install_url) {
+          const link = document.createElement("a");
+          link.href = r.install_url;
+          link.target = "_blank";
+          link.rel = "noopener";
+          link.textContent = " Install the Cutover reader on this repository";
+          result.appendChild(link);
+        }
+        return;
+      }
+      const when = r.last_changed ? `, last changed ${new Date(r.last_changed).toLocaleDateString()}` : "";
+      const partial = r.truncated ? " (very large repository: the count may be partial)" : "";
+      result.textContent = `Found: ${r.files} files${when}${partial}.`;
+      result.className = "muted small";
+      showStep(3);
+      $("repoSummary").textContent = result.textContent;
+    } catch (err) {
+      result.textContent = err.message;
+      result.className = "err";
+    } finally {
+      $("wzNext3").disabled = false;
+    }
   });
   $("wzBack4").addEventListener("click", () => showStep(2));
   $("dataRules").addEventListener("change", () => { $("startNow").disabled = !$("dataRules").checked; });

@@ -4,6 +4,7 @@
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { generateKeyPairSync, createVerify } from "node:crypto";
 import worker from "../src/index.mjs";
 
 const env = {
@@ -498,5 +499,57 @@ test("a failed deletion record stops a user delete", async () => {
   const res = await worker.fetch(request(`/api/analyses/${ANALYSIS_ID}`, { method: "DELETE", token: "ok" }), env);
   assert.equal(res.status, 502);
   assert.equal(calls.filter((c) => c.url.endsWith(`analyses?id=eq.${ANALYSIS_ID}`)).length, 0, "nothing is deleted");
+});
+
+// ---- Repository check (GitHub App) ----
+const appKeys = generateKeyPairSync("rsa", {
+  modulusLength: 2048,
+  publicKeyEncoding: { type: "spki", format: "pem" },
+  privateKeyEncoding: { type: "pkcs1", format: "pem" },
+});
+const appEnv = { ...env, GITHUB_APP_ID: "5361797", GITHUB_APP_PRIVATE_KEY: appKeys.privateKey };
+
+test("repo check reads the file count and last change with an app token", async () => {
+  mockFetch([
+    ["/auth/v1/user", reply(200, USER)],
+    AS_DEVELOPER,
+    ["/repos/acme/app/installation", reply(200, { id: 99 })],
+    ["/app/installations/99/access_tokens", reply(201, { token: "ghs_test" })],
+    ["/git/trees/", reply(200, { tree: [{ type: "blob" }, { type: "blob" }, { type: "tree" }], truncated: false })],
+    ["/commits?", reply(200, [{ commit: { committer: { date: "2026-07-01T00:00:00Z" } } }])],
+    ["https://api.github.com/repos/acme/app", reply(200, { default_branch: "main" })],
+  ]);
+  const res = await worker.fetch(request("/api/repo-check?repo=acme/app", { token: "ok" }), appEnv);
+  const body = await res.json();
+  assert.equal(body.ok, true);
+  assert.equal(body.files, 2, "only files are counted");
+  assert.equal(body.branch, "main");
+  assert.equal(body.last_changed, "2026-07-01T00:00:00Z");
+  const tokenCall = calls.find((c) => c.url.includes("/access_tokens"));
+  const bearer = tokenCall.init.headers.authorization.replace("Bearer ", "");
+  const [h, p, sig] = bearer.split(".");
+  const verifier = createVerify("RSA-SHA256");
+  verifier.update(`${h}.${p}`);
+  assert.ok(verifier.verify(appKeys.publicKey, Buffer.from(sig, "base64url")), "the app token is signed by the app key");
+  assert.equal(JSON.parse(Buffer.from(p, "base64url").toString()).iss, "5361797");
+});
+
+test("repo check explains how to fix a repository the app cannot read", async () => {
+  mockFetch([
+    ["/auth/v1/user", reply(200, USER)],
+    AS_DEVELOPER,
+    ["/repos/acme/app/installation", reply(404, { message: "Not Found" })],
+  ]);
+  const res = await worker.fetch(request("/api/repo-check?repo=acme/app", { token: "ok" }), appEnv);
+  const body = await res.json();
+  assert.equal(body.ok, false);
+  assert.equal(body.reason, "not_readable");
+  assert.match(body.install_url, /cutover-reader-portal\/installations\/new$/);
+});
+
+test("repo check refuses a malformed repository name", async () => {
+  mockFetch([["/auth/v1/user", reply(200, USER)], AS_DEVELOPER]);
+  const res = await worker.fetch(request("/api/repo-check?repo=..%2Fetc", { token: "ok" }), appEnv);
+  assert.equal(res.status, 400);
 });
 
