@@ -14,7 +14,9 @@ compatibility_date = "2025-01-01"
 crons = ["17 3 * * *"]
 
 [vars]
-# Replace with your Supabase project URL (not a secret).
-SUPABASE_URL = "https://YOUR-PROJECT-REF.supabase.co"
+# Supabase project URL (not a secret).
+SUPABASE_URL = "https://tietnfdwkiiitgzuchra.supabase.co"
+# The sign-in web app. The API only accepts browser calls from this origin.
+APP_ORIGIN = "https://app.cutover.site"
 # The GitHub repository that contains the analysis workflow (owner/name).
-RUNNER_REPO = "YOUR-GITHUB-OWNER/cutover"
+RUNNER_REPO = "ghlmaziz-gr8/cutover"
