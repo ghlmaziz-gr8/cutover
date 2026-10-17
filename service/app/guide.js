@@ -5,11 +5,13 @@
 //   - If a step names a screen element, list its id in refs. The test in
 //     service/app/test/guide.test.mjs fails if that id no longer exists in index.html.
 //   - who: "everyone" | "engineers" (platform engineers) | "admins" (workspace admins) | "operators".
+//   - faq: questions the Ask button answers. step names the guide step to open.
 //   - actions: {type:"link", label, href} | {type:"go", label, tab:"analyses"|"workspaces"|"guide"}
 //              | {type:"repo-check", label}
 window.CUTOVER_GUIDE = {
   updated: "2026-10-17",
   whatsNew: [
+    "2026-10-17: An Ask button answers how-to questions from this guide.",
     "2026-10-17: Home has tabs for Analyses, Workspaces and this guide.",
     "2026-10-17: Review shows charts and a summary, and healthcare results appear only when relevant.",
     "2026-10-17: Stages tick on one at a time when an analysis finishes.",
@@ -127,5 +129,27 @@ window.CUTOVER_GUIDE = {
       actions: [{ type: "go", label: "Go to Workspaces", tab: "workspaces" }],
       refs: ["opName", "opBtn"],
     },
+  ],
+  faq: [
+    { q: "How do I add my GitHub repository?", step: "install",
+      a: "Install the Cutover reader on it. Open the install page, choose 'Only select repositories', tick the repository, and Save. Then check it with the Check a repository step in the guide." },
+    { q: "Cutover says it cannot read my repository. Why?", step: "check",
+      a: "The Cutover reader is not installed on that repository, or the name is wrong. Check the owner/name spelling, install the reader on the repository, then check again." },
+    { q: "How do I start an analysis?", step: "start",
+      a: "On the Analyses tab, choose Start a new assessment, follow the steps, and confirm the data rule: sample or public code only, with no patient data." },
+    { q: "Why can't I see some findings?", step: "findings",
+      a: "Findings are shared by role. Anything marked 'Not shown for your role' belongs to another role in the workspace." },
+    { q: "How do I invite someone?", step: "invite",
+      a: "On the Workspaces tab, enter their Google work email, choose a role, and select Invite. They sign in with that exact email." },
+    { q: "Who can see my analysis?", step: "roles",
+      a: "Only people invited to the same workspace, and only the findings their role allows." },
+    { q: "How long are results kept?", step: "next",
+      a: "Results are deleted after 30 days. You can delete them sooner from the next steps screen." },
+    { q: "Is my source code stored?", step: "what",
+      a: "No. Cutover reads the code and keeps only the findings and status." },
+    { q: "How do I add action items or comments?", step: "discuss",
+      a: "Open an analysis and use Add action item or Post comment at the bottom of the review. Auditors can comment, but cannot add or close action items." },
+    { q: "How do I create a customer workspace?", step: "customer",
+      a: "Operators use Create a customer workspace on the Workspaces tab. You cannot see a customer's data unless you are invited into that workspace." },
   ],
 };

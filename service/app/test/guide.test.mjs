@@ -45,3 +45,11 @@ test("every action is well formed", () => {
     }
   }
 });
+
+test("every FAQ entry has a question and answer, and points at a real guide step", () => {
+  const stepIds = new Set(G.steps.map((s) => s.id));
+  for (const f of G.faq || []) {
+    assert.ok(f.q && f.a, "question and answer");
+    if (f.step) assert.ok(stepIds.has(f.step), `FAQ "${f.q}" refers to missing step ${f.step}`);
+  }
+});
