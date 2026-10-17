@@ -281,6 +281,9 @@ async function deleteAnalysis(request, env, id) {
   if (!isOwner && gate.member.role !== "workspace_admin") {
     return json({ error: "Only the person who started this analysis or a workspace admin can delete it." }, 403);
   }
+  if (!(await recordDeletion(env, [{ id, repo: found.row.repo }], "requested"))) {
+    return json({ error: "Could not record the deletion, so nothing was deleted." }, 502);
+  }
   const res = await serviceRest(env, `analyses?id=eq.${id}`, {
     method: "DELETE",
     headers: { prefer: "return=minimal" },
@@ -445,13 +448,156 @@ async function runnerResult(request, env, id) {
   return json({ saved: true });
 }
 
+// Write one deletion record per analysis. Returns false if the records could not be saved.
+async function recordDeletion(env, rows, reason) {
+  if (rows.length === 0) return true;
+  const res = await serviceRest(env, "deletion_log", {
+    method: "POST",
+    headers: { prefer: "return=minimal" },
+    body: JSON.stringify(rows.map((r) => ({ analysis_id: r.id, repo: r.repo, reason }))),
+  });
+  return res.ok;
+}
+
+// Retention: find expired analyses, record the deletion, then delete them.
+// Nothing is deleted unless its deletion record was saved first.
 async function purgeExpired(env) {
   const now = new Date().toISOString();
-  const res = await serviceRest(env, `analyses?expires_at=lt.${encodeURIComponent(now)}`, {
+  const found = await serviceRest(env, `analyses?expires_at=lt.${encodeURIComponent(now)}&select=id,repo`);
+  if (!found.ok) throw new Error(`Retention lookup failed with status ${found.status}`);
+  const rows = await found.json();
+  if (rows.length === 0) return;
+  if (!(await recordDeletion(env, rows, "expired"))) {
+    throw new Error("Retention could not save the deletion records, so nothing was deleted.");
+  }
+  const ids = rows.map((r) => r.id).join(",");
+  const res = await serviceRest(env, `analyses?id=in.(${ids})`, {
     method: "DELETE",
     headers: { prefer: "return=minimal" },
   });
   if (!res.ok) throw new Error(`Retention purge failed with status ${res.status}`);
+}
+
+
+// ---- Repository check (GitHub App, read-only) ----
+// The app is "cutover-reader-portal". It has read-only access to the repositories it is installed on.
+const APP_SLUG = "cutover-reader-portal";
+const GH_HEADERS = { accept: "application/vnd.github+json", "x-github-api-version": "2022-11-28", "user-agent": "cutover-api" };
+
+function base64url(bytes) {
+  let s = "";
+  for (const b of bytes) s += String.fromCharCode(b);
+  return btoa(s).replace(/=+$/, "").replace(/\+/g, "-").replace(/\//g, "_");
+}
+
+function pemToDer(pem) {
+  const body = pem.replace(/-----[^-]+-----/g, "").replace(/\s+/g, "");
+  const bin = atob(body);
+  const out = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
+  return out;
+}
+
+function concatBytes(...parts) {
+  const total = parts.reduce((n, p) => n + p.length, 0);
+  const out = new Uint8Array(total);
+  let at = 0;
+  for (const p of parts) { out.set(p, at); at += p.length; }
+  return out;
+}
+
+function derWrap(tag, content) {
+  const n = content.length;
+  let len;
+  if (n < 0x80) len = [n];
+  else {
+    const bytes = [];
+    for (let x = n; x > 0; x >>= 8) bytes.unshift(x & 0xff);
+    len = [0x80 | bytes.length, ...bytes];
+  }
+  return concatBytes(Uint8Array.from([tag, ...len]), content);
+}
+
+// GitHub issues keys in PKCS#1 form. WebCrypto needs PKCS#8, so wrap the key.
+function pkcs1ToPkcs8(der) {
+  const version = Uint8Array.from([0x02, 0x01, 0x00]);
+  const rsaAlgorithm = Uint8Array.from([0x30, 0x0d, 0x06, 0x09, 0x2a, 0x86, 0x48, 0x86, 0xf7, 0x0d, 0x01, 0x01, 0x01, 0x05, 0x00]);
+  return derWrap(0x30, concatBytes(version, rsaAlgorithm, derWrap(0x04, der)));
+}
+
+async function importAppKey(env) {
+  const pem = String(env.GITHUB_APP_PRIVATE_KEY || "").replace(/\\n/g, "\n");
+  let der = pemToDer(pem);
+  if (/BEGIN RSA PRIVATE KEY/.test(pem)) der = pkcs1ToPkcs8(der);
+  return crypto.subtle.importKey("pkcs8", der, { name: "RSASSA-PKCS1-v1_5", hash: "SHA-256" }, false, ["sign"]);
+}
+
+// A short-lived token that proves the request comes from the app.
+async function githubAppJwt(env) {
+  const now = Math.floor(Date.now() / 1000);
+  const enc = new TextEncoder();
+  const header = base64url(enc.encode(JSON.stringify({ alg: "RS256", typ: "JWT" })));
+  const payload = base64url(enc.encode(JSON.stringify({ iat: now - 60, exp: now + 540, iss: String(env.GITHUB_APP_ID) })));
+  const key = await importAppKey(env);
+  const sig = new Uint8Array(await crypto.subtle.sign("RSASSA-PKCS1-v1_5", key, enc.encode(`${header}.${payload}`)));
+  return `${header}.${payload}.${base64url(sig)}`;
+}
+
+// Exchanges the app token for a read-only token for one repository's installation.
+async function readToken(env, repo) {
+  const jwt = await githubAppJwt(env);
+  const auth = { ...GH_HEADERS, authorization: `Bearer ${jwt}` };
+  const inst = await fetch(`https://api.github.com/repos/${repo}/installation`, { headers: auth });
+  if (inst.status === 404) return { notInstalled: true };
+  if (!inst.ok) return { failed: true };
+  const { id } = await inst.json();
+  const tok = await fetch(`https://api.github.com/app/installations/${id}/access_tokens`, { method: "POST", headers: auth });
+  if (!tok.ok) return { failed: true };
+  const { token } = await tok.json();
+  return { token };
+}
+
+async function repoCheck(request, env) {
+  const gate = await requireMember(env, request);
+  if (gate.response) return gate.response;
+  const url = new URL(request.url);
+  const repo = url.searchParams.get("repo") || "";
+  const ref = url.searchParams.get("ref") || "";
+  if (!REPO_PATTERN.test(repo)) return json({ error: "Use the form owner/name." }, 400);
+  if (ref && !REF_PATTERN.test(ref)) return json({ error: "The branch, tag or commit name is not valid." }, 400);
+
+  const access = await readToken(env, repo);
+  if (access.notInstalled) {
+    return json({
+      ok: false,
+      reason: "not_readable",
+      message: "Cutover cannot read this repository yet. Check the name, or install the Cutover reader on it, then check again.",
+      install_url: `https://github.com/apps/${APP_SLUG}/installations/new`,
+    });
+  }
+  if (access.failed) return json({ ok: false, reason: "failed", message: "Cutover could not check the repository right now. Try again in a minute." });
+
+  const h = { ...GH_HEADERS, authorization: `Bearer ${access.token}` };
+  const meta = await fetch(`https://api.github.com/repos/${repo}`, { headers: h });
+  if (!meta.ok) return json({ ok: false, reason: "not_found", message: "We could not read that repository. Check the name, or install the Cutover reader on it." });
+  const info = await meta.json();
+  const branch = ref || info.default_branch;
+
+  const tree = await fetch(`https://api.github.com/repos/${repo}/git/trees/${encodeURIComponent(branch)}?recursive=1`, { headers: h });
+  if (!tree.ok) return json({ ok: false, reason: "branch", message: `We could not find the branch, tag or commit "${branch}".` });
+  const t = await tree.json();
+  const files = (t.tree || []).filter((e) => e.type === "blob").length;
+
+  const commits = await fetch(`https://api.github.com/repos/${repo}/commits?sha=${encodeURIComponent(branch)}&per_page=1`, { headers: h });
+  const [latest] = commits.ok ? await commits.json() : [];
+  return json({
+    ok: true,
+    repo,
+    branch,
+    files,
+    truncated: Boolean(t.truncated),
+    last_changed: latest?.commit?.committer?.date || null,
+  });
 }
 
 // Browsers only let the app call the API from an allowed address.
@@ -480,6 +626,7 @@ async function route(request, env) {
 
     if (path === "/api/analyses" && method === "POST") return startAnalysis(request, env);
     if (path === "/api/analyses" && method === "GET") return listAnalyses(request, env);
+    if (path === "/api/repo-check" && method === "GET") return repoCheck(request, env);
 
     const one = path.match(/^\/api\/analyses\/([^/]+)$/);
     if (one && UUID_PATTERN.test(one[1]) && method === "GET") return getAnalysis(request, env, one[1]);
