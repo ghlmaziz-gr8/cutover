@@ -30,6 +30,17 @@
     li.item .body { flex-basis: 100%; white-space: pre-wrap; word-break: break-word; }
     pre { white-space: pre-wrap; word-break: break-word; background: var(--bg); padding: 12px; border-radius: 10px; font-size: 13px; }
     [hidden] { display: none !important; }
+    .flags { margin: 8px 0 4px; display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+    .chip { display: inline-block; padding: 3px 10px; border-radius: 999px; border: 1px solid var(--line); font-size: 13px; }
+    .finding { border: 1px solid var(--line); border-radius: 12px; padding: 12px 14px; margin: 10px 0; }
+    .finding h4 { margin: 0 0 6px; font-size: 16px; }
+    .finding p { margin: 4px 0; }
+    .finding.sev-high { border-color: var(--bad); }
+    .small { font-size: 13px; }
+    .mono { font-family: ui-monospace, Consolas, monospace; font-size: 13px; }
+    details { margin: 8px 0; }
+    details summary { cursor: pointer; color: var(--muted); }
+    pre.raw { white-space: pre-wrap; word-break: break-word; font-size: 12px; max-height: 360px; overflow: auto; }
   </style>
 </head>
 <body>
@@ -74,7 +85,7 @@
         <button class="ghost" id="deleteBtn" hidden>Delete</button>
       </div>
       <p id="detailMeta" class="muted"></p>
-      <pre id="detailBody"></pre>
+      <div id="detailBody"></div>
 
       <h3>Action items</h3>
       <ul id="actionList" class="plain"></ul>
@@ -194,11 +205,112 @@
     }
   }
 
+  // Category order and labels match the discovery engine.
+  const CATEGORY_ORDER = ["stack", "data", "ui_portal", "security", "epic", "privacy", "containers", "delivery", "infrastructure"];
+  const CATEGORY_TITLES = {
+    stack: "Stack", data: "Data model", ui_portal: "User interface and portal",
+    security: "Roles and access", epic: "Epic integration", privacy: "Privacy",
+    containers: "Images and containers", delivery: "Delivery", infrastructure: "Infrastructure",
+  };
+
+  // Turn a finding value into readable text, the same way the engine does.
+  function fmtValue(v) {
+    if (typeof v === "boolean") return v ? "yes" : "no";
+    if (Array.isArray(v)) {
+      if (!v.length) return "none";
+      if (typeof v[0] === "object" && v[0] !== null) {
+        return v.map((d) => Object.entries(d).map(([k, x]) => `${k}=${x}`).join(", ")).join("; ");
+      }
+      return v.join(", ");
+    }
+    if (v && typeof v === "object") {
+      return Object.entries(v).map(([k, x]) => `${k}: ${fmtValue(x)}`).join("; ");
+    }
+    return String(v);
+  }
+
+  function el(tag, text, cls) {
+    const node = document.createElement(tag);
+    node.textContent = text;
+    if (cls) node.className = cls;
+    return node;
+  }
+
+  function renderFindings(row) {
+    const box = $("detailBody");
+    box.innerHTML = "";
+    if (row.error) { box.appendChild(el("p", row.error, "err")); return; }
+    if (!row.findings) { box.appendChild(el("p", "Waiting for results.", "muted")); return; }
+
+    const report = row.findings;
+    const items = report.findings || {};
+    const history = report.history || {};
+
+    const facts = history.available
+      ? [`Age: ${history.application_age_years} years`, `Commits: ${history.total_commits}`,
+         `Last commit: ${history.days_since_last_commit} days ago`]
+      : [history.reason || "Repository history not available."];
+    box.appendChild(el("p", facts.join("  ·  "), "muted"));
+
+    const flagged = (report.flags || []).map((id) => items[id]).filter(Boolean);
+    if (flagged.length) {
+      const wrap = document.createElement("div");
+      wrap.className = "flags";
+      wrap.appendChild(el("strong", "Needs review: "));
+      flagged.forEach((f) => wrap.appendChild(el("span", f.title, "chip")));
+      box.appendChild(wrap);
+    }
+
+    const groups = new Map();
+    for (const item of Object.values(items)) {
+      const key = CATEGORY_ORDER.includes(item.category) ? item.category : "other";
+      if (!groups.has(key)) groups.set(key, []);
+      groups.get(key).push(item);
+    }
+    const keys = [...CATEGORY_ORDER.filter((k) => groups.has(k)), ...(groups.has("other") ? ["other"] : [])];
+    for (const key of keys) {
+      box.appendChild(el("h3", CATEGORY_TITLES[key] || "Other"));
+      for (const item of groups.get(key)) {
+        const card = document.createElement("div");
+        card.className = "finding" + (item.severity ? " sev-" + item.severity : "");
+        card.appendChild(el("h4", item.title));
+        card.appendChild(el("p", fmtValue(item.value)));
+        const meta = `Confidence: ${item.confidence}` +
+          (item.severity ? ` · Severity: ${item.severity}` : "") +
+          ` · Evidence files: ${item.evidence_count}`;
+        card.appendChild(el("p", meta, "muted small"));
+        if (item.note) card.appendChild(el("p", item.note, "muted small"));
+        if (item.evidence && item.evidence.length) {
+          const details = document.createElement("details");
+          details.appendChild(el("summary", "Show evidence files"));
+          const list = document.createElement("ul");
+          list.className = "plain";
+          item.evidence.forEach((path) => list.appendChild(el("li", path, "mono")));
+          details.appendChild(list);
+          card.appendChild(details);
+        }
+        box.appendChild(card);
+      }
+    }
+
+    if (report.limitations && report.limitations.length) {
+      box.appendChild(el("h3", "What this review does not cover"));
+      const ul = document.createElement("ul");
+      report.limitations.forEach((t) => ul.appendChild(el("li", t)));
+      box.appendChild(ul);
+    }
+
+    const raw = document.createElement("details");
+    raw.appendChild(el("summary", "Raw data (for auditors)"));
+    raw.appendChild(el("pre", JSON.stringify(report, null, 2), "raw"));
+    box.appendChild(raw);
+  }
+
   function renderDetail(row) {
     $("detail").hidden = false;
     $("detailTitle").textContent = row.ref ? `${row.repo} @ ${row.ref}` : row.repo;
     $("detailMeta").textContent = `Status: ${row.status}. Commit: ${row.commit_sha || "not known yet"}. Started by: ${row.is_mine ? "you" : "a teammate"}. Deleted after: ${new Date(row.expires_at).toLocaleDateString()}.`;
-    $("detailBody").textContent = row.error ? row.error : row.findings ? JSON.stringify(row.findings, null, 2) : "Waiting for results.";
+    renderFindings(row);
 
     $("deleteBtn").hidden = !row.can_delete;
     $("deleteBtn").onclick = async () => {
