@@ -241,7 +241,8 @@ pre{white-space:pre-wrap;word-break:break-word;background:var(--soft);padding:12
   body.printing > *:not(#printReport){display:none!important}
   body.printing #printReport{display:block!important;color:#000;background:#fff;font:11pt/1.45 system-ui,-apple-system,"Segoe UI",sans-serif;padding:0}
   #printReport h1{font-size:20pt;margin:0 0 4pt}
-  #printReport h3{font-size:12pt;margin:0 0 2pt}
+  #printReport h2{font-size:13pt;margin:12pt 0 4pt;border-bottom:1px solid #999;padding-bottom:2pt}
+  #printReport h3{font-size:11pt;margin:0 0 2pt}
   #printReport .print-meta{font-size:9pt;color:#444;margin:2pt 0}
   #printReport .print-value{margin:2pt 0 4pt;word-break:break-word}
   #printReport .print-item{border-bottom:1px solid #ccc;padding:8pt 0;break-inside:avoid}
@@ -2151,26 +2152,51 @@ a{color:#6d28d9;font-weight:600}`;
     setTimeout(() => URL.revokeObjectURL(url), 1000);
   });
 
-  // PDF: the same findings as the JSON, laid out for printing. The browser's print dialog saves the PDF.
-  function fmtValue(v) {
-    if (v === null || v === undefined) return "";
-    if (typeof v === "object") return JSON.stringify(v).slice(0, 300);
+  // PDF and HTML: the same findings the review shows, grouped by category, for printing or attaching.
+  const CATEGORY_LABELS = { stack: "Stack", ui_portal: "Application and portal", data: "Data", infrastructure: "Hosting and infrastructure", security: "Security", privacy: "Privacy", delivery: "Delivery", containers: "Containers", epic: "Healthcare standards" };
+  function reportValue(v) {
+    if (v === null || v === undefined || v === "") return "None";
+    if (Array.isArray(v)) return v.length ? v.map(reportValue).join(", ") : "None";
+    if (typeof v === "object") return Object.entries(v).map(([k, x]) => `${k.replace(/_/g, " ")}: ${reportValue(x)}`).join("; ");
     return String(v);
+  }
+  function confidenceLine(f) {
+    const n = f.evidence_count ? ` · ${f.evidence_count} evidence item${f.evidence_count === 1 ? "" : "s"}` : "";
+    return `${f.confidence === "verified" ? "Verified in code" : "Inferred, needs review"}${n}`;
+  }
+  // The analysis stores the whole report; the findings the viewer may see are under report.findings.
+  function reportSections() {
+    const shown = (cur.findings && cur.findings.findings) || {};
+    const groups = {};
+    for (const f of Object.values(shown)) (groups[f.category || "other"] = groups[f.category || "other"] || []).push(f);
+    const order = Object.keys(CATEGORY_LABELS);
+    const keys = [...order.filter((k) => groups[k]), ...Object.keys(groups).filter((k) => !order.includes(k))];
+    const all = Object.values(shown);
+    const verified = all.filter((f) => f.confidence === "verified").length;
+    return {
+      summary: `${all.length} points found · ${verified} verified in code · ${all.length - verified} need review`,
+      groups: keys.map((k) => ({ label: CATEGORY_LABELS[k] || "Other", items: groups[k] })),
+    };
   }
   function buildPrintReport() {
     const box = $("printReport");
     box.replaceChildren();
+    const data = reportSections();
     box.appendChild(el("h1", `Cutover report: ${cur.app_name || cur.repo}`));
     box.appendChild(el("p", `${cur.repo || ""}${cur.commit_sha ? " · commit " + cur.commit_sha : ""}${cur.finished_at ? " · finished " + new Date(cur.finished_at).toLocaleString() : ""}`, "print-meta"));
     box.appendChild(el("p", "Contains only the findings your role may see. Source code is not included.", "print-meta"));
-    for (const f of Object.values(cur.findings || {})) {
-      const item = el("div", null, "print-item");
-      item.appendChild(el("h3", f.title || f.id));
-      item.appendChild(el("p", `${fmtValue(f.value)}`, "print-value"));
-      item.appendChild(el("p", `${f.confidence === "verified" ? "Verified in code" : "Inferred, needs review"}${f.evidence_count ? " · " + f.evidence_count + " evidence item" + (f.evidence_count === 1 ? "" : "s") : ""}`, "print-meta"));
-      if (f.note) item.appendChild(el("p", f.note, "print-meta"));
-      if (f.evidence && f.evidence.length) item.appendChild(el("p", f.evidence.slice(0, 5).join(", "), "print-meta"));
-      box.appendChild(item);
+    box.appendChild(el("p", data.summary, "print-meta"));
+    for (const g of data.groups) {
+      box.appendChild(el("h2", g.label));
+      for (const f of g.items) {
+        const item = el("div", null, "print-item");
+        item.appendChild(el("h3", f.title || f.id));
+        item.appendChild(el("p", reportValue(f.value), "print-value"));
+        item.appendChild(el("p", confidenceLine(f), "print-meta"));
+        if (f.note) item.appendChild(el("p", f.note, "print-meta"));
+        if (f.evidence && f.evidence.length) item.appendChild(el("p", "Evidence: " + f.evidence.slice(0, 5).join(", "), "print-meta"));
+        box.appendChild(item);
+      }
     }
   }
   function printReportPdf() {
@@ -2187,31 +2213,32 @@ a{color:#6d28d9;font-weight:600}`;
   // HTML: one self-contained file with the same findings. No scripts and no outside links, so it can be attached to an email.
   function buildReportHtml() {
     const esc = (v) => String(v ?? "").replace(/[&<>"']/g, (ch) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[ch]));
+    const data = reportSections();
     const when = cur.finished_at ? new Date(cur.finished_at).toLocaleString() : "";
-    const items = Object.values(cur.findings || {}).map((f) => {
+    const groups = data.groups.map((g) => `<h2 class="group">${esc(g.label)}</h2>\n` + g.items.map((f) => {
       const ev = (f.evidence || []).slice(0, 5);
-      const count = f.evidence_count ? `${f.evidence_count} evidence item${f.evidence_count === 1 ? "" : "s"}` : "";
-      return `<section class="item"><h2>${esc(f.title || f.id)}</h2>
-<p class="value">${esc(fmtValue(f.value))}</p>
-<p class="meta">${f.confidence === "verified" ? "Verified in code" : "Inferred, needs review"}${count ? " · " + esc(count) : ""}</p>
+      return `<section class="item"><h3>${esc(f.title || f.id)}</h3>
+<p class="value">${esc(reportValue(f.value))}</p>
+<p class="meta">${esc(confidenceLine(f))}</p>
 ${f.note ? `<p class="meta">${esc(f.note)}</p>` : ""}
-${ev.length ? `<p class="meta">${esc(ev.join(", "))}</p>` : ""}</section>`;
-    }).join("\n");
+${ev.length ? `<p class="meta">Evidence: ${esc(ev.join(", "))}</p>` : ""}</section>`;
+    }).join("\n")).join("\n");
     return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Cutover report: ${esc(cur.app_name || cur.repo)}</title>
 <style>
 body{margin:0;padding:24px;font:15px/1.5 system-ui,-apple-system,"Segoe UI",sans-serif;color:#1e1b3a;background:#fff;max-width:880px}
 h1{font-size:24px;margin:0 0 6px}
+h2.group{font-size:17px;margin:22px 0 4px;border-bottom:1px solid #c9c3e6;padding-bottom:4px}
 .meta{font-size:13px;color:#5b5878;margin:4px 0}
 .note{font-size:13px;color:#5b5878;border-left:3px solid #c9c3e6;padding:4px 10px;margin:12px 0}
-.item{border-bottom:1px solid #e6e3f3;padding:12px 0}
-.item h2{font-size:16px;margin:0 0 4px}
+.item{border-bottom:1px solid #e6e3f3;padding:10px 0}
+.item h3{font-size:15px;margin:0 0 4px}
 .value{margin:2px 0 4px;word-break:break-word}
 </style></head><body>
 <h1>Cutover report: ${esc(cur.app_name || cur.repo)}</h1>
 <p class="meta">${esc(cur.repo || "")}${cur.commit_sha ? " · commit " + esc(cur.commit_sha) : ""}${when ? " · finished " + esc(when) : ""}</p>
-<p class="note">Contains only the findings the viewer's role may see. Source code is not included.</p>
-${items}
+<p class="note">Contains only the findings the viewer's role may see. Source code is not included. ${esc(data.summary)}.</p>
+${groups}
 </body></html>`;
   }
   $("exportHtmlTop").addEventListener("click", () => {
