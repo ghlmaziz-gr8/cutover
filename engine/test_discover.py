@@ -93,16 +93,22 @@ class PortalTests(unittest.TestCase):
 
     def test_roles_are_counted_from_access_rules(self):
         out = self._detect({
-            "src/Security.java": (
-                'http.authorizeRequests().antMatchers("/a").hasRole("PATIENT")'
-                '.antMatchers("/b").hasRole("NURSE");\n'
-                '@RolesAllowed("PATIENT")\nvoid f() {}\n'
+            "src/PortalController.java": (
+                '@PreAuthorize("hasRole(\'PATIENT\')")\nvoid a() {}\n'
+                '@RolesAllowed("PATIENT")\nvoid b() {}\n'
             ),
         })
         self.assertIn("ui.roles", out)
         value = out["ui.roles"]["value"]
-        self.assertEqual(value["count"], 2)
-        self.assertEqual(value["roles"], {"NURSE": 1, "PATIENT": 2})
+        self.assertEqual(value["count"], 1)
+        self.assertEqual(value["roles"], {"PATIENT": 2})
+
+    def test_staff_only_roles_are_left_out_of_the_portal(self):
+        out = self._detect({
+            "src/StaffController.java": '@PreAuthorize("hasRole(\'FRONTDESK\')")\nvoid a() {}\n',
+            "src/PortalController.java": '@PreAuthorize("hasRole(\'PATIENT\')")\nvoid b() {}\n',
+        })
+        self.assertEqual(out["ui.roles"]["value"]["roles"], {"PATIENT": 1})
         self.assertEqual(out["ui.roles"]["confidence"], "verified")
 
     def test_no_roles_finding_without_access_rules(self):
