@@ -335,7 +335,47 @@ pre{white-space:pre-wrap;word-break:break-word;background:var(--soft);padding:12
         <button type="button" id="startNew">Start a new assessment</button>
       </div>
       <p class="muted small" style="margin-top:6px">Only sample or public code. No patient data.</p>
-      <div id="analysisList" style="margin-top:10px"></div>
+      <div class="list-tools" style="display:grid;gap:10px;margin-top:12px">
+        <input id="listSearch" type="search" placeholder="Search by name, repository, branch or status" autocomplete="off" aria-label="Search analyses" style="width:100%">
+        <div class="row" style="gap:8px;flex-wrap:wrap">
+          <select id="listStatus" aria-label="Filter by status">
+            <option value="">All statuses</option>
+            <option value="complete">Review ready</option>
+            <option value="running">Running</option>
+            <option value="queued">Waiting to start</option>
+            <option value="failed">Failed</option>
+          </select>
+          <select id="listOwner" aria-label="Filter by who started it">
+            <option value="">Started by anyone</option>
+            <option value="mine">Started by you</option>
+            <option value="team">Started by a teammate</option>
+          </select>
+          <label class="small muted">From <input id="listFrom" type="date" aria-label="Started on or after"></label>
+          <label class="small muted">To <input id="listTo" type="date" aria-label="Started on or before"></label>
+        </div>
+        <div class="row" style="gap:8px;flex-wrap:wrap;justify-content:space-between">
+          <select id="listSort" aria-label="Sort analyses">
+            <option value="newest">Newest first</option>
+            <option value="oldest">Oldest first</option>
+            <option value="name">Name, A to Z</option>
+            <option value="repo">Repository, A to Z</option>
+            <option value="status">Status</option>
+          </select>
+          <select id="listPageSize" aria-label="Rows per page">
+            <option value="10">10 per page</option>
+            <option value="20" selected>20 per page</option>
+            <option value="50">50 per page</option>
+          </select>
+          <button type="button" class="ghost small-btn" id="listClear">Clear filters</button>
+        </div>
+      </div>
+      <p class="muted small" id="listCount" style="margin-top:10px"></p>
+      <div id="analysisList" style="margin-top:6px"></div>
+      <div class="row" id="listPager" style="justify-content:space-between;margin-top:12px" hidden>
+        <button type="button" class="ghost small-btn" id="pagePrev">Previous</button>
+        <span class="muted small" id="pageInfo"></span>
+        <button type="button" class="ghost small-btn" id="pageNext">Next</button>
+      </div>
       <p id="listMsg" class="muted small" role="status"></p>
     </div>
 
@@ -1201,27 +1241,101 @@ pre{white-space:pre-wrap;word-break:break-word;background:var(--soft);padding:12
     }
   }
 
-  async function loadList() {
+  // The analyses list: all rows for the workspace are loaded once, then searched, filtered, sorted and paged here.
+  let listRows = [];
+  let listPage = 1;
+  let listWorkspace = null;
+
+  function applyListTools(rows) {
+    const q = $("listSearch").value.trim().toLowerCase();
+    const status = $("listStatus").value;
+    const owner = $("listOwner").value;
+    const from = $("listFrom").value ? new Date(`${$("listFrom").value}T00:00:00`) : null;
+    const to = $("listTo").value ? new Date(`${$("listTo").value}T23:59:59`) : null;
+    const matches = rows.filter((r) => {
+      if (q && ![r.app_name, r.repo, r.ref, STATUS_TEXT[r.status]].some((v) => String(v || "").toLowerCase().includes(q))) return false;
+      if (status && r.status !== status) return false;
+      if (owner === "mine" && !r.is_mine) return false;
+      if (owner === "team" && r.is_mine) return false;
+      const created = new Date(r.created_at);
+      if (from && created < from) return false;
+      if (to && created > to) return false;
+      return true;
+    });
+    const nameOf = (r) => String(r.app_name || r.repo || "").toLowerCase();
+    const sorters = {
+      newest: (a, b) => new Date(b.created_at) - new Date(a.created_at),
+      oldest: (a, b) => new Date(a.created_at) - new Date(b.created_at),
+      name: (a, b) => nameOf(a).localeCompare(nameOf(b)),
+      repo: (a, b) => String(a.repo).localeCompare(String(b.repo)),
+      status: (a, b) => (STATUS_TEXT[a.status] || a.status).localeCompare(STATUS_TEXT[b.status] || b.status),
+    };
+    return matches.sort(sorters[$("listSort").value] || sorters.newest);
+  }
+
+  function analysisItem(r) {
+    const item = el("div", null, "item");
+    const text = el("div", null, "grow");
+    text.append(
+      el("b", r.app_name || r.repo),
+      el("div", `${r.repo}${r.ref ? " @ " + r.ref : ""} · ${STATUS_TEXT[r.status] || r.status} · ${r.is_mine ? "started by you" : "started by a teammate"} · ${new Date(r.created_at).toLocaleDateString()}`, "muted small"),
+    );
+    const open = el("button", "Open", "ghost small-btn");
+    open.type = "button";
+    open.addEventListener("click", () => openAnalysis(r.id));
+    item.append(text, open);
+    return item;
+  }
+
+  function renderList() {
     const box = $("analysisList");
+    const size = Number($("listPageSize").value) || 20;
+    const matches = applyListTools(listRows);
+    const pages = Math.max(1, Math.ceil(matches.length / size));
+    listPage = Math.min(Math.max(1, listPage), pages);
+    box.innerHTML = "";
+    if (listRows.length && !matches.length) box.appendChild(el("p", "No analyses match these filters.", "muted small"));
+    for (const r of matches.slice((listPage - 1) * size, listPage * size)) box.appendChild(analysisItem(r));
+    $("listCount").textContent = listRows.length ? `${matches.length} of ${listRows.length} analyses shown` : "";
+    $("pageInfo").textContent = `Page ${listPage} of ${pages}`;
+    $("pagePrev").disabled = listPage <= 1;
+    $("pageNext").disabled = listPage >= pages;
+    $("listPager").hidden = matches.length <= size;
+  }
+
+  function resetListAndRender() {
+    listPage = 1;
+    renderList();
+  }
+
+  for (const id of ["listStatus", "listOwner", "listFrom", "listTo", "listSort", "listPageSize"]) {
+    $(id).addEventListener("change", resetListAndRender);
+  }
+  $("listSearch").addEventListener("input", resetListAndRender);
+  $("listClear").addEventListener("click", () => {
+    $("listSearch").value = "";
+    $("listStatus").value = "";
+    $("listOwner").value = "";
+    $("listFrom").value = "";
+    $("listTo").value = "";
+    $("listSort").value = "newest";
+    resetListAndRender();
+  });
+  $("pagePrev").addEventListener("click", () => { listPage -= 1; renderList(); });
+  $("pageNext").addEventListener("click", () => { listPage += 1; renderList(); });
+
+  async function loadList() {
     const msg = $("listMsg");
     try {
       const rows = await api(`/api/analyses?workspace=${encodeURIComponent(ws.id)}`);
-      box.innerHTML = "";
+      if (listWorkspace !== ws.id) {
+        listWorkspace = ws.id;
+        listPage = 1;
+      }
+      listRows = rows;
+      renderList();
       msg.textContent = rows.length ? "" : "No analyses in this workspace yet.";
       msg.className = "muted small";
-      for (const r of rows) {
-        const item = el("div", null, "item");
-        const text = el("div", null, "grow");
-        text.append(
-          el("b", r.app_name || r.repo),
-          el("div", `${r.repo}${r.ref ? " @ " + r.ref : ""} · ${STATUS_TEXT[r.status] || r.status} · ${r.is_mine ? "started by you" : "started by a teammate"} · ${new Date(r.created_at).toLocaleDateString()}`, "muted small"),
-        );
-        const open = el("button", "Open", "ghost small-btn");
-        open.type = "button";
-        open.addEventListener("click", () => openAnalysis(r.id));
-        item.append(text, open);
-        box.appendChild(item);
-      }
       if (rows.some((r) => r.status === "queued" || r.status === "running")) {
         clearTimeout(homeTimer);
         homeTimer = setTimeout(() => { if ($("s-home").hidden === false) loadList(); }, 5000);
