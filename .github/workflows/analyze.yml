@@ -64,11 +64,17 @@ jobs:
         with:
           python-version: "3.12"
 
+      - name: Install the browser for page screenshots
+        run: |
+          set -euo pipefail
+          python3 -m pip install --quiet playwright==1.47.0
+          python3 -m playwright install --with-deps chromium
+
       - name: Run the discovery engine
         run: |
           set -euo pipefail
           python3 cutover/engine/cutover_discover.py \
-            --path "$RUNNER_TEMP/target" --out "$RUNNER_TEMP/reports"
+            --path "$RUNNER_TEMP/target" --out "$RUNNER_TEMP/reports" --screenshots
 
       - name: Send findings to the API
         env:

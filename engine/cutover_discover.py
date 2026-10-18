@@ -537,7 +537,7 @@ def detect_ui(repo: Repo, out: dict) -> None:
             "ui.page_preview", "ui_portal", "Pages drawn from the code",
             {"count": len(previews), "pages": previews},
             "inferred", [x["path"] for x in previews],
-            note="Rendered from each page's markup. Source code is not stored: only visible text, the layout and sample values are kept.",
+            note="Each page is drawn from its markup, and static pages get a screenshot when screenshots are on. Source code is not stored: only visible text, layout, sample values and screenshots are kept.",
         )
 
     roles: dict[str, int] = defaultdict(int)
@@ -859,7 +859,76 @@ def render_md(report: dict, label: str) -> str:
 # Command line
 # --------------------------------------------------------------------------
 
-def analyze_and_write(root: Path, label: str, out_dir: str, now: dt.datetime, source: dict) -> int:
+# ---- Page screenshots: a real browser draws each static page, so the look is the page's own.
+SHOT_SIZES = {"desktop": (1280, 900), "phone": (390, 844)}
+SHOT_MAX_BYTES = 350_000
+SHOT_MAX_HEIGHT = {"desktop": 2400, "phone": 2000}
+SHOT_ALLOWED_HOSTS = ("fonts.googleapis.com", "fonts.gstatic.com", "cdn.tailwindcss.com", "cdnjs.cloudflare.com",
+                      "cdn.jsdelivr.net", "unpkg.com")
+
+
+def _allow_page_request(route) -> None:
+    """Local files, inline data and a few font and style CDNs load. Everything else is blocked."""
+    from urllib.parse import urlparse
+    url = route.request.url
+    if url.startswith(("file://", "data:")):
+        route.continue_()
+        return
+    host = urlparse(url).hostname or ""
+    if urlparse(url).scheme == "https" and host in SHOT_ALLOWED_HOSTS:
+        route.continue_()
+    else:
+        route.abort()
+
+
+def add_screenshots(report: dict, root: Path) -> None:
+    """Keep a JPEG of each static page at desktop and phone width. Dynamic pages are not captured."""
+    finding = report["findings"].get("ui.page_preview")
+    if not finding:
+        return
+    try:
+        from playwright.sync_api import sync_playwright
+    except ImportError:
+        report.setdefault("limitations", []).append("Page screenshots were not taken: the browser library is not installed.")
+        return
+    chrome = os.environ.get("CUTOVER_CHROME") or None
+    pages = [pg for pg in finding["value"]["pages"] if pg.get("kind") == "static"]
+    try:
+        _capture_pages(sync_playwright, chrome, pages, root)
+    except Exception as exc:  # a failed browser must not fail the analysis
+        report.setdefault("limitations", []).append(f"Page screenshots were not taken: {type(exc).__name__}.")
+
+
+def _capture_pages(sync_playwright, chrome, pages, root: Path) -> None:
+    with sync_playwright() as pw:
+        browser = pw.chromium.launch(executable_path=chrome, args=["--no-sandbox", "--disable-gpu"])
+        try:
+            for pg in pages:
+                shots = {}
+                for name, (w, h) in SHOT_SIZES.items():
+                    ctx = browser.new_context(viewport={"width": w, "height": h}, java_script_enabled=True)
+                    try:
+                        page = ctx.new_page()
+                        page.route("**/*", _allow_page_request)
+                        page.goto((root / pg["path"]).resolve().as_uri(), wait_until="networkidle", timeout=20000)
+                        page.wait_for_timeout(1000)
+                        tall = page.evaluate("document.documentElement.scrollHeight")
+                        height = min(tall, SHOT_MAX_HEIGHT[name])
+                        png = page.screenshot(full_page=True, type="jpeg", quality=70,
+                                              clip={"x": 0, "y": 0, "width": w, "height": height})
+                        if len(png) <= SHOT_MAX_BYTES:
+                            shots[name] = base64.b64encode(png).decode("ascii")
+                    except Exception:
+                        pass
+                    finally:
+                        ctx.close()
+                pg["shots"] = shots
+        finally:
+            browser.close()
+
+
+def analyze_and_write(root: Path, label: str, out_dir: str, now: dt.datetime, source: dict,
+                      shots: bool = False) -> int:
     repo = Repo(root)
     commit = None
     if is_repo_root(root):
@@ -868,6 +937,8 @@ def analyze_and_write(root: Path, label: str, out_dir: str, now: dt.datetime, so
         except RuntimeError:
             commit = None
     report = analyze(repo, root, now, {**source, "commit": commit})
+    if shots:
+        add_screenshots(report, root)
     safe_label = re.sub(r"[^\w.-]", "_", label)
     dest = Path(out_dir) / safe_label
     dest.mkdir(parents=True, exist_ok=True)
@@ -886,6 +957,8 @@ def main(argv=None) -> int:
     src.add_argument("--path", help="Local folder to analyze (a git repository also gets history)")
     ap.add_argument("--ref", help="Branch, tag or commit to check out (with --repo)")
     ap.add_argument("--out", default="reports", help="Output folder (default: reports)")
+    ap.add_argument("--screenshots", action="store_true",
+                    help="Keep a picture of each static page (needs Playwright and Chromium)")
     args = ap.parse_args(argv)
 
     now = dt.datetime.now(dt.timezone.utc)
@@ -900,12 +973,12 @@ def main(argv=None) -> int:
             root = Path(tmp) / "source"
             clone_repo(url, root, args.ref, token)
             return analyze_and_write(root, label, args.out, now,
-                                     {"type": "github", "url": url, "ref": args.ref})
+                                     {"type": "github", "url": url, "ref": args.ref}, shots=args.screenshots)
 
     root = Path(args.path).expanduser().resolve()
     if not root.is_dir():
         ap.error("--path must be an existing folder")
-    return analyze_and_write(root, root.name, args.out, now, {"type": "local", "ref": None})
+    return analyze_and_write(root, root.name, args.out, now, {"type": "local", "ref": None}, shots=args.screenshots)
 
 
 if __name__ == "__main__":
