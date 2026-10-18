@@ -147,6 +147,17 @@ revoke all on public.workspaces, public.analyses, public.members, public.invitat
 
 grant select, insert, update, delete on public.workspaces, public.analyses, public.members,
   public.invitations, public.analysis_comments, public.action_items, public.contingencies to service_role;
+
+-- Database size in bytes, for the operator view. Only the Worker (service role) can call it.
+create or replace function public.database_size_bytes()
+returns bigint
+language sql
+security definer
+set search_path = ''
+as $$ select pg_database_size(current_database())::bigint $$;
+
+revoke all on function public.database_size_bytes() from public, anon, authenticated;
+grant execute on function public.database_size_bytes() to service_role;
 grant select, insert on public.deletion_log to service_role;
 
 -- First workspace admin, after the Worker is deployed. Replace the workspace name and email:
