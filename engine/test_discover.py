@@ -60,5 +60,55 @@ class HelperTests(unittest.TestCase):
         self.assertEqual(cd._redact("failed with ghp_abc123", "ghp_abc123"), "failed with ***")
 
 
+class PortalTests(unittest.TestCase):
+    """The client-facing portal card: screen names from file names, roles from access rules."""
+
+    def _detect(self, files: dict) -> dict:
+        import tempfile
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            for rel, text in files.items():
+                path = root / rel
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_text(text, encoding="utf-8")
+            out: dict = {}
+            cd.detect_ui(cd.Repo(root), out)
+            return out
+
+    def test_screen_names_come_from_template_file_names(self):
+        out = self._detect({
+            "web/templates/lab-results.html": "<h1>Lab</h1>",
+            "web/templates/appointments.html": "<h1>Appt</h1>",
+            "web/templates/secure_messages.html": "<h1>Msg</h1>",
+        })
+        self.assertIn("ui.screen_names", out)
+        value = out["ui.screen_names"]["value"]
+        self.assertEqual(value["count"], 3)
+        self.assertEqual(value["names"], ["Appointments", "Lab Results", "Secure Messages"])
+        self.assertEqual(out["ui.screen_names"]["confidence"], "inferred")
+
+    def test_no_screen_finding_when_no_screen_files(self):
+        out = self._detect({"src/Main.java": "class Main {}"})
+        self.assertNotIn("ui.screen_names", out)
+
+    def test_roles_are_counted_from_access_rules(self):
+        out = self._detect({
+            "src/Security.java": (
+                'http.authorizeRequests().antMatchers("/a").hasRole("PATIENT")'
+                '.antMatchers("/b").hasRole("NURSE");\n'
+                '@RolesAllowed("PATIENT")\nvoid f() {}\n'
+            ),
+        })
+        self.assertIn("ui.roles", out)
+        value = out["ui.roles"]["value"]
+        self.assertEqual(value["count"], 2)
+        self.assertEqual(value["roles"], {"NURSE": 1, "PATIENT": 2})
+        self.assertEqual(out["ui.roles"]["confidence"], "verified")
+
+    def test_no_roles_finding_without_access_rules(self):
+        out = self._detect({"src/Main.java": "class Main {}"})
+        self.assertNotIn("ui.roles", out)
+
+
 if __name__ == "__main__":
     unittest.main()

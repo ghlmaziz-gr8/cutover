@@ -350,6 +350,39 @@ def detect_ui(repo: Repo, out: dict) -> None:
         note="Each template or page component counts as one screen. Fragments and email templates are included, so confirm the count with the team.",
     )
 
+    # Screen names come from the file names, so the client can draw a preview. Roles are listed only
+    # where the code names them in a security annotation; nothing is guessed.
+    names = {}
+    for p in screens:
+        base = re.sub(r"\.[A-Za-z]+$", "", p.rsplit("/", 1)[-1])
+        label = " ".join(w.capitalize() for w in re.split(r"[-_.\s]+", base) if w)
+        if label:
+            names.setdefault(label, p)
+    if names:
+        out["ui.screen_names"] = F(
+            "ui.screen_names", "ui_portal", "Screen names from file names",
+            {"count": len(names), "names": sorted(names)[:60]},
+            "inferred", [names[n] for n in sorted(names)][:EVIDENCE_LIMIT],
+            note="Each name is taken from a template or page file name, so it shows what the screen is called in the code.",
+        )
+
+    roles: dict[str, int] = defaultdict(int)
+    role_files: set[str] = set()
+    for p, t in repo.files.items():
+        if not p.endswith((".java", ".kt", ".html", ".tsx", ".jsx", ".vue", ".cs")):
+            continue
+        for m in re.finditer(r"hasRole\(\s*['\"](\w+)['\"]\s*\)|hasAuthority\(\s*['\"](\w+)['\"]\s*\)|@RolesAllowed\(\s*\{?\s*['\"](\w+)['\"]", t):
+            role = next(g for g in m.groups() if g)
+            roles[role] += 1
+            role_files.add(p)
+    if roles:
+        out["ui.roles"] = F(
+            "ui.roles", "ui_portal", "Roles named in access rules",
+            {"count": len(roles), "roles": dict(sorted(roles.items()))},
+            "verified", sorted(role_files)[:EVIDENCE_LIMIT],
+            note="Only roles written into access rules in the code are listed.",
+        )
+
     portal_terms = {
         p for p, t in repo.files.items()
         if p.endswith((".java", ".kt", ".html", ".tsx", ".jsx", ".vue", ".cs"))
