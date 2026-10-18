@@ -1671,10 +1671,16 @@ pre{white-space:pre-wrap;word-break:break-word;background:var(--soft);padding:12
       else {
         const tables = val("data.tables");
         const migrations = val("data.migrations");
-        if (!tables) c.appendChild(el("p", "No tables found in the code reviewed.", "muted small"));
-        else {
-          c.querySelector("h3").textContent = `${tables.count} ${tables.count === 1 ? "table" : "tables"}`;
-          if (migrations && migrations.scripts) c.appendChild(el("p", `${migrations.scripts} schema migrations (${migrations.tool})`, "muted small"));
+        if (!tables || !tables.count) {
+          const empty = el("div", null, "seg seg-empty");
+          empty.setAttribute("role", "img");
+          empty.setAttribute("aria-label", "No database tables");
+          c.appendChild(empty);
+          c.appendChild(el("p", "No database tables found in the code reviewed.", "muted small"));
+        } else {
+          const parts = [`${tables.count} ${tables.count === 1 ? "table" : "tables"}`];
+          if (migrations && migrations.scripts) parts.push(`${migrations.scripts} schema migrations (${migrations.tool})`);
+          c.appendChild(el("p", parts.join(" · "), "muted small"));
           const groups = {};
           for (const name of tables.names || []) {
             const parts = String(name).toLowerCase().split("_");
