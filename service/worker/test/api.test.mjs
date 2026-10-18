@@ -47,6 +47,7 @@ const AN_BETA = uid(202);
 const COMMENT_ACME = uid(301);
 const ACTION_ACME = uid(401);
 const CONTINGENCY_ACME = uid(501);
+const AN_RUNNING = uid(203);
 const NOW = "2026-10-17T12:00:00.000Z";
 const FAR_FUTURE = "2099-01-01T00:00:00.000Z";
 const LONG_AGO = "2020-01-01T00:00:00.000Z";
@@ -100,6 +101,7 @@ function seed() {
         status: "complete", commit_sha: "def456", findings: structuredClone(REPORT), error: null,
         created_at: NOW, finished_at: NOW, expires_at: FAR_FUTURE },
     ],
+    file_findings: [],
     analysis_comments: [
       { id: COMMENT_ACME, analysis_id: AN_ACME, author_id: PEOPLE.eng_a.id, author_email: PEOPLE.eng_a.email, body: "Start here.", created_at: NOW },
     ],
@@ -663,6 +665,65 @@ test("a workspace is not left behind when its first admin cannot be invited", as
   const res = await call("/api/workspaces", { as: "operator", method: "POST", body: { name: "Lost", admin_email: "it@lost.test" } });
   assert.equal(res.status, 502);
   assert.equal(state.workspaces.some((w) => w.name === "Lost"), false);
+});
+
+// ---- File-level chunks from the runner ----
+
+function runningAnalysis(extra = {}) {
+  state.analyses.push({
+    id: AN_RUNNING, workspace_id: W_ACME, owner_id: PEOPLE.eng_a.id, repo: "acme/app", ref: null, app_name: "Acme app",
+    status: "running", commit_sha: null, findings: null, error: null, created_at: NOW, finished_at: null, expires_at: FAR_FUTURE,
+    file_bytes: 0, ...extra,
+  });
+}
+
+const sampleFile = (path) => ({
+  path, category: "application", purpose: "Handles requests for one resource and passes them to a service.",
+  suggestions: [{ text: "Add a test for the empty-input branch.", severity: "low" }], sample_only: true,
+});
+
+test("a runner chunk needs the shared secret", async () => {
+  runningAnalysis();
+  const res = await call(`/api/runner/${AN_RUNNING}/files`, { method: "POST", body: { files: [sampleFile("src/A.java")] }, secret: "wrong" });
+  assert.equal(res.status, 401);
+});
+
+test("a valid chunk is saved, and the analysis is marked running with its running total", async () => {
+  runningAnalysis();
+  const res = await call(`/api/runner/${AN_RUNNING}/files`, { method: "POST", body: { files: [sampleFile("src/A.java"), sampleFile("src/B.java")] }, secret: env.RUNNER_SECRET });
+  assert.equal(res.status, 201);
+  assert.equal(res.body.saved, 2);
+  assert.equal(state.file_findings.filter((f) => f.analysis_id === AN_RUNNING).length, 2);
+  const row = state.analyses.find((a) => a.id === AN_RUNNING);
+  assert.equal(row.status, "running");
+  assert.ok(row.file_bytes > 0);
+});
+
+test("a chunk with a bad record, a repeated path or too many files is refused and nothing is saved", async () => {
+  runningAnalysis();
+  const longPath = await call(`/api/runner/${AN_RUNNING}/files`, { method: "POST", body: { files: [sampleFile("x".repeat(600))] }, secret: env.RUNNER_SECRET });
+  assert.equal(longPath.status, 400);
+  const twice = await call(`/api/runner/${AN_RUNNING}/files`, { method: "POST", body: { files: [sampleFile("src/A.java"), sampleFile("src/A.java")] }, secret: env.RUNNER_SECRET });
+  assert.equal(twice.status, 400);
+  const many = await call(`/api/runner/${AN_RUNNING}/files`, { method: "POST", body: { files: Array.from({ length: 201 }, (_, i) => sampleFile(`f${i}.java`)) }, secret: env.RUNNER_SECRET });
+  assert.equal(many.status, 400);
+  assert.equal(state.file_findings.length, 0);
+});
+
+test("a finished analysis takes no more file chunks", async () => {
+  const res = await call(`/api/runner/${AN_ACME}/files`, { method: "POST", body: { files: [sampleFile("src/A.java")] }, secret: env.RUNNER_SECRET });
+  assert.equal(res.status, 409);
+});
+
+test("going over the free-tier cap fails the analysis and removes its file rows", async () => {
+  runningAnalysis({ file_bytes: 25 * 1024 * 1024 - 10 });
+  state.file_findings.push({ id: uid(900), analysis_id: AN_RUNNING, path: "old.java", category: "application", purpose: null, suggestions: [], sample_only: true, created_at: NOW });
+  const res = await call(`/api/runner/${AN_RUNNING}/files`, { method: "POST", body: { files: [sampleFile("src/A.java")] }, secret: env.RUNNER_SECRET });
+  assert.equal(res.status, 413);
+  const row = state.analyses.find((a) => a.id === AN_RUNNING);
+  assert.equal(row.status, "failed");
+  assert.match(row.error, /25 MB limit/);
+  assert.equal(state.file_findings.filter((f) => f.analysis_id === AN_RUNNING).length, 0);
 });
 
 // ---- Runner callback ----
