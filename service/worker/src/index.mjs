@@ -439,15 +439,18 @@ async function overviewWorkspaces(request, env) {
   const auth = await requireUser(env, request);
   if (auth.response) return auth.response;
   if (!isOperator(env, auth.user.email)) return json({ error: "Only Cutover operators can see this." }, 403);
-  const [wsRes, memRes, invRes] = await Promise.all([
+  const [wsRes, memRes, invRes, anRes] = await Promise.all([
     serviceRest(env, "workspaces?select=id,name,created_at&order=created_at.asc"),
     serviceRest(env, "members?select=workspace_id,user_id,email,name,role,is_admin"),
     serviceRest(env, "invitations?select=workspace_id,email"),
+    serviceRest(env, "analyses?select=workspace_id"),
   ]);
-  if (!wsRes.ok || !memRes.ok || !invRes.ok) return json({ error: "Could not load workspaces." }, 502);
+  if (!wsRes.ok || !memRes.ok || !invRes.ok || !anRes.ok) return json({ error: "Could not load workspaces." }, 502);
   const workspaces = await wsRes.json();
   const members = await memRes.json();
   const invites = await invRes.json();
+  // Counts only: the workspace id of each analysis, never its findings.
+  const analyses = await anRes.json();
   const mine = new Set(members.filter((m) => m.user_id === auth.user.id).map((m) => m.workspace_id));
   return json(workspaces.map((w) => {
     const people = members.filter((m) => m.workspace_id === w.id);
@@ -457,6 +460,7 @@ async function overviewWorkspaces(request, env) {
       created_at: w.created_at,
       people_count: people.length,
       pending_count: invites.filter((i) => i.workspace_id === w.id).length,
+      analyses_count: analyses.filter((a) => a.workspace_id === w.id).length,
       you_are_member: mine.has(w.id),
     };
     if (out.you_are_member) {
