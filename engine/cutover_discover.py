@@ -222,6 +222,9 @@ def history(root: Path, now: dt.datetime) -> dict:
     years: dict[int, int] = defaultdict(int)
     for _, ts in tags:
         years[dt.datetime.fromtimestamp(ts, dt.timezone.utc).year] += 1
+    commit_years: dict[int, int] = defaultdict(int)
+    for s in stamps:
+        commit_years[dt.datetime.fromtimestamp(s, dt.timezone.utc).year] += 1
     latest = max(tags, key=lambda t: t[1])[0] if tags else None
     return {
         "available": True,
@@ -236,6 +239,7 @@ def history(root: Path, now: dt.datetime) -> dict:
         "release_tag_count": len(tags),
         "latest_release_tag": latest,
         "release_tags_per_year": dict(sorted(years.items())),
+        "commits_per_year": dict(sorted(commit_years.items())),
     }
 
 

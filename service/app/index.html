@@ -1645,10 +1645,17 @@ pre{white-space:pre-wrap;word-break:break-word;background:var(--soft);padding:12
         kv.append(el("span", "Last code change"), el("span", `${day(history.last_commit)} (${history.days_since_last_commit} days ago)`));
         kv.append(el("span", "Commits, last 12 months"), el("span", String(history.commits_last_12_months)));
         c.appendChild(kv);
-        const years = Object.entries(history.release_tags_per_year || {});
-        if (years.length) {
+        // Releases per year when the repository has tags; otherwise commits per year.
+        const releases = Object.entries(history.release_tags_per_year || {});
+        const commits = Object.entries(history.commits_per_year || {});
+        if (releases.length) {
           c.appendChild(el("p", "Tagged releases per year", "muted small"));
-          c.appendChild(columns(years.map(([y, v]) => ({ label: y.slice(-2), value: v }))));
+          c.appendChild(columns(releases.map(([y, v]) => ({ label: y.slice(-2), value: v }))));
+        } else if (commits.length) {
+          c.appendChild(el("p", "No release tags in this repository. Commits per year:", "muted small"));
+          c.appendChild(columns(commits.map(([y, v]) => ({ label: y.slice(-2), value: v }))));
+        } else {
+          c.appendChild(el("p", "No yearly history for this analysis. Run a new analysis to see it.", "muted small"));
         }
         const tags = el("div", null, "tags");
         tags.appendChild(el("span", "Verified from git history", "tag t-ok"));
