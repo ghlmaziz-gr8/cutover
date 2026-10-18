@@ -616,7 +616,7 @@ def detect_ui(repo: Repo, out: dict) -> None:
             "ui.page_preview", "ui_portal", "Pages drawn from the code",
             {"count": len(previews), "pages": previews},
             "inferred", [x["path"] for x in previews],
-            note="Each page is drawn from its markup, and static pages get a screenshot when screenshots are on. Source code is not stored: only visible text, layout, sample values and screenshots are kept.",
+            note="Each page is drawn from its markup. Source code is not stored: only visible text, layout and sample values are kept.",
         )
 
     roles: dict[str, int] = defaultdict(int)
