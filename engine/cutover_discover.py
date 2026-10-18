@@ -249,6 +249,83 @@ def history(root: Path, now: dt.datetime) -> dict:
 # Detectors. Each one adds findings to `out`, keyed by finding id.
 # --------------------------------------------------------------------------
 
+PURPOSE_SKIP_HEADINGS = {"installation", "install", "usage", "license", "licence", "contributing", "development",
+                         "setup", "getting started", "testing", "tests", "deployment", "roadmap", "changelog",
+                         "authors", "credits", "acknowledgements", "table of contents", "contents"}
+
+
+def _first_paragraph(md: str) -> str:
+    """The first plain paragraph of a README, skipping headings, badges, lists, tables and code."""
+    md = re.sub(r"```.*?```", "", md, flags=re.S)
+    md = re.sub(r"<[^>]+>", " ", md)
+    for block in re.split(r"\n\s*\n", md):
+        lines = [l.strip() for l in block.splitlines() if l.strip()]
+        if not lines or any(l.startswith(("#", "!", "[", "|", "-", "*", ">", "=")) for l in lines):
+            continue
+        text = " ".join(lines)
+        if len(text) >= 40:
+            return text[:400]
+    return ""
+
+
+def detect_purpose(repo: Repo, out: dict) -> None:
+    """What the project says it is, in its own words: name, description, README and home page. Nothing is written by Cutover."""
+    name = ""
+    summary = ""
+    source = ""
+    features: list[str] = []
+    pkg = repo.files.get("package.json")
+    if pkg:
+        try:
+            data = json.loads(pkg)
+            name = str(data.get("name") or "")
+            if data.get("description"):
+                summary, source = str(data["description"]), "package.json"
+        except ValueError:
+            pass
+    pyproject = repo.files.get("pyproject.toml")
+    if pyproject:
+        m = re.search(r'^name\s*=\s*"([^"]+)"', pyproject, re.M)
+        if m and not name:
+            name = m.group(1)
+        d = re.search(r'^description\s*=\s*"([^"]+)"', pyproject, re.M)
+        if d and not summary:
+            summary, source = d.group(1), "pyproject.toml"
+    readme = next((p for p in repo.paths if re.fullmatch(r"(?i)readme(\.md|\.rst|\.txt)?", p)), None)
+    if readme:
+        text = repo.files.get(readme, "")
+        heading = re.search(r"^#\s+(.+)$", text, re.M)
+        if heading and not name:
+            name = heading.group(1).strip()[:120]
+        para = _first_paragraph(text)
+        if para and not summary:
+            summary, source = para, readme
+        features = [h.strip()[:60] for h in re.findall(r"^##\s+(.+)$", text, re.M)
+                    if h.strip().lower() not in PURPOSE_SKIP_HEADINGS][:8]
+    home = next((p for p in repo.paths if p.lower() in ("index.html", "public/index.html", "src/index.html")), None)
+    if home:
+        t = repo.files.get(home, "")
+        meta = re.search(r"<meta\s+name=[\"']description[\"']\s+content=[\"']([^\"']+)", t, re.I)
+        if meta and not summary:
+            summary, source = " ".join(meta.group(1).split())[:400], home
+        title = re.search(r"<title>(.*?)</title>", t, re.I | re.S)
+        if title and not name:
+            name = " ".join(title.group(1).split())[:120]
+        h1 = re.search(r"<h1\b[^>]*>(.*?)</h1>", t, re.I | re.S)
+        if h1 and not summary:
+            headline = " ".join(re.sub(r"<[^>]+>", " ", h1.group(1)).split())[:200]
+            if headline:
+                summary, source = f"Home page headline: {headline}", home
+    if not summary and not name:
+        return
+    out["app.purpose"] = F(
+        "app.purpose", "ui_portal", "What the project says it is",
+        {"name": name, "summary": summary, "source": source, "features": features},
+        "verified", [source] if source else [],
+        note="Taken from the project's own name, description, README or home page. Cutover does not write this text.",
+    )
+
+
 def detect_stack(repo: Repo, out: dict) -> None:
     poms = [p for p in repo.paths if p == "pom.xml" or p.endswith("/pom.xml")]
     gradles = [p for p in repo.paths if p.endswith(("build.gradle", "build.gradle.kts"))]
@@ -770,6 +847,7 @@ def detect_infrastructure(repo: Repo, out: dict) -> None:
 def analyze(repo: Repo, root: Path, now: dt.datetime, source: dict) -> dict:
     out: dict = {}
     detect_stack(repo, out)
+    detect_purpose(repo, out)
     detect_ui(repo, out)
     detect_data(repo, out)
     detect_epic(repo, out)

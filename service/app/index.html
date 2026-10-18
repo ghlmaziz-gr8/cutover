@@ -1642,6 +1642,10 @@ pre{white-space:pre-wrap;word-break:break-word;background:var(--soft);padding:12
       if (!visible) out.push(hidden(c));
       else {
         const rows = [];
+        const purpose = val("app.purpose");
+        if (purpose && purpose.name) rows.push(["Name", purpose.name]);
+        if (purpose && purpose.summary) rows.push(["Purpose", purpose.summary]);
+        if (purpose && purpose.features && purpose.features.length) rows.push(["Sections in its README", purpose.features.join(", ")]);
         const java = val("runtime.java");
         const boot = val("runtime.spring_boot");
         if (java || boot) rows.push(["Runtime", [java && `Java ${java}`, boot && `Spring Boot ${boot}`].filter(Boolean).join(", ")]);
@@ -2009,7 +2013,7 @@ a{color:#6d28d9;font-weight:600}`;
     box.appendChild(heading);
     const grid = el("div", null, "rgrid");
     // The findings the summary cards show are left out of the topic cards, so each appears once.
-    const SUMMARY_IDS = ["runtime.java", "runtime.spring_boot", "ui.endpoints", "ui.client_facing", "ui.screen_names", "ui.roles", "ui.page_preview", "data.tables", "data.migrations", "infrastructure.as_code"];
+    const SUMMARY_IDS = ["runtime.java", "runtime.spring_boot", "ui.endpoints", "ui.client_facing", "ui.screen_names", "ui.roles", "ui.page_preview", "app.purpose", "data.tables", "data.migrations", "infrastructure.as_code"];
     const topic = all.filter((i) => !SUMMARY_IDS.includes(i.id));
     for (const card of REVIEW_CARDS) {
       const node = reviewCard(card, topic, cur.viewer_role, all);

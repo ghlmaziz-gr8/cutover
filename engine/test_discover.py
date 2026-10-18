@@ -48,6 +48,35 @@ class FixtureAnswerKeyTests(unittest.TestCase):
             self.assertNotIn(secret, blob)
 
 
+class PurposeTests(unittest.TestCase):
+    def _purpose(self, files: dict):
+        import tempfile
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            for rel, text in files.items():
+                (root / rel).parent.mkdir(parents=True, exist_ok=True)
+                (root / rel).write_text(text, encoding="utf-8")
+            out: dict = {}
+            cd.detect_purpose(cd.Repo(root), out)
+            return out.get("app.purpose")
+
+    def test_description_comes_from_package_json(self):
+        p = self._purpose({"package.json": '{"name": "ward-board", "description": "Shows bed status for wards."}'})
+        self.assertEqual(p["value"]["summary"], "Shows bed status for wards.")
+        self.assertEqual(p["value"]["name"], "ward-board")
+        self.assertEqual(p["value"]["source"], "package.json")
+
+    def test_readme_gives_summary_and_features_but_not_install_steps(self):
+        readme = ("# Ward Board\n\n[![build](x.svg)](y)\n\nA live view of bed status across hospital wards, "
+                  "updated as nurses record changes.\n\n## Features\n\n- beds\n\n## Installation\n\nrun it\n\n## Roadmap\n")
+        p = self._purpose({"README.md": readme})
+        self.assertIn("live view of bed status", p["value"]["summary"])
+        self.assertEqual(p["value"]["features"], ["Features"])
+
+    def test_no_description_anywhere_means_no_finding(self):
+        self.assertIsNone(self._purpose({"src/Main.java": "class Main {}"}))
+
+
 class HelperTests(unittest.TestCase):
     def test_resolve_url_accepts_owner_name(self):
         self.assertEqual(cd.resolve_url("acme/app"), "https://github.com/acme/app.git")
