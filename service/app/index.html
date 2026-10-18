@@ -887,7 +887,8 @@ pre{white-space:pre-wrap;word-break:break-word;background:var(--soft);padding:12
       for (const w of rows) {
         const row = el("div", null, "ov-row");
         const info = el("div", null, "grow");
-        const sub = `${w.people_count} ${w.people_count === 1 ? "person" : "people"} · ${w.pending_count} waiting for first sign-in · ${w.you_are_member ? "you are in this workspace" : "you are not in this workspace, so people are not shown"}`;
+        const plural = (n, one, many) => `${n} ${n === 1 ? one : many}`;
+        const sub = `${plural(w.analyses_count, "analysis", "analyses")} · ${plural(w.people_count, "person", "people")} · ${w.pending_count} waiting for first sign-in · ${w.you_are_member ? "you are in this workspace" : "you are not in this workspace, so people are not shown"}`;
         info.append(el("b", w.name), el("div", sub, "muted small"));
         if (w.you_are_member && w.members) {
           const det = document.createElement("details");
@@ -912,7 +913,11 @@ pre{white-space:pre-wrap;word-break:break-word;background:var(--soft);padding:12
         const del = el("button", "Delete", "danger small-btn");
         del.type = "button";
         del.addEventListener("click", async () => {
-          const typed = prompt(`This deletes "${w.name}", its people, invitations, analyses, comments and action items. Its deletions are recorded. To confirm, type the workspace name exactly:`, "");
+          const n = w.analyses_count;
+          const warning = n === 0
+            ? `This deletes "${w.name}" and its ${w.people_count} people and ${w.pending_count} ${w.pending_count === 1 ? "invitation" : "invitations"}. It has no analyses.`
+            : `This permanently deletes "${w.name}", with its ${n} ${n === 1 ? "analysis" : "analyses"}, their findings, comments and action items, and its ${w.people_count} people and ${w.pending_count} ${w.pending_count === 1 ? "invitation" : "invitations"}. The analyses cannot be recovered. Their deletions are recorded.`;
+          const typed = prompt(`${warning}\n\nTo confirm, type the workspace name exactly:`, "");
           if (typed === null) return;
           try {
             await api(`/api/workspaces/${w.id}`, { method: "DELETE", body: JSON.stringify({ confirm_name: typed }) });

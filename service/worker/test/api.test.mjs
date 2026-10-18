@@ -621,6 +621,7 @@ test("only operators see the workspace overview, and people only where the opera
   const acme = res.body.find((w) => w.id === W_ACME);
   const beta = res.body.find((w) => w.id === W_BETA);
   assert.ok(acme.people_count > 0, "counts are shown for every workspace");
+  assert.equal(acme.analyses_count, state.analyses.filter((a) => a.workspace_id === W_ACME).length);
   assert.equal(acme.you_are_member, false);
   assert.equal(acme.members, undefined, "no one's details are shown for a workspace the operator is not in");
   assert.equal(beta.you_are_member, true);
