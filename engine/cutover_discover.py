@@ -327,6 +327,28 @@ def detect_stack(repo: Repo, out: dict) -> None:
                                   "yes", "verified", frontend)
 
 
+def screen_structure(text: str) -> dict:
+    """What one screen's markup contains. Only counts and heading text are kept; nothing is invented."""
+    t = text or ""
+    heads = []
+    for h in re.findall(r"<h[1-3]\b[^>]*>(.*?)</h[1-3]>", t, re.I | re.S):
+        label = " ".join(re.sub(r"<[^>]+>|\{[^}]*\}", " ", h).split())
+        if label:
+            heads.append(label[:60])
+    submits = len(re.findall(r"<input\b[^>]*type=[\"']submit[\"']", t, re.I))
+    table = re.search(r"<table\b.*?</table>", t, re.I | re.S)
+    return {
+        "headings": heads[:3],
+        "forms": min(len(re.findall(r"<form\b", t, re.I)), 50),
+        "inputs": min(max(len(re.findall(r"<(?:input|select|textarea)\b", t, re.I)) - submits, 0), 50),
+        "buttons": min(len(re.findall(r"<button\b", t, re.I)) + submits, 50),
+        "tables": min(len(re.findall(r"<table\b", t, re.I)), 50),
+        "table_columns": min(len(re.findall(r"<th\b", table.group(0), re.I)) if table else 0, 12),
+        "lists": min(len(re.findall(r"<(?:ul|ol)\b", t, re.I)), 50),
+        "images": min(len(re.findall(r"<img\b", t, re.I)), 50),
+    }
+
+
 CLIENT_FILE_HINT = re.compile(r"portal|patient|client|customer|member|self.?service", re.I)
 
 
@@ -364,7 +386,7 @@ def detect_ui(repo: Repo, out: dict) -> None:
     if names:
         out["ui.screen_names"] = F(
             "ui.screen_names", "ui_portal", "Screen names from file names",
-            {"count": len(names), "screens": [{"name": n, "path": names[n]} for n in sorted(names)][:60]},
+            {"count": len(names), "screens": [{"name": n, "path": names[n], **screen_structure(repo.files.get(names[n], ""))} for n in sorted(names)][:60]},
             "inferred", [names[n] for n in sorted(names)][:EVIDENCE_LIMIT],
             note="Each name is taken from a template or page file name, so it shows what the screen is called in the code.",
         )
