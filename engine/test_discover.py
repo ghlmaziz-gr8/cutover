@@ -85,8 +85,31 @@ class PortalTests(unittest.TestCase):
         value = out["ui.screen_names"]["value"]
         self.assertEqual(value["count"], 3)
         self.assertEqual([x["name"] for x in value["screens"]], ["Appointments", "Lab Results", "Secure Messages"])
-        self.assertEqual(value["screens"][0], {"name": "Appointments", "path": "web/templates/appointments.html"})
+        self.assertEqual(value["screens"][0]["name"], "Appointments")
+        self.assertEqual(value["screens"][0]["path"], "web/templates/appointments.html")
         self.assertEqual(out["ui.screen_names"]["confidence"], "inferred")
+
+    def test_screen_layout_comes_from_the_markup(self):
+        out = self._detect({
+            "web/templates/checkin.html": (
+                "<h1>Check in</h1><h2>Visit details</h2>"
+                "<form><input name='a'><select name='b'></select><button type='submit'>Go</button></form>"
+                "<table><thead><tr><th>Name</th><th>Time</th><th>Room</th></tr></thead></table>"
+                "<ul><li>One</li></ul><img src='x.png'>"
+            ),
+        })
+        screen = out["ui.screen_names"]["value"]["screens"][0]
+        self.assertEqual(screen["name"], "Checkin")
+        self.assertEqual(screen["headings"], ["Check in", "Visit details"])
+        self.assertEqual((screen["forms"], screen["inputs"], screen["buttons"]), (1, 2, 1))
+        self.assertEqual((screen["tables"], screen["table_columns"], screen["lists"], screen["images"]), (1, 3, 1, 1))
+
+    def test_a_bare_page_reports_no_layout_elements(self):
+        out = self._detect({"web/templates/results.html": "<html><body>Results</body></html>"})
+        screen = out["ui.screen_names"]["value"]["screens"][0]
+        self.assertEqual(screen["inputs"], 0)
+        self.assertEqual(screen["tables"], 0)
+        self.assertEqual(screen["headings"], [])
 
     def test_no_screen_finding_when_no_screen_files(self):
         out = self._detect({"src/Main.java": "class Main {}"})

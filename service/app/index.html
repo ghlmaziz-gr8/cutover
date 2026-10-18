@@ -210,6 +210,17 @@ pre{white-space:pre-wrap;word-break:break-word;background:var(--soft);padding:12
 .wf-h i{width:7px;height:7px;border-radius:50%;background:var(--accent2);flex:0 0 auto}
 .wf-h span{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .wf-path{font-size:10.5px;color:var(--muted);padding:5px 9px 0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.wf-body{padding:9px;display:grid;gap:7px}
+.wf-title{font-size:12px;font-weight:700;color:var(--fg)}
+.wf-input{height:16px;border:1px solid var(--line);border-radius:6px;background:var(--card)}
+.wf-table{display:grid;gap:3px}
+.wf-th,.wf-td{height:9px;border-radius:3px;background:var(--soft)}
+.wf-th{background:var(--grad);opacity:.8}
+.wf-line{height:7px;border-radius:99px;background:var(--soft);width:80%}
+.wf-img{height:44px;border-radius:6px;background:var(--soft);border:1px dashed var(--line)}
+.wf-btns{display:flex;gap:6px}
+.wf-btn{height:16px;width:56px;border-radius:99px;background:var(--grad)}
+.wf-note{font-size:11px;color:var(--muted);margin:0}
 .wf-row{height:9px;margin:9px;border-radius:99px;background:var(--soft);width:var(--w)}
 .wf-row.wf-accent{background:var(--grad);opacity:.85}
   </style>
@@ -1735,9 +1746,9 @@ pre{white-space:pre-wrap;word-break:break-word;background:var(--soft);padding:12
           : clientFacing ? "The code reviewed suggests a client portal, but no screen files were found." : "No screen files were found in the code reviewed.", "muted small"));
         if (screens && screens.screens.length) {
           const grid = el("div", null, "wf-grid");
-          for (const sc of screens.screens.slice(0, 6)) grid.appendChild(wireframe(sc.name, sc.path));
+          for (const sc of screens.screens.slice(0, 6)) grid.appendChild(wireframe(sc));
           c.appendChild(grid);
-          c.appendChild(el("p", "Previews are drawn from the file names. They are not screenshots of a live system.", "muted small"));
+          c.appendChild(el("p", "Each preview is drawn from the markup of its file. They are not screenshots of a live system.", "muted small"));
         }
         if (roles) {
           c.appendChild(el("p", "Roles named in access rules", "eyebrow-sm"));
@@ -1754,20 +1765,41 @@ pre{white-space:pre-wrap;word-break:break-word;background:var(--soft);padding:12
     return out;
   }
 
-  // A preview drawn from a screen name: a header and blocks of varying sizes, in the same style as the demo.
-  function wireframe(name, path) {
-    const seed = [...name].reduce((a, ch) => a + ch.charCodeAt(0), 0);
+  // A preview drawn from what a screen's markup contains. Each element comes from a count the engine read.
+  function wireframe(sc) {
     const w = el("div", null, "wf");
     const head = el("div", null, "wf-h");
-    head.append(el("i"), el("span", name));
+    head.append(el("i"), el("span", sc.name));
     w.appendChild(head);
-    if (path) w.appendChild(el("div", path, "wf-path"));
-    const rows = 3 + (seed % 3);
-    for (let r = 0; r < rows; r++) {
-      const row = el("div", null, "wf-row" + (r === (seed % rows) ? " wf-accent" : ""));
-      row.style.setProperty("--w", `${45 + ((seed + r * 37) % 50)}%`);
-      w.appendChild(row);
+    if (sc.path) w.appendChild(el("div", sc.path.split("/").slice(-2).join("/"), "wf-path"));
+    const body = el("div", null, "wf-body");
+    if (sc.inputs === undefined) {
+      body.appendChild(el("p", "Layout was not stored for this report. Run a new analysis to see it.", "wf-note"));
+    } else {
+      for (const h of sc.headings || []) body.appendChild(el("div", h, "wf-title"));
+      for (let i = 0; i < Math.min(sc.inputs, 6); i++) body.appendChild(el("div", null, "wf-input"));
+      if (sc.tables) {
+        const cols = Math.max(Math.min(sc.table_columns || 1, 6), 1);
+        const grid = el("div", null, "wf-table");
+        grid.style.gridTemplateColumns = `repeat(${cols}, 1fr)`;
+        for (let c = 0; c < cols; c++) grid.appendChild(el("span", null, "wf-th"));
+        for (let r = 0; r < 3; r++) for (let c = 0; c < cols; c++) grid.appendChild(el("span", null, "wf-td"));
+        body.appendChild(grid);
+      }
+      for (let i = 0; i < Math.min(sc.lists || 0, 4); i++) body.appendChild(el("div", null, "wf-line"));
+      if (sc.images) body.appendChild(el("div", null, "wf-img"));
+      if (sc.buttons) {
+        const row = el("div", null, "wf-btns");
+        for (let i = 0; i < Math.min(sc.buttons, 4); i++) row.appendChild(el("span", null, "wf-btn"));
+        body.appendChild(row);
+      }
+      const parts = [
+        [sc.forms, "form"], [sc.inputs, "input"], [sc.buttons, "button"], [sc.tables, "table"],
+        [sc.lists, "list"], [sc.images, "image"],
+      ].filter(([n]) => n).map(([n, label]) => `${n} ${label}${n === 1 ? "" : "s"}`);
+      body.appendChild(el("p", parts.length ? `From the markup: ${parts.join(", ")}.` : "No layout elements in this file.", "wf-note"));
     }
+    w.appendChild(body);
     return w;
   }
 
