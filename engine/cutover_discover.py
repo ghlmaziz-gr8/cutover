@@ -39,6 +39,8 @@ from collections import defaultdict
 from html.parser import HTMLParser
 from pathlib import Path
 
+import file_inventory
+
 SCHEMA_VERSION = "0.1"
 MAX_FILE_BYTES = 2_000_000
 EVIDENCE_LIMIT = 15
@@ -1022,7 +1024,10 @@ def analyze_and_write(root: Path, label: str, out_dir: str, now: dt.datetime, so
     dest.mkdir(parents=True, exist_ok=True)
     (dest / "findings.json").write_text(json.dumps(report, indent=2), encoding="utf-8")
     (dest / "report.md").write_text(render_md(report, label), encoding="utf-8")
-    print(f"Analyzed {label}: {len(report['findings'])} findings, {len(report['flags'])} flags")
+    # One record per file, sent to the API in chunks by post_files.py.
+    records = file_inventory.file_records(repo.paths, repo.files)
+    (dest / "files.json").write_text(json.dumps(records, separators=(",", ":")), encoding="utf-8")
+    print(f"Analyzed {label}: {len(report['findings'])} findings, {len(report['flags'])} flags, {len(records)} files")
     print(f"Wrote {dest / 'findings.json'} and {dest / 'report.md'}")
     return 0
 
