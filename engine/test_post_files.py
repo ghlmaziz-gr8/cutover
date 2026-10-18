@@ -25,8 +25,8 @@ class SendTests(unittest.TestCase):
             sent.append(len(files))
             return 201
 
-        saved, problem = post_files.send_all(records(450), poster, "https://api.test", "a", "s")
-        self.assertEqual((saved, problem), (450, None))
+        saved, problem, refused = post_files.send_all(records(450), poster, "https://api.test", "a", "s")
+        self.assertEqual((saved, problem, refused), (450, None, None))
         self.assertEqual(sent, [200, 200, 50])
 
     def test_stops_at_the_first_refused_chunk(self):
@@ -36,9 +36,10 @@ class SendTests(unittest.TestCase):
             calls.append(len(files))
             return 201 if len(calls) == 1 else 413
 
-        saved, problem = post_files.send_all(records(450), poster, "https://api.test", "a", "s")
+        saved, problem, refused = post_files.send_all(records(450), poster, "https://api.test", "a", "s")
         self.assertEqual(saved, 200)
         self.assertIn("413", problem)
+        self.assertEqual(refused, 413)
         self.assertEqual(len(calls), 2)
 
 
