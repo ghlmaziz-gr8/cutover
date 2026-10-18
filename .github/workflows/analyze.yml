@@ -76,7 +76,32 @@ jobs:
           python3 cutover/engine/cutover_discover.py \
             --path "$RUNNER_TEMP/target" --out "$RUNNER_TEMP/reports" --screenshots
 
+      # File-level results go first, in chunks. If the free-tier cap stops them, the API has already
+      # marked the analysis failed, so the findings are not sent.
+      - name: Send file-level results in chunks
+        id: files
+        continue-on-error: true
+        env:
+          CALLBACK_URL: ${{ secrets.CUTOVER_API_URL }}
+          RUNNER_SECRET: ${{ secrets.RUNNER_SECRET }}
+        run: |
+          set -euo pipefail
+          python3 cutover/engine/post_files.py \
+            --records "$RUNNER_TEMP/reports/target/files.json" \
+            --callback "$CALLBACK_URL" --analysis-id "$ANALYSIS_ID"
+
+      - name: Report a failed file upload
+        if: steps.files.outcome == 'failure'
+        env:
+          CALLBACK_URL: ${{ secrets.CUTOVER_API_URL }}
+          RUNNER_SECRET: ${{ secrets.RUNNER_SECRET }}
+        run: |
+          python3 cutover/engine/post_result.py \
+            --error "Sending the file-level results failed. Check the workflow run for details." \
+            --callback "$CALLBACK_URL" --analysis-id "$ANALYSIS_ID" || true
+
       - name: Send findings to the API
+        if: steps.files.outcome == 'success' && steps.files.outputs.stopped != 'true'
         env:
           CALLBACK_URL: ${{ secrets.CUTOVER_API_URL }}
           RUNNER_SECRET: ${{ secrets.RUNNER_SECRET }}

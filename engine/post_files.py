@@ -47,15 +47,15 @@ def post_chunk(callback: str, analysis_id: str, secret: str, files: list[dict]) 
         return err.code
 
 
-def send_all(records: Iterable[dict], poster: Poster, callback: str, analysis_id: str, secret: str) -> tuple[int, str | None]:
-    """Send every chunk in order. Returns (files saved, None) or (files saved so far, the reason it stopped)."""
+def send_all(records: Iterable[dict], poster: Poster, callback: str, analysis_id: str, secret: str) -> tuple[int, str | None, int | None]:
+    """Send every chunk in order. Returns (files saved, reason it stopped or None, HTTP status it was refused with or None)."""
     saved = 0
     for chunk in chunks(list(records)):
         status = poster(callback, analysis_id, secret, chunk)
         if status != 201:
-            return saved, f"The API refused a chunk with HTTP {status}."
+            return saved, f"The API refused a chunk with HTTP {status}.", status
         saved += len(chunk)
-    return saved, None
+    return saved, None, None
 
 
 def main(argv=None) -> int:
@@ -76,12 +76,25 @@ def main(argv=None) -> int:
     if not isinstance(records, list):
         ap.error("--records must hold a JSON list")
 
-    saved, problem = send_all(records, post_chunk, args.callback, args.analysis_id, secret)
+    saved, problem, refused = send_all(records, post_chunk, args.callback, args.analysis_id, secret)
     print(f"Saved {saved} of {len(records)} file records.")
+    if refused == 413:
+        # Over the free-tier limit. The API has already marked the analysis failed, so the run must not overwrite that.
+        print("The API stopped the analysis because it is over the free-tier limit.")
+        write_output("stopped", "true")
+        return 0
     if problem:
         print(problem, file=sys.stderr)
         return 1
     return 0
+
+
+def write_output(name: str, value: str) -> None:
+    """Tell the workflow about this step's result, when it runs in GitHub Actions."""
+    path = os.environ.get("GITHUB_OUTPUT")
+    if path:
+        with open(path, "a", encoding="utf-8") as fh:
+            fh.write(f"{name}={value}\n")
 
 
 if __name__ == "__main__":
