@@ -1713,7 +1713,9 @@ pre{white-space:pre-wrap;word-break:break-word;background:var(--soft);padding:12
     }
     // Client-facing portal: screen previews drawn from file names, and the roles named in access rules.
     {
-      const screens = val("ui.screen_names");
+      const raw = val("ui.screen_names");
+      // Reports made before screen paths were stored only have a list of names.
+      const screens = raw ? { count: raw.count, screens: raw.screens || (raw.names || []).map((n) => ({ name: n, path: null })) } : null;
       const roles = val("ui.roles");
       const clientFacing = val("ui.client_facing") === "yes";
       if (sees(role, "ui_portal")) {
@@ -1759,7 +1761,7 @@ pre{white-space:pre-wrap;word-break:break-word;background:var(--soft);padding:12
     const head = el("div", null, "wf-h");
     head.append(el("i"), el("span", name));
     w.appendChild(head);
-    w.appendChild(el("div", path, "wf-path"));
+    if (path) w.appendChild(el("div", path, "wf-path"));
     const rows = 3 + (seed % 3);
     for (let r = 0; r < rows; r++) {
       const row = el("div", null, "wf-row" + (r === (seed % rows) ? " wf-accent" : ""));
