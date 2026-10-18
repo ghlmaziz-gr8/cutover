@@ -118,6 +118,41 @@ class PortalTests(unittest.TestCase):
         self.assertEqual([x["title"] for x in screen["sections"]], ["Capabilities", "Request a quote"])
         self.assertEqual((screen["sections"][1]["inputs"], screen["sections"][1]["buttons"]), (1, 1))
 
+    def test_static_page_keeps_text_and_layout(self):
+        out = self._detect({
+            "index.html": "<html><head><title>Home</title></head><body><nav><a href='/x'>Services</a></nav>"
+                          "<h1>Power for sites</h1><p>We build it.</p><form><input type='email' placeholder='Email'>"
+                          "<button>Send</button></form></body></html>",
+        })
+        page = out["ui.page_preview"]["value"]["pages"][0]
+        self.assertEqual(page["kind"], "static")
+        self.assertEqual(page["reasons"], [])
+        blob = json.dumps(page["tree"])
+        self.assertIn("Power for sites", blob)
+        self.assertIn('"tag": "input"', blob)
+        self.assertNotIn("Home", blob)  # the title lives in the head and is not drawn
+
+    def test_dynamic_page_shows_sample_rows_and_values(self):
+        out = self._detect({
+            "web/templates/appointments.html": (
+                "<table><tr th:each='a : ${rows}'><td th:text='${a.time}'>9:00</td></tr></table>"
+            ),
+        })
+        page = out["ui.page_preview"]["value"]["pages"][0]
+        self.assertEqual(page["kind"], "dynamic")
+        self.assertTrue(page["reasons"])
+        table = page["tree"][0]
+        self.assertEqual(len(table["children"]), 3)
+        self.assertEqual(table["children"][0]["children"][0]["children"], ["Sample value"])
+
+    def test_scripts_and_link_addresses_never_reach_the_preview(self):
+        out = self._detect({
+            "index.html": "<script>var k='SECRET_TOKEN_123';</script><p><a href='https://secret.example/x'>Go</a></p>",
+        })
+        blob = json.dumps(out["ui.page_preview"])
+        self.assertNotIn("SECRET_TOKEN_123", blob)
+        self.assertNotIn("secret.example", blob)
+
     def test_a_bare_page_reports_no_layout_elements(self):
         out = self._detect({"web/templates/results.html": "<html><body>Results</body></html>"})
         screen = out["ui.screen_names"]["value"]["screens"][0]
