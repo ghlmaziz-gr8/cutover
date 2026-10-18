@@ -468,6 +468,7 @@ pre{white-space:pre-wrap;word-break:break-word;background:var(--soft);padding:12
       <button type="button" class="ghost" id="reviewBackTop">Back to analyses</button>
       <button type="button" class="ghost" id="exportPdfTop">Export PDF</button>
       <button type="button" class="ghost" id="exportHtmlTop">Export HTML</button>
+      <button type="button" class="ghost" id="reviewFilesTop" hidden>Review file results</button>
       <button type="button" id="toNextTop">Next steps</button>
     </div>
     <div class="card" id="reviewBody"></div>
@@ -577,6 +578,26 @@ pre{white-space:pre-wrap;word-break:break-word;background:var(--soft);padding:12
     </div>
   </section>
 
+  <!-- 10. Review file-level results (platform engineers) -->
+  <section id="s-files" class="screen" hidden>
+    <p class="eyebrow">Review</p>
+    <h2 style="margin:8px 0 6px">File-level results</h2>
+    <p class="muted small" id="filesMeta"></p>
+    <div class="row wzNav" style="margin:14px 0 4px">
+      <button type="button" class="ghost" id="filesBackReview">Back to findings</button>
+      <button type="button" id="filesApproveAll">Approve all drafts</button>
+    </div>
+    <div class="card">
+      <p class="muted small" id="filesNote" style="margin:0"></p>
+      <p class="small" id="filesCounts" style="margin:10px 0 0"></p>
+    </div>
+    <ul id="filesList" style="list-style:none;padding:0;margin:14px 0 0"></ul>
+    <p id="filesMsg" class="err small hint" role="status"></p>
+    <div class="row wzNav">
+      <button type="button" class="ghost" id="filesBackReviewBottom">Back to findings</button>
+    </div>
+  </section>
+
   <p class="muted small" style="text-align:center;margin-top:40px">Cutover reads code only. Source code is not stored. Page screenshots and visible text are kept for this review, and results are deleted after the retention period.</p>
 </main>
 
@@ -635,7 +656,7 @@ pre{white-space:pre-wrap;word-break:break-word;background:var(--soft);padding:12
     { id: "s-review", name: "Review findings", w: 15, min: 2 },
     { id: "s-next", name: "Next steps", w: 10, min: 0.5 },
   ];
-  const SCREENS = ["s-login", "s-denied", "s-role", "s-home", "s-name", "s-connect", "s-rules", "s-run", "s-review", "s-next", "s-plan"];
+  const SCREENS = ["s-login", "s-denied", "s-role", "s-home", "s-name", "s-connect", "s-rules", "s-run", "s-review", "s-next", "s-plan", "s-files"];
   const RUN_STAGES = ["Reading files", "Finding the stack", "Finding the data", "Finding the infrastructure", "Writing the report"];
   const STATUS_TEXT = { queued: "Waiting to start", running: "Running", complete: "Review ready", failed: "Failed" };
   const REPO_FORMAT = /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/;
@@ -1452,6 +1473,7 @@ pre{white-space:pre-wrap;word-break:break-word;background:var(--soft);padding:12
 
   function showReview() {
     show("s-review");
+    $("reviewFilesTop").hidden = !cur.can_plan;
     $("reviewTitle").textContent = cur.app_name || cur.repo;
     $("reviewMeta").textContent = `${cur.repo}${cur.ref ? " @ " + cur.ref : ""} · Commit: ${cur.commit_sha || "not known yet"} · Started by: ${cur.is_mine ? "you" : "a teammate"} · Deleted after: ${new Date(cur.expires_at).toLocaleDateString()}`;
     renderReview(cur);
@@ -2543,6 +2565,112 @@ a{color:#6d28d9;font-weight:600}`;
   $("planBackNextBottom").addEventListener("click", () => showNext());
   $("planBackReview").addEventListener("click", () => showReview());
   $("planBackReviewBottom").addEventListener("click", () => showReview());
+
+  // ---- File-level review (platform engineers) ----
+  // Each file's purpose and suggestions are drafts until a platform engineer approves them.
+  const FILE_STATUS = { draft: "Draft, not yet reviewed", approved: "Approved", edited: "Edited and approved" };
+  let fileRows = [];
+
+  async function loadFiles() {
+    const rows = [];
+    for (let offset = 0; ; offset += 200) {
+      const page = await api(`/api/analyses/${cur.id}/files?offset=${offset}&limit=200`);
+      rows.push(...page.files);
+      if (page.files.length < 200) break;
+    }
+    return rows;
+  }
+
+  async function showFiles() {
+    show("s-files");
+    $("filesMeta").textContent = `${cur.app_name || cur.repo} · ${cur.repo}`;
+    $("filesNote").textContent = "Each file's purpose and suggestions are drafts until a platform engineer approves them. Only approved files are final.";
+    $("filesList").innerHTML = "";
+    setMsg("filesMsg", "", false);
+    try {
+      fileRows = await loadFiles();
+    } catch (err) {
+      fileRows = [];
+      setMsg("filesMsg", err.message, true);
+    }
+    renderFiles();
+  }
+
+  function renderFiles() {
+    const counts = { draft: 0, approved: 0, edited: 0 };
+    fileRows.forEach((f) => { counts[f.review_status] = (counts[f.review_status] || 0) + 1; });
+    $("filesCounts").textContent = fileRows.length
+      ? `${fileRows.length} files: ${counts.draft} draft, ${counts.approved} approved, ${counts.edited} edited and approved.`
+      : "No file-level results yet. They appear here once the analysis sends them.";
+    const list = $("filesList");
+    list.innerHTML = "";
+    for (const f of fileRows) list.appendChild(fileItem(f));
+  }
+
+  function fileItem(f) {
+    const li = el("li", null, "item");
+    const body = el("div", null, "grow");
+    body.append(el("b", f.path), el("div", `${f.category} · ${FILE_STATUS[f.review_status] || f.review_status}`, "muted small"));
+    body.appendChild(el("div", f.purpose || "No purpose written yet.", "small"));
+    for (const s of f.suggestions || []) {
+      body.appendChild(el("div", `${s.severity ? s.severity + ": " : ""}${s.text}`, "small muted"));
+    }
+    li.appendChild(body);
+    const buttons = el("div", null, "row");
+    const button = (label, fn) => {
+      const b = el("button", label, "ghost small-btn");
+      b.type = "button";
+      b.addEventListener("click", fn);
+      buttons.appendChild(b);
+    };
+    if (f.review_status !== "approved") button("Approve", () => reviewFile(f.id, { review_status: "approved" }));
+    button("Edit purpose", () => openFileEditor(li, f));
+    li.appendChild(buttons);
+    return li;
+  }
+
+  async function reviewFile(id, change) {
+    try {
+      await api(`/api/file-findings/${id}`, { method: "PATCH", body: JSON.stringify(change) });
+      fileRows = await loadFiles();
+      renderFiles();
+    } catch (err) {
+      setMsg("filesMsg", err.message, true);
+    }
+  }
+
+  // Replaces one file's purpose with an editable box. Saving marks the file as edited and approved.
+  function openFileEditor(li, f) {
+    li.innerHTML = "";
+    const box = document.createElement("textarea");
+    box.rows = 3;
+    box.maxLength = 2000;
+    box.value = f.purpose || "";
+    box.style.width = "100%";
+    const row = el("div", null, "row");
+    row.style.justifyContent = "flex-end";
+    const cancel = el("button", "Cancel", "ghost small-btn");
+    cancel.type = "button";
+    cancel.addEventListener("click", () => renderFiles());
+    const save = el("button", "Save and approve", "small-btn");
+    save.type = "button";
+    save.addEventListener("click", () => reviewFile(f.id, { review_status: "edited", purpose: box.value.trim() }));
+    row.append(cancel, save);
+    li.append(box, row);
+  }
+
+  $("filesApproveAll").addEventListener("click", async () => {
+    try {
+      await api(`/api/analyses/${cur.id}/files/approve-all`, { method: "POST" });
+      fileRows = await loadFiles();
+      renderFiles();
+    } catch (err) {
+      setMsg("filesMsg", err.message, true);
+    }
+  });
+  $("reviewFilesTop").addEventListener("click", () => showFiles());
+  $("filesBackReview").addEventListener("click", () => showReview());
+  $("filesBackReviewBottom").addEventListener("click", () => showReview());
 
   // The buttons at the top repeat the ones at the bottom, and do exactly what they do.
   [["runBackTop", "runBack"], ["viewFindingsTop", "viewFindings"], ["reviewBackTop", "reviewBack"],

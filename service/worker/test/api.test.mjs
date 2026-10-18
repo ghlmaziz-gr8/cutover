@@ -48,6 +48,7 @@ const COMMENT_ACME = uid(301);
 const ACTION_ACME = uid(401);
 const CONTINGENCY_ACME = uid(501);
 const AN_RUNNING = uid(203);
+const FILE_ACME = uid(601);
 const NOW = "2026-10-17T12:00:00.000Z";
 const FAR_FUTURE = "2099-01-01T00:00:00.000Z";
 const LONG_AGO = "2020-01-01T00:00:00.000Z";
@@ -101,7 +102,11 @@ function seed() {
         status: "complete", commit_sha: "def456", findings: structuredClone(REPORT), error: null,
         created_at: NOW, finished_at: NOW, expires_at: FAR_FUTURE },
     ],
-    file_findings: [],
+    file_findings: [
+      { id: FILE_ACME, analysis_id: AN_ACME, path: "src/A.java", category: "source", purpose: "Application code.",
+        suggestions: [{ text: "No test file was found for this code.", severity: "medium" }], sample_only: true,
+        review_status: "draft", reviewed_by_email: null, reviewed_at: null, created_at: NOW },
+    ],
     analysis_comments: [
       { id: COMMENT_ACME, analysis_id: AN_ACME, author_id: PEOPLE.eng_a.id, author_email: PEOPLE.eng_a.email, body: "Start here.", created_at: NOW },
     ],
@@ -131,7 +136,7 @@ const j = (body, status = 200) => new Response(body === undefined ? null : JSON.
   headers: { "content-type": "application/json" },
 });
 
-const SKIP_PARAMS = ["select", "order", "limit", "on_conflict"];
+const SKIP_PARAMS = ["select", "order", "limit", "offset", "on_conflict"];
 
 function matches(row, key, value) {
   if (value.startsWith("eq.")) return String(row[key]) === value.slice(3);
@@ -707,7 +712,7 @@ test("a chunk with a bad record, a repeated path or too many files is refused an
   assert.equal(twice.status, 400);
   const many = await call(`/api/runner/${AN_RUNNING}/files`, { method: "POST", body: { files: Array.from({ length: 201 }, (_, i) => sampleFile(`f${i}.java`)) }, secret: env.RUNNER_SECRET });
   assert.equal(many.status, 400);
-  assert.equal(state.file_findings.length, 0);
+  assert.equal(state.file_findings.filter((f) => f.analysis_id === AN_RUNNING).length, 0);
 });
 
 test("a finished analysis takes no more file chunks", async () => {
@@ -724,6 +729,59 @@ test("going over the free-tier cap fails the analysis and removes its file rows"
   assert.equal(row.status, "failed");
   assert.match(row.error, /25 MB limit/);
   assert.equal(state.file_findings.filter((f) => f.analysis_id === AN_RUNNING).length, 0);
+});
+
+// ---- Reviewing file-level results (platform engineers) ----
+
+test("only platform engineers see the file-level results", async () => {
+  const engineer = await call(`/api/analyses/${AN_ACME}/files`, { as: "eng_a" });
+  assert.equal(engineer.status, 200);
+  assert.equal(engineer.body.files.length, 1);
+  assert.equal(engineer.body.files[0].review_status, "draft");
+  const auditor = await call(`/api/analyses/${AN_ACME}/files`, { as: "aud_a" });
+  assert.equal(auditor.status, 403);
+  const other = await call(`/api/analyses/${AN_ACME}/files`, { as: "eng_b" });
+  assert.equal(other.status, 404);
+});
+
+test("a platform engineer approves a file, and the approval records who and when", async () => {
+  const res = await call(`/api/file-findings/${FILE_ACME}`, { as: "eng_a", method: "PATCH", body: { review_status: "approved" } });
+  assert.equal(res.status, 200);
+  const row = state.file_findings.find((f) => f.id === FILE_ACME);
+  assert.equal(row.review_status, "approved");
+  assert.equal(row.reviewed_by_email, PEOPLE.eng_a.email);
+  assert.ok(row.reviewed_at);
+});
+
+test("an edited file must say what changed, and is marked edited", async () => {
+  const none = await call(`/api/file-findings/${FILE_ACME}`, { as: "eng_a", method: "PATCH", body: { review_status: "edited" } });
+  assert.equal(none.status, 400);
+  const edit = await call(`/api/file-findings/${FILE_ACME}`, { as: "eng_a", method: "PATCH", body: { review_status: "edited", purpose: "Checks the order before it is sent." } });
+  assert.equal(edit.status, 200);
+  const row = state.file_findings.find((f) => f.id === FILE_ACME);
+  assert.equal(row.review_status, "edited");
+  assert.equal(row.purpose, "Checks the order before it is sent.");
+});
+
+test("an edit with a bad status or bad suggestions is refused", async () => {
+  const badStatus = await call(`/api/file-findings/${FILE_ACME}`, { as: "eng_a", method: "PATCH", body: { review_status: "final", purpose: "x" } });
+  assert.equal(badStatus.status, 400);
+  const badSuggestions = await call(`/api/file-findings/${FILE_ACME}`, { as: "eng_a", method: "PATCH", body: { review_status: "edited", suggestions: "none" } });
+  assert.equal(badSuggestions.status, 400);
+});
+
+test("auditors and security officers cannot review files", async () => {
+  const review = await call(`/api/file-findings/${FILE_ACME}`, { as: "aud_a", method: "PATCH", body: { review_status: "approved" } });
+  assert.equal(review.status, 403);
+  const approveAll = await call(`/api/analyses/${AN_ACME}/files/approve-all`, { as: "sec_a", method: "POST" });
+  assert.equal(approveAll.status, 403);
+});
+
+test("approve-all approves the files still in draft", async () => {
+  state.file_findings.push({ id: uid(602), analysis_id: AN_ACME, path: "src/B.java", category: "source", purpose: null, suggestions: [], sample_only: true, review_status: "draft", reviewed_by_email: null, reviewed_at: null, created_at: NOW });
+  const res = await call(`/api/analyses/${AN_ACME}/files/approve-all`, { as: "eng_a", method: "POST" });
+  assert.equal(res.status, 200);
+  assert.ok(state.file_findings.every((f) => f.review_status === "approved"));
 });
 
 // ---- Runner callback ----
