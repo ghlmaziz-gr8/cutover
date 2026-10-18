@@ -84,7 +84,8 @@ class PortalTests(unittest.TestCase):
         self.assertIn("ui.screen_names", out)
         value = out["ui.screen_names"]["value"]
         self.assertEqual(value["count"], 3)
-        self.assertEqual(value["names"], ["Appointments", "Lab Results", "Secure Messages"])
+        self.assertEqual([x["name"] for x in value["screens"]], ["Appointments", "Lab Results", "Secure Messages"])
+        self.assertEqual(value["screens"][0], {"name": "Appointments", "path": "web/templates/appointments.html"})
         self.assertEqual(out["ui.screen_names"]["confidence"], "inferred")
 
     def test_no_screen_finding_when_no_screen_files(self):
