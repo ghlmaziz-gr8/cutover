@@ -179,6 +179,13 @@ alter table public.analyses add column if not exists file_bytes bigint not null 
 alter table public.file_findings enable row level security;
 revoke all on public.file_findings from anon, authenticated;
 grant select, insert, update, delete on public.file_findings to service_role;
+
+-- Review of each file's purpose and suggestions. A platform engineer approves them, or edits and then approves.
+alter table public.file_findings add column if not exists review_status text not null default 'draft'
+  check (review_status in ('draft', 'approved', 'edited'));
+alter table public.file_findings add column if not exists reviewed_by_email text;
+alter table public.file_findings add column if not exists reviewed_at timestamptz;
+create index if not exists file_findings_review_idx on public.file_findings (analysis_id, review_status);
 grant select, insert on public.deletion_log to service_role;
 
 -- First workspace admin, after the Worker is deployed. Replace the workspace name and email:

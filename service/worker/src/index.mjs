@@ -29,6 +29,9 @@
 //   POST   /api/analyses/:id/contingencies                add a contingency plan (platform engineers)
 //   PATCH  /api/contingencies/:id                         edit or set the status of a contingency (platform engineers)
 //   DELETE /api/contingencies/:id                         remove a contingency (platform engineers)
+//   GET    /api/analyses/:id/files                        file-level results, a page at a time (platform engineers)
+//   POST   /api/analyses/:id/files/approve-all            approve every file still in draft (platform engineers)
+//   PATCH  /api/file-findings/:id                         approve or edit one file's purpose and suggestions (platform engineers)
 //   POST   /api/runner/:id/files                          one chunk of file-level results, up to 200 files (shared secret)
 //   POST   /api/runner/:id/result                         runner callback with findings (shared secret)
 //
@@ -853,6 +856,78 @@ const FILE_CHUNK_MAX_BYTES = 1_000_000;
 const FILE_CHUNK_MAX_FILES = 200;
 const FREE_TIER_ANALYSIS_BYTES = 25 * 1024 * 1024;
 
+function suggestionsOk(value) {
+  return Array.isArray(value) && value.length <= 20 && JSON.stringify(value).length <= 4000;
+}
+
+// File-level review. Only platform engineers see file-level results, for now.
+const FILE_PAGE_MAX = 200;
+const FILE_COLUMNS = "id,path,category,purpose,suggestions,review_status,reviewed_by_email,reviewed_at";
+
+async function listFiles(request, env, id) {
+  const access = await analysisAccess(env, request, id);
+  if (access.response) return access.response;
+  if (!canStart(access.member)) return json({ error: "Only platform engineers can review file-level results." }, 403);
+  const url = new URL(request.url);
+  const offset = Math.max(0, Math.floor(Number(url.searchParams.get("offset") || 0)) || 0);
+  const limit = Math.min(FILE_PAGE_MAX, Math.max(1, Math.floor(Number(url.searchParams.get("limit") || FILE_PAGE_MAX)) || FILE_PAGE_MAX));
+  const res = await serviceRest(env, `file_findings?analysis_id=eq.${id}&select=${FILE_COLUMNS}&order=path.asc&limit=${limit}&offset=${offset}`);
+  if (!res.ok) return json({ error: "Could not load the file results." }, 502);
+  return json({ files: await res.json(), offset, limit });
+}
+
+async function editFile(request, env, id) {
+  const auth = await requireUser(env, request);
+  if (auth.response) return auth.response;
+  const found = await serviceRest(env, `file_findings?id=eq.${id}&select=id,analysis_id`);
+  if (!found.ok) return json({ error: "Could not load the file result." }, 502);
+  const [item] = await found.json();
+  if (!item) return json({ error: "Not found." }, 404);
+  const access = await analysisAccessAs(env, auth, item.analysis_id);
+  if (access.response) return access.response;
+  if (!canStart(access.member)) return json({ error: "Only platform engineers can review file-level results." }, 403);
+  const parsed = await readJson(request);
+  if (parsed.error) return json({ error: parsed.error }, 400);
+  const body = parsed.value || {};
+  if (body.review_status !== "approved" && body.review_status !== "edited") {
+    return json({ error: "review_status must be approved or edited." }, 400);
+  }
+  const change = {};
+  if (body.purpose !== undefined) {
+    if (body.purpose !== null && (typeof body.purpose !== "string" || body.purpose.length > 2000)) {
+      return json({ error: "purpose must be text of up to 2000 characters." }, 400);
+    }
+    change.purpose = body.purpose;
+  }
+  if (body.suggestions !== undefined) {
+    if (!suggestionsOk(body.suggestions)) return json({ error: "suggestions must be a list of up to 20 short items." }, 400);
+    change.suggestions = body.suggestions;
+  }
+  if (body.review_status === "edited" && Object.keys(change).length === 0) {
+    return json({ error: "Send the edited purpose or suggestions." }, 400);
+  }
+  const res = await serviceRest(env, `file_findings?id=eq.${id}`, {
+    method: "PATCH",
+    headers: { prefer: "return=minimal" },
+    body: JSON.stringify({ ...change, review_status: body.review_status, reviewed_by_email: auth.user.email, reviewed_at: new Date().toISOString() }),
+  });
+  if (!res.ok) return json({ error: "Could not save the review." }, 502);
+  return json({ updated: true });
+}
+
+async function approveAllFiles(request, env, id) {
+  const access = await analysisAccess(env, request, id);
+  if (access.response) return access.response;
+  if (!canStart(access.member)) return json({ error: "Only platform engineers can approve file-level results." }, 403);
+  const res = await serviceRest(env, `file_findings?analysis_id=eq.${id}&review_status=eq.draft`, {
+    method: "PATCH",
+    headers: { prefer: "return=minimal" },
+    body: JSON.stringify({ review_status: "approved", reviewed_by_email: access.user.email, reviewed_at: new Date().toISOString() }),
+  });
+  if (!res.ok) return json({ error: "Could not approve the file results." }, 502);
+  return json({ approved: true });
+}
+
 // Checks one file record. Only the fields we store are kept.
 function fileRecord(value) {
   if (!value || typeof value !== "object" || Array.isArray(value)) return { error: "Each file must be an object." };
@@ -864,7 +939,7 @@ function fileRecord(value) {
     return { error: "purpose must be text of up to 2000 characters." };
   }
   const suggestions = value.suggestions === undefined || value.suggestions === null ? [] : value.suggestions;
-  if (!Array.isArray(suggestions) || suggestions.length > 20 || JSON.stringify(suggestions).length > 4000) {
+  if (!suggestionsOk(suggestions)) {
     return { error: "suggestions must be a list of up to 20 short items." };
   }
   return {
@@ -1186,6 +1261,15 @@ async function route(request, env) {
       if (kind === "invitations" && !child && method === "POST") return createInvitation(request, env, workspaceId);
       if (kind === "invitations" && child && method === "DELETE") return deleteInvitation(request, env, workspaceId, decodeURIComponent(child));
     }
+
+    const fileList = path.match(/^\/api\/analyses\/([^/]+)\/files$/);
+    if (fileList && UUID_PATTERN.test(fileList[1]) && method === "GET") return listFiles(request, env, fileList[1]);
+
+    const fileApprove = path.match(/^\/api\/analyses\/([^/]+)\/files\/approve-all$/);
+    if (fileApprove && UUID_PATTERN.test(fileApprove[1]) && method === "POST") return approveAllFiles(request, env, fileApprove[1]);
+
+    const oneFile = path.match(/^\/api\/file-findings\/([^/]+)$/);
+    if (oneFile && UUID_PATTERN.test(oneFile[1]) && method === "PATCH") return editFile(request, env, oneFile[1]);
 
     const fileChunk = path.match(/^\/api\/runner\/([^/]+)\/files$/);
     if (fileChunk && UUID_PATTERN.test(fileChunk[1]) && method === "POST") {
