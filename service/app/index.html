@@ -519,8 +519,8 @@ pre{white-space:pre-wrap;word-break:break-word;background:var(--soft);padding:12
       </div>
       <div class="card" style="margin-top:0">
         <h3 style="margin-top:0">Continue to planning</h3>
-        <p class="muted small" style="margin:6px 0 12px">Coming in a later phase.</p>
-        <button type="button" class="ghost" disabled>Coming soon</button>
+        <p class="muted small" style="margin:6px 0 12px">Plan the risks and fallbacks for this cutover. Proposals are drafted from the findings, then edited by platform engineers.</p>
+        <button type="button" class="ghost" id="planBtn">Continue to planning</button>
       </div>
       <div class="card" style="margin-top:0" id="deleteCardNext">
         <h3 style="margin-top:0">Delete these results</h3>
@@ -532,6 +532,46 @@ pre{white-space:pre-wrap;word-break:break-word;background:var(--soft);padding:12
     <div class="row wzNav">
       <button type="button" class="ghost" id="nextBackReview">Back to findings</button>
       <button type="button" class="ghost" id="nextBackHome">Back to analyses</button>
+    </div>
+  </section>
+
+  <!-- 9. Contingency planning -->
+  <section id="s-plan" class="screen" hidden>
+    <p class="eyebrow">Planning</p>
+    <h2 style="margin:8px 0 6px">Cutover risks and fallbacks</h2>
+    <p class="muted small" id="planMeta"></p>
+    <div class="row wzNav" style="margin:14px 0 4px">
+      <button type="button" class="ghost" id="planBackNext">Back to next steps</button>
+      <button type="button" class="ghost" id="planBackReview">Back to findings</button>
+    </div>
+    <div class="card">
+      <p class="muted small" id="planNote" style="margin:0"></p>
+      <div class="row" style="margin-top:12px">
+        <button type="button" id="planDraft">Draft proposals from findings</button>
+      </div>
+      <p id="planDraftMsg" class="small hint" role="status"></p>
+      <ul id="planList" style="list-style:none;padding:0;margin:14px 0 0"></ul>
+    </div>
+    <div class="card" id="planAddCard">
+      <h3 style="margin-top:0">Add a contingency</h3>
+      <form id="planForm">
+        <label class="small muted" for="planRisk">Risk</label>
+        <input id="planRisk" maxlength="500" placeholder="For example: check-in fails at peak times" required style="width:100%">
+        <label class="small muted" for="planFallback" style="display:block;margin-top:10px">Fallback</label>
+        <textarea id="planFallback" rows="2" maxlength="2000" placeholder="What the team does if it happens" required style="width:100%"></textarea>
+        <label class="small muted" for="planRollback" style="display:block;margin-top:10px">Roll back by</label>
+        <textarea id="planRollback" rows="2" maxlength="2000" placeholder="Optional: the steps to return to the current system" style="width:100%"></textarea>
+        <label class="small muted" for="planTrigger" style="display:block;margin-top:10px">Trigger</label>
+        <input id="planTrigger" maxlength="500" placeholder="Optional: when to use the fallback" style="width:100%">
+        <label class="small muted" for="planOwner" style="display:block;margin-top:10px">Owner email</label>
+        <input id="planOwner" type="email" maxlength="320" placeholder="Optional" style="width:100%">
+        <div class="row" style="justify-content:flex-end;margin-top:12px"><button type="submit" id="planAddBtn">Add contingency</button></div>
+      </form>
+    </div>
+    <p id="planMsg" class="err small hint" role="status"></p>
+    <div class="row wzNav">
+      <button type="button" class="ghost" id="planBackNextBottom">Back to next steps</button>
+      <button type="button" class="ghost" id="planBackReviewBottom">Back to findings</button>
     </div>
   </section>
 
@@ -593,7 +633,7 @@ pre{white-space:pre-wrap;word-break:break-word;background:var(--soft);padding:12
     { id: "s-review", name: "Review findings", w: 15, min: 2 },
     { id: "s-next", name: "Next steps", w: 10, min: 0.5 },
   ];
-  const SCREENS = ["s-login", "s-denied", "s-role", "s-home", "s-name", "s-connect", "s-rules", "s-run", "s-review", "s-next"];
+  const SCREENS = ["s-login", "s-denied", "s-role", "s-home", "s-name", "s-connect", "s-rules", "s-run", "s-review", "s-next", "s-plan"];
   const RUN_STAGES = ["Reading files", "Finding the stack", "Finding the data", "Finding the infrastructure", "Writing the report"];
   const STATUS_TEXT = { queued: "Waiting to start", running: "Running", complete: "Review ready", failed: "Failed" };
   const REPO_FORMAT = /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/;
@@ -2185,8 +2225,35 @@ a{color:#6d28d9;font-weight:600}`;
     body.querySelectorAll("iframe").forEach((f) => f.setAttribute("sandbox", ""));
     body.querySelectorAll("[id]").forEach((n) => n.removeAttribute("id"));
     body.removeAttribute("id");
+    body.appendChild(planForExport());
     body.classList.add("report-export");
     return body;
+  }
+
+  // The contingency plans go into the export as text. Rejected plans are left out.
+  function planForExport() {
+    const wrap = document.createElement("div");
+    wrap.className = "report-plan";
+    wrap.appendChild(el("h3", "Cutover risks and fallbacks"));
+    const items = (cur.contingencies || []).filter((c) => c.status !== "rejected");
+    if (!items.length) {
+      wrap.appendChild(el("p", "No contingency plans recorded.", "muted small"));
+      return wrap;
+    }
+    wrap.appendChild(el("p", "Accepted plans are agreed. Proposed and edited plans still need a platform engineer's review.", "muted small"));
+    const ul = document.createElement("ul");
+    for (const c of items) {
+      const li = document.createElement("li");
+      li.appendChild(el("b", c.risk));
+      li.appendChild(el("div", `Fallback: ${c.contingency}`));
+      if (c.rollback_step) li.appendChild(el("div", `Roll back by: ${c.rollback_step}`));
+      if (c.trigger_condition) li.appendChild(el("div", `Trigger: ${c.trigger_condition}`));
+      if (c.owner_email) li.appendChild(el("div", `Owner: ${c.owner_email}`));
+      li.appendChild(el("div", PLAN_STATUS[c.status] || c.status, "muted small"));
+      ul.appendChild(li);
+    }
+    wrap.appendChild(ul);
+    return wrap;
   }
   function reportHeader() {
     return `${$("reviewTitle").textContent} · ${$("reviewMeta").textContent}`;
@@ -2246,6 +2313,225 @@ a{color:#6d28d9;font-weight:600}`;
 
   $("nextBackReview").addEventListener("click", () => showReview());
   $("nextBackHome").addEventListener("click", () => showHome());
+
+  // ---- Step 9: contingency planning ----
+  // Proposals are drafted here from the findings this viewer can see. Nothing is saved until someone acts on one.
+  const PLAN_STATUS = {
+    proposed: "Proposed, not yet reviewed",
+    accepted: "Accepted",
+    edited: "Edited, not yet accepted",
+    rejected: "Rejected",
+  };
+  const PLAN_DRAFTS = {
+    "epic.fhir_endpoints": {
+      risk: "Interfaces to the FHIR endpoints fail when traffic moves to the new platform",
+      contingency: "Keep the current endpoint settings in place, and point the interface back to them until the new endpoints pass the interface tests.",
+      rollback_step: "Restore the previous endpoint settings and restart the interface service.",
+      trigger_condition: "Interface tests fail, or messages are rejected for more than 15 minutes after cutover.",
+    },
+    "epic.epic_specific": {
+      risk: "Vendor-specific hosts and endpoints do not resolve or behave the same on the new platform",
+      contingency: "Keep the vendor connection running through the current network path until the new hosts are confirmed with the vendor.",
+      rollback_step: "Switch the connection back to the current host names.",
+      trigger_condition: "A vendor connection fails in the first hour after cutover.",
+    },
+    "data.sql_dialects": {
+      risk: "Database-specific SQL does not run on the new database engine",
+      contingency: "Keep the old database available read-only for reporting until the SQL is rewritten and tested.",
+      rollback_step: "Point the application back to the old database connection.",
+      trigger_condition: "Any query fails in the first hour after cutover.",
+    },
+    "data.migrations": {
+      risk: "Schema changes are not applied the same way on the new database",
+      contingency: "Take a verified backup before the migration, and keep the restore steps ready.",
+      rollback_step: "Restore the backup taken before the migration.",
+      trigger_condition: "A migration fails, or row counts differ from the old database after the run.",
+    },
+    "infrastructure.as_code": {
+      risk: "The environment is set up by hand, so a rebuild after failure may not match the tested setup",
+      contingency: "Keep the current servers running until a rebuild from written steps has been tested.",
+      rollback_step: "Start the current servers and switch traffic back to them.",
+      trigger_condition: "The new environment cannot be rebuilt from the written steps within the agreed window.",
+    },
+    "delivery.ci": {
+      risk: "Without an automated pipeline, a faulty release cannot be rolled back quickly",
+      contingency: "Keep the previous release package and a manual deploy checklist ready.",
+      rollback_step: "Deploy the previous release package.",
+      trigger_condition: "A release fails its smoke test after cutover.",
+    },
+  };
+
+  // A draft for one finding, or nothing when the finding is not a cutover risk.
+  function planDraftFor(f) {
+    const known = PLAN_DRAFTS[f.id];
+    if (known) return { finding_id: f.id, ...known };
+    if (f.severity === "high" || f.severity === "medium") {
+      return {
+        finding_id: f.id,
+        risk: `${f.title}: may not behave the same after cutover`,
+        contingency: "Keep the current arrangement running until this point has been tested on the new platform.",
+        rollback_step: "Switch back to the current arrangement.",
+        trigger_condition: "A test for this point fails after cutover.",
+      };
+    }
+    return null;
+  }
+
+  async function refreshPlan() {
+    cur = await api(`/api/analyses/${cur.id}`);
+    renderPlan();
+  }
+
+  function showPlan() {
+    show("s-plan");
+    $("planMeta").textContent = `${cur.app_name || cur.repo} · ${cur.repo}`;
+    renderPlan();
+  }
+
+  function renderPlan() {
+    const canPlan = !!cur.can_plan;
+    $("planNote").textContent = canPlan
+      ? "These are suggestions drafted from the findings. Edit each one, then accept it. Nothing here is final until a platform engineer accepts it."
+      : "Platform engineers draft and edit these plans. You can read them here.";
+    $("planDraft").hidden = !canPlan;
+    $("planAddCard").hidden = !canPlan;
+
+    const list = $("planList");
+    list.innerHTML = "";
+    const items = cur.contingencies || [];
+    if (!items.length) list.appendChild(el("li", "No contingencies yet.", "muted small"));
+    for (const c of items) list.appendChild(planItem(c, canPlan));
+  }
+
+  function planItem(c, canPlan) {
+    const li = el("li", null, "item" + (c.status === "rejected" ? " done" : ""));
+    const body = el("div", null, "grow");
+    body.append(el("b", c.risk), el("div", c.contingency));
+    if (c.rollback_step) body.appendChild(el("div", `Roll back by: ${c.rollback_step}`, "small"));
+    if (c.trigger_condition) body.appendChild(el("div", `Trigger: ${c.trigger_condition}`, "small"));
+    if (c.owner_email) body.appendChild(el("div", `Owner: ${c.owner_email}`, "small"));
+    body.appendChild(el("div", `${PLAN_STATUS[c.status] || c.status} · ${c.updated_by_email || c.created_by_email}`, "muted small"));
+    li.appendChild(body);
+    if (!canPlan) return li;
+
+    const buttons = el("div", null, "row");
+    const button = (label, fn) => {
+      const b = el("button", label, "ghost small-btn");
+      b.type = "button";
+      b.addEventListener("click", fn);
+      buttons.appendChild(b);
+    };
+    const act = async (change) => {
+      try {
+        await api(`/api/contingencies/${c.id}`, { method: "PATCH", body: JSON.stringify(change) });
+        await refreshPlan();
+      } catch (err) { setMsg("planMsg", err.message, true); }
+    };
+    if (c.status !== "accepted") button("Accept", () => act({ status: "accepted" }));
+    button("Edit", () => openPlanEditor(li, c));
+    if (c.status !== "rejected") button("Reject", () => act({ status: "rejected" }));
+    button("Remove", async () => {
+      if (!confirm("Remove this contingency? This cannot be undone.")) return;
+      try {
+        await api(`/api/contingencies/${c.id}`, { method: "DELETE" });
+        await refreshPlan();
+      } catch (err) { setMsg("planMsg", err.message, true); }
+    });
+    li.appendChild(buttons);
+    return li;
+  }
+
+  // Replaces one contingency's text with an editable form. Saving marks it as edited, so it must be accepted again.
+  function openPlanEditor(li, c) {
+    li.innerHTML = "";
+    const form = el("form", null, "grow");
+    const fields = [
+      ["risk", "Risk", c.risk, "input"],
+      ["contingency", "Fallback", c.contingency, "textarea"],
+      ["rollback_step", "Roll back by", c.rollback_step || "", "textarea"],
+      ["trigger_condition", "Trigger", c.trigger_condition || "", "input"],
+      ["owner_email", "Owner email", c.owner_email || "", "input"],
+    ];
+    const inputs = {};
+    for (const [key, label, value, kind] of fields) {
+      form.appendChild(el("label", label, "small muted"));
+      const node = document.createElement(kind);
+      if (kind === "textarea") node.rows = 2;
+      node.value = value;
+      node.style.width = "100%";
+      node.style.marginBottom = "8px";
+      inputs[key] = node;
+      form.appendChild(node);
+    }
+    const save = el("button", "Save", "small-btn");
+    save.type = "submit";
+    const cancel = el("button", "Cancel", "ghost small-btn");
+    cancel.type = "button";
+    cancel.addEventListener("click", () => renderPlan());
+    const row = el("div", null, "row");
+    row.style.justifyContent = "flex-end";
+    row.append(cancel, save);
+    form.appendChild(row);
+    form.addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const change = { status: "edited" };
+      for (const key of Object.keys(inputs)) change[key] = inputs[key].value.trim();
+      try {
+        await api(`/api/contingencies/${c.id}`, { method: "PATCH", body: JSON.stringify(change) });
+        await refreshPlan();
+      } catch (err) { setMsg("planMsg", err.message, true); }
+    });
+    li.appendChild(form);
+  }
+
+  $("planDraft").addEventListener("click", async () => {
+    const existing = new Set((cur.contingencies || []).map((c) => c.finding_id).filter(Boolean));
+    const findings = Object.values((cur.findings && cur.findings.findings) || {});
+    const drafts = findings
+      .filter((f) => !existing.has(f.id))
+      .map(planDraftFor)
+      .filter(Boolean);
+    if (!drafts.length) {
+      setMsg("planDraftMsg", "Nothing new to draft. Every cutover risk in the findings already has a proposal.", false);
+      return;
+    }
+    $("planDraft").disabled = true;
+    try {
+      for (const d of drafts) {
+        await api(`/api/analyses/${cur.id}/contingencies`, { method: "POST", body: JSON.stringify(d) });
+      }
+      setMsg("planDraftMsg", `${drafts.length} proposal${drafts.length === 1 ? "" : "s"} drafted. Edit each one, then accept it.`, false);
+      await refreshPlan();
+    } catch (err) {
+      setMsg("planMsg", err.message, true);
+    } finally {
+      $("planDraft").disabled = false;
+    }
+  });
+
+  $("planForm").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const body = {
+      risk: $("planRisk").value.trim(),
+      contingency: $("planFallback").value.trim(),
+      rollback_step: $("planRollback").value.trim(),
+      trigger_condition: $("planTrigger").value.trim(),
+      owner_email: $("planOwner").value.trim(),
+      status: "accepted",
+    };
+    try {
+      await api(`/api/analyses/${cur.id}/contingencies`, { method: "POST", body: JSON.stringify(body) });
+      ["planRisk", "planFallback", "planRollback", "planTrigger", "planOwner"].forEach((id) => { $(id).value = ""; });
+      setMsg("planMsg", "", false);
+      await refreshPlan();
+    } catch (err) { setMsg("planMsg", err.message, true); }
+  });
+
+  $("planBtn").addEventListener("click", () => showPlan());
+  $("planBackNext").addEventListener("click", () => showNext());
+  $("planBackNextBottom").addEventListener("click", () => showNext());
+  $("planBackReview").addEventListener("click", () => showReview());
+  $("planBackReviewBottom").addEventListener("click", () => showReview());
 
   // The buttons at the top repeat the ones at the bottom, and do exactly what they do.
   [["runBackTop", "runBack"], ["viewFindingsTop", "viewFindings"], ["reviewBackTop", "reviewBack"],

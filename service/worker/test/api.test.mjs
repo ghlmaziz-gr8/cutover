@@ -46,6 +46,7 @@ const AN_ACME = uid(201);
 const AN_BETA = uid(202);
 const COMMENT_ACME = uid(301);
 const ACTION_ACME = uid(401);
+const CONTINGENCY_ACME = uid(501);
 const NOW = "2026-10-17T12:00:00.000Z";
 const FAR_FUTURE = "2099-01-01T00:00:00.000Z";
 const LONG_AGO = "2020-01-01T00:00:00.000Z";
@@ -104,6 +105,13 @@ function seed() {
     ],
     action_items: [
       { id: ACTION_ACME, analysis_id: AN_ACME, title: "Confirm HL7 scope", status: "open", created_by: PEOPLE.eng_a.id, created_by_email: PEOPLE.eng_a.email, created_at: NOW, done_at: null, done_by_email: null },
+    ],
+    contingencies: [
+      { id: CONTINGENCY_ACME, analysis_id: AN_ACME, finding_id: "hl7.gap", risk: "Patient messages stop during cutover",
+        contingency: "Keep the old interface running read-only until the new one passes the message test.",
+        rollback_step: null, trigger_condition: null, owner_email: null, status: "proposed",
+        created_by: PEOPLE.eng_a.id, created_by_email: PEOPLE.eng_a.email, updated_by_email: null,
+        created_at: NOW, updated_at: NOW },
     ],
     deletion_log: [],
   };
@@ -470,6 +478,76 @@ test("other members can add and close action items", async () => {
   const close = await call(`/api/actions/${ACTION_ACME}`, { as: "inf_a", method: "PATCH", body: { status: "done" } });
   assert.equal(close.status, 200);
   assert.equal(state.action_items.find((a) => a.id === ACTION_ACME).done_by_email, PEOPLE.inf_a.email);
+});
+
+// ---- Contingency planning ----
+
+test("every member can read the contingency plans with the analysis, but only platform engineers see can_plan", async () => {
+  const auditor = await call(`/api/analyses/${AN_ACME}`, { as: "aud_a" });
+  assert.equal(auditor.status, 200);
+  assert.equal(auditor.body.contingencies.length, 1);
+  assert.equal(auditor.body.can_plan, false);
+  const engineer = await call(`/api/analyses/${AN_ACME}`, { as: "eng_a" });
+  assert.equal(engineer.body.can_plan, true);
+});
+
+test("a contingency is kept inside its own workspace", async () => {
+  const res = await call(`/api/analyses/${AN_ACME}/contingencies`, { as: "eng_b", method: "POST", body: { risk: "x", contingency: "y" } });
+  assert.equal(res.status, 404);
+});
+
+test("only platform engineers can add, change or remove contingencies", async () => {
+  const add = await call(`/api/analyses/${AN_ACME}/contingencies`, { as: "inf_a", method: "POST", body: { risk: "r", contingency: "c" } });
+  assert.equal(add.status, 403);
+  const change = await call(`/api/contingencies/${CONTINGENCY_ACME}`, { as: "sec_a", method: "PATCH", body: { risk: "changed" } });
+  assert.equal(change.status, 403);
+  const remove = await call(`/api/contingencies/${CONTINGENCY_ACME}`, { as: "aud_a", method: "DELETE" });
+  assert.equal(remove.status, 403);
+  assert.equal(state.contingencies.length, 1);
+  assert.equal(state.contingencies[0].risk, "Patient messages stop during cutover");
+});
+
+test("a platform engineer adds a contingency, which starts as a proposal and records who saved it", async () => {
+  const res = await call(`/api/analyses/${AN_ACME}/contingencies`, {
+    as: "eng_a", method: "POST",
+    body: { risk: "Check-in fails at peak", contingency: "Switch to paper check-in for one shift.", owner_email: "informatics@acme.test" },
+  });
+  assert.equal(res.status, 201);
+  const added = state.contingencies.find((c) => c.risk === "Check-in fails at peak");
+  assert.equal(added.status, "proposed");
+  assert.equal(added.created_by_email, PEOPLE.eng_a.email);
+  assert.equal(added.owner_email, "informatics@acme.test");
+});
+
+test("a new contingency needs a risk and a fallback", async () => {
+  const missing = await call(`/api/analyses/${AN_ACME}/contingencies`, { as: "eng_a", method: "POST", body: { contingency: "c" } });
+  assert.equal(missing.status, 400);
+  assert.match(missing.body.error, /risk is required/);
+  const blank = await call(`/api/analyses/${AN_ACME}/contingencies`, { as: "eng_a", method: "POST", body: { risk: "  ", contingency: "c" } });
+  assert.equal(blank.status, 400);
+  const badStatus = await call(`/api/analyses/${AN_ACME}/contingencies`, { as: "eng_a", method: "POST", body: { risk: "r", contingency: "c", status: "done" } });
+  assert.equal(badStatus.status, 400);
+});
+
+test("editing a proposal marks it edited, but an explicit status is kept", async () => {
+  const edit = await call(`/api/contingencies/${CONTINGENCY_ACME}`, { as: "eng_a", method: "PATCH", body: { contingency: "Keep the old interface read-only for one week." } });
+  assert.equal(edit.status, 200);
+  const row = state.contingencies.find((c) => c.id === CONTINGENCY_ACME);
+  assert.equal(row.status, "edited");
+  assert.equal(row.updated_by_email, PEOPLE.eng_a.email);
+  const accept = await call(`/api/contingencies/${CONTINGENCY_ACME}`, { as: "eng_a", method: "PATCH", body: { status: "accepted" } });
+  assert.equal(accept.status, 200);
+  assert.equal(state.contingencies.find((c) => c.id === CONTINGENCY_ACME).status, "accepted");
+});
+
+test("an empty update is refused, and a removed contingency is gone", async () => {
+  const empty = await call(`/api/contingencies/${CONTINGENCY_ACME}`, { as: "eng_a", method: "PATCH", body: {} });
+  assert.equal(empty.status, 400);
+  const remove = await call(`/api/contingencies/${CONTINGENCY_ACME}`, { as: "eng_a", method: "DELETE" });
+  assert.equal(remove.status, 200);
+  assert.equal(state.contingencies.length, 0);
+  const again = await call(`/api/contingencies/${CONTINGENCY_ACME}`, { as: "eng_a", method: "DELETE" });
+  assert.equal(again.status, 404);
 });
 
 test("a comment can be deleted by its author or a workspace admin, not by others", async () => {
