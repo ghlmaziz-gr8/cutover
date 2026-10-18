@@ -158,6 +158,27 @@ as $$ select pg_database_size(current_database())::bigint $$;
 
 revoke all on function public.database_size_bytes() from public, anon, authenticated;
 grant execute on function public.database_size_bytes() to service_role;
+
+-- File-level results of an analysis, one row per file. The runner sends them in chunks.
+-- Holds no source code and no real data: purpose and suggestions are written as text, and examples are samples.
+create table if not exists public.file_findings (
+  id           uuid primary key default gen_random_uuid(),
+  analysis_id  uuid not null references public.analyses (id) on delete cascade,
+  path         text not null check (length(path) between 1 and 512),
+  category     text not null check (length(category) between 1 and 60),
+  purpose      text check (purpose is null or length(purpose) <= 2000),
+  suggestions  jsonb not null default '[]'::jsonb check (jsonb_typeof(suggestions) = 'array'),
+  sample_only  boolean not null default true,
+  created_at   timestamptz not null default now(),
+  unique (analysis_id, path)
+);
+
+-- Running total of the file-level results, in bytes, checked against the free-tier cap.
+alter table public.analyses add column if not exists file_bytes bigint not null default 0;
+
+alter table public.file_findings enable row level security;
+revoke all on public.file_findings from anon, authenticated;
+grant select, insert, update, delete on public.file_findings to service_role;
 grant select, insert on public.deletion_log to service_role;
 
 -- First workspace admin, after the Worker is deployed. Replace the workspace name and email:

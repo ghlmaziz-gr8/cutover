@@ -29,6 +29,7 @@
 //   POST   /api/analyses/:id/contingencies                add a contingency plan (platform engineers)
 //   PATCH  /api/contingencies/:id                         edit or set the status of a contingency (platform engineers)
 //   DELETE /api/contingencies/:id                         remove a contingency (platform engineers)
+//   POST   /api/runner/:id/files                          one chunk of file-level results, up to 200 files (shared secret)
 //   POST   /api/runner/:id/result                         runner callback with findings (shared secret)
 //
 // A scheduled job deletes analyses past their expires_at, and writes a deletion record first.
@@ -228,9 +229,9 @@ function serviceRest(env, path, init = {}) {
   });
 }
 
-async function readJson(request) {
+async function readJson(request, maxBytes = MAX_BODY_BYTES) {
   const text = await request.text();
-  if (text.length > MAX_BODY_BYTES) return { error: "Request body is too large." };
+  if (text.length > maxBytes) return { error: "Request body is too large." };
   try {
     return { value: JSON.parse(text) };
   } catch {
@@ -847,6 +848,95 @@ async function deleteContingency(request, env, id) {
   return json({ deleted: true });
 }
 
+// File-level results arrive in chunks, so each request stays small enough for the free-tier CPU budget.
+const FILE_CHUNK_MAX_BYTES = 1_000_000;
+const FILE_CHUNK_MAX_FILES = 200;
+const FREE_TIER_ANALYSIS_BYTES = 25 * 1024 * 1024;
+
+// Checks one file record. Only the fields we store are kept.
+function fileRecord(value) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return { error: "Each file must be an object." };
+  const path = typeof value.path === "string" ? value.path.trim() : "";
+  if (!path || path.length > 512) return { error: "Each file needs a path of up to 512 characters." };
+  const category = typeof value.category === "string" ? value.category.trim() : "";
+  if (!category || category.length > 60) return { error: "Each file needs a category of up to 60 characters." };
+  if (value.purpose !== undefined && value.purpose !== null && (typeof value.purpose !== "string" || value.purpose.length > 2000)) {
+    return { error: "purpose must be text of up to 2000 characters." };
+  }
+  const suggestions = value.suggestions === undefined || value.suggestions === null ? [] : value.suggestions;
+  if (!Array.isArray(suggestions) || suggestions.length > 20 || JSON.stringify(suggestions).length > 4000) {
+    return { error: "suggestions must be a list of up to 20 short items." };
+  }
+  return {
+    row: {
+      path,
+      category,
+      purpose: typeof value.purpose === "string" ? value.purpose : null,
+      suggestions,
+      sample_only: value.sample_only !== false,
+    },
+  };
+}
+
+// Saves one chunk of file-level results. A chunk is refused if the analysis is finished, or if the
+// running total would pass the free-tier cap. Going over the cap fails the analysis and removes its file rows.
+async function runnerFiles(request, env, id) {
+  if (!timingSafeEqual(request.headers.get("x-runner-secret") || "", env.RUNNER_SECRET || "")) {
+    return json({ error: "Unauthorized." }, 401);
+  }
+  const found = await serviceRest(env, `analyses?id=eq.${id}&select=id,status,file_bytes`);
+  if (!found.ok) return json({ error: "Could not load the analysis." }, 502);
+  const [analysis] = await found.json();
+  if (!analysis) return json({ error: "Not found." }, 404);
+  if (analysis.status !== "queued" && analysis.status !== "running") {
+    return json({ error: "This analysis is no longer taking results." }, 409);
+  }
+  const parsed = await readJson(request, FILE_CHUNK_MAX_BYTES);
+  if (parsed.error) return json({ error: parsed.error }, 400);
+  const files = parsed.value?.files;
+  if (!Array.isArray(files) || files.length === 0 || files.length > FILE_CHUNK_MAX_FILES) {
+    return json({ error: `A chunk holds 1 to ${FILE_CHUNK_MAX_FILES} files.` }, 400);
+  }
+  const rows = [];
+  const paths = new Set();
+  for (const value of files) {
+    const checked = fileRecord(value);
+    if (checked.error) return json({ error: checked.error }, 400);
+    if (paths.has(checked.row.path)) return json({ error: `The path ${checked.row.path} appears twice in this chunk.` }, 400);
+    paths.add(checked.row.path);
+    rows.push(checked.row);
+  }
+  const bytes = new TextEncoder().encode(JSON.stringify(rows)).length;
+  const total = Number(analysis.file_bytes || 0) + bytes;
+  if (total > FREE_TIER_ANALYSIS_BYTES) {
+    await serviceRest(env, `file_findings?analysis_id=eq.${id}`, { method: "DELETE", headers: { prefer: "return=minimal" } });
+    await serviceRest(env, `analyses?id=eq.${id}`, {
+      method: "PATCH",
+      headers: { prefer: "return=minimal" },
+      body: JSON.stringify({
+        status: "failed",
+        error: "These results are over the 25 MB limit for an analysis on the free tier. Analyze a smaller part of the repository.",
+        file_bytes: 0,
+        finished_at: new Date().toISOString(),
+      }),
+    });
+    return json({ error: "This analysis is over the free-tier limit, so it was stopped." }, 413);
+  }
+  const res = await serviceRest(env, "file_findings", {
+    method: "POST",
+    headers: { prefer: "return=minimal" },
+    body: JSON.stringify(rows.map((row) => ({ ...row, analysis_id: id }))),
+  });
+  if (!res.ok) return json({ error: "Could not save these file results. A path may already be saved." }, 502);
+  const update = await serviceRest(env, `analyses?id=eq.${id}`, {
+    method: "PATCH",
+    headers: { prefer: "return=minimal" },
+    body: JSON.stringify({ status: "running", file_bytes: total }),
+  });
+  if (!update.ok) return json({ error: "Could not update the analysis." }, 502);
+  return json({ saved: rows.length, total_bytes: total }, 201);
+}
+
 async function runnerResult(request, env, id) {
   if (!timingSafeEqual(request.headers.get("x-runner-secret") || "", env.RUNNER_SECRET || "")) {
     return json({ error: "Unauthorized." }, 401);
@@ -1095,6 +1185,11 @@ async function route(request, env) {
       if (kind === "invitations" && !child && method === "GET") return listInvitations(request, env, workspaceId);
       if (kind === "invitations" && !child && method === "POST") return createInvitation(request, env, workspaceId);
       if (kind === "invitations" && child && method === "DELETE") return deleteInvitation(request, env, workspaceId, decodeURIComponent(child));
+    }
+
+    const fileChunk = path.match(/^\/api\/runner\/([^/]+)\/files$/);
+    if (fileChunk && UUID_PATTERN.test(fileChunk[1]) && method === "POST") {
+      return runnerFiles(request, env, fileChunk[1]);
     }
 
     const callback = path.match(/^\/api\/runner\/([^/]+)\/result$/);
