@@ -1467,7 +1467,7 @@ pre{white-space:pre-wrap;word-break:break-word;background:var(--soft);padding:12
   }
 
   // One card per topic: the facts as label and value, the confidence mix, and the details.
-  function reviewCard(card, all, role) {
+  function reviewCard(card, all, role, every) {
     const found = all.filter((item) => card.cats.includes(item.category));
     // Optional cards show only when there is something to show, so a generic app never sees healthcare wording.
     if (card.onlyWhenFound && !found.length) return null;
@@ -1476,7 +1476,12 @@ pre{white-space:pre-wrap;word-break:break-word;background:var(--soft);padding:12
     c.appendChild(el("h3", card.title));
     if (!found.length) {
       const visible = card.cats.some((cat) => sees(role, cat));
-      c.appendChild(el("p", visible ? (card.empty || "Nothing detected in the code reviewed.") : "Not shown for your role.", "muted small"));
+      // Findings in these categories may be shown in a summary card instead.
+      const elsewhere = (every || []).some((i) => card.cats.includes(i.category));
+      const text = !visible ? "Not shown for your role."
+        : elsewhere ? "Shown in the summary cards below."
+        : (card.empty || "Nothing detected in the code reviewed.");
+      c.appendChild(el("p", text, "muted small"));
       return c;
     }
     const kv = el("div", null, "kv");
@@ -1493,6 +1498,107 @@ pre{white-space:pre-wrap;word-break:break-word;background:var(--soft);padding:12
     found.forEach((item) => details.appendChild(renderFindingItem(item)));
     c.appendChild(details);
     return c;
+  }
+
+  // Three summary cards from the demo: what it does, age and history, data structure.
+  // Built only from findings this viewer may see, and from the history (shown to every role).
+  function componentCards(shown, history, role) {
+    const val = (id) => (shown[id] ? shown[id].value : undefined);
+    const out = [];
+    const shell = (eyebrow, title) => {
+      const c = el("div", null, "rcard");
+      c.append(el("p", eyebrow, "eyebrow-sm"), el("h3", title));
+      return c;
+    };
+    const hidden = (c) => { c.appendChild(el("p", "Not shown for your role.", "muted small")); return c; };
+
+    // What it does: runtime, entry points, client-facing, hosting.
+    {
+      const cats = ["stack", "ui_portal", "infrastructure"];
+      const visible = cats.some((k) => sees(role, k));
+      const c = shell("Application", "What it does");
+      if (!visible) out.push(hidden(c));
+      else {
+        const rows = [];
+        const java = val("runtime.java");
+        const boot = val("runtime.spring_boot");
+        if (java || boot) rows.push(["Runtime", [java && `Java ${java}`, boot && `Spring Boot ${boot}`].filter(Boolean).join(", ")]);
+        const ep = val("ui.endpoints");
+        if (ep && typeof ep.endpoint_annotations === "number") rows.push(["Entry points", `${ep.endpoint_annotations} REST routes in ${ep.controllers} controllers`]);
+        const client = val("ui.client_facing");
+        if (client) rows.push(["Client-facing", client === "yes" ? "Yes, a client portal is likely" : "Not indicated"]);
+        const iac = val("infrastructure.as_code");
+        if (iac) {
+          const files = Object.values(iac).filter((n) => typeof n === "number").reduce((a, b) => a + b, 0);
+          rows.push(["Hosting", files ? `${files} infrastructure-as-code files` : "Not defined as code"]);
+        }
+        if (!rows.length) c.appendChild(el("p", "Nothing detected in the code reviewed.", "muted small"));
+        else {
+          const kv = el("div", null, "kv");
+          for (const [k, v] of rows) kv.append(el("span", k), el("span", v));
+          c.appendChild(kv);
+        }
+        const tags = el("div", null, "tags");
+        if (shown["runtime.java"]) tags.appendChild(el("span", "Verified", "tag t-ok"));
+        if (shown["ui.client_facing"] && shown["ui.client_facing"].confidence !== "verified") tags.appendChild(el("span", "Inferred: client-facing", "tag t-inf"));
+        c.appendChild(tags);
+        out.push(c);
+      }
+    }
+
+    // Age and history: from git, so no finding categories apply.
+    {
+      const c = shell("History", history.available ? `${Math.round(history.application_age_years)} years, ${history.release_tag_count} releases` : "Age and history");
+      if (!history.available) c.appendChild(el("p", history.reason || "Repository history not available.", "muted small"));
+      else {
+        const kv = el("div", null, "kv");
+        const day = (t) => (t ? String(t).slice(0, 10) : "not known");
+        kv.append(el("span", "First commit"), el("span", day(history.first_commit)));
+        kv.append(el("span", "Tagged versions"), el("span", `${history.release_tag_count}${history.latest_release_tag ? ` (latest ${history.latest_release_tag})` : ""}`));
+        kv.append(el("span", "Last code change"), el("span", `${day(history.last_commit)} (${history.days_since_last_commit} days ago)`));
+        kv.append(el("span", "Commits, last 12 months"), el("span", String(history.commits_last_12_months)));
+        c.appendChild(kv);
+        const years = Object.entries(history.release_tags_per_year || {});
+        if (years.length) {
+          c.appendChild(el("p", "Tagged releases per year", "muted small"));
+          c.appendChild(columns(years.map(([y, v]) => ({ label: y.slice(-2), value: v }))));
+        }
+        const tags = el("div", null, "tags");
+        tags.appendChild(el("span", "Verified from git history", "tag t-ok"));
+        c.appendChild(tags);
+      }
+      out.push(c);
+    }
+
+    // Data structure: tables grouped by the first word of their name, and the migrations.
+    {
+      const c = shell("Data", "Data structure");
+      if (!sees(role, "data")) out.push(hidden(c));
+      else {
+        const tables = val("data.tables");
+        const migrations = val("data.migrations");
+        if (!tables) c.appendChild(el("p", "No tables found in the code reviewed.", "muted small"));
+        else {
+          c.querySelector("h3").textContent = `${tables.count} ${tables.count === 1 ? "table" : "tables"}`;
+          if (migrations && migrations.scripts) c.appendChild(el("p", `${migrations.scripts} schema migrations (${migrations.tool})`, "muted small"));
+          const groups = {};
+          for (const name of tables.names || []) {
+            const parts = String(name).toLowerCase().split("_");
+            const key = parts.length > 1 ? parts[0] : "other";
+            groups[key] = (groups[key] || 0) + 1;
+          }
+          const rows = Object.entries(groups).sort((a, b) => b[1] - a[1]).slice(0, 6)
+            .map(([k, v], i) => ({ label: k === "other" ? "Other" : k, value: v, color: ["var(--accent)", "var(--accent2)", "var(--accent3)", "var(--ok)", "var(--warn)", "#7c3aed"][i % 6] }));
+          if (rows.length) c.appendChild(hbars(rows));
+          const tags = el("div", null, "tags");
+          if (migrations && migrations.scripts) tags.appendChild(el("span", "Verified from migrations", "tag t-ok"));
+          tags.appendChild(el("span", "Inferred: grouped by table name", "tag t-inf"));
+          c.appendChild(tags);
+        }
+      }
+      out.push(c);
+    }
+    return out;
   }
 
   function renderReview(row) {
@@ -1562,12 +1668,6 @@ pre{white-space:pre-wrap;word-break:break-word;background:var(--soft);padding:12
       ]));
       charts.appendChild(p);
     }
-    const years = Object.entries(history.release_tags_per_year || {});
-    if (years.length) {
-      const p = panel("Tagged releases per year", "History");
-      p.appendChild(columns(years.map(([y, v]) => ({ label: y.slice(-2), value: v }))));
-      charts.appendChild(p);
-    }
     if (charts.childElementCount) box.appendChild(charts);
 
     // Cards
@@ -1575,10 +1675,14 @@ pre{white-space:pre-wrap;word-break:break-word;background:var(--soft);padding:12
     heading.style.marginTop = "28px";
     box.appendChild(heading);
     const grid = el("div", null, "rgrid");
+    // The findings the summary cards show are left out of the topic cards, so each appears once.
+    const SUMMARY_IDS = ["runtime.java", "runtime.spring_boot", "ui.endpoints", "ui.client_facing", "data.tables", "data.migrations", "infrastructure.as_code"];
+    const topic = all.filter((i) => !SUMMARY_IDS.includes(i.id));
     for (const card of REVIEW_CARDS) {
-      const node = reviewCard(card, all, cur.viewer_role);
+      const node = reviewCard(card, topic, cur.viewer_role, all);
       if (node) grid.appendChild(node);
     }
+    for (const node of componentCards(shown, history, cur.viewer_role)) grid.appendChild(node);
     box.appendChild(grid);
 
     if (report.limitations && report.limitations.length) {
