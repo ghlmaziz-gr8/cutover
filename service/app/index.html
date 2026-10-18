@@ -246,6 +246,8 @@ pre{white-space:pre-wrap;word-break:break-word;background:var(--soft);padding:12
   #printReport .print-meta{font-size:9pt;color:#444;margin:2pt 0}
   #printReport .print-value{margin:2pt 0 4pt;word-break:break-word}
   #printReport .print-item{border-bottom:1px solid #ccc;padding:8pt 0;break-inside:avoid}
+  /* The entrance animations start cards at opacity 0. Print the finished state, and keep the colours of the charts and cards. */
+  body.printing #printReport *{animation:none!important;transition:none!important;opacity:1!important;transform:none!important;-webkit-print-color-adjust:exact!important;print-color-adjust:exact!important}
 }
   </style>
 </head>
@@ -2265,8 +2267,17 @@ a{color:#6d28d9;font-weight:600}`;
     box.appendChild(el("h1", $("reviewTitle").textContent));
     box.appendChild(el("p", $("reviewMeta").textContent, "print-meta"));
     box.appendChild(reviewForExport());
+    // Print in the light theme, so the cards and charts keep the same colours as the report on screen.
+    const root = document.documentElement;
+    const hadTheme = root.hasAttribute("data-theme");
+    const prevTheme = root.getAttribute("data-theme");
+    root.setAttribute("data-theme", "light");
     document.body.classList.add("printing");
-    const done = () => { document.body.classList.remove("printing"); window.removeEventListener("afterprint", done); };
+    const done = () => {
+      document.body.classList.remove("printing");
+      if (hadTheme) root.setAttribute("data-theme", prevTheme); else root.removeAttribute("data-theme");
+      window.removeEventListener("afterprint", done);
+    };
     window.addEventListener("afterprint", done);
     window.print();
     setTimeout(done, 1500);
