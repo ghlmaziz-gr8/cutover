@@ -31,14 +31,14 @@ const uid = (n) => `00000000-0000-4000-8000-${String(n).padStart(12, "0")}`;
 const W_ACME = uid(101);
 const W_BETA = uid(102);
 const PEOPLE = {
-  admin_a: { id: uid(1), email: "admin@acme.test" },
-  eng_a: { id: uid(2), email: "engineer@acme.test" },
+  admin_a: { id: uid(1), email: "admin@acme.test", name: "Ada Admin" },
+  eng_a: { id: uid(2), email: "engineer@acme.test", name: "Eli Engineer" },
   sec_a: { id: uid(3), email: "security@acme.test" },
   inf_a: { id: uid(4), email: "informatics@acme.test" },
   cio_a: { id: uid(5), email: "cio@acme.test" },
   aud_a: { id: uid(6), email: "auditor@acme.test" },
   eng_b: { id: uid(7), email: "engineer@beta.test" },
-  operator: { id: uid(8), email: "operator@cutover.test" },
+  operator: { id: uid(8), email: "operator@cutover.test", name: "Olivia Operator" },
   newhire: { id: uid(9), email: "newhire@acme.test" },
   stranger: { id: uid(10), email: "stranger@example.test" },
 };
@@ -188,8 +188,9 @@ function handleRest(url, init) {
   }
 
   if (method === "PATCH") {
-    for (const row of rows.filter(hit)) Object.assign(row, JSON.parse(init.body));
-    return new Response(null, { status: 204 });
+    const changed = rows.filter(hit);
+    for (const row of changed) Object.assign(row, JSON.parse(init.body));
+    return prefer.includes("return=representation") ? j(changed.map((r) => ({ ...r }))) : new Response(null, { status: 204 });
   }
 
   if (method === "DELETE") {
@@ -231,7 +232,7 @@ beforeEach(() => {
     outbound.push({ url: u, method: init.method || "GET" });
     if (u.startsWith(`${env.SUPABASE_URL}/auth/v1/user`)) {
       const person = userForToken(init.headers?.authorization);
-      return person ? j({ id: person.id, email: person.email }) : j({ message: "bad token" }, 401);
+      return person ? j({ id: person.id, email: person.email, user_metadata: { full_name: person.name } }) : j({ message: "bad token" }, 401);
     }
     if (u.startsWith(`${env.SUPABASE_URL}/rest/v1/`)) return handleRest(u, init);
     if (u.startsWith("https://api.github.com/")) return handleGithub(u, init);
@@ -591,3 +592,70 @@ test("the runner callback needs the shared secret", async () => {
   const good = await call(`/api/runner/${AN_ACME}/result`, { method: "POST", body: { status: "failed", error: "x" }, secret: env.RUNNER_SECRET });
   assert.equal(good.status, 200);
 });
+
+// ---- Names, and managing workspaces (operators) ----
+
+test("a person's Google name is saved on their memberships at sign-in", async () => {
+  const res = await call("/api/me", { as: "admin_a" });
+  assert.equal(res.status, 200);
+  const rows = state.members.filter((m) => m.user_id === PEOPLE.admin_a.id);
+  assert.ok(rows.length > 0);
+  assert.ok(rows.every((m) => m.name === PEOPLE.admin_a.name));
+});
+
+test("the people list shows each member's name with their email", async () => {
+  await call("/api/me", { as: "eng_a" });
+  const res = await call(`/api/workspaces/${W_ACME}/members`, { as: "admin_a" });
+  assert.equal(res.status, 200);
+  const eng = res.body.find((m) => m.email === PEOPLE.eng_a.email);
+  assert.equal(eng.name, PEOPLE.eng_a.name);
+});
+
+test("only operators see the workspace overview, and people only where the operator is a member", async () => {
+  state.members.push({ workspace_id: W_BETA, user_id: PEOPLE.operator.id, email: PEOPLE.operator.email, name: PEOPLE.operator.name, role: "platform_engineer", is_admin: true, created_at: NOW });
+  const denied = await call("/api/admin/workspaces", { as: "admin_a" });
+  assert.equal(denied.status, 403);
+
+  const res = await call("/api/admin/workspaces", { as: "operator" });
+  assert.equal(res.status, 200);
+  const acme = res.body.find((w) => w.id === W_ACME);
+  const beta = res.body.find((w) => w.id === W_BETA);
+  assert.ok(acme.people_count > 0, "counts are shown for every workspace");
+  assert.equal(acme.you_are_member, false);
+  assert.equal(acme.members, undefined, "no one's details are shown for a workspace the operator is not in");
+  assert.equal(beta.you_are_member, true);
+  assert.ok(beta.members.some((m) => m.email === PEOPLE.operator.email));
+});
+
+test("only operators rename a workspace", async () => {
+  const denied = await call(`/api/workspaces/${W_ACME}`, { as: "admin_a", method: "PATCH", body: { name: "Renamed" } });
+  assert.equal(denied.status, 403);
+  const res = await call(`/api/workspaces/${W_ACME}`, { as: "operator", method: "PATCH", body: { name: "Acme Clinic" } });
+  assert.equal(res.status, 200);
+  assert.equal(res.body.name, "Acme Clinic");
+  assert.equal(state.workspaces.find((w) => w.id === W_ACME).name, "Acme Clinic");
+});
+
+test("deleting a workspace needs its exact name, and logs its analyses before removing it", async () => {
+  const wrong = await call(`/api/workspaces/${W_ACME}`, { as: "operator", method: "DELETE", body: { confirm_name: "acme" } });
+  assert.equal(wrong.status, 400);
+  assert.ok(state.workspaces.some((w) => w.id === W_ACME), "nothing deleted on a wrong name");
+
+  const denied = await call(`/api/workspaces/${W_ACME}`, { as: "admin_a", method: "DELETE", body: { confirm_name: "Acme Health" } });
+  assert.equal(denied.status, 403);
+
+  const res = await call(`/api/workspaces/${W_ACME}`, { as: "operator", method: "DELETE", body: { confirm_name: "Acme Health" } });
+  assert.equal(res.status, 200);
+  assert.equal(res.body.deleted, true);
+  assert.ok(!state.workspaces.some((w) => w.id === W_ACME));
+  const logged = state.deletion_log.filter((d) => d.reason === "requested").map((d) => d.analysis_id);
+  assert.ok(logged.includes(AN_ACME), "the analysis is recorded in the deletion log");
+});
+
+test("if the deletions cannot be logged, the workspace is kept", async () => {
+  failLog = true;
+  const res = await call(`/api/workspaces/${W_ACME}`, { as: "operator", method: "DELETE", body: { confirm_name: "Acme Health" } });
+  assert.equal(res.status, 502);
+  assert.ok(state.workspaces.some((w) => w.id === W_ACME));
+});
+
