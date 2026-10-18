@@ -249,6 +249,16 @@ pre{white-space:pre-wrap;word-break:break-word;background:var(--soft);padding:12
   /* The entrance animations start cards at opacity 0. Print the finished state, and keep the colours of the charts and cards. */
   body.printing #printReport *{animation:none!important;transition:none!important;opacity:1!important;transform:none!important;-webkit-print-color-adjust:exact!important;print-color-adjust:exact!important}
 }
+  /* The analyses list: the newest one, and the ones this browser has not opened yet. */
+  .item.is-newest{position:relative;background:linear-gradient(120deg,color-mix(in srgb,var(--accent) 12%,var(--card)),color-mix(in srgb,var(--accent2) 10%,var(--card)) 60%,color-mix(in srgb,var(--warn) 10%,var(--card)));box-shadow:0 0 0 1.5px color-mix(in srgb,var(--accent) 45%,transparent),0 12px 28px -12px var(--accent);border-radius:16px}
+  .item.is-unread{border-left:4px solid var(--accent2);padding-left:14px}
+  .item.is-unread b{color:var(--accent)}
+  .tag{display:inline-flex;align-items:center;gap:6px;font:800 11px/1 var(--body);letter-spacing:.06em;text-transform:uppercase;border-radius:999px;padding:4px 9px;margin-left:8px;vertical-align:middle}
+  .tag.newest{background:var(--grad);color:#fff}
+  .tag.new{background:color-mix(in srgb,var(--accent2) 16%,var(--card));color:var(--accent2)}
+  .tag.new::before{content:"";width:7px;height:7px;border-radius:50%;background:var(--accent2);animation:pulseDot 1.6s ease-in-out infinite}
+  @keyframes pulseDot{0%,100%{box-shadow:0 0 0 0 color-mix(in srgb,var(--accent2) 55%,transparent)}50%{box-shadow:0 0 0 6px transparent}}
+  @media (prefers-reduced-motion:reduce){.tag.new::before{animation:none}}
   </style>
 </head>
 <body>
@@ -350,6 +360,11 @@ pre{white-space:pre-wrap;word-break:break-word;background:var(--soft);padding:12
             <option value="mine">Started by you</option>
             <option value="team">Started by a teammate</option>
           </select>
+          <select id="listSeen" aria-label="Filter by whether it has been opened">
+            <option value="">Opened or not</option>
+            <option value="unread">Not opened yet</option>
+            <option value="read">Already opened</option>
+          </select>
           <label class="small muted">From <input id="listFrom" type="date" aria-label="Started on or after"></label>
           <label class="small muted">To <input id="listTo" type="date" aria-label="Started on or before"></label>
         </div>
@@ -369,7 +384,10 @@ pre{white-space:pre-wrap;word-break:break-word;background:var(--soft);padding:12
           <button type="button" class="ghost small-btn" id="listClear">Clear filters</button>
         </div>
       </div>
-      <p class="muted small" id="listCount" style="margin-top:10px"></p>
+      <div class="row" style="justify-content:space-between;margin-top:10px;gap:8px;flex-wrap:wrap">
+        <p class="muted small" id="listCount" style="margin:0"></p>
+        <button type="button" class="ghost small-btn" id="markAllOpened" hidden>Mark all as opened</button>
+      </div>
       <div id="analysisList" style="margin-top:6px"></div>
       <div class="row" id="listPager" style="justify-content:space-between;margin-top:12px" hidden>
         <button type="button" class="ghost small-btn" id="pagePrev">Previous</button>
@@ -1246,10 +1264,31 @@ pre{white-space:pre-wrap;word-break:break-word;background:var(--soft);padding:12
   let listPage = 1;
   let listWorkspace = null;
 
+  // Which analyses this browser has opened. It is kept on this device only, so it is a convenience, not a record.
+  const OPENED_KEY = "cutover.openedAnalyses";
+  function openedSet() {
+    try {
+      return new Set(JSON.parse(localStorage.getItem(OPENED_KEY) || "[]"));
+    } catch {
+      return new Set();
+    }
+  }
+  function markOpened(ids) {
+    try {
+      const set = openedSet();
+      ids.forEach((id) => set.add(id));
+      localStorage.setItem(OPENED_KEY, JSON.stringify([...set].slice(-1000)));
+    } catch {
+      // Storage is blocked or full: the highlights simply stay until it works again.
+    }
+  }
+
   function applyListTools(rows) {
     const q = $("listSearch").value.trim().toLowerCase();
     const status = $("listStatus").value;
     const owner = $("listOwner").value;
+    const seen = $("listSeen").value;
+    const opened = openedSet();
     const from = $("listFrom").value ? new Date(`${$("listFrom").value}T00:00:00`) : null;
     const to = $("listTo").value ? new Date(`${$("listTo").value}T23:59:59`) : null;
     const matches = rows.filter((r) => {
@@ -1257,6 +1296,8 @@ pre{white-space:pre-wrap;word-break:break-word;background:var(--soft);padding:12
       if (status && r.status !== status) return false;
       if (owner === "mine" && !r.is_mine) return false;
       if (owner === "team" && r.is_mine) return false;
+      if (seen === "unread" && opened.has(r.id)) return false;
+      if (seen === "read" && !opened.has(r.id)) return false;
       const created = new Date(r.created_at);
       if (from && created < from) return false;
       if (to && created > to) return false;
@@ -1273,11 +1314,18 @@ pre{white-space:pre-wrap;word-break:break-word;background:var(--soft);padding:12
     return matches.sort(sorters[$("listSort").value] || sorters.newest);
   }
 
-  function analysisItem(r) {
-    const item = el("div", null, "item");
+  function tag(label, kind) {
+    return el("span", label, `tag ${kind}`);
+  }
+
+  function analysisItem(r, isNewest, isUnread) {
+    const item = el("div", null, "item" + (isNewest ? " is-newest" : "") + (isUnread ? " is-unread" : ""));
     const text = el("div", null, "grow");
+    const title = el("b", r.app_name || r.repo);
+    if (isNewest) title.appendChild(tag("Newest", "newest"));
+    if (isUnread) title.appendChild(tag("Not opened", "new"));
     text.append(
-      el("b", r.app_name || r.repo),
+      title,
       el("div", `${r.repo}${r.ref ? " @ " + r.ref : ""} · ${STATUS_TEXT[r.status] || r.status} · ${r.is_mine ? "started by you" : "started by a teammate"} · ${new Date(r.created_at).toLocaleDateString()}`, "muted small"),
     );
     const open = el("button", "Open", "ghost small-btn");
@@ -1293,10 +1341,18 @@ pre{white-space:pre-wrap;word-break:break-word;background:var(--soft);padding:12
     const matches = applyListTools(listRows);
     const pages = Math.max(1, Math.ceil(matches.length / size));
     listPage = Math.min(Math.max(1, listPage), pages);
+    const opened = openedSet();
+    const newest = listRows.reduce((best, r) => (!best || new Date(r.created_at) > new Date(best.created_at) ? r : best), null);
+    const unread = listRows.filter((r) => !opened.has(r.id)).length;
     box.innerHTML = "";
     if (listRows.length && !matches.length) box.appendChild(el("p", "No analyses match these filters.", "muted small"));
-    for (const r of matches.slice((listPage - 1) * size, listPage * size)) box.appendChild(analysisItem(r));
-    $("listCount").textContent = listRows.length ? `${matches.length} of ${listRows.length} analyses shown` : "";
+    for (const r of matches.slice((listPage - 1) * size, listPage * size)) {
+      box.appendChild(analysisItem(r, newest && r.id === newest.id, !opened.has(r.id)));
+    }
+    $("listCount").textContent = listRows.length
+      ? `${matches.length} of ${listRows.length} analyses shown · ${unread} not opened yet`
+      : "";
+    $("markAllOpened").hidden = unread === 0;
     $("pageInfo").textContent = `Page ${listPage} of ${pages}`;
     $("pagePrev").disabled = listPage <= 1;
     $("pageNext").disabled = listPage >= pages;
@@ -1308,14 +1364,19 @@ pre{white-space:pre-wrap;word-break:break-word;background:var(--soft);padding:12
     renderList();
   }
 
-  for (const id of ["listStatus", "listOwner", "listFrom", "listTo", "listSort", "listPageSize"]) {
+  for (const id of ["listStatus", "listOwner", "listSeen", "listFrom", "listTo", "listSort", "listPageSize"]) {
     $(id).addEventListener("change", resetListAndRender);
   }
   $("listSearch").addEventListener("input", resetListAndRender);
+  $("markAllOpened").addEventListener("click", () => {
+    markOpened(listRows.map((r) => r.id));
+    resetListAndRender();
+  });
   $("listClear").addEventListener("click", () => {
     $("listSearch").value = "";
     $("listStatus").value = "";
     $("listOwner").value = "";
+    $("listSeen").value = "";
     $("listFrom").value = "";
     $("listTo").value = "";
     $("listSort").value = "newest";
@@ -1445,6 +1506,7 @@ pre{white-space:pre-wrap;word-break:break-word;background:var(--soft);padding:12
   // ---- Opening an analysis ----
 
   async function openAnalysis(id) {
+    markOpened([id]);
     try {
       cur = await api(`/api/analyses/${id}`);
     } catch (err) {
