@@ -26,6 +26,7 @@ from __future__ import annotations
 
 import argparse
 import base64
+import copy
 import datetime as dt
 import json
 import os
@@ -35,6 +36,7 @@ import subprocess
 import sys
 import tempfile
 from collections import defaultdict
+from html.parser import HTMLParser
 from pathlib import Path
 
 SCHEMA_VERSION = "0.1"
@@ -364,6 +366,117 @@ def screen_structure(text: str) -> dict:
 CLIENT_FILE_HINT = re.compile(r"portal|patient|client|customer|member|self.?service", re.I)
 
 
+# ---- Page previews: a simple element tree per static HTML page, with sample values for dynamic ones.
+PREVIEW_TAGS = {
+    "h1", "h2", "h3", "h4", "p", "a", "button", "label", "nav", "header", "footer", "main", "section",
+    "form", "ul", "ol", "li", "table", "thead", "tbody", "tr", "th", "td", "img", "input", "select",
+    "textarea", "div", "span", "strong", "em", "small", "figure", "figcaption", "video", "article", "aside",
+}
+PREVIEW_SKIP = {"script", "style", "noscript", "template", "svg", "iframe", "object", "head", "title"}
+PREVIEW_IGNORE = {"html", "body", "meta", "link", "base"}
+PREVIEW_VOID = {"img", "input", "br", "hr", "source", "meta", "link", "base"}
+PREVIEW_TEXT_MAX = 140
+PREVIEW_MAX_NODES = 250
+PREVIEW_SAMPLE = "Sample value"
+TEMPLATE_RX = re.compile(r"\$\{[^}]*\}|\{\{.*?\}\}|<%.*?%>|\{%.*?%\}|th:[\w:-]+=\"[^\"]*\"", re.S)
+LOOP_RX = re.compile(r"th:each|\{%\s*for\s|\.map\(|v-for=|ng-repeat=|\*ngFor", re.I)
+FETCH_RX = re.compile(r"\bfetch\(|\baxios\.|\bXMLHttpRequest\b|\buseEffect\(|\bgetServerSideProps\b|\.from\(['\"]", re.I)
+
+
+def clean_preview_text(s: str) -> str:
+    """Visible text only. Template expressions become sample values."""
+    s = TEMPLATE_RX.sub(PREVIEW_SAMPLE, s or "")
+    return " ".join(s.split())[:PREVIEW_TEXT_MAX]
+
+
+class _PreviewParser(HTMLParser):
+    def __init__(self) -> None:
+        super().__init__(convert_charrefs=True)
+        self.root: dict = {"tag": "div", "children": []}
+        self.stack = [self.root]
+        self.skip = 0
+        self.nodes = 0
+        self.truncated = False
+
+    def handle_starttag(self, tag, attrs):
+        if tag in PREVIEW_SKIP:
+            self.skip += 1
+            return
+        if self.skip or tag in PREVIEW_IGNORE:
+            return
+        if self.nodes >= PREVIEW_MAX_NODES:
+            self.truncated = True
+            return
+        self.nodes += 1
+        a = {k: (v or "") for k, v in attrs}
+        node: dict = {"tag": tag if tag in PREVIEW_TAGS else "div", "children": []}
+        if node["tag"] == "input":
+            node["type"] = (re.sub(r"[^a-z]", "", a.get("type", "text").lower())[:20]) or "text"
+        if a.get("placeholder"):
+            node["placeholder"] = clean_preview_text(a["placeholder"])
+        if tag == "img":
+            node["alt"] = clean_preview_text(a.get("alt", ""))
+        if LOOP_RX.search(" ".join(f"{k}={v}" for k, v in attrs)):
+            node["loop"] = True
+        if any(k.startswith("th:text") or k.startswith("th:utext") for k in a):
+            node["children"].append(PREVIEW_SAMPLE)
+            node["replaced"] = True
+        self.stack[-1]["children"].append(node)
+        if tag not in PREVIEW_VOID:
+            self.stack.append(node)
+
+    def handle_endtag(self, tag):
+        if tag in PREVIEW_SKIP:
+            self.skip = max(0, self.skip - 1)
+            return
+        for i in range(len(self.stack) - 1, 0, -1):
+            if self.stack[i]["tag"] == tag:
+                node = self.stack[i]
+                del self.stack[i:]
+                if node.get("loop"):
+                    # A repeated block: show three sample rows or items.
+                    parent = self.stack[-1]
+                    idx = parent["children"].index(node)
+                    copies = []
+                    for _ in range(3):
+                        c = copy.deepcopy(node)
+                        c.pop("loop", None)
+                        copies.append(c)
+                    parent["children"][idx:idx + 1] = copies
+                return
+
+    def handle_data(self, data):
+        if self.skip or self.nodes >= PREVIEW_MAX_NODES:
+            return
+        if self.stack[-1].get("replaced"):
+            return
+        text = clean_preview_text(data)
+        if text:
+            self.stack[-1]["children"].append(text)
+
+
+def page_preview(text: str):
+    """What a static or dynamic HTML page shows, as text and layout. None if the file has no markup."""
+    if not text or not re.search(r"<[a-zA-Z]", text):
+        return None
+    reasons = []
+    if TEMPLATE_RX.search(text):
+        reasons.append("Values come from template expressions")
+    if LOOP_RX.search(text):
+        reasons.append("Lists are built from data in a loop")
+    if FETCH_RX.search(text):
+        reasons.append("Data is loaded by the page script")
+    parser = _PreviewParser()
+    parser.feed(text)
+    parser.close()
+    return {
+        "kind": "dynamic" if reasons else "static",
+        "reasons": reasons,
+        "tree": parser.root["children"],
+        "truncated": parser.truncated,
+    }
+
+
 def detect_ui(repo: Repo, out: dict) -> None:
     code = {p: t for p, t in repo.files.items() if p.endswith((".java", ".kt"))}
     controllers = [p for p, t in code.items() if re.search(r"@(?:Rest)?Controller\b", t)]
@@ -406,6 +519,25 @@ def detect_ui(repo: Repo, out: dict) -> None:
             {"count": len(names), "screens": [{"name": n, "path": names[n], **screen_structure(repo.files.get(names[n], ""))} for n in sorted(names)][:60]},
             "inferred", [names[n] for n in sorted(names)][:EVIDENCE_LIMIT],
             note="Each name is taken from a template or page file name, so it shows what the screen is called in the code.",
+        )
+
+    label_for = {path: label for label, path in names.items()}
+    previews = []
+    for p in sorted(screens):
+        if not re.search(r"\.html?$", p, re.I):
+            continue
+        pv = page_preview(repo.files.get(p, ""))
+        if pv is None:
+            continue
+        previews.append({"name": label_for.get(p, p.rsplit("/", 1)[-1]), "path": p, **pv})
+        if len(previews) == 4:
+            break
+    if previews:
+        out["ui.page_preview"] = F(
+            "ui.page_preview", "ui_portal", "Pages drawn from the code",
+            {"count": len(previews), "pages": previews},
+            "inferred", [x["path"] for x in previews],
+            note="Rendered from each page's markup. Source code is not stored: only visible text, the layout and sample values are kept.",
         )
 
     roles: dict[str, int] = defaultdict(int)

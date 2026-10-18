@@ -226,6 +226,13 @@ pre{white-space:pre-wrap;word-break:break-word;background:var(--soft);padding:12
 .wf-muted{color:var(--muted);font-weight:500}
 .wf-row{height:9px;margin:9px;border-radius:99px;background:var(--soft);width:var(--w)}
 .wf-row.wf-accent{background:var(--grad);opacity:.85}
+/* Deep AI Assessment Results */
+.dp-tabs{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px}
+.dp-tab{border:1px solid var(--line);background:var(--card);color:var(--fg);border-radius:99px;padding:6px 12px;font:600 12.5px system-ui;cursor:pointer}
+.dp-tab.on{background:var(--grad);color:#fff;border-color:transparent}
+.dp-wrap{margin-top:10px;border:1px solid var(--line);border-radius:14px;overflow:hidden;background:#fff}
+.dp-frame{display:block;width:100%;height:520px;border:0;background:#fff}
+@media (max-width:640px){.dp-frame{height:440px}}
   </style>
 </head>
 <body>
@@ -1765,7 +1772,79 @@ pre{white-space:pre-wrap;word-break:break-word;background:var(--soft);padding:12
       }
     }
 
+    // Deep AI Assessment Results: each page rendered from its markup, in a frame with no scripts and no network.
+    {
+      const pv = val("ui.page_preview");
+      if (sees(role, "ui_portal") && pv && pv.pages && pv.pages.length) {
+        const c = shell("Deep AI Assessment Results", "Rendered from the code");
+        c.style.gridColumn = "1 / -1";
+        const dyn = pv.pages.filter((p) => p.kind === "dynamic").length;
+        const chips = el("div", null, "chips");
+        chips.appendChild(el("span", `${pv.pages.length} ${pv.pages.length === 1 ? "page" : "pages"}`, "tag t-cy"));
+        chips.appendChild(el("span", `${pv.pages.length - dyn} static`, "tag t-cy"));
+        if (dyn) chips.appendChild(el("span", `${dyn} with sample data`, "tag t-warn"));
+        c.appendChild(chips);
+        const tabs = el("div", null, "dp-tabs");
+        const note = el("p", null, "muted small");
+        const frame = document.createElement("iframe");
+        frame.className = "dp-frame";
+        frame.setAttribute("sandbox", "");
+        frame.setAttribute("title", "Rendered page preview");
+        const show = (i) => {
+          const pg = pv.pages[i];
+          frame.srcdoc = pageSrcdoc(pg);
+          [...tabs.children].forEach((b, j) => b.classList.toggle("on", j === i));
+          note.textContent = pg.kind === "dynamic"
+            ? "Dynamic page. Values are sample data, because the code loads them from a template, a loop or the page script."
+            : "Static page. Text and layout are as found in the code. Colours and fonts are not copied.";
+        };
+        pv.pages.forEach((pg, i) => {
+          const b = el("button", pg.name || pg.path, "dp-tab");
+          b.type = "button";
+          b.addEventListener("click", () => show(i));
+          tabs.appendChild(b);
+        });
+        c.append(tabs, el("div", null, "dp-wrap"));
+        c.lastChild.appendChild(frame);
+        c.appendChild(note);
+        out.push(c);
+        show(0);
+      }
+    }
+
     return out;
+  }
+
+  // Builds the frame's HTML from the engine's element tree. Only whitelisted tags are drawn; everything is escaped.
+  const DP_TAGS = new Set(["h1","h2","h3","h4","p","a","button","label","nav","header","footer","main","section","form","ul","ol","li","table","thead","tbody","tr","th","td","div","span","strong","em","small","figure","figcaption","article","aside","select","textarea","input","img","video"]);
+  function escHtml(v) { return String(v).replace(/[&<>"']/g, (ch) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[ch])); }
+  function renderPreviewNode(n) {
+    if (typeof n === "string") return escHtml(n);
+    if (!n || typeof n !== "object") return "";
+    if (n.tag === "img") return `<div class="ph">Image${n.alt ? ": " + escHtml(n.alt) : ""}</div>`;
+    if (n.tag === "video") return `<div class="ph vid">Video</div>`;
+    if (n.tag === "input") return `<input type="${escHtml(/^[a-z]{1,20}$/.test(n.type || "") ? n.type : "text")}" placeholder="${escHtml(n.placeholder || "")}" disabled>`;
+    const tag = DP_TAGS.has(n.tag) && !["form", "select", "textarea"].includes(n.tag) ? n.tag : "div";
+    const kids = (n.children || []).map(renderPreviewNode).join("");
+    return `<${tag}>${kids}</${tag}>`;
+  }
+  function pageSrcdoc(pg) {
+    const css = `body{margin:0;padding:18px;font:15px/1.5 system-ui,-apple-system,"Segoe UI",sans-serif;color:#1e1b3a;background:#fff}
+h1{font-size:28px;margin:.4em 0;line-height:1.15}h2{font-size:22px;margin:.5em 0}h3{font-size:18px;margin:.5em 0}h4{font-size:16px;margin:.5em 0}
+p{margin:.5em 0}
+header,nav,footer{display:flex;flex-wrap:wrap;gap:12px;align-items:center;padding:10px 0;border-bottom:1px solid #e6e3f3}
+footer{border-top:1px solid #e6e3f3;border-bottom:0;margin-top:20px;font-size:13px;color:#6b6890}
+section,article,main,aside,figure{display:block;padding:14px 0;border-bottom:1px solid #f0eef8}
+ul,ol{padding-left:20px}li{margin:2px 0}
+table{border-collapse:collapse;width:100%;margin:8px 0}th,td{border:1px solid #e6e3f3;padding:6px 8px;text-align:left;font-size:14px}th{background:#f5f3fd}
+button{background:linear-gradient(90deg,#7c3aed,#f97316);color:#fff;border:0;border-radius:999px;padding:8px 16px;font:600 14px system-ui}
+input,select,textarea{display:block;width:100%;max-width:360px;padding:8px 10px;border:1px solid #d6d2ea;border-radius:8px;margin:6px 0;box-sizing:border-box;background:#fff;color:#6b6890;font:14px system-ui}
+.ph{background:#eeeafb;border:1px dashed #c9c3e6;border-radius:10px;height:120px;display:flex;align-items:center;justify-content:center;color:#6b6890;font-size:13px;margin:8px 0}
+.ph.vid{height:160px}
+a{color:#6d28d9;font-weight:600}`;
+    const body = (pg.tree || []).map(renderPreviewNode).join("");
+    const trunc = pg.truncated ? '<p style="font-size:12px;color:#6b6890">Preview stopped early: the page is longer than the preview shows.</p>' : "";
+    return `<!doctype html><html><head><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; img-src data:"><style>${css}</style></head><body>${body}${trunc}</body></html>`;
   }
 
   // A preview drawn from what a screen's markup contains. Each element comes from a count the engine read.
@@ -1895,7 +1974,7 @@ pre{white-space:pre-wrap;word-break:break-word;background:var(--soft);padding:12
     box.appendChild(heading);
     const grid = el("div", null, "rgrid");
     // The findings the summary cards show are left out of the topic cards, so each appears once.
-    const SUMMARY_IDS = ["runtime.java", "runtime.spring_boot", "ui.endpoints", "ui.client_facing", "ui.screen_names", "ui.roles", "data.tables", "data.migrations", "infrastructure.as_code"];
+    const SUMMARY_IDS = ["runtime.java", "runtime.spring_boot", "ui.endpoints", "ui.client_facing", "ui.screen_names", "ui.roles", "ui.page_preview", "data.tables", "data.migrations", "infrastructure.as_code"];
     const topic = all.filter((i) => !SUMMARY_IDS.includes(i.id));
     for (const card of REVIEW_CARDS) {
       const node = reviewCard(card, topic, cur.viewer_role, all);
