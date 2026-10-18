@@ -12,6 +12,7 @@ window.CUTOVER_GUIDE = {
   updated: "2026-10-17",
   whatsNew: [
     "2026-10-17: An Ask button answers how-to questions from this guide.",
+    "2026-10-17: The guide and FAQ include sample addresses for sign-in, the install page and repository names.",
     "2026-10-17: Home has tabs for Analyses, Workspaces and this guide.",
     "2026-10-17: Review shows charts and a summary, and healthcare results appear only when relevant.",
     "2026-10-17: Stages tick on one at a time when an analysis finishes.",
@@ -24,6 +25,7 @@ window.CUTOVER_GUIDE = {
       body: [
         "Cutover reads an application's code and reports what it is built on, where its data lives, and what needs a person's review.",
         "Cutover does not store source code. Only findings and status are kept, and results are deleted after 30 days.",
+        "Sign in at https://app.cutover.site with your Google account.",
       ],
       actions: [],
       refs: [],
@@ -46,6 +48,7 @@ window.CUTOVER_GUIDE = {
       body: [
         "Cutover reads repositories through the Cutover reader GitHub app. Install it on each repository you want to analyse, including public ones.",
         "On the install page, choose 'Only select repositories', tick the ones you need, then Save. Do not use Suspend or Uninstall in the danger zone: they block all access.",
+        "Example: to analyse https://github.com/ghlmaziz-gr8/voltcon, tick the voltcon repository under the ghlmaziz-gr8 account, at https://github.com/apps/cutover-reader-portal/installations/new.",
       ],
       actions: [
         { type: "link", label: "Open the install page", href: "https://github.com/apps/cutover-reader-portal/installations/new" },
@@ -57,7 +60,8 @@ window.CUTOVER_GUIDE = {
       title: "Check that Cutover can read a repository",
       who: "engineers",
       body: [
-        "Enter the repository as owner/name. Cutover checks that it can read the default branch.",
+        "Enter the repository as owner/name: the two parts of its GitHub address after github.com. Cutover checks that it can read the default branch.",
+        "Example: for https://github.com/ghlmaziz-gr8/voltcon, enter ghlmaziz-gr8/voltcon. Other examples: ghlmaziz-gr8/cutover, ghlmaziz-gr8/targetfit-studio.",
         "If the check says it cannot read the repository, the repository was not selected in the install step.",
       ],
       actions: [{ type: "repo-check", label: "Check a repository" }],
@@ -132,15 +136,15 @@ window.CUTOVER_GUIDE = {
   ],
   faq: [
     { q: "How do I add my GitHub repository?", step: "install",
-      a: "Install the Cutover reader on it. Open the install page, choose 'Only select repositories', tick the repository, and Save. Then check it with the Check a repository step in the guide." },
+      a: "Install the Cutover reader on it. Open https://github.com/apps/cutover-reader-portal/installations/new, choose 'Only select repositories', tick the repository, and Save. Then check it with the Check a repository step in the guide." },
     { q: "Cutover says it cannot read my repository. Why?", step: "check",
-      a: "The Cutover reader is not installed on that repository, or the name is wrong. Check the owner/name spelling, install the reader on the repository, then check again." },
+      a: "The Cutover reader is not installed on that repository, or the name is wrong. Enter the owner/name from the GitHub address: https://github.com/ghlmaziz-gr8/voltcon is entered as ghlmaziz-gr8/voltcon. Install the reader on the repository, then check again." },
     { q: "How do I start an analysis?", step: "start",
-      a: "On the Analyses tab, choose Start a new assessment, follow the steps, and confirm the data rule: sample or public code only, with no patient data." },
+      a: "Sign in at https://app.cutover.site, open the Analyses tab, choose Start a new assessment, follow the steps, and confirm the data rule: sample or public code only, with no patient data. For example, the repository ghlmaziz-gr8/voltcon." },
     { q: "Why can't I see some findings?", step: "findings",
       a: "Findings are shared by role. Anything marked 'Not shown for your role' belongs to another role in the workspace." },
     { q: "How do I invite someone?", step: "invite",
-      a: "On the Workspaces tab, enter their Google work email, choose a role, and select Invite. They sign in with that exact email." },
+      a: "On the Workspaces tab, enter their Google work email, choose a role, and select Invite. They sign in at https://app.cutover.site with that exact email." },
     { q: "Who can see my analysis?", step: "roles",
       a: "Only people invited to the same workspace, and only the findings their role allows." },
     { q: "How long are results kept?", step: "next",
