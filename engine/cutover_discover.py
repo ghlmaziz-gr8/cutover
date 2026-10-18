@@ -336,8 +336,20 @@ def screen_structure(text: str) -> dict:
         if label:
             heads.append(label[:60])
     submits = len(re.findall(r"<input\b[^>]*type=[\"']submit[\"']", t, re.I))
+    sections = []
+    for m in re.finditer(r"<section\b[^>]*>(.*?)</section>", t, re.I | re.S):
+        body = m.group(1)
+        h = re.search(r"<h[1-3]\b[^>]*>(.*?)</h[1-3]>", body, re.I | re.S)
+        sections.append({
+            "title": " ".join(re.sub(r"<[^>]+>", " ", h.group(1)).split())[:60] if h else "",
+            "inputs": min(len(re.findall(r"<(?:input|select|textarea)\b", body, re.I)), 20),
+            "buttons": min(len(re.findall(r"<button\b", body, re.I)), 20),
+            "images": min(len(re.findall(r"<(?:img|video)\b", body, re.I)), 20),
+        })
     table = re.search(r"<table\b.*?</table>", t, re.I | re.S)
     return {
+        "sections": sections[:8],
+        "section_count": min(len(sections), 50),
         "headings": heads[:3],
         "forms": min(len(re.findall(r"<form\b", t, re.I)), 50),
         "inputs": min(max(len(re.findall(r"<(?:input|select|textarea)\b", t, re.I)) - submits, 0), 50),
@@ -368,6 +380,8 @@ def detect_ui(repo: Repo, out: dict) -> None:
         if re.search(r"(^|/)templates/.*\.(html?|jsp|xhtml|cshtml)$", p, re.I)
         or re.search(r"(^|/)static/.*\.html?$", p, re.I)
         or re.search(r"(^|/)(src/)?(app|pages|views|screens)/.*\.(tsx|jsx|vue)$", p)
+        or re.search(r"(^|/)(src/)?(pages|routes)/.*\.(astro|svelte)$", p)
+        or re.search(r"^[^/]+\.html?$", p, re.I)
     ]
     out["ui.screens"] = F(
         "ui.screens", "ui_portal", "Screens (templates and page components)", len(screens),
@@ -381,6 +395,9 @@ def detect_ui(repo: Repo, out: dict) -> None:
     for p in screens:
         base = re.sub(r"\.[A-Za-z]+$", "", p.rsplit("/", 1)[-1])
         label = " ".join(w.capitalize() for w in re.split(r"[-_.\s]+", base) if w)
+        title = re.search(r"<title>(.*?)</title>", repo.files.get(p, ""), re.I | re.S)
+        if title and " ".join(title.group(1).split()):
+            label = " ".join(title.group(1).split())[:90]
         if label:
             names.setdefault(label, p)
     if names:

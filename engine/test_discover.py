@@ -104,6 +104,20 @@ class PortalTests(unittest.TestCase):
         self.assertEqual((screen["forms"], screen["inputs"], screen["buttons"]), (1, 2, 1))
         self.assertEqual((screen["tables"], screen["table_columns"], screen["lists"], screen["images"]), (1, 3, 1, 1))
 
+    def test_a_one_page_site_is_read_from_its_sections(self):
+        out = self._detect({
+            "index.html": (
+                "<section id='capabilities'><h2>Capabilities</h2><img src='a.jpg'></section>"
+                "<section id='rfq'><h2>Request a quote</h2><form><input name='a'>"
+                "<button>Send</button></form></section>"
+            ),
+        })
+        self.assertEqual(out["ui.screen_names"]["value"]["count"], 1)
+        screen = out["ui.screen_names"]["value"]["screens"][0]
+        self.assertEqual(screen["section_count"], 2)
+        self.assertEqual([x["title"] for x in screen["sections"]], ["Capabilities", "Request a quote"])
+        self.assertEqual((screen["sections"][1]["inputs"], screen["sections"][1]["buttons"]), (1, 1))
+
     def test_a_bare_page_reports_no_layout_elements(self):
         out = self._detect({"web/templates/results.html": "<html><body>Results</body></html>"})
         screen = out["ui.screen_names"]["value"]["screens"][0]
