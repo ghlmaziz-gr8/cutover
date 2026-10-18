@@ -209,6 +209,7 @@ pre{white-space:pre-wrap;word-break:break-word;background:var(--soft);padding:12
 .wf-h{display:flex;align-items:center;gap:6px;padding:7px 9px;background:var(--soft);font-size:11px;font-weight:700;color:var(--fg)}
 .wf-h i{width:7px;height:7px;border-radius:50%;background:var(--accent2);flex:0 0 auto}
 .wf-h span{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.wf-path{font-size:10.5px;color:var(--muted);padding:5px 9px 0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .wf-row{height:9px;margin:9px;border-radius:99px;background:var(--soft);width:var(--w)}
 .wf-row.wf-accent{background:var(--grad);opacity:.85}
   </style>
@@ -1730,9 +1731,9 @@ pre{white-space:pre-wrap;word-break:break-word;background:var(--soft);padding:12
         c.appendChild(el("p", screens
           ? `Screen names come from ${screens.count} template or page ${screens.count === 1 ? "file" : "files"} in the code.`
           : clientFacing ? "The code reviewed suggests a client portal, but no screen files were found." : "No screen files were found in the code reviewed.", "muted small"));
-        if (screens && screens.names.length) {
+        if (screens && screens.screens.length) {
           const grid = el("div", null, "wf-grid");
-          for (const name of screens.names.slice(0, 6)) grid.appendChild(wireframe(name));
+          for (const sc of screens.screens.slice(0, 6)) grid.appendChild(wireframe(sc.name, sc.path));
           c.appendChild(grid);
           c.appendChild(el("p", "Previews are drawn from the file names. They are not screenshots of a live system.", "muted small"));
         }
@@ -1752,12 +1753,13 @@ pre{white-space:pre-wrap;word-break:break-word;background:var(--soft);padding:12
   }
 
   // A preview drawn from a screen name: a header and blocks of varying sizes, in the same style as the demo.
-  function wireframe(name) {
+  function wireframe(name, path) {
     const seed = [...name].reduce((a, ch) => a + ch.charCodeAt(0), 0);
     const w = el("div", null, "wf");
     const head = el("div", null, "wf-h");
     head.append(el("i"), el("span", name));
     w.appendChild(head);
+    w.appendChild(el("div", path, "wf-path"));
     const rows = 3 + (seed % 3);
     for (let r = 0; r < rows; r++) {
       const row = el("div", null, "wf-row" + (r === (seed % rows) ? " wf-accent" : ""));

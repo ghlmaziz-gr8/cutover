@@ -364,7 +364,7 @@ def detect_ui(repo: Repo, out: dict) -> None:
     if names:
         out["ui.screen_names"] = F(
             "ui.screen_names", "ui_portal", "Screen names from file names",
-            {"count": len(names), "names": sorted(names)[:60]},
+            {"count": len(names), "screens": [{"name": n, "path": names[n]} for n in sorted(names)][:60]},
             "inferred", [names[n] for n in sorted(names)][:EVIDENCE_LIMIT],
             note="Each name is taken from a template or page file name, so it shows what the screen is called in the code.",
         )
