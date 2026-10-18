@@ -97,6 +97,29 @@ create table if not exists public.action_items (
 create index if not exists action_items_analysis_idx
   on public.action_items (analysis_id, created_at);
 
+-- Contingency plans on an analysis: a risk, the fallback if it happens, and how to roll back.
+-- Proposals are drafted from the findings in the browser and saved here only when someone accepts or edits them.
+-- Every member can read these. Only platform engineers can write them.
+create table if not exists public.contingencies (
+  id                uuid primary key default gen_random_uuid(),
+  analysis_id       uuid not null references public.analyses (id) on delete cascade,
+  finding_id        text check (finding_id is null or length(finding_id) <= 200),
+  risk              text not null check (length(risk) between 1 and 500),
+  contingency       text not null check (length(contingency) between 1 and 2000),
+  rollback_step     text check (rollback_step is null or length(rollback_step) <= 2000),
+  trigger_condition text check (trigger_condition is null or length(trigger_condition) <= 500),
+  owner_email       text check (owner_email is null or length(owner_email) <= 320),
+  status            text not null default 'proposed' check (status in ('proposed', 'accepted', 'edited', 'rejected')),
+  created_by        uuid references auth.users (id) on delete set null,
+  created_by_email  text not null,
+  updated_by_email  text,
+  created_at        timestamptz not null default now(),
+  updated_at        timestamptz not null default now()
+);
+
+create index if not exists contingencies_analysis_idx
+  on public.contingencies (analysis_id, created_at);
+
 -- Deletion records: one row each time an analysis is deleted, by the retention job or on request.
 -- Holds no findings and no patient data: only the analysis id, the repository name, the reason and the time.
 create table if not exists public.deletion_log (
@@ -115,14 +138,15 @@ alter table public.members enable row level security;
 alter table public.invitations enable row level security;
 alter table public.analysis_comments enable row level security;
 alter table public.action_items enable row level security;
+alter table public.contingencies enable row level security;
 alter table public.deletion_log enable row level security;
 
 revoke all on public.workspaces, public.analyses, public.members, public.invitations,
-  public.analysis_comments, public.action_items, public.deletion_log
+  public.analysis_comments, public.action_items, public.contingencies, public.deletion_log
   from anon, authenticated;
 
 grant select, insert, update, delete on public.workspaces, public.analyses, public.members,
-  public.invitations, public.analysis_comments, public.action_items to service_role;
+  public.invitations, public.analysis_comments, public.action_items, public.contingencies to service_role;
 grant select, insert on public.deletion_log to service_role;
 
 -- First workspace admin, after the Worker is deployed. Replace the workspace name and email:

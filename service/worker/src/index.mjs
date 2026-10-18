@@ -25,6 +25,9 @@
 //   DELETE /api/comments/:id                              delete a comment (its author, or a workspace admin)
 //   POST   /api/analyses/:id/actions                      add an action item (not auditors)
 //   PATCH  /api/actions/:id                               open or close an action item (not auditors)
+//   POST   /api/analyses/:id/contingencies                add a contingency plan (platform engineers)
+//   PATCH  /api/contingencies/:id                         edit or set the status of a contingency (platform engineers)
+//   DELETE /api/contingencies/:id                         remove a contingency (platform engineers)
 //   POST   /api/runner/:id/result                         runner callback with findings (shared secret)
 //
 // A scheduled job deletes analyses past their expires_at, and writes a deletion record first.
@@ -569,11 +572,14 @@ async function getAnalysis(request, env, id) {
   if (access.response) return access.response;
   const { row, member, user } = access;
 
-  const [commentsRes, actionsRes] = await Promise.all([
+  const [commentsRes, actionsRes, contingenciesRes] = await Promise.all([
     serviceRest(env, `analysis_comments?analysis_id=eq.${id}&select=id,author_id,author_email,body,created_at&order=created_at.asc`),
     serviceRest(env, `action_items?analysis_id=eq.${id}&select=id,title,status,created_by_email,done_by_email,created_at,done_at&order=created_at.asc`),
+    serviceRest(env, `contingencies?analysis_id=eq.${id}&select=id,finding_id,risk,contingency,rollback_step,trigger_condition,owner_email,status,created_by_email,updated_by_email,created_at,updated_at&order=created_at.asc`),
   ]);
-  if (!commentsRes.ok || !actionsRes.ok) return json({ error: "Could not load the analysis." }, 502);
+  if (!commentsRes.ok || !actionsRes.ok || !contingenciesRes.ok) {
+    return json({ error: "Could not load the analysis." }, 502);
+  }
 
   const isAdmin = member.is_admin === true;
   const { owner_id, findings, ...analysis } = row;
@@ -589,8 +595,10 @@ async function getAnalysis(request, env, id) {
     viewer_role: member.role,
     viewer_is_admin: isAdmin,
     can_work_items: canWorkItems(member),
+    can_plan: canStart(member),
     comments,
     action_items: await actionsRes.json(),
+    contingencies: await contingenciesRes.json(),
   });
 }
 
@@ -699,6 +707,124 @@ async function updateAction(request, env, id) {
   });
   if (!res.ok) return json({ error: "Could not update the action item." }, 502);
   return json({ updated: true });
+}
+
+// Contingency plans. Every member can read them with the analysis; only platform engineers write them.
+const CONTINGENCY_STATUS = ["proposed", "accepted", "edited", "rejected"];
+const CONTINGENCY_TEXT = {
+  risk: { max: 500, required: true },
+  contingency: { max: 2000, required: true },
+  rollback_step: { max: 2000, required: false },
+  trigger_condition: { max: 500, required: false },
+  owner_email: { max: 320, required: false },
+  finding_id: { max: 200, required: false },
+};
+const CONTINGENCY_CONTENT = ["risk", "contingency", "rollback_step", "trigger_condition", "owner_email"];
+
+// Checks a contingency body. On create every required field must be present; on update only what is sent is checked.
+function contingencyFields(value, partial) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return { error: "Send a contingency object." };
+  }
+  const out = {};
+  for (const [key, rule] of Object.entries(CONTINGENCY_TEXT)) {
+    if (!(key in value)) {
+      if (rule.required && !partial) return { error: `${key} is required.` };
+      continue;
+    }
+    if (value[key] !== null && typeof value[key] !== "string") return { error: `${key} must be text.` };
+    const trimmed = (value[key] || "").trim();
+    if (!trimmed) {
+      if (rule.required) return { error: `${key} is required.` };
+      out[key] = null;
+      continue;
+    }
+    if (trimmed.length > rule.max) return { error: `${key} must be at most ${rule.max} characters.` };
+    out[key] = trimmed;
+  }
+  if ("status" in value) {
+    if (!CONTINGENCY_STATUS.includes(value.status)) {
+      return { error: "status must be proposed, accepted, edited or rejected." };
+    }
+    out.status = value.status;
+  }
+  if (partial && Object.keys(out).length === 0) return { error: "Nothing to change." };
+  return { fields: out };
+}
+
+async function addContingency(request, env, id) {
+  const access = await analysisAccess(env, request, id);
+  if (access.response) return access.response;
+  if (!canStart(access.member)) {
+    return json({ error: "Only platform engineers can plan contingencies." }, 403);
+  }
+  const parsed = await readJson(request);
+  if (parsed.error) return json({ error: parsed.error }, 400);
+  const checked = contingencyFields(parsed.value, false);
+  if (checked.error) return json({ error: checked.error }, 400);
+  const res = await serviceRest(env, "contingencies", {
+    method: "POST",
+    headers: { prefer: "return=minimal" },
+    body: JSON.stringify({
+      ...checked.fields,
+      status: checked.fields.status || "proposed",
+      analysis_id: id,
+      created_by: access.user.id,
+      created_by_email: access.user.email,
+      updated_by_email: access.user.email,
+    }),
+  });
+  if (!res.ok) return json({ error: "Could not save the contingency." }, 502);
+  return json({ saved: true }, 201);
+}
+
+async function updateContingency(request, env, id) {
+  const auth = await requireUser(env, request);
+  if (auth.response) return auth.response;
+  const found = await serviceRest(env, `contingencies?id=eq.${id}&select=id,analysis_id,status`);
+  if (!found.ok) return json({ error: "Could not load the contingency." }, 502);
+  const [item] = await found.json();
+  if (!item) return json({ error: "Not found." }, 404);
+  const access = await analysisAccessAs(env, auth, item.analysis_id);
+  if (access.response) return access.response;
+  if (!canStart(access.member)) {
+    return json({ error: "Only platform engineers can change contingencies." }, 403);
+  }
+  const parsed = await readJson(request);
+  if (parsed.error) return json({ error: parsed.error }, 400);
+  const checked = contingencyFields(parsed.value, true);
+  if (checked.error) return json({ error: checked.error }, 400);
+  const change = { ...checked.fields, updated_by_email: auth.user.email, updated_at: new Date().toISOString() };
+  // Editing the text of a proposal marks it as edited, unless the caller sets a status itself.
+  const edited = CONTINGENCY_CONTENT.some((key) => key in checked.fields);
+  if (edited && !("status" in change) && item.status === "proposed") change.status = "edited";
+  const res = await serviceRest(env, `contingencies?id=eq.${id}`, {
+    method: "PATCH",
+    headers: { prefer: "return=minimal" },
+    body: JSON.stringify(change),
+  });
+  if (!res.ok) return json({ error: "Could not update the contingency." }, 502);
+  return json({ updated: true });
+}
+
+async function deleteContingency(request, env, id) {
+  const auth = await requireUser(env, request);
+  if (auth.response) return auth.response;
+  const found = await serviceRest(env, `contingencies?id=eq.${id}&select=id,analysis_id`);
+  if (!found.ok) return json({ error: "Could not load the contingency." }, 502);
+  const [item] = await found.json();
+  if (!item) return json({ error: "Not found." }, 404);
+  const access = await analysisAccessAs(env, auth, item.analysis_id);
+  if (access.response) return access.response;
+  if (!canStart(access.member)) {
+    return json({ error: "Only platform engineers can remove contingencies." }, 403);
+  }
+  const del = await serviceRest(env, `contingencies?id=eq.${id}`, {
+    method: "DELETE",
+    headers: { prefer: "return=minimal" },
+  });
+  if (!del.ok) return json({ error: "Could not delete the contingency." }, 502);
+  return json({ deleted: true });
 }
 
 async function runnerResult(request, env, id) {
@@ -932,6 +1058,13 @@ async function route(request, env) {
 
     const oneAction = path.match(/^\/api\/actions\/([^/]+)$/);
     if (oneAction && UUID_PATTERN.test(oneAction[1]) && method === "PATCH") return updateAction(request, env, oneAction[1]);
+
+    const contingencyAdd = path.match(/^\/api\/analyses\/([^/]+)\/contingencies$/);
+    if (contingencyAdd && UUID_PATTERN.test(contingencyAdd[1]) && method === "POST") return addContingency(request, env, contingencyAdd[1]);
+
+    const oneContingency = path.match(/^\/api\/contingencies\/([^/]+)$/);
+    if (oneContingency && UUID_PATTERN.test(oneContingency[1]) && method === "PATCH") return updateContingency(request, env, oneContingency[1]);
+    if (oneContingency && UUID_PATTERN.test(oneContingency[1]) && method === "DELETE") return deleteContingency(request, env, oneContingency[1]);
 
     const ws = path.match(/^\/api\/workspaces\/([^/]+)\/(members|invitations)(?:\/(.+))?$/);
     if (ws && UUID_PATTERN.test(ws[1])) {
