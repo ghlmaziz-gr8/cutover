@@ -1717,6 +1717,7 @@ pre{white-space:pre-wrap;word-break:break-word;background:var(--soft);padding:12
       const clientFacing = val("ui.client_facing") === "yes";
       if (sees(role, "ui_portal")) {
         const c = shell("Client-facing portal", "Screens in the code");
+        c.style.gridColumn = "1 / -1";
         const chips = el("div", null, "chips");
         if (screens) {
           chips.appendChild(el("span", `${screens.count} ${screens.count === 1 ? "screen" : "screens"}`, "tag t-cy"));

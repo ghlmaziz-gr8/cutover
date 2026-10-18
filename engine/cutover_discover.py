@@ -327,6 +327,9 @@ def detect_stack(repo: Repo, out: dict) -> None:
                                   "yes", "verified", frontend)
 
 
+CLIENT_FILE_HINT = re.compile(r"portal|patient|client|customer|member|self.?service", re.I)
+
+
 def detect_ui(repo: Repo, out: dict) -> None:
     code = {p: t for p, t in repo.files.items() if p.endswith((".java", ".kt"))}
     controllers = [p for p, t in code.items() if re.search(r"@(?:Rest)?Controller\b", t)]
@@ -371,6 +374,9 @@ def detect_ui(repo: Repo, out: dict) -> None:
     for p, t in repo.files.items():
         if not p.endswith((".java", ".kt", ".html", ".tsx", ".jsx", ".vue", ".cs")):
             continue
+        # Only client-facing code counts toward the portal. Staff-only roles are left out.
+        if not CLIENT_FILE_HINT.search(p.rsplit("/", 1)[-1]):
+            continue
         for m in re.finditer(r"hasRole\(\s*['\"](\w+)['\"]\s*\)|hasAuthority\(\s*['\"](\w+)['\"]\s*\)|@RolesAllowed\(\s*\{?\s*['\"](\w+)['\"]", t):
             role = next(g for g in m.groups() if g)
             roles[role] += 1
@@ -380,7 +386,7 @@ def detect_ui(repo: Repo, out: dict) -> None:
             "ui.roles", "ui_portal", "Roles named in access rules",
             {"count": len(roles), "roles": dict(sorted(roles.items()))},
             "verified", sorted(role_files)[:EVIDENCE_LIMIT],
-            note="Only roles written into access rules in the code are listed.",
+            note="Only roles written into access rules in client-facing code are listed. Staff-only roles are left out.",
         )
 
     portal_terms = {
