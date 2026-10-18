@@ -47,6 +47,7 @@ create table if not exists public.members (
   role          text not null
                 check (role in ('platform_engineer', 'security_officer', 'informatics_lead', 'cio_cto', 'auditor')),
   is_admin      boolean not null default false,
+  name          text check (name is null or length(name) <= 200),
   created_at    timestamptz not null default now(),
   primary key (workspace_id, user_id)
 );

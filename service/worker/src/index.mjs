@@ -8,6 +8,9 @@
 // Routes (all under /api). Every route needs a signed-in person, except the runner callback.
 //   GET    /api/me                                        your email, operator flag, and your workspaces with roles
 //   POST   /api/workspaces                                create a customer workspace and invite its first admin (Cutover operators)
+//   PATCH  /api/workspaces/:id                             rename a workspace (operators)
+//   DELETE /api/workspaces/:id                             delete a workspace and its analyses (operators; type the name to confirm)
+//   GET    /api/admin/workspaces                           every workspace with counts; people shown only where the operator is a member (operators)
 //   GET    /api/workspaces/:id/members                    list members (workspace admins)
 //   DELETE /api/workspaces/:id/members/:userId            remove a member (workspace admins)
 //   GET    /api/workspaces/:id/invitations                list pending invitations (workspace admins)
@@ -88,6 +91,13 @@ async function currentUser(env, request) {
   if (!res.ok) return null;
   const user = await res.json();
   return user && user.id ? user : null;
+}
+
+// The name Google gives this person, if any. Stored on their membership rows at sign-in.
+function displayName(user) {
+  const meta = user.user_metadata || {};
+  const name = String(meta.full_name || meta.name || "").trim();
+  return name.slice(0, 200);
 }
 
 // Turns every pending invitation for this person's email into a membership, then uses it up.
@@ -237,6 +247,15 @@ async function loadAnalysis(env, id) {
 async function me(request, env) {
   const auth = await requireUser(env, request);
   if (auth.response) return auth.response;
+  const name = displayName(auth.user);
+  if (name) {
+    // Best effort: a failed name update must not stop sign-in.
+    await serviceRest(env, `members?user_id=eq.${auth.user.id}`, {
+      method: "PATCH",
+      headers: { prefer: "return=minimal" },
+      body: JSON.stringify({ name }),
+    }).catch(() => {});
+  }
   const res = await serviceRest(env,
     `members?user_id=eq.${auth.user.id}&select=workspace_id,role,is_admin,created_at,workspace:workspaces(id,name)&order=created_at.asc`);
   if (!res.ok) return json({ error: "Could not load your workspaces." }, 502);
@@ -295,7 +314,7 @@ async function createWorkspace(request, env) {
 async function listMembers(request, env, workspaceId) {
   const access = await workspaceAdmin(env, request, workspaceId);
   if (access.response) return access.response;
-  const res = await serviceRest(env, `members?workspace_id=eq.${workspaceId}&select=user_id,email,role,is_admin,created_at&order=created_at.asc`);
+  const res = await serviceRest(env, `members?workspace_id=eq.${workspaceId}&select=user_id,email,name,role,is_admin,created_at&order=created_at.asc`);
   if (!res.ok) return json({ error: "Could not load members." }, 502);
   return json(await res.json());
 }
@@ -361,6 +380,91 @@ async function deleteInvitation(request, env, workspaceId, email) {
 }
 
 // ---- Analyses ----
+
+// ---- Operators: rename, delete and overview of workspaces ----
+
+async function renameWorkspace(request, env, workspaceId) {
+  const auth = await requireUser(env, request);
+  if (auth.response) return auth.response;
+  if (!isOperator(env, auth.user.email)) return json({ error: "Only Cutover operators can change workspaces." }, 403);
+  if (!UUID_PATTERN.test(workspaceId)) return json({ error: "Not found." }, 404);
+  const parsed = await readJson(request);
+  if (parsed.error) return json({ error: parsed.error }, 400);
+  const name = typeof parsed.value?.name === "string" ? parsed.value.name.trim() : "";
+  if (!name || name.length > MAX_TITLE) return json({ error: `Give the workspace a name of 1 to ${MAX_TITLE} characters.` }, 400);
+  const res = await serviceRest(env, `workspaces?id=eq.${workspaceId}`, {
+    method: "PATCH",
+    headers: { prefer: "return=representation" },
+    body: JSON.stringify({ name }),
+  });
+  if (!res.ok) return json({ error: "Could not rename the workspace." }, 502);
+  const [row] = await res.json();
+  if (!row) return json({ error: "Not found." }, 404);
+  return json({ id: row.id, name: row.name });
+}
+
+// Deletes a workspace with everything in it. The person must type its name. Every analysis is
+// recorded in the deletion log first; nothing is removed if that record cannot be saved.
+async function deleteWorkspace(request, env, workspaceId) {
+  const auth = await requireUser(env, request);
+  if (auth.response) return auth.response;
+  if (!isOperator(env, auth.user.email)) return json({ error: "Only Cutover operators can delete workspaces." }, 403);
+  if (!UUID_PATTERN.test(workspaceId)) return json({ error: "Not found." }, 404);
+  const parsed = await readJson(request);
+  if (parsed.error) return json({ error: parsed.error }, 400);
+  const found = await serviceRest(env, `workspaces?id=eq.${workspaceId}&select=id,name`);
+  if (!found.ok) return json({ error: "Could not check the workspace. Try again in a minute." }, 502);
+  const [ws] = await found.json();
+  if (!ws) return json({ error: "Not found." }, 404);
+  if (String(parsed.value?.confirm_name || "").trim() !== ws.name) {
+    return json({ error: `Type the workspace name exactly, "${ws.name}", to delete it.` }, 400);
+  }
+  const analyses = await serviceRest(env, `analyses?workspace_id=eq.${workspaceId}&select=id,repo`);
+  if (!analyses.ok) return json({ error: "Could not list its analyses, so nothing was deleted." }, 502);
+  const rows = await analyses.json();
+  if (!(await recordDeletion(env, rows, "requested"))) {
+    return json({ error: "Could not record the deletions, so nothing was deleted." }, 502);
+  }
+  const res = await serviceRest(env, `workspaces?id=eq.${workspaceId}`, {
+    method: "DELETE",
+    headers: { prefer: "return=minimal" },
+  });
+  if (!res.ok) return json({ error: "Could not delete the workspace." }, 502);
+  return json({ deleted: true, analyses_deleted: rows.length });
+}
+
+// Every workspace, with counts. Member names and emails are shown only for workspaces the operator
+// is a member of, so an operator cannot see a customer's people unless invited into that workspace.
+async function overviewWorkspaces(request, env) {
+  const auth = await requireUser(env, request);
+  if (auth.response) return auth.response;
+  if (!isOperator(env, auth.user.email)) return json({ error: "Only Cutover operators can see this." }, 403);
+  const [wsRes, memRes, invRes] = await Promise.all([
+    serviceRest(env, "workspaces?select=id,name,created_at&order=created_at.asc"),
+    serviceRest(env, "members?select=workspace_id,user_id,email,name,role,is_admin"),
+    serviceRest(env, "invitations?select=workspace_id,email"),
+  ]);
+  if (!wsRes.ok || !memRes.ok || !invRes.ok) return json({ error: "Could not load workspaces." }, 502);
+  const workspaces = await wsRes.json();
+  const members = await memRes.json();
+  const invites = await invRes.json();
+  const mine = new Set(members.filter((m) => m.user_id === auth.user.id).map((m) => m.workspace_id));
+  return json(workspaces.map((w) => {
+    const people = members.filter((m) => m.workspace_id === w.id);
+    const out = {
+      id: w.id,
+      name: w.name,
+      created_at: w.created_at,
+      people_count: people.length,
+      pending_count: invites.filter((i) => i.workspace_id === w.id).length,
+      you_are_member: mine.has(w.id),
+    };
+    if (out.you_are_member) {
+      out.members = people.map((m) => ({ user_id: m.user_id, email: m.email, name: m.name || null, role: m.role, is_admin: m.is_admin === true }));
+    }
+    return out;
+  }));
+}
 
 async function listAnalyses(request, env) {
   const url = new URL(request.url);
@@ -800,6 +904,11 @@ async function route(request, env) {
     if (path === "/api/me" && method === "GET") return me(request, env);
     if (path === "/api/workspaces" && method === "POST") return createWorkspace(request, env);
     if (path === "/api/repo-check" && method === "GET") return repoCheck(request, env);
+    if (path === "/api/admin/workspaces" && method === "GET") return overviewWorkspaces(request, env);
+
+    const oneWorkspace = path.match(/^\/api\/workspaces\/([^/]+)$/);
+    if (oneWorkspace && method === "PATCH") return renameWorkspace(request, env, oneWorkspace[1]);
+    if (oneWorkspace && method === "DELETE") return deleteWorkspace(request, env, oneWorkspace[1]);
 
     if (path === "/api/analyses" && method === "POST") return startAnalysis(request, env);
     if (path === "/api/analyses" && method === "GET") return listAnalyses(request, env);

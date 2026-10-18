@@ -179,6 +179,8 @@ pre{white-space:pre-wrap;word-break:break-word;background:var(--soft);padding:12
 .ask-answer{margin-top:14px;display:grid;gap:8px}
 .ask-answer .ghost{justify-self:start}
 @media (max-width:480px){.ask-panel{right:8px;left:8px;width:auto}}
+.ov-row{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;flex-wrap:wrap;padding:12px 0;border-bottom:1px solid var(--line)}
+.ov-row:last-child{border-bottom:0}
   </style>
 </head>
 <body>
@@ -266,6 +268,13 @@ pre{white-space:pre-wrap;word-break:break-word;background:var(--soft);padding:12
       <p class="muted small" style="margin-top:6px">Only sample or public code. No patient data.</p>
       <div id="analysisList" style="margin-top:10px"></div>
       <p id="listMsg" class="muted small" role="status"></p>
+    </div>
+
+    <div class="card" id="overviewCard" hidden>
+      <h2>All workspaces</h2>
+      <p class="muted small" style="margin-top:6px">Counts are shown for every workspace. You see people only in workspaces you are invited into.</p>
+      <div id="overviewList" style="margin-top:10px"></div>
+      <p id="overviewMsg" class="muted small" role="status"></p>
     </div>
 
     <div class="card" id="adminCard" hidden>
@@ -734,6 +743,8 @@ pre{white-space:pre-wrap;word-break:break-word;background:var(--soft);padding:12
     $("startNew").hidden = !(ws && ws.role === "platform_engineer");
     $("adminCard").hidden = !(ws && ws.is_admin && homeTab === "workspaces");
     $("operatorCard").hidden = !(me.is_operator && homeTab === "workspaces");
+    $("overviewCard").hidden = !(me.is_operator && homeTab === "workspaces");
+    if (me.is_operator && homeTab === "workspaces") loadOverview();
     $("guideCard").hidden = homeTab !== "guide";
     if (homeTab === "analyses" && ws) loadList();
     if (homeTab === "workspaces" && ws && ws.is_admin) loadPeople();
@@ -856,6 +867,66 @@ pre{white-space:pre-wrap;word-break:break-word;background:var(--soft);padding:12
     renderAnswer(q);
   });
   document.addEventListener("keydown", (e) => { if (e.key === "Escape" && !$("askPanel").hidden) closeAsk(); });
+
+  // ---- Operators: all workspaces, with rename and delete ----
+
+  async function refreshMe() {
+    me = await api("/api/me");
+    ws = (ws && me.workspaces.find((w) => w.id === ws.id)) || me.workspaces[0] || null;
+    showHome();
+  }
+
+  async function loadOverview() {
+    const box = $("overviewList");
+    const msg = $("overviewMsg");
+    msg.textContent = "";
+    try {
+      const rows = await api("/api/admin/workspaces");
+      box.innerHTML = "";
+      if (!rows.length) msg.textContent = "No workspaces yet.";
+      for (const w of rows) {
+        const row = el("div", null, "ov-row");
+        const info = el("div", null, "grow");
+        const sub = `${w.people_count} ${w.people_count === 1 ? "person" : "people"} · ${w.pending_count} waiting for first sign-in · ${w.you_are_member ? "you are in this workspace" : "you are not in this workspace, so people are not shown"}`;
+        info.append(el("b", w.name), el("div", sub, "muted small"));
+        if (w.you_are_member && w.members) {
+          const det = document.createElement("details");
+          det.appendChild(el("summary", "Show people"));
+          for (const m of w.members) {
+            det.appendChild(el("div", `${m.name ? m.name + " · " : ""}${m.email} · ${roleName(m.role)}${m.is_admin ? " · admin" : ""}`, "small"));
+          }
+          info.appendChild(det);
+        }
+        const actions = el("div", null, "row");
+        actions.style.gap = "8px";
+        const rename = el("button", "Rename", "ghost small-btn");
+        rename.type = "button";
+        rename.addEventListener("click", async () => {
+          const name = (prompt("New name for this workspace", w.name) || "").trim();
+          if (!name || name === w.name) return;
+          try {
+            await api(`/api/workspaces/${w.id}`, { method: "PATCH", body: JSON.stringify({ name }) });
+            await refreshMe();
+          } catch (err) { setMsg("overviewMsg", err.message, true); }
+        });
+        const del = el("button", "Delete", "danger small-btn");
+        del.type = "button";
+        del.addEventListener("click", async () => {
+          const typed = prompt(`This deletes "${w.name}", its people, invitations, analyses, comments and action items. Its deletions are recorded. To confirm, type the workspace name exactly:`, "");
+          if (typed === null) return;
+          try {
+            await api(`/api/workspaces/${w.id}`, { method: "DELETE", body: JSON.stringify({ confirm_name: typed }) });
+            await refreshMe();
+          } catch (err) { setMsg("overviewMsg", err.message, true); }
+        });
+        actions.append(rename, del);
+        row.append(info, actions);
+        box.appendChild(row);
+      }
+    } catch (err) {
+      setMsg("overviewMsg", err.message, true);
+    }
+  }
 
   // ---- Guide: step by step, with actions. Content lives in guide.js. ----
 
@@ -1057,7 +1128,8 @@ pre{white-space:pre-wrap;word-break:break-word;background:var(--soft);padding:12
       memBox.innerHTML = "";
       for (const m of members) {
         const isMe = me && m.email === me.email;
-        listRow(memBox, m.email, `${roleName(m.role)}${m.is_admin ? " · admin" : ""}${isMe ? " · you" : ""}`, "Remove", async () => {
+        const sub = `${m.name ? m.email + " · " : ""}${roleName(m.role)}${m.is_admin ? " · admin" : ""}${isMe ? " · you" : ""}`;
+        listRow(memBox, m.name || m.email, sub, "Remove", async () => {
           try {
             await api(`/api/workspaces/${id}/members/${m.user_id}`, { method: "DELETE" });
             loadPeople();
