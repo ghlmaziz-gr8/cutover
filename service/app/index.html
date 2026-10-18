@@ -1715,16 +1715,20 @@ pre{white-space:pre-wrap;word-break:break-word;background:var(--soft);padding:12
       const screens = val("ui.screen_names");
       const roles = val("ui.roles");
       const clientFacing = val("ui.client_facing") === "yes";
-      if (sees(role, "ui_portal") && (screens || clientFacing)) {
+      if (sees(role, "ui_portal")) {
         const c = shell("Client-facing portal", "Screens in the code");
         const chips = el("div", null, "chips");
-        if (screens) chips.appendChild(el("span", `${screens.count} ${screens.count === 1 ? "screen" : "screens"}`, "tag t-cy"));
+        if (screens) {
+          chips.appendChild(el("span", `${screens.count} ${screens.count === 1 ? "screen" : "screens"}`, "tag t-cy"));
+          chips.appendChild(el("span", "Preview, not live", "tag t-warn"));
+        } else {
+          chips.appendChild(el("span", "No screens found", "tag t-warn"));
+        }
         if (roles) chips.appendChild(el("span", `${roles.count} ${roles.count === 1 ? "role" : "roles"}`, "tag t-cy"));
-        chips.appendChild(el("span", "Preview, not live", "tag t-warn"));
         c.appendChild(chips);
         c.appendChild(el("p", screens
           ? `Screen names come from ${screens.count} template or page ${screens.count === 1 ? "file" : "files"} in the code.`
-          : "Client-facing screens were not named in the code reviewed.", "muted small"));
+          : clientFacing ? "The code reviewed suggests a client portal, but no screen files were found." : "No screen files were found in the code reviewed.", "muted small"));
         if (screens && screens.names.length) {
           const grid = el("div", null, "wf-grid");
           for (const name of screens.names.slice(0, 6)) grid.appendChild(wireframe(name));
