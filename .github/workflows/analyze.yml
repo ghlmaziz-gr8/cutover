@@ -64,17 +64,12 @@ jobs:
         with:
           python-version: "3.12"
 
-      - name: Install the browser for page screenshots
-        run: |
-          set -euo pipefail
-          python3 -m pip install --quiet playwright==1.47.0
-          python3 -m playwright install --with-deps chromium
-
+      # Page screenshots are off on the free tier: the report keeps the drawn page and its visible text instead.
       - name: Run the discovery engine
         run: |
           set -euo pipefail
           python3 cutover/engine/cutover_discover.py \
-            --path "$RUNNER_TEMP/target" --out "$RUNNER_TEMP/reports" --screenshots
+            --path "$RUNNER_TEMP/target" --out "$RUNNER_TEMP/reports"
 
       # File-level results go first, in chunks. If the free-tier cap stops them, the API has already
       # marked the analysis failed, so the findings are not sent.
