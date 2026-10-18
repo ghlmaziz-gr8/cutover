@@ -232,6 +232,9 @@ pre{white-space:pre-wrap;word-break:break-word;background:var(--soft);padding:12
 .dp-tab.on{background:var(--grad);color:#fff;border-color:transparent}
 .dp-wrap{margin-top:10px;border:1px solid var(--line);border-radius:14px;overflow:hidden;background:#fff}
 .dp-frame{display:block;width:100%;height:520px;border:0;background:#fff}
+.dp-shot{max-height:560px;overflow:auto;background:#fff}
+.dp-shot img{display:block;width:100%;height:auto}
+.dp-sizes{display:flex;gap:6px;padding:8px;position:sticky;top:0;background:#fff;z-index:1}
 @media (max-width:640px){.dp-frame{height:440px}}
   </style>
 </head>
@@ -516,7 +519,7 @@ pre{white-space:pre-wrap;word-break:break-word;background:var(--soft);padding:12
     </div>
   </section>
 
-  <p class="muted small" style="text-align:center;margin-top:40px">Cutover reads code only. Source code is not stored, and results are deleted after the retention period.</p>
+  <p class="muted small" style="text-align:center;margin-top:40px">Cutover reads code only. Source code is not stored. Page screenshots and visible text are kept for this review, and results are deleted after the retention period.</p>
 </main>
 
 <!-- Pinned to an exact version. Only the browser client is loaded here. -->
@@ -1790,13 +1793,44 @@ pre{white-space:pre-wrap;word-break:break-word;background:var(--soft);padding:12
         frame.className = "dp-frame";
         frame.setAttribute("sandbox", "");
         frame.setAttribute("title", "Rendered page preview");
+        const shotBox = el("div", null, "dp-shot");
+        const sizes = el("div", null, "dp-sizes");
+        const shotImg = document.createElement("img");
+        shotImg.alt = "Screenshot of the page";
+        shotBox.append(sizes, shotImg);
+        shotBox.style.display = "none";
         const show = (i) => {
           const pg = pv.pages[i];
-          frame.srcdoc = pageSrcdoc(pg);
+          const shots = pg.shots || {};
+          const names = Object.keys(shots);
           [...tabs.children].forEach((b, j) => b.classList.toggle("on", j === i));
+          if (names.length) {
+            frame.style.display = "none";
+            shotBox.style.display = "block";
+            sizes.replaceChildren();
+            const showSize = (n) => {
+              shotImg.src = "data:image/jpeg;base64," + shots[n];
+              [...sizes.children].forEach((b) => b.classList.toggle("on", b.dataset.size === n));
+            };
+            for (const n of ["desktop", "phone"]) {
+              if (!shots[n]) continue;
+              const b = el("button", n === "desktop" ? "Desktop" : "Phone", "dp-tab");
+              b.type = "button";
+              b.dataset.size = n;
+              b.addEventListener("click", () => showSize(n));
+              sizes.appendChild(b);
+            }
+            showSize(sizes.firstChild.dataset.size);
+          } else {
+            shotBox.style.display = "none";
+            frame.style.display = "block";
+            frame.srcdoc = pageSrcdoc(pg);
+          }
           note.textContent = pg.kind === "dynamic"
             ? "Dynamic page. Values are sample data, because the code loads them from a template, a loop or the page script."
-            : "Static page. Text and layout are as found in the code. Colours and fonts are not copied.";
+            : names.length
+              ? "Screenshot of the page as a browser drew it from the code. Dynamic data is not loaded."
+              : "Static page. Text and layout are as found in the code. Colours and fonts are not copied.";
         };
         pv.pages.forEach((pg, i) => {
           const b = el("button", pg.name || pg.path, "dp-tab");
@@ -1804,8 +1838,9 @@ pre{white-space:pre-wrap;word-break:break-word;background:var(--soft);padding:12
           b.addEventListener("click", () => show(i));
           tabs.appendChild(b);
         });
-        c.append(tabs, el("div", null, "dp-wrap"));
-        c.lastChild.appendChild(frame);
+        const wrap = el("div", null, "dp-wrap");
+        wrap.append(frame, shotBox);
+        c.append(tabs, wrap);
         c.appendChild(note);
         out.push(c);
         show(0);
