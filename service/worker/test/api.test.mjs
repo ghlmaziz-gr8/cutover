@@ -146,9 +146,12 @@ function defaultsFor(table) {
   return base;
 }
 
+const DATABASE_BYTES = 125 * 1024 * 1024;
+
 function handleRest(url, init) {
   const u = new URL(url);
   const table = u.pathname.replace("/rest/v1/", "");
+  if (table === "rpc/database_size_bytes") return j(DATABASE_BYTES);
   const method = init.method || "GET";
   const prefer = init.headers?.prefer || "";
   const rows = state[table];
@@ -669,6 +672,21 @@ test("the runner callback needs the shared secret", async () => {
   assert.equal(bad.status, 401);
   const good = await call(`/api/runner/${AN_ACME}/result`, { method: "POST", body: { status: "failed", error: "x" }, secret: env.RUNNER_SECRET });
   assert.equal(good.status, 200);
+});
+
+// ---- Database size (operators) ----
+
+test("operators see the database size against the free-tier limit", async () => {
+  const res = await call("/api/admin/database", { as: "operator" });
+  assert.equal(res.status, 200);
+  assert.equal(res.body.bytes, DATABASE_BYTES);
+  assert.equal(res.body.limit_bytes, 500 * 1024 * 1024);
+  assert.equal(res.body.percent, 25);
+});
+
+test("the database size is only for operators", async () => {
+  const res = await call("/api/admin/database", { as: "admin_a" });
+  assert.equal(res.status, 403);
 });
 
 // ---- Names, and managing workspaces (operators) ----

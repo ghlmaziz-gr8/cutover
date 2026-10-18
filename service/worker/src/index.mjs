@@ -17,6 +17,7 @@
 //   POST   /api/workspaces/:id/invitations                invite an email with a role (workspace admins)
 //   DELETE /api/workspaces/:id/invitations/:email         remove a pending invitation (workspace admins)
 //   GET    /api/repo-check?workspace=&repo=&ref=          check Cutover can read a repository (platform engineers)
+//   GET    /api/admin/database                            database size against the free-tier limit (operators)
 //   GET    /api/analyses?workspace=                       analyses in one workspace (members)
 //   POST   /api/analyses                                  start an analysis (platform engineers)
 //   GET    /api/analyses/:id                              one analysis, limited to what your role may see
@@ -438,6 +439,25 @@ async function deleteWorkspace(request, env, workspaceId) {
 
 // Every workspace, with counts. Member names and emails are shown only for workspaces the operator
 // is a member of, so an operator cannot see a customer's people unless invited into that workspace.
+// The free tier's database limit. Above it, Supabase makes the whole project read-only.
+const FREE_TIER_DATABASE_BYTES = 500 * 1024 * 1024;
+
+// Operators only: how full the database is, so the limit is seen before it is reached.
+async function databaseSize(request, env) {
+  const auth = await requireUser(env, request);
+  if (auth.response) return auth.response;
+  if (!isOperator(env, auth.user.email)) return json({ error: "Only Cutover operators can see this." }, 403);
+  const res = await serviceRest(env, "rpc/database_size_bytes", { method: "POST", body: "{}" });
+  if (!res.ok) return json({ error: "Could not read the database size." }, 502);
+  const bytes = Number(await res.json());
+  if (!Number.isFinite(bytes)) return json({ error: "Could not read the database size." }, 502);
+  return json({
+    bytes,
+    limit_bytes: FREE_TIER_DATABASE_BYTES,
+    percent: Math.round((bytes / FREE_TIER_DATABASE_BYTES) * 1000) / 10,
+  });
+}
+
 async function overviewWorkspaces(request, env) {
   const auth = await requireUser(env, request);
   if (auth.response) return auth.response;
@@ -1035,6 +1055,7 @@ async function route(request, env) {
     if (path === "/api/workspaces" && method === "POST") return createWorkspace(request, env);
     if (path === "/api/repo-check" && method === "GET") return repoCheck(request, env);
     if (path === "/api/admin/workspaces" && method === "GET") return overviewWorkspaces(request, env);
+    if (path === "/api/admin/database" && method === "GET") return databaseSize(request, env);
 
     const oneWorkspace = path.match(/^\/api\/workspaces\/([^/]+)$/);
     if (oneWorkspace && method === "PATCH") return renameWorkspace(request, env, oneWorkspace[1]);
