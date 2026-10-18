@@ -53,3 +53,15 @@ test("every FAQ entry has a question and answer, and points at a real guide step
     if (f.step) assert.ok(stepIds.has(f.step), `FAQ "${f.q}" refers to missing step ${f.step}`);
   }
 });
+
+test("every web address in the guide and FAQ is valid https", () => {
+  const texts = [];
+  for (const s of G.steps) { texts.push(...s.body); for (const a of s.actions || []) if (a.href) texts.push(a.href); }
+  for (const f of G.faq || []) texts.push(f.a);
+  for (const t of texts) {
+    for (const m of t.match(/https?:\/\/[^\s)]+/g) || []) {
+      const url = new URL(m.replace(/[.,;:]+$/, ""));
+      assert.equal(url.protocol, "https:", `https address: ${m}`);
+    }
+  }
+});
