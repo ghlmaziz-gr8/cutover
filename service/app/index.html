@@ -463,6 +463,8 @@ pre{white-space:pre-wrap;word-break:break-word;background:var(--soft);padding:12
     <p class="muted small" id="reviewMeta"></p>
     <div class="row wzNav" style="margin:14px 0 4px">
       <button type="button" class="ghost" id="reviewBackTop">Back to analyses</button>
+      <button type="button" class="ghost" id="exportPdfTop">Export PDF</button>
+      <button type="button" class="ghost" id="exportHtmlTop">Export HTML</button>
       <button type="button" id="toNextTop">Next steps</button>
     </div>
     <div class="card" id="reviewBody"></div>
@@ -2171,13 +2173,57 @@ a{color:#6d28d9;font-weight:600}`;
       box.appendChild(item);
     }
   }
-  $("pdfBtn").addEventListener("click", () => {
+  function printReportPdf() {
     buildPrintReport();
     document.body.classList.add("printing");
     const done = () => { document.body.classList.remove("printing"); window.removeEventListener("afterprint", done); };
     window.addEventListener("afterprint", done);
     window.print();
     setTimeout(done, 1500);
+  }
+  $("pdfBtn").addEventListener("click", printReportPdf);
+  $("exportPdfTop").addEventListener("click", printReportPdf);
+
+  // HTML: one self-contained file with the same findings. No scripts and no outside links, so it can be attached to an email.
+  function buildReportHtml() {
+    const esc = (v) => String(v ?? "").replace(/[&<>"']/g, (ch) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[ch]));
+    const when = cur.finished_at ? new Date(cur.finished_at).toLocaleString() : "";
+    const items = Object.values(cur.findings || {}).map((f) => {
+      const ev = (f.evidence || []).slice(0, 5);
+      const count = f.evidence_count ? `${f.evidence_count} evidence item${f.evidence_count === 1 ? "" : "s"}` : "";
+      return `<section class="item"><h2>${esc(f.title || f.id)}</h2>
+<p class="value">${esc(fmtValue(f.value))}</p>
+<p class="meta">${f.confidence === "verified" ? "Verified in code" : "Inferred, needs review"}${count ? " · " + esc(count) : ""}</p>
+${f.note ? `<p class="meta">${esc(f.note)}</p>` : ""}
+${ev.length ? `<p class="meta">${esc(ev.join(", "))}</p>` : ""}</section>`;
+    }).join("\n");
+    return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Cutover report: ${esc(cur.app_name || cur.repo)}</title>
+<style>
+body{margin:0;padding:24px;font:15px/1.5 system-ui,-apple-system,"Segoe UI",sans-serif;color:#1e1b3a;background:#fff;max-width:880px}
+h1{font-size:24px;margin:0 0 6px}
+.meta{font-size:13px;color:#5b5878;margin:4px 0}
+.note{font-size:13px;color:#5b5878;border-left:3px solid #c9c3e6;padding:4px 10px;margin:12px 0}
+.item{border-bottom:1px solid #e6e3f3;padding:12px 0}
+.item h2{font-size:16px;margin:0 0 4px}
+.value{margin:2px 0 4px;word-break:break-word}
+</style></head><body>
+<h1>Cutover report: ${esc(cur.app_name || cur.repo)}</h1>
+<p class="meta">${esc(cur.repo || "")}${cur.commit_sha ? " · commit " + esc(cur.commit_sha) : ""}${when ? " · finished " + esc(when) : ""}</p>
+<p class="note">Contains only the findings the viewer's role may see. Source code is not included.</p>
+${items}
+</body></html>`;
+  }
+  $("exportHtmlTop").addEventListener("click", () => {
+    const blob = new Blob([buildReportHtml()], { type: "text/html" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `${(cur.app_name || cur.repo || "report").replace(/[^A-Za-z0-9_-]+/g, "-").replace(/^-+|-+$/g, "")}-report.html`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
   });
 
   $("inviteNext").addEventListener("click", () => {
