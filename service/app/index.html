@@ -199,6 +199,18 @@ pre{white-space:pre-wrap;word-break:break-word;background:var(--soft);padding:12
   .stat,.panel,.rcard,.seg b,.hrow i b,.cols>div>i{animation:none!important;transition:none!important}
   .rcard:hover,.panel:hover,.stat:hover{transform:none}
 }
+/* Client-facing portal: wireframe previews */
+.chips{display:flex;flex-wrap:wrap;gap:6px;margin-top:4px}
+.t-cy{background:#cffafe;color:#155e75}
+.t-warn{background:#ffedd5;color:#9a3412}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]) .t-cy{background:#164e63;color:#a5f3fc}:root:not([data-theme="light"]) .t-warn{background:#7c2d12;color:#fed7aa}}
+.wf-grid{display:grid;gap:12px;grid-template-columns:repeat(auto-fit,minmax(min(100%,140px),1fr));margin-top:12px}
+.wf{background:var(--card);border:1px solid var(--line);border-radius:14px;overflow:hidden;animation:rise .5s cubic-bezier(.2,.8,.2,1) backwards}
+.wf-h{display:flex;align-items:center;gap:6px;padding:7px 9px;background:var(--soft);font-size:11px;font-weight:700;color:var(--fg)}
+.wf-h i{width:7px;height:7px;border-radius:50%;background:var(--accent2);flex:0 0 auto}
+.wf-h span{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.wf-row{height:9px;margin:9px;border-radius:99px;background:var(--soft);width:var(--w)}
+.wf-row.wf-accent{background:var(--grad);opacity:.85}
   </style>
 </head>
 <body>
@@ -1698,7 +1710,56 @@ pre{white-space:pre-wrap;word-break:break-word;background:var(--soft);padding:12
       }
       out.push(c);
     }
+    // Client-facing portal: screen previews drawn from file names, and the roles named in access rules.
+    {
+      const screens = val("ui.screen_names");
+      const roles = val("ui.roles");
+      const clientFacing = val("ui.client_facing") === "yes";
+      if (sees(role, "ui_portal") && (screens || clientFacing)) {
+        const c = shell("Client-facing portal", "Screens in the code");
+        const chips = el("div", null, "chips");
+        if (screens) chips.appendChild(el("span", `${screens.count} ${screens.count === 1 ? "screen" : "screens"}`, "tag t-cy"));
+        if (roles) chips.appendChild(el("span", `${roles.count} ${roles.count === 1 ? "role" : "roles"}`, "tag t-cy"));
+        chips.appendChild(el("span", "Preview, not live", "tag t-warn"));
+        c.appendChild(chips);
+        c.appendChild(el("p", screens
+          ? `Screen names come from ${screens.count} template or page ${screens.count === 1 ? "file" : "files"} in the code.`
+          : "Client-facing screens were not named in the code reviewed.", "muted small"));
+        if (screens && screens.names.length) {
+          const grid = el("div", null, "wf-grid");
+          for (const name of screens.names.slice(0, 6)) grid.appendChild(wireframe(name));
+          c.appendChild(grid);
+          c.appendChild(el("p", "Previews are drawn from the file names. They are not screenshots of a live system.", "muted small"));
+        }
+        if (roles) {
+          c.appendChild(el("p", "Roles named in access rules", "eyebrow-sm"));
+          const kv = el("div", null, "kv");
+          for (const [name, n] of Object.entries(roles.roles)) kv.append(el("span", name), el("span", `${n} ${n === 1 ? "rule" : "rules"}`));
+          c.appendChild(kv);
+        } else {
+          c.appendChild(el("p", "No roles named in access rules in the code reviewed.", "muted small"));
+        }
+        out.push(c);
+      }
+    }
+
     return out;
+  }
+
+  // A preview drawn from a screen name: a header and blocks of varying sizes, in the same style as the demo.
+  function wireframe(name) {
+    const seed = [...name].reduce((a, ch) => a + ch.charCodeAt(0), 0);
+    const w = el("div", null, "wf");
+    const head = el("div", null, "wf-h");
+    head.append(el("i"), el("span", name));
+    w.appendChild(head);
+    const rows = 3 + (seed % 3);
+    for (let r = 0; r < rows; r++) {
+      const row = el("div", null, "wf-row" + (r === (seed % rows) ? " wf-accent" : ""));
+      row.style.setProperty("--w", `${45 + ((seed + r * 37) % 50)}%`);
+      w.appendChild(row);
+    }
+    return w;
   }
 
   function renderReview(row) {
@@ -1780,7 +1841,7 @@ pre{white-space:pre-wrap;word-break:break-word;background:var(--soft);padding:12
     box.appendChild(heading);
     const grid = el("div", null, "rgrid");
     // The findings the summary cards show are left out of the topic cards, so each appears once.
-    const SUMMARY_IDS = ["runtime.java", "runtime.spring_boot", "ui.endpoints", "ui.client_facing", "data.tables", "data.migrations", "infrastructure.as_code"];
+    const SUMMARY_IDS = ["runtime.java", "runtime.spring_boot", "ui.endpoints", "ui.client_facing", "ui.screen_names", "ui.roles", "data.tables", "data.migrations", "infrastructure.as_code"];
     const topic = all.filter((i) => !SUMMARY_IDS.includes(i.id));
     for (const card of REVIEW_CARDS) {
       const node = reviewCard(card, topic, cur.viewer_role, all);
