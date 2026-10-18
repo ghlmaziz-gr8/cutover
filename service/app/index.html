@@ -181,6 +181,24 @@ pre{white-space:pre-wrap;word-break:break-word;background:var(--soft);padding:12
 @media (max-width:480px){.ask-panel{right:8px;left:8px;width:auto}}
 .ov-row{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;flex-wrap:wrap;padding:12px 0;border-bottom:1px solid var(--line)}
 .ov-row:last-child{border-bottom:0}
+/* Review: charts and motion. Respects reduced-motion settings. */
+@keyframes rise{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:none}}
+@keyframes grow{from{transform:scaleX(0)}to{transform:scaleX(1)}}
+@keyframes growY{from{transform:scaleY(0)}to{transform:scaleY(1)}}
+.stat,.panel,.rcard{animation:rise .55s cubic-bezier(.2,.8,.2,1) backwards;animation-delay:calc(var(--i,0) * 70ms);transition:transform .2s ease,box-shadow .2s ease}
+.rcard:hover,.panel:hover,.stat:hover{transform:translateY(-2px);box-shadow:0 12px 28px rgba(109,40,217,.12)}
+.seg{display:flex;height:10px;border-radius:99px;background:var(--soft);overflow:hidden;margin-top:12px}
+.seg b{display:block;height:100%;width:var(--w);background:var(--c);transform-origin:left;animation:grow .9s cubic-bezier(.2,.8,.2,1) backwards;animation-delay:var(--d,0ms)}
+.legend-row{display:flex;flex-wrap:wrap;gap:4px 12px;margin-top:8px;font-size:12px;color:var(--muted)}
+.legend-row span::before{content:"";display:inline-block;width:9px;height:9px;border-radius:3px;margin-right:6px;background:var(--c)}
+.bars{margin-top:10px}
+.seg-empty{background:repeating-linear-gradient(135deg,var(--soft) 0 8px,transparent 8px 16px)}
+.hrow i b{transform-origin:left;animation:grow .9s cubic-bezier(.2,.8,.2,1) backwards}
+.cols>div>i{transform-origin:bottom;animation:growY .8s cubic-bezier(.2,.8,.2,1) backwards;animation-delay:calc(var(--k,0) * 45ms)}
+@media (prefers-reduced-motion:reduce){
+  .stat,.panel,.rcard,.seg b,.hrow i b,.cols>div>i{animation:none!important;transition:none!important}
+  .rcard:hover,.panel:hover,.stat:hover{transform:none}
+}
   </style>
 </head>
 <body>
@@ -1459,6 +1477,7 @@ pre{white-space:pre-wrap;word-break:break-word;background:var(--soft);padding:12
       const col = el("div");
       const bar = el("i");
       bar.style.setProperty("--h", `${Math.max(3, Math.round((100 * p.value) / max))}%`);
+      bar.style.setProperty("--k", String(points.indexOf(p)));
       bar.title = `${p.label}: ${p.value}`;
       col.append(bar, el("span", p.label));
       box.appendChild(col);
@@ -1482,11 +1501,24 @@ pre{white-space:pre-wrap;word-break:break-word;background:var(--soft);padding:12
         : elsewhere ? "Shown in the summary cards below."
         : (card.empty || "Nothing detected in the code reviewed.");
       c.appendChild(el("p", text, "muted small"));
+      // Chart the findings this card covers, even when they are listed in a summary card.
+      if (visible) {
+        const covered = (every || []).filter((i) => card.cats.includes(i.category));
+        if (covered.length) c.appendChild(findingBars(covered));
+        else {
+          const empty = el("div", null, "seg seg-empty");
+          empty.setAttribute("role", "img");
+          empty.setAttribute("aria-label", "No findings");
+          c.appendChild(empty);
+          c.appendChild(el("p", "0 findings", "muted small"));
+        }
+      }
       return c;
     }
     const kv = el("div", null, "kv");
     for (const item of found) kv.append(el("span", item.title), el("span", fmtValue(item.value)));
     c.appendChild(kv);
+    c.appendChild(findingBars(found));
     const verified = found.filter((i) => i.confidence === "verified").length;
     const inferred = found.length - verified;
     const tags = el("div", null, "tags");
@@ -1498,6 +1530,59 @@ pre{white-space:pre-wrap;word-break:break-word;background:var(--soft);padding:12
     found.forEach((item) => details.appendChild(renderFindingItem(item)));
     c.appendChild(details);
     return c;
+  }
+
+  // A stacked bar: each part is a share of the total, and grows in turn.
+  function segBar(parts, total) {
+    const bar = el("div", null, "seg");
+    bar.setAttribute("role", "img");
+    bar.setAttribute("aria-label", parts.map((p) => `${p.label}: ${p.value}`).join(", "));
+    parts.forEach((p, i) => {
+      if (!p.value || !total) return;
+      const b = el("b");
+      b.style.setProperty("--w", `${((100 * p.value) / total).toFixed(2)}%`);
+      b.style.setProperty("--c", p.color);
+      b.style.setProperty("--d", `${180 + i * 140}ms`);
+      b.title = `${p.label}: ${p.value}`;
+      bar.appendChild(b);
+    });
+    return bar;
+  }
+
+  function legendRow(parts) {
+    const row = el("div", null, "legend-row");
+    for (const p of parts) {
+      const s = el("span", `${p.label}: ${p.value}`);
+      s.style.setProperty("--c", p.color);
+      row.appendChild(s);
+    }
+    return row;
+  }
+
+  // Confidence and severity for a set of findings, as one or two bars.
+  function findingBars(items) {
+    const wrap = el("div", null, "bars");
+    if (!items.length) return wrap;
+    const verified = items.filter((i) => i.confidence === "verified").length;
+    const confParts = [
+      { label: "Verified in code", value: verified, color: "var(--ok)" },
+      { label: "Inferred", value: items.length - verified, color: "var(--warn)" },
+    ];
+    wrap.appendChild(segBar(confParts, items.length));
+    wrap.appendChild(legendRow(confParts));
+    const sev = { high: 0, medium: 0, low: 0 };
+    for (const i of items) if (sev[i.severity] !== undefined) sev[i.severity] += 1;
+    const sevTotal = sev.high + sev.medium + sev.low;
+    if (sevTotal) {
+      const sevParts = [
+        { label: "High", value: sev.high, color: "var(--bad)" },
+        { label: "Medium", value: sev.medium, color: "var(--warn)" },
+        { label: "Low", value: sev.low, color: "var(--accent3)" },
+      ];
+      wrap.appendChild(segBar(sevParts, sevTotal));
+      wrap.appendChild(legendRow(sevParts));
+    }
+    return wrap;
   }
 
   // Three summary cards from the demo: what it does, age and history, data structure.
@@ -1538,6 +1623,8 @@ pre{white-space:pre-wrap;word-break:break-word;background:var(--soft);padding:12
           for (const [k, v] of rows) kv.append(el("span", k), el("span", v));
           c.appendChild(kv);
         }
+        const own = Object.values(shown).filter((i) => cats.includes(i.category));
+        c.appendChild(findingBars(own));
         const tags = el("div", null, "tags");
         if (shown["runtime.java"]) tags.appendChild(el("span", "Verified", "tag t-ok"));
         if (shown["ui.client_facing"] && shown["ui.client_facing"].confidence !== "verified") tags.appendChild(el("span", "Inferred: client-facing", "tag t-inf"));
@@ -1649,6 +1736,10 @@ pre{white-space:pre-wrap;word-break:break-word;background:var(--soft);padding:12
     stat(stats, flagged.length, "need review");
     stat(stats, verified, "verified in code");
     box.appendChild(stats);
+    stats.querySelectorAll(".stat b").forEach((b) => {
+      const target = parseInt(b.textContent, 10) || 0;
+      countTo(0, target, 800, (v) => { b.textContent = String(v); });
+    });
 
     // Charts
     const charts = el("div", null, "charts");
@@ -1684,6 +1775,8 @@ pre{white-space:pre-wrap;word-break:break-word;background:var(--soft);padding:12
     }
     for (const node of componentCards(shown, history, cur.viewer_role)) grid.appendChild(node);
     box.appendChild(grid);
+    // Entrance order: cards and panels appear one after another.
+    box.querySelectorAll(".rcard, .panel, .stat").forEach((n, i) => n.style.setProperty("--i", String(i)));
 
     if (report.limitations && report.limitations.length) {
       box.appendChild(el("h3", "What this review does not cover"));
