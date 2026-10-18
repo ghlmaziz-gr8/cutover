@@ -444,6 +444,121 @@ async function deleteWorkspace(request, env, workspaceId) {
 // Every workspace, with counts. Member names and emails are shown only for workspaces the operator
 // is a member of, so an operator cannot see a customer's people unless invited into that workspace.
 // The free tier's database limit. Above it, Supabase makes the whole project read-only.
+// ---- Privacy sign-off for a workspace (needed before the workspace can use its own language model) ----
+// The text lives here, so the copy recorded is the copy the server holds. The browser cannot change it.
+// Each sign-off or withdrawal is a new row. Nothing is ever updated or deleted.
+const PRIVACY_NOTICE_VERSION = "2026-10-18.1";
+const PRIVACY_NOTICE = "Cutover can send code from this workspace to a language model that the workspace sets up itself. This sign-off confirms that the workspace accepts the rules below. The provider's own terms apply to what it receives.";
+const PRIVACY_STATEMENTS = [
+  { id: "code_only", text: "Only the code I choose to analyze is sent to the language model I set up." },
+  { id: "no_personal_data", text: "No patient or personal data is sent. Examples are sample data only." },
+  { id: "provider_terms", text: "The provider I choose handles what it receives under its own terms, which I have read." },
+  { id: "withdraw", text: "I can withdraw this sign-off at any time. Access to stored model keys stops when I do." },
+];
+const PRIVACY_TEXT = [PRIVACY_NOTICE, ...PRIVACY_STATEMENTS.map((s) => `- ${s.text}`)].join("\n");
+
+// Every event for the workspace, newest first.
+async function privacyEvents(env, workspaceId) {
+  const res = await serviceRest(env, `privacy_signoffs?workspace_id=eq.${workspaceId}&select=id,action,full_name,email,notice_version,created_at`);
+  if (!res.ok) return { failed: true };
+  const rows = await res.json();
+  rows.sort((a, b) => String(b.created_at).localeCompare(String(a.created_at)));
+  return { events: rows };
+}
+
+// The current sign-off: the newest event, if it is a sign-off that has not been withdrawn.
+function privacyCurrent(events) {
+  const latest = events[0] || null;
+  return latest && latest.action === "signed_off" ? latest : null;
+}
+
+// Checks the name and the ticked statements a person sent with a sign-off or withdrawal.
+function privacyInput(value, { needStatements }) {
+  if (!value || typeof value !== "object") return { error: "Send the sign-off details." };
+  const name = typeof value.full_name === "string" ? value.full_name.trim() : "";
+  if (name.length < 2 || name.length > PRIVACY_NAME_MAX) return { error: "Type your full name." };
+  if (needStatements) {
+    const ticked = Array.isArray(value.statements) ? value.statements.filter((s) => typeof s === "string") : [];
+    const wanted = PRIVACY_STATEMENTS.map((s) => s.id);
+    const complete = wanted.every((id) => ticked.includes(id)) && ticked.length === wanted.length;
+    if (!complete) return { error: "Read each statement and tick all of them to sign off." };
+    if (value.notice_version !== PRIVACY_NOTICE_VERSION) {
+      return { error: "The privacy notice has changed. Read it again before signing off.", status: 409 };
+    }
+  }
+  return { name };
+}
+
+async function privacyStatus(request, env, workspaceId) {
+  const access = await workspaceAccess(env, request, workspaceId);
+  if (access.response) return access.response;
+  const found = await privacyEvents(env, workspaceId);
+  if (found.failed) return json({ error: "Could not load the sign-off. Try again in a minute." }, 502);
+  const current = privacyCurrent(found.events);
+  return json({
+    notice_version: PRIVACY_NOTICE_VERSION,
+    notice: PRIVACY_NOTICE,
+    statements: PRIVACY_STATEMENTS,
+    signed_off: !!current,
+    current: current
+      ? { full_name: current.full_name, email: current.email, signed_at: current.created_at, notice_version: current.notice_version }
+      : null,
+    can_change: access.member.is_admin === true,
+    history: found.events.map((e) => ({
+      action: e.action, full_name: e.full_name, email: e.email, notice_version: e.notice_version, at: e.created_at,
+    })),
+  });
+}
+
+async function recordPrivacyEvent(env, access, action, name, statements) {
+  return serviceRest(env, "privacy_signoffs", {
+    method: "POST",
+    headers: { prefer: "return=minimal" },
+    body: JSON.stringify({
+      workspace_id: access.workspace_id,
+      user_id: access.user.id,
+      email: normalizeEmail(access.user.email),
+      full_name: name,
+      action,
+      notice_version: PRIVACY_NOTICE_VERSION,
+      notice_text: PRIVACY_TEXT,
+      statements,
+    }),
+  });
+}
+
+async function privacySignOff(request, env, workspaceId) {
+  const access = await workspaceAdmin(env, request, workspaceId);
+  if (access.response) return access.response;
+  const body = await readJson(request, 20_000);
+  if (body.error) return json({ error: body.error }, 400);
+  const input = privacyInput(body.value, { needStatements: true });
+  if (input.error) return json({ error: input.error }, input.status || 400);
+  const found = await privacyEvents(env, workspaceId);
+  if (found.failed) return json({ error: "Could not record the sign-off. Try again in a minute." }, 502);
+  if (privacyCurrent(found.events)) return json({ error: "This workspace is already signed off." }, 409);
+  const made = await recordPrivacyEvent(env, access, "signed_off", input.name, PRIVACY_STATEMENTS.map((s) => s.id));
+  if (!made.ok) return json({ error: "Could not record the sign-off. Try again in a minute." }, 502);
+  return json({ signed_off: true }, 201);
+}
+
+async function privacyWithdraw(request, env, workspaceId) {
+  const access = await workspaceAdmin(env, request, workspaceId);
+  if (access.response) return access.response;
+  const body = await readJson(request, 20_000);
+  if (body.error) return json({ error: body.error }, 400);
+  const input = privacyInput(body.value, { needStatements: false });
+  if (input.error) return json({ error: input.error }, 400);
+  const found = await privacyEvents(env, workspaceId);
+  if (found.failed) return json({ error: "Could not record the withdrawal. Try again in a minute." }, 502);
+  if (!privacyCurrent(found.events)) return json({ error: "There is no sign-off to withdraw." }, 409);
+  const made = await recordPrivacyEvent(env, access, "withdrawn", input.name, []);
+  if (!made.ok) return json({ error: "Could not record the withdrawal. Try again in a minute." }, 502);
+  return json({ signed_off: false }, 201);
+}
+
+const PRIVACY_NAME_MAX = 200;
+
 const FREE_TIER_DATABASE_BYTES = 500 * 1024 * 1024;
 
 // Operators only: how full the database is, so the limit is seen before it is reached.
@@ -1251,6 +1366,14 @@ async function route(request, env) {
     const oneContingency = path.match(/^\/api\/contingencies\/([^/]+)$/);
     if (oneContingency && UUID_PATTERN.test(oneContingency[1]) && method === "PATCH") return updateContingency(request, env, oneContingency[1]);
     if (oneContingency && UUID_PATTERN.test(oneContingency[1]) && method === "DELETE") return deleteContingency(request, env, oneContingency[1]);
+
+    const privacy = path.match(/^\/api\/workspaces\/([^/]+)\/privacy(?:\/(signoff|withdraw))?$/);
+    if (privacy && UUID_PATTERN.test(privacy[1])) {
+      const [, workspaceId, step] = privacy;
+      if (!step && method === "GET") return privacyStatus(request, env, workspaceId);
+      if (step === "signoff" && method === "POST") return privacySignOff(request, env, workspaceId);
+      if (step === "withdraw" && method === "POST") return privacyWithdraw(request, env, workspaceId);
+    }
 
     const ws = path.match(/^\/api\/workspaces\/([^/]+)\/(members|invitations)(?:\/(.+))?$/);
     if (ws && UUID_PATTERN.test(ws[1])) {

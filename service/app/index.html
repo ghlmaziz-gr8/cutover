@@ -331,6 +331,7 @@ pre{white-space:pre-wrap;word-break:break-word;background:var(--soft);padding:12
 
     <div class="row" id="homeTabs" style="margin-top:18px;gap:8px" role="tablist">
       <button type="button" class="small-btn" id="tabAnalyses" role="tab">Analyses</button>
+      <button type="button" class="ghost small-btn" id="tabPrivacy" role="tab" hidden>Privacy</button>
       <button type="button" class="ghost small-btn" id="tabWorkspaces" role="tab" hidden>Workspaces</button>
       <button type="button" class="ghost small-btn" id="tabGuide" role="tab">Guide</button>
     </div>
@@ -402,6 +403,14 @@ pre{white-space:pre-wrap;word-break:break-word;background:var(--soft);padding:12
       <p class="muted small" style="margin-top:6px">Counts are shown for every workspace. You see people only in workspaces you are invited into.</p>
       <div id="overviewList" style="margin-top:10px"></div>
       <p id="overviewMsg" class="muted small" role="status"></p>
+    </div>
+
+    <div class="card" id="privacyCard" hidden>
+      <h2>Privacy sign-off</h2>
+      <p class="muted small" style="margin-top:6px">Needed before this workspace can set up its own language model. Cutover keeps a record of who signed, the name typed, and the exact text accepted.</p>
+      <div id="privacyStatus" class="row" style="margin-top:14px;gap:8px"></div>
+      <div id="privacyBody" style="margin-top:14px"></div>
+      <p id="privacyMsg" class="muted small hint" role="status"></p>
     </div>
 
     <div class="card" id="adminCard" hidden>
@@ -920,7 +929,7 @@ pre{white-space:pre-wrap;word-break:break-word;background:var(--soft);padding:12
     const canAnalyse = !!ws;
     const canWork = !!((ws && ws.is_admin) || me.is_operator);
     const available = ["guide"];
-    if (canAnalyse) available.push("analyses");
+    if (canAnalyse) available.push("analyses", "privacy");
     if (canWork) available.push("workspaces");
     if (!available.includes(homeTab)) homeTab = canAnalyse ? "analyses" : canWork ? "workspaces" : "guide";
     const setTab = (id, key) => {
@@ -929,9 +938,12 @@ pre{white-space:pre-wrap;word-break:break-word;background:var(--soft);padding:12
       $(id).setAttribute("aria-selected", String(homeTab === key));
     };
     setTab("tabAnalyses", "analyses");
+    setTab("tabPrivacy", "privacy");
     setTab("tabWorkspaces", "workspaces");
     setTab("tabGuide", "guide");
     $("analysesCard").hidden = homeTab !== "analyses";
+    $("privacyCard").hidden = !(ws && homeTab === "privacy");
+    if (homeTab === "privacy" && ws) loadPrivacy();
     $("startNew").hidden = !(ws && ws.role === "platform_engineer");
     $("adminCard").hidden = !(ws && ws.is_admin && homeTab === "workspaces");
     $("operatorCard").hidden = !(me.is_operator && homeTab === "workspaces");
@@ -945,6 +957,7 @@ pre{white-space:pre-wrap;word-break:break-word;background:var(--soft);padding:12
 
   let homeTab = "analyses";
   $("tabAnalyses").addEventListener("click", () => { homeTab = "analyses"; showHome(); });
+  $("tabPrivacy").addEventListener("click", () => { homeTab = "privacy"; showHome(); });
   $("tabWorkspaces").addEventListener("click", () => { homeTab = "workspaces"; showHome(); });
   $("tabGuide").addEventListener("click", () => { homeTab = "guide"; showHome(); });
 
@@ -1418,6 +1431,140 @@ pre{white-space:pre-wrap;word-break:break-word;background:var(--soft);padding:12
     btn.addEventListener("click", onClick);
     item.append(body, btn);
     container.appendChild(item);
+  }
+
+  // ---- Privacy sign-off: shown in the Privacy tab of the workspace ----
+
+  async function loadPrivacy() {
+    const id = ws.id;
+    try {
+      const data = await api(`/api/workspaces/${id}/privacy`);
+      if (!ws || ws.id !== id || homeTab !== "privacy") return;
+      renderPrivacy(data);
+    } catch (err) {
+      setMsg("privacyMsg", err.message, true);
+    }
+  }
+
+  function renderPrivacy(data) {
+    const when = (iso) => (iso ? new Date(iso).toLocaleString() : "");
+    const status = $("privacyStatus");
+    const body = $("privacyBody");
+    status.innerHTML = "";
+    body.innerHTML = "";
+    status.appendChild(data.signed_off
+      ? el("span", `Signed off by ${data.current.full_name} on ${when(data.current.signed_at)}`, "chip")
+      : el("span", "Not signed off yet", "chip"));
+
+    body.appendChild(el("p", data.notice, "muted"));
+    const list = el("ul", null, "privacy-statements");
+    for (const s of data.statements) list.appendChild(el("li", s.text));
+    body.appendChild(list);
+
+    if (!data.can_change) {
+      body.appendChild(el("p", data.signed_off
+        ? "A workspace admin can withdraw this sign-off."
+        : "A workspace admin needs to sign off before this workspace can set up its own language model.", "muted small hint"));
+    } else if (!data.signed_off) {
+      body.appendChild(privacySignOffForm(data));
+    } else {
+      body.appendChild(privacyWithdrawForm());
+    }
+
+    if (data.history.length) {
+      body.appendChild(el("h3", "History"));
+      for (const h of data.history) {
+        const verb = h.action === "signed_off" ? "Signed off" : "Withdrew sign-off";
+        const row = el("div", null, "item");
+        const text = el("div", null, "grow");
+        text.append(el("b", `${verb}: ${h.full_name}`), el("div", `${h.email} · notice ${h.notice_version} · ${when(h.at)}`, "muted small"));
+        row.appendChild(text);
+        body.appendChild(row);
+      }
+    }
+  }
+
+  function privacySignOffForm(data) {
+    const form = el("form", null, "privacy-form");
+    const boxes = [];
+    const name = document.createElement("input");
+    const button = el("button", "Sign off for this workspace");
+    const ready = () => boxes.every((b) => b.checked) && name.value.trim().length >= 2;
+    const refresh = () => { button.disabled = !ready(); };
+    for (const s of data.statements) {
+      const label = el("label", null, "check");
+      const box = document.createElement("input");
+      box.type = "checkbox";
+      box.value = s.id;
+      box.addEventListener("change", refresh);
+      boxes.push(box);
+      label.append(box, document.createTextNode(` ${s.text}`));
+      form.appendChild(label);
+    }
+    name.type = "text";
+    name.placeholder = "Your full name";
+    name.autocomplete = "name";
+    name.maxLength = 200;
+    name.setAttribute("aria-label", "Your full name");
+    name.addEventListener("input", refresh);
+    button.type = "submit";
+    button.disabled = true;
+    form.append(el("label", "Type your full name to sign", null), name, button);
+    form.addEventListener("submit", async (e) => {
+      e.preventDefault();
+      if (!ready()) return;
+      button.disabled = true;
+      try {
+        await api(`/api/workspaces/${ws.id}/privacy/signoff`, {
+          method: "POST",
+          body: JSON.stringify({
+            notice_version: data.notice_version,
+            statements: boxes.filter((b) => b.checked).map((b) => b.value),
+            full_name: name.value.trim(),
+          }),
+        });
+        setMsg("privacyMsg", "Signed off. Language models can now be set up for this workspace.", false);
+        loadPrivacy();
+      } catch (err) {
+        setMsg("privacyMsg", err.message, true);
+        refresh();
+      }
+    });
+    form.appendChild(button);
+    return form;
+  }
+
+  function privacyWithdrawForm() {
+    const form = el("form", null, "privacy-form");
+    const name = document.createElement("input");
+    const button = el("button", "Withdraw sign-off", "ghost");
+    const ready = () => name.value.trim().length >= 2;
+    name.type = "text";
+    name.placeholder = "Your full name";
+    name.autocomplete = "name";
+    name.maxLength = 200;
+    name.setAttribute("aria-label", "Your full name");
+    name.addEventListener("input", () => { button.disabled = !ready(); });
+    button.type = "submit";
+    button.disabled = true;
+    form.append(el("label", "Type your full name to withdraw", null), name, button);
+    form.addEventListener("submit", async (e) => {
+      e.preventDefault();
+      if (!ready() || !window.confirm("Withdraw this sign-off? Stored model keys stop being usable until a new sign-off.")) return;
+      button.disabled = true;
+      try {
+        await api(`/api/workspaces/${ws.id}/privacy/withdraw`, {
+          method: "POST",
+          body: JSON.stringify({ full_name: name.value.trim() }),
+        });
+        setMsg("privacyMsg", "Sign-off withdrawn.", false);
+        loadPrivacy();
+      } catch (err) {
+        setMsg("privacyMsg", err.message, true);
+        button.disabled = !ready();
+      }
+    });
+    return form;
   }
 
   async function loadPeople() {

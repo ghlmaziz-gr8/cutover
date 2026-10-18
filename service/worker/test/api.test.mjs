@@ -121,6 +121,7 @@ function seed() {
         created_at: NOW, updated_at: NOW },
     ],
     deletion_log: [],
+    privacy_signoffs: [],
   };
 }
 
@@ -145,8 +146,12 @@ function matches(row, key, value) {
   throw new Error(`Unsupported filter ${value}`);
 }
 
+// Each new sign-off row gets a later time than the one before, so "newest first" is unambiguous.
+let signoffClock = Date.parse(NOW);
+
 function defaultsFor(table) {
   const base = { id: randomUUID(), created_at: NOW };
+  if (table === "privacy_signoffs") return { ...base, created_at: new Date(signoffClock += 1000).toISOString() };
   if (table === "analyses") return { ...base, status: "queued", findings: null, error: null, commit_sha: null, finished_at: null, expires_at: FAR_FUTURE };
   if (table === "action_items") return { ...base, status: "open", done_at: null, done_by_email: null };
   if (table === "members" || table === "invitations") return { is_admin: false, ...base };
@@ -875,3 +880,106 @@ test("if the deletions cannot be logged, the workspace is kept", async () => {
   assert.ok(state.workspaces.some((w) => w.id === W_ACME));
 });
 
+
+// ---- Privacy sign-off ----
+
+const SIGN = (name = "Ada Admin", overrides = {}) => ({
+  notice_version: "2026-10-18.1",
+  statements: ["code_only", "no_personal_data", "provider_terms", "withdraw"],
+  full_name: name,
+  ...overrides,
+});
+
+test("a member can read the sign-off status: not signed off yet, with the statements to read", async () => {
+  const res = await call(`/api/workspaces/${W_ACME}/privacy`, { as: "eng_a" });
+  assert.equal(res.status, 200);
+  assert.equal(res.body.signed_off, false);
+  assert.equal(res.body.current, null);
+  assert.equal(res.body.can_change, false);
+  assert.equal(res.body.statements.length, 4);
+  assert.equal(res.body.notice_version, "2026-10-18.1");
+});
+
+test("only a workspace admin is offered to sign off", async () => {
+  const res = await call(`/api/workspaces/${W_ACME}/privacy`, { as: "admin_a" });
+  assert.equal(res.body.can_change, true);
+});
+
+test("someone outside the workspace cannot read its sign-off status", async () => {
+  const stranger = await call(`/api/workspaces/${W_ACME}/privacy`, { as: "stranger" });
+  const otherCustomer = await call(`/api/workspaces/${W_ACME}/privacy`, { as: "eng_b" });
+  assert.equal(stranger.status, 404);
+  assert.equal(otherCustomer.status, 404);
+  assert.deepEqual(stranger.body, { error: "Not found." });
+});
+
+test("an admin signs off: the record holds who signed, the name typed, and the text the server holds", async () => {
+  const res = await call(`/api/workspaces/${W_ACME}/privacy/signoff`, {
+    method: "POST", as: "admin_a", body: SIGN("  Ada Admin  ", { notice_text: "forged text" }),
+  });
+  assert.equal(res.status, 201);
+  assert.equal(state.privacy_signoffs.length, 1);
+  const row = state.privacy_signoffs[0];
+  assert.equal(row.workspace_id, W_ACME);
+  assert.equal(row.email, PEOPLE.admin_a.email);
+  assert.equal(row.full_name, "Ada Admin");
+  assert.equal(row.action, "signed_off");
+  assert.equal(row.notice_version, "2026-10-18.1");
+  assert.match(row.notice_text, /Cutover can send code/);
+  assert.ok(!row.notice_text.includes("forged"), "the browser cannot change the recorded text");
+  assert.deepEqual(row.statements, ["code_only", "no_personal_data", "provider_terms", "withdraw"]);
+
+  const status = await call(`/api/workspaces/${W_ACME}/privacy`, { as: "eng_a" });
+  assert.equal(status.body.signed_off, true);
+  assert.equal(status.body.current.full_name, "Ada Admin");
+  assert.equal(status.body.current.email, PEOPLE.admin_a.email);
+});
+
+test("people who are not admins cannot sign off, and nothing is recorded", async () => {
+  const res = await call(`/api/workspaces/${W_ACME}/privacy/signoff`, { method: "POST", as: "eng_a", body: SIGN("Eli Engineer") });
+  assert.equal(res.status, 403);
+  assert.equal(state.privacy_signoffs.length, 0);
+});
+
+test("a sign-off needs every statement ticked, the current notice version, and a real name", async () => {
+  const path = `/api/workspaces/${W_ACME}/privacy/signoff`;
+  const partial = await call(path, { method: "POST", as: "admin_a", body: SIGN("Ada Admin", { statements: ["code_only"] }) });
+  assert.equal(partial.status, 400);
+  const outdated = await call(path, { method: "POST", as: "admin_a", body: SIGN("Ada Admin", { notice_version: "2026-01-01.0" }) });
+  assert.equal(outdated.status, 409);
+  const noName = await call(path, { method: "POST", as: "admin_a", body: SIGN("A") });
+  assert.equal(noName.status, 400);
+  assert.equal(state.privacy_signoffs.length, 0, "nothing recorded");
+});
+
+test("a workspace is signed off once; a second sign-off is refused", async () => {
+  const path = `/api/workspaces/${W_ACME}/privacy/signoff`;
+  await call(path, { method: "POST", as: "admin_a", body: SIGN() });
+  const again = await call(path, { method: "POST", as: "admin_a", body: SIGN() });
+  assert.equal(again.status, 409);
+  assert.equal(state.privacy_signoffs.length, 1);
+});
+
+test("withdrawing ends the sign-off, and both events stay in the history", async () => {
+  const path = `/api/workspaces/${W_ACME}/privacy`;
+  await call(`${path}/signoff`, { method: "POST", as: "admin_a", body: SIGN() });
+  const notAdmin = await call(`${path}/withdraw`, { method: "POST", as: "eng_a", body: { full_name: "Eli Engineer" } });
+  assert.equal(notAdmin.status, 403);
+  const withdrawn = await call(`${path}/withdraw`, { method: "POST", as: "admin_a", body: { full_name: "Ada Admin" } });
+  assert.equal(withdrawn.status, 201);
+  const status = await call(path, { as: "eng_a" });
+  assert.equal(status.body.signed_off, false);
+  assert.deepEqual(status.body.history.map((h) => h.action), ["withdrawn", "signed_off"]);
+  const again = await call(`${path}/withdraw`, { method: "POST", as: "admin_a", body: { full_name: "Ada Admin" } });
+  assert.equal(again.status, 409, "nothing left to withdraw");
+});
+
+test("sign-off rows are only read or inserted, never changed or deleted", async () => {
+  const path = `/api/workspaces/${W_ACME}/privacy`;
+  await call(`${path}/signoff`, { method: "POST", as: "admin_a", body: SIGN() });
+  await call(`${path}/withdraw`, { method: "POST", as: "admin_a", body: { full_name: "Ada Admin" } });
+  await call(path, { as: "admin_a" });
+  const touched = outbound.filter((c) => c.url.includes("/rest/v1/privacy_signoffs"));
+  assert.ok(touched.length > 0);
+  assert.ok(touched.every((c) => c.method === "GET" || c.method === "POST"), "no PATCH or DELETE on sign-off rows");
+});
