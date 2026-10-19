@@ -35,6 +35,7 @@
 //   POST   /api/runner/:id/files                          one chunk of file-level results, up to 200 files (shared secret)
 //   POST   /api/runner/:id/result                         runner callback with findings (shared secret)
 //   POST   /api/runner/:id/model-key                      one-time exchange of a model token for the key (shared secret + token)
+//   POST   /api/runner/:id/screens                        screens drawn from the code by the model (shared secret)
 //
 // A scheduled job deletes analyses past their expires_at, and writes a deletion record first.
 //
@@ -1001,9 +1002,17 @@ async function getAnalysis(request, env, id) {
     ...c,
     can_delete: author_id === user.id || isAdmin,
   }));
+  // Screens are UI, so they follow the UI category: the roles that may see UI findings see the drawn screens.
+  let screens = [];
+  if (seesCategory(member.role, "ui_portal")) {
+    const screensRes = await serviceRest(env, `analysis_screens?analysis_id=eq.${id}&select=id,path,name,html&order=path.asc`);
+    if (!screensRes.ok) return json({ error: "Could not load the analysis." }, 502);
+    screens = await screensRes.json();
+  }
   return json({
     ...analysis,
     findings: visibleReport(findings, member.role),
+    screens,
     is_mine: owner_id === user.id,
     can_delete: owner_id === user.id || isAdmin,
     viewer_role: member.role,
@@ -1014,6 +1023,74 @@ async function getAnalysis(request, env, id) {
     action_items: await actionsRes.json(),
     contingencies: await contingenciesRes.json(),
   });
+}
+
+// ---- Screens drawn by the workspace's own model from the code ----
+const SCREEN_MAX = 8;
+const SCREEN_MAX_CHARS = 40_000;
+// A drawn screen is a plain page. Anything that runs code, loads from elsewhere, or sends a form is refused.
+const SCREEN_REFUSED = [
+  /<\s*(script|iframe|frame|frameset|object|embed|link|meta|base|form|style\s+src)\b/i,
+  /\son[a-z]+\s*=/i,
+  /\b(src|href|action|poster|srcset|background|formaction)\s*=\s*["']?\s*(https?:|\/\/|data:|javascript:)/i,
+  /url\(\s*["']?\s*(https?:|\/\/|data:)/i,
+  /@import/i,
+  /javascript:/i,
+];
+
+function seesCategory(role, category) {
+  const allowed = Object.prototype.hasOwnProperty.call(ROLE_CATEGORIES, role) ? ROLE_CATEGORIES[role] : [];
+  return allowed === "all" || allowed.includes(category);
+}
+
+// Returns why a screen is refused, or null when it may be kept.
+function screenProblem(html) {
+  if (typeof html !== "string" || html.length < 50 || html.length > SCREEN_MAX_CHARS) {
+    return "Each screen must be HTML of 50 to 40,000 characters.";
+  }
+  if (!/<html|<body|<!doctype/i.test(html)) return "Each screen must be a complete HTML page.";
+  if (SCREEN_REFUSED.some((rx) => rx.test(html))) {
+    return "A screen used something a drawing may not use: scripts, links to other sites, forms or frames.";
+  }
+  return null;
+}
+
+// Saves the screens for one analysis, replacing any saved before. Only while the analysis is still running.
+async function runnerScreens(request, env, id) {
+  if (!timingSafeEqual(request.headers.get("x-runner-secret") || "", env.RUNNER_SECRET || "")) {
+    return json({ error: "Unauthorized." }, 401);
+  }
+  const found = await serviceRest(env, `analyses?id=eq.${id}&select=id,status`);
+  if (!found.ok) return json({ error: "Could not load the analysis." }, 502);
+  const [analysis] = await found.json();
+  if (!analysis) return json({ error: "Not found." }, 404);
+  if (analysis.status !== "queued" && analysis.status !== "running") {
+    return json({ error: "This analysis is no longer taking results." }, 409);
+  }
+  const parsed = await readJson(request, 400_000);
+  if (parsed.error) return json({ error: parsed.error }, 400);
+  const list = parsed.value?.screens;
+  if (!Array.isArray(list) || list.length === 0 || list.length > SCREEN_MAX) {
+    return json({ error: `Send 1 to ${SCREEN_MAX} screens.` }, 400);
+  }
+  const rows = [];
+  const paths = new Set();
+  for (const value of list) {
+    const path = typeof value?.path === "string" ? value.path.trim() : "";
+    const name = typeof value?.name === "string" ? value.name.trim() : "";
+    if (!path || path.length > 512) return json({ error: "Each screen needs a path of up to 512 characters." }, 400);
+    if (!name || name.length > 120) return json({ error: "Each screen needs a name of up to 120 characters." }, 400);
+    if (paths.has(path)) return json({ error: `The path ${path} appears twice.` }, 400);
+    const problem = screenProblem(value.html);
+    if (problem) return json({ error: problem }, 400);
+    paths.add(path);
+    rows.push({ analysis_id: id, path, name, html: value.html });
+  }
+  const cleared = await serviceRest(env, `analysis_screens?analysis_id=eq.${id}`, { method: "DELETE" });
+  if (!cleared.ok) return json({ error: "Could not save the screens." }, 502);
+  const made = await serviceRest(env, "analysis_screens", { method: "POST", headers: { prefer: "return=minimal" }, body: JSON.stringify(rows) });
+  if (!made.ok) return json({ error: "Could not save the screens." }, 502);
+  return json({ saved: rows.length }, 201);
 }
 
 async function deleteAnalysis(request, env, id) {
@@ -1690,6 +1767,11 @@ async function route(request, env) {
     const modelKey = path.match(/^\/api\/runner\/([^/]+)\/model-key$/);
     if (modelKey && UUID_PATTERN.test(modelKey[1]) && method === "POST") {
       return runnerModelKey(request, env, modelKey[1]);
+    }
+
+    const screensUpload = path.match(/^\/api\/runner\/([^/]+)\/screens$/);
+    if (screensUpload && UUID_PATTERN.test(screensUpload[1]) && method === "POST") {
+      return runnerScreens(request, env, screensUpload[1]);
     }
 
     const callback = path.match(/^\/api\/runner\/([^/]+)\/result$/);

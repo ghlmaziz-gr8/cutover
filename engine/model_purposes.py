@@ -29,6 +29,8 @@ import urllib.request
 from pathlib import Path
 from typing import Callable
 
+from model_screens import (SCREEN_MAX_TOKENS, SCREEN_PROMPT, ScreenError, StopDrawing, draw_screens, post_screens)
+
 MODEL_CATEGORIES = {"source", "template", "database", "integration"}
 MAX_MODEL_FILES = 200
 MAX_FILE_CHARS = 20_000
@@ -76,19 +78,20 @@ def build_user_text(path: str, code: str) -> str:
     return f"File path: {path}\n\n<file>\n{code}\n</file>"
 
 
-def build_request(provider: str, model: str, api_key: str, user_text: str) -> tuple[str, dict, bytes]:
+def build_request(provider: str, model: str, api_key: str, user_text: str,
+                  system: str = SYSTEM, max_tokens: int = 160) -> tuple[str, dict, bytes]:
     """Returns the URL, headers and body for one request. The key only ever goes in a header."""
     if provider == "anthropic":
         url = "https://api.anthropic.com/v1/messages"
         headers = {"content-type": "application/json", "x-api-key": api_key, "anthropic-version": "2023-06-01"}
-        body = {"model": model, "max_tokens": 160, "system": SYSTEM,
+        body = {"model": model, "max_tokens": max_tokens, "system": system,
                 "messages": [{"role": "user", "content": user_text}]}
     elif provider == "google":
         url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
         headers = {"content-type": "application/json", "x-goog-api-key": api_key}
-        body = {"systemInstruction": {"parts": [{"text": SYSTEM}]},
+        body = {"systemInstruction": {"parts": [{"text": system}]},
                 "contents": [{"role": "user", "parts": [{"text": user_text}]}],
-                "generationConfig": {"maxOutputTokens": 160}}
+                "generationConfig": {"maxOutputTokens": max_tokens}}
     else:
         raise ProviderError(f"unknown provider {provider}")
     return url, {**headers, "user-agent": "cutover-runner"}, json.dumps(body).encode("utf-8")
@@ -132,8 +135,9 @@ def accept_purpose(reply: str, code: str) -> str | None:
     return text
 
 
-def call_provider(provider: str, model: str, api_key: str, user_text: str, opener=urllib.request.urlopen) -> str:
-    url, headers, body = build_request(provider, model, api_key, user_text)
+def call_provider(provider: str, model: str, api_key: str, user_text: str, opener=urllib.request.urlopen,
+                  system: str = SYSTEM, max_tokens: int = 160) -> str:
+    url, headers, body = build_request(provider, model, api_key, user_text, system=system, max_tokens=max_tokens)
     req = urllib.request.Request(url, data=body, method="POST", headers=headers)
     try:
         with opener(req, timeout=60) as res:
@@ -249,19 +253,43 @@ def main(argv=None, opener=urllib.request.urlopen) -> int:
         return 1
 
     provider, model, api_key = release["provider"], release["model"], release["api_key"]
+    read_source = make_source_reader(Path(args.source))
     stats = apply_purposes(
         records,
-        make_source_reader(Path(args.source)),
+        read_source,
         lambda record, code: call_provider(provider, model, api_key, build_user_text(record["path"], code), opener=opener),
     )
-    del release, api_key
-
     if stats["model"]:
         with open(args.records, "w", encoding="utf-8") as fh:
             json.dump(records, fh, separators=(",", ":"))
     print(f"{provider}: {stats['model']} file purposes written by the model, {stats['rules']} kept rule-based.")
     if stats["stopped"]:
         print(f"The provider refused the key or limited requests (HTTP {stats['stopped']}). The rest stay rule-based.")
+        del release, api_key
+        return 0
+
+    # Screens: the same key, the same run. Only when the provider has not refused the key.
+    def draw(record, code):
+        try:
+            return call_provider(provider, model, api_key, build_user_text(record["path"], code), opener=opener,
+                                 system=SCREEN_PROMPT, max_tokens=SCREEN_MAX_TOKENS)
+        except ProviderStopped as err:
+            raise StopDrawing(err.status)
+        except ProviderError:
+            raise ScreenError("request failed")
+
+    screens, screen_stats = draw_screens(records, read_source, draw)
+    del release, api_key
+    if screen_stats["stopped"]:
+        print(f"The provider refused the key or limited requests while drawing screens (HTTP {screen_stats['stopped']}).")
+    if screens:
+        status = post_screens(args.callback, args.analysis_id, secret, screens, opener=opener)
+        if status == 201:
+            print(f"{len(screens)} screens drawn from the code and saved; {screen_stats['refused']} refused.")
+        else:
+            print(f"The screens could not be saved (HTTP {status}). The analysis continues without them.")
+    else:
+        print(f"No screens drawn; {screen_stats['refused']} refused.")
     return 0
 
 

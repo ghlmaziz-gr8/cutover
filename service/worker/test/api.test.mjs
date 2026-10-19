@@ -132,6 +132,7 @@ function seed() {
     privacy_signoffs: [],
     model_keys: [],
     analysis_model_tokens: [],
+    analysis_screens: [],
   };
 }
 
@@ -1332,4 +1333,75 @@ test("the file list tells the app which purposes the model wrote", async () => {
   const list = await call(`/api/analyses/${AN_RUNNING}/files`, { as: "eng_a" });
   assert.equal(list.status, 200);
   assert.ok(JSON.stringify(list.body).includes('"purpose_source":"model"'));
+});
+
+// ---- Screens drawn by the workspace's own model from the code ----
+
+const SCREEN_HTML = "<!doctype html><html><body><h1>Appointments</h1><p>Sample visit: 10:30, Room 4</p></body></html>";
+const screen = (path, extra = {}) => ({ path, name: `Screen ${path}`, html: SCREEN_HTML, ...extra });
+
+test("the runner needs the shared secret, and screens are refused once the analysis is finished", async () => {
+  runningAnalysis();
+  const wrong = await call(`/api/runner/${AN_RUNNING}/screens`, { method: "POST", body: { screens: [screen("a.html")] }, secret: "wrong" });
+  assert.equal(wrong.status, 401);
+  const finished = await call(`/api/runner/${AN_ACME}/screens`, { method: "POST", body: { screens: [screen("a.html")] }, secret: env.RUNNER_SECRET });
+  assert.equal(finished.status, 409);
+  const missing = await call(`/api/runner/${uid(999)}/screens`, { method: "POST", body: { screens: [screen("a.html")] }, secret: env.RUNNER_SECRET });
+  assert.equal(missing.status, 404);
+});
+
+test("drawn screens are saved, and a later upload replaces the earlier ones", async () => {
+  runningAnalysis();
+  const first = await call(`/api/runner/${AN_RUNNING}/screens`, { method: "POST", body: { screens: [screen("a.html"), screen("b.html")] }, secret: env.RUNNER_SECRET });
+  assert.equal(first.status, 201);
+  assert.equal(first.body.saved, 2);
+  const again = await call(`/api/runner/${AN_RUNNING}/screens`, { method: "POST", body: { screens: [screen("c.html")] }, secret: env.RUNNER_SECRET });
+  assert.equal(again.status, 201);
+  const kept = state.analysis_screens.filter((s) => s.analysis_id === AN_RUNNING).map((s) => s.path);
+  assert.deepEqual(kept, ["c.html"]);
+});
+
+test("a screen that runs code, loads from elsewhere, or sends a form is refused, and nothing is saved", async () => {
+  runningAnalysis();
+  const refused = [
+    "<!doctype html><html><body><script>alert(1)</script></body></html>",
+    "<!doctype html><html><body><p onclick=\"x()\">Visit</p></body></html>",
+    "<!doctype html><html><body><img src=\"https://example.test/a.png\"></body></html>",
+    "<!doctype html><html><body><iframe src=\"x.html\"></iframe></body></html>",
+    "<!doctype html><html><body><form action=\"/send\"><input></form></body></html>",
+    "<!doctype html><html><head><style>@import url(x.css);</style></head><body>Visit</body></html>",
+    "<!doctype html><html><body><a href=\"javascript:alert(1)\">Visit</a></body></html>",
+    "<div>A fragment without a page around it, long enough to pass the length check.</div>",
+  ];
+  for (const html of refused) {
+    const res = await call(`/api/runner/${AN_RUNNING}/screens`, { method: "POST", body: { screens: [screen("x.html", { html })] }, secret: env.RUNNER_SECRET });
+    assert.equal(res.status, 400, html);
+  }
+  assert.equal(state.analysis_screens.filter((s) => s.analysis_id === AN_RUNNING).length, 0);
+});
+
+test("the screen list is checked: count, paths, names and size", async () => {
+  runningAnalysis();
+  const send = (screens) => call(`/api/runner/${AN_RUNNING}/screens`, { method: "POST", body: { screens }, secret: env.RUNNER_SECRET });
+  assert.equal((await send([])).status, 400);
+  assert.equal((await send(Array.from({ length: 9 }, (_, i) => screen(`p${i}.html`)))).status, 400);
+  assert.equal((await send([screen("a.html"), screen("a.html")])).status, 400);
+  assert.equal((await send([screen("a.html", { name: "" })])).status, 400);
+  const big = "<!doctype html><html><body>" + "x".repeat(40_001) + "</body></html>";
+  assert.equal((await send([screen("a.html", { html: big })])).status, 400);
+});
+
+test("the people who may see UI findings see the drawn screens; others do not", async () => {
+  runningAnalysis();
+  await call(`/api/runner/${AN_RUNNING}/screens`, { method: "POST", body: { screens: [screen("a.html")] }, secret: env.RUNNER_SECRET });
+  state.analyses.find((a) => a.id === AN_RUNNING).status = "complete";
+  const engineer = await call(`/api/analyses/${AN_RUNNING}`, { as: "eng_a" });
+  assert.equal(engineer.body.screens.length, 1);
+  assert.equal(engineer.body.screens[0].path, "a.html");
+  const cio = await call(`/api/analyses/${AN_RUNNING}`, { as: "cio_a" });
+  assert.equal(cio.body.screens.length, 1, "the CIO sees UI findings");
+  const security = await call(`/api/analyses/${AN_RUNNING}`, { as: "sec_a" });
+  assert.deepEqual(security.body.screens, []);
+  const auditor = await call(`/api/analyses/${AN_RUNNING}`, { as: "aud_a" });
+  assert.deepEqual(auditor.body.screens, []);
 });
