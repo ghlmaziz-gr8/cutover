@@ -413,6 +413,14 @@ pre{white-space:pre-wrap;word-break:break-word;background:var(--soft);padding:12
       <p id="privacyMsg" class="muted small hint" role="status"></p>
     </div>
 
+    <div class="card" id="modelsCard" hidden>
+      <h2>Language model</h2>
+      <p class="muted small" style="margin-top:6px">The workspace uses its own key from a language model provider. Cutover tests the key before saving it. The key is stored encrypted, and only its last four characters are shown again.</p>
+      <div id="modelKeyList" style="margin-top:14px"></div>
+      <div id="modelKeyForm" style="margin-top:14px"></div>
+      <p id="modelMsg" class="muted small hint" role="status"></p>
+    </div>
+
     <div class="card" id="adminCard" hidden>
       <h2>People in this workspace</h2>
       <p class="muted small" style="margin-top:6px">Invited people can sign in with Google, using that exact email address. They see only this workspace.</p>
@@ -943,6 +951,7 @@ pre{white-space:pre-wrap;word-break:break-word;background:var(--soft);padding:12
     setTab("tabGuide", "guide");
     $("analysesCard").hidden = homeTab !== "analyses";
     $("privacyCard").hidden = !(ws && homeTab === "privacy");
+    $("modelsCard").hidden = !(ws && homeTab === "privacy");
     if (homeTab === "privacy" && ws) loadPrivacy();
     $("startNew").hidden = !(ws && ws.role === "platform_engineer");
     $("adminCard").hidden = !(ws && ws.is_admin && homeTab === "workspaces");
@@ -1435,12 +1444,16 @@ pre{white-space:pre-wrap;word-break:break-word;background:var(--soft);padding:12
 
   // ---- Privacy sign-off: shown in the Privacy tab of the workspace ----
 
+  let privacyNow = null; // the last sign-off status loaded, so the model card can check it
+
   async function loadPrivacy() {
     const id = ws.id;
     try {
       const data = await api(`/api/workspaces/${id}/privacy`);
       if (!ws || ws.id !== id || homeTab !== "privacy") return;
+      privacyNow = data;
       renderPrivacy(data);
+      loadModelKeys();
     } catch (err) {
       setMsg("privacyMsg", err.message, true);
     }
@@ -1562,6 +1575,102 @@ pre{white-space:pre-wrap;word-break:break-word;background:var(--soft);padding:12
       } catch (err) {
         setMsg("privacyMsg", err.message, true);
         button.disabled = !ready();
+      }
+    });
+    return form;
+  }
+
+  // ---- Language model keys ----
+
+  async function loadModelKeys() {
+    const id = ws.id;
+    try {
+      const data = await api(`/api/workspaces/${id}/model-keys`);
+      if (!ws || ws.id !== id || homeTab !== "privacy") return;
+      renderModelKeys(data);
+    } catch (err) {
+      setMsg("modelMsg", err.message, true);
+    }
+  }
+
+  function renderModelKeys(data) {
+    const list = $("modelKeyList");
+    const form = $("modelKeyForm");
+    list.innerHTML = "";
+    form.innerHTML = "";
+    if (!data.keys.length) list.appendChild(el("p", "No language model is set up for this workspace yet.", "muted small"));
+    for (const k of data.keys) {
+      const provider = (data.providers.find((p) => p.id === k.provider) || {}).label || k.provider;
+      const item = el("div", null, "item");
+      const body = el("div", null, "grow");
+      body.append(el("b", `${provider} · ends in ${k.last4}`), el("div", `added by ${k.added_by_email} · ${new Date(k.added_at).toLocaleString()}`, "muted small"));
+      item.appendChild(body);
+      if (data.can_change) {
+        const remove = el("button", "Remove", "ghost small-btn");
+        remove.type = "button";
+        remove.addEventListener("click", async () => {
+          if (!window.confirm("Remove this key? Cutover will stop using it.")) return;
+          remove.disabled = true;
+          try {
+            await api(`/api/workspaces/${ws.id}/model-keys/${k.id}`, { method: "DELETE" });
+            setMsg("modelMsg", "Key removed.", false);
+            loadModelKeys();
+          } catch (err) {
+            setMsg("modelMsg", err.message, true);
+            remove.disabled = false;
+          }
+        });
+        item.appendChild(remove);
+      }
+      list.appendChild(item);
+    }
+
+    if (!privacyNow || !privacyNow.signed_off) {
+      form.appendChild(el("p", "Sign off the privacy notice above before adding a model key.", "muted small hint"));
+    } else if (!data.can_change) {
+      form.appendChild(el("p", "A workspace admin can add a key here.", "muted small hint"));
+    } else if (!data.keys.some((k) => k.provider === data.providers[0].id)) {
+      form.appendChild(modelKeyForm(data));
+    }
+  }
+
+  function modelKeyForm(data) {
+    const form = el("form", null, "model-key-form");
+    const provider = document.createElement("select");
+    for (const p of data.providers) {
+      const option = document.createElement("option");
+      option.value = p.id;
+      option.textContent = p.label;
+      provider.appendChild(option);
+    }
+    const label = el("label", "Key", null);
+    label.htmlFor = "modelKeyInput";
+    const input = document.createElement("input");
+    input.id = "modelKeyInput";
+    input.type = "password";
+    input.autocomplete = "off";
+    input.spellcheck = false;
+    input.placeholder = "Paste the whole key";
+    const button = el("button", "Test and save");
+    button.type = "submit";
+    form.append(el("label", "Provider", null), provider, label, input, button);
+    form.addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const apiKey = input.value.trim();
+      if (!apiKey) return;
+      button.disabled = true;
+      setMsg("modelMsg", "Testing the key with the provider…", false);
+      try {
+        await api(`/api/workspaces/${ws.id}/model-keys`, {
+          method: "POST",
+          body: JSON.stringify({ provider: provider.value, api_key: apiKey }),
+        });
+        input.value = "";
+        setMsg("modelMsg", "Connected and saved. Only the last four characters are shown from now on.", false);
+        loadModelKeys();
+      } catch (err) {
+        setMsg("modelMsg", err.message, true);
+        button.disabled = false;
       }
     });
     return form;
