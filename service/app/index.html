@@ -125,6 +125,9 @@ pre{white-space:pre-wrap;word-break:break-word;background:var(--soft);padding:12
 .steps{list-style:none;padding:0;margin:0;display:grid;gap:10px}
 .steps li{display:flex;gap:12px;align-items:center;padding:10px 14px;border-radius:14px;background:var(--card);border:1px solid var(--line)}
 .tick{width:22px;height:22px;border-radius:50%;border:2px solid var(--line);flex:0 0 auto;display:grid;place-items:center}
+.runWait{margin:12px 0 0;padding:12px 14px;border-radius:12px;background:#fff;border:1px solid var(--soft);max-width:720px}
+.runWaitTime{margin:0;font-weight:700;font-size:14px}
+.runWaitNote{margin:4px 0 0;font-size:14px;opacity:.8}
 #s-run.is-running .tick{border-color:var(--accent3);border-top-color:transparent;animation:spin .8s linear infinite}
 #s-run.is-done .tick{background:var(--ok);border-color:var(--ok)}
 #s-run.is-done .tick::after{content:"✓";color:#fff;font-size:12px;font-weight:800}
@@ -514,6 +517,10 @@ pre{white-space:pre-wrap;word-break:break-word;background:var(--soft);padding:12
     <p class="eyebrow">Step 6</p>
     <h2 style="margin:8px 0 6px" id="runTitle">Analyzing</h2>
     <p class="muted" id="runStatus"></p>
+    <div class="runWait" id="runWait" hidden>
+      <p class="runWaitTime" id="runWaitTime"></p>
+      <p class="runWaitNote" id="runWaitNote"></p>
+    </div>
     <div class="row wzNav" style="margin:14px 0 4px">
       <button type="button" class="ghost" id="runBackTop">Back to analyses</button>
       <button type="button" id="viewFindingsTop" disabled>View findings</button>
@@ -1816,6 +1823,7 @@ pre{white-space:pre-wrap;word-break:break-word;background:var(--soft);padding:12
       : st === "running" ? `Running. ${aiStageName(cur)}. This page updates by itself. You can leave and come back.`
       : done ? `Analysis complete. ${flags === 0 ? "Nothing needs your review right now." : `${flags} ${flags === 1 ? "item needs" : "items need"} your review.`}`
       : (cur.error || "The analysis failed.");
+    updateWait();
 
     const arc = $("ringArc");
     $("ring").classList.toggle("running", st === "running");
@@ -1917,6 +1925,35 @@ pre{white-space:pre-wrap;word-break:break-word;background:var(--soft);padding:12
       if (cur.status === "queued" || cur.status === "running") watchRun();
     }, 5000);
   }
+
+  // The waiting note: how long the run has taken, what to expect, and what the AI is doing right now.
+  const WAIT_LINES = [
+    "An AI model is reading your code one file at a time, working out what each part of the application does.",
+    "It is sketching the screens it finds in your code, with sample data, so you can see what the app looks like.",
+    "Think of it as a careful reader: it notices the pages, the data, and the parts that touch patient information.",
+    "Your repository is not changed. Source code is read for this review and not stored.",
+  ];
+  function formatElapsed(sec) {
+    return `${Math.floor(sec / 60)}:${String(sec % 60).padStart(2, "0")}`;
+  }
+  function updateWait() {
+    const box = $("runWait");
+    const st = cur && cur.status;
+    if (!box || (st !== "queued" && st !== "running")) {
+      if (box) box.hidden = true;
+      return;
+    }
+    const started = Date.parse(cur.created_at);
+    const sec = Number.isFinite(started) ? Math.max(0, Math.floor((Date.now() - started) / 1000)) : 0;
+    const ai = Boolean(cur.model_provider);
+    const late = sec > (ai ? 8 * 60 : 5 * 60);
+    $("runWaitTime").textContent = `Elapsed ${formatElapsed(sec)}. Expected wait: ${ai ? "about 5 to 8 minutes with AI" : "a few minutes"}.`;
+    $("runWaitNote").textContent = late
+      ? "This is taking longer than usual. Larger codebases need more time. You can leave this page; the analysis keeps running."
+      : WAIT_LINES[Math.floor(sec / 12) % WAIT_LINES.length];
+    box.hidden = false;
+  }
+  setInterval(() => { if (!$("s-run").hidden) updateWait(); }, 1000);
 
   $("runBack").addEventListener("click", () => showHome());
   $("viewFindings").addEventListener("click", () => showReview());
