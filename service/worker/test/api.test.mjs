@@ -131,6 +131,7 @@ function seed() {
     deletion_log: [],
     privacy_signoffs: [],
     model_keys: [],
+    analysis_model_tokens: [],
   };
 }
 
@@ -152,6 +153,7 @@ function matches(row, key, value) {
   if (value.startsWith("eq.")) return String(row[key]) === value.slice(3);
   if (value.startsWith("in.(")) return value.slice(4, -1).split(",").includes(String(row[key]));
   if (value.startsWith("lt.")) return String(row[key]) < value.slice(3);
+  if (value === "is.null") return row[key] === null || row[key] === undefined;
   throw new Error(`Unsupported filter ${value}`);
 }
 
@@ -163,6 +165,7 @@ function defaultsFor(table) {
   if (table === "privacy_signoffs") return { ...base, created_at: new Date(signoffClock += 1000).toISOString() };
   if (table === "analyses") return { ...base, status: "queued", findings: null, error: null, commit_sha: null, finished_at: null, expires_at: FAR_FUTURE };
   if (table === "action_items") return { ...base, status: "open", done_at: null, done_by_email: null };
+  if (table === "analysis_model_tokens") return { ...base, used_at: null };
   if (table === "members" || table === "invitations") return { is_admin: false, ...base };
   return base;
 }
@@ -192,6 +195,7 @@ function handleRest(url, init) {
 
   if (method === "POST") {
     if (table === "deletion_log" && failLog) return j({ message: "forced failure" }, 500);
+    if (table === "analysis_model_tokens" && github.failTokens) return j({ message: "forced failure" }, 500);
     const body = JSON.parse(init.body);
     const list = Array.isArray(body) ? body : [body];
     const onConflict = u.searchParams.get("on_conflict")?.split(",");
@@ -1149,4 +1153,148 @@ test("a Google key the provider refuses is not saved, with a Google-specific rea
   assert.equal(res.status, 400);
   assert.match(res.body.error, /Google did not accept this key/);
   assert.equal(state.model_keys.length, 0);
+});
+
+// ---- A model for an analysis, and the one-time release of its key to the runner ----
+
+const MODEL_TOKEN_SHAPE = /^[A-Za-z0-9_-]{20,100}$/;
+const LATER = "2026-10-18T13:00:00.000Z";
+
+async function addGoogleKey(workspaceId = W_ACME, as = "admin_a") {
+  signedOff(workspaceId);
+  const res = await call(KEYS(workspaceId), { method: "POST", as, body: { provider: "google", api_key: GOOD_GOOGLE_KEY } });
+  assert.equal(res.status, 201);
+  return res.body.id;
+}
+
+function withdraw(workspaceId = W_ACME, at = LATER) {
+  state.privacy_signoffs.push({
+    id: randomUUID(), workspace_id: workspaceId, user_id: PEOPLE.admin_a.id, email: PEOPLE.admin_a.email,
+    full_name: "Ada Admin", action: "withdrawn", notice_version: "2026-10-18.1", notice_text: "text", statements: [], created_at: at,
+  });
+}
+
+test("starting with a model records its provider, key and sign-off, and the runner gets a token, not the key", async () => {
+  const keyId = await addGoogleKey();
+  const res = await call("/api/analyses", { as: "eng_a", method: "POST", body: { ...START, workspace_id: W_ACME, model_key_id: keyId } });
+  assert.equal(res.status, 202);
+  const row = state.analyses.find((a) => a.id === res.body.id);
+  assert.equal(row.model_provider, "google");
+  assert.equal(row.model_key_id, keyId);
+  assert.equal(row.model_notice_version, "2026-10-18.1");
+  assert.equal(row.model_chosen_by_email, PEOPLE.eng_a.email);
+  const token = github.dispatches[0].inputs.model_token;
+  assert.match(token, MODEL_TOKEN_SHAPE);
+  assert.ok(!JSON.stringify(github.dispatches).includes(GOOD_GOOGLE_KEY), "the key never goes to GitHub");
+  assert.equal(state.analysis_model_tokens.length, 1);
+  assert.equal(state.analysis_model_tokens[0].token_hash.length, 64, "only a SHA-256 hash of the token is stored");
+  assert.ok(!JSON.stringify(state.analysis_model_tokens).includes(token), "the token itself is not stored");
+});
+
+test("starting without a model sends an empty token and records no model", async () => {
+  const res = await call("/api/analyses", { as: "eng_a", method: "POST", body: { ...START, workspace_id: W_ACME } });
+  assert.equal(res.status, 202);
+  const row = state.analyses.find((a) => a.id === res.body.id);
+  assert.equal(row.model_provider ?? null, null);
+  assert.equal(github.dispatches[0].inputs.model_token, "");
+  assert.equal(state.analysis_model_tokens.length, 0);
+});
+
+test("a model needs a current sign-off, a key of this workspace, and a key that is still active", async () => {
+  const keyId = await addGoogleKey();
+  const betaKey = await addGoogleKey(W_BETA, "eng_b");
+  const otherWorkspace = await call("/api/analyses", { as: "eng_a", method: "POST", body: { ...START, workspace_id: W_ACME, model_key_id: betaKey } });
+  assert.equal(otherWorkspace.status, 400);
+
+  const notAKey = await call("/api/analyses", { as: "eng_a", method: "POST", body: { ...START, workspace_id: W_ACME, model_key_id: "not-a-key" } });
+  assert.equal(notAKey.status, 400);
+
+  withdraw();
+  const withdrawn = await call("/api/analyses", { as: "eng_a", method: "POST", body: { ...START, workspace_id: W_ACME, model_key_id: keyId } });
+  assert.equal(withdrawn.status, 409);
+
+  state.privacy_signoffs.push({ ...state.privacy_signoffs[0], id: randomUUID(), action: "signed_off", created_at: "2026-10-18T14:00:00.000Z" });
+  await call(`${KEYS()}/${keyId}`, { method: "DELETE", as: "admin_a" });
+  const removed = await call("/api/analyses", { as: "eng_a", method: "POST", body: { ...START, workspace_id: W_ACME, model_key_id: keyId } });
+  assert.equal(removed.status, 400);
+  assert.equal(github.dispatches.length, 0, "nothing is started when the model is refused");
+});
+
+test("the runner trades its token once for the key; wrong, reused, or misdirected tokens get nothing", async () => {
+  const keyId = await addGoogleKey();
+  const started = await call("/api/analyses", { as: "eng_a", method: "POST", body: { ...START, workspace_id: W_ACME, model_key_id: keyId } });
+  const token = github.dispatches[0].inputs.model_token;
+  const path = `/api/runner/${started.body.id}/model-key`;
+
+  assert.equal((await call(path, { method: "POST", secret: "wrong", body: { token } })).status, 401, "the shared secret is needed");
+  assert.equal((await call(path, { method: "POST", secret: env.RUNNER_SECRET, body: { token: "x".repeat(30) } })).status, 401, "a wrong token gets nothing");
+  assert.equal((await call(path, { method: "POST", secret: env.RUNNER_SECRET, body: { token: "short" } })).status, 401, "a malformed token gets nothing");
+  assert.equal((await call(`/api/runner/${AN_RUNNING}/model-key`, { method: "POST", secret: env.RUNNER_SECRET, body: { token } })).status, 401, "a token only works for its own analysis");
+
+  const released = await call(path, { method: "POST", secret: env.RUNNER_SECRET, body: { token } });
+  assert.equal(released.status, 200);
+  assert.deepEqual(released.body, { provider: "google", model: "gemini-3.5-flash", api_key: GOOD_GOOGLE_KEY });
+  assert.equal(released.body.api_key, GOOD_GOOGLE_KEY);
+
+  const again = await call(path, { method: "POST", secret: env.RUNNER_SECRET, body: { token } });
+  assert.equal(again.status, 401, "a second use gets nothing");
+  assert.ok(!JSON.stringify(again.body).includes(GOOD_GOOGLE_KEY));
+});
+
+test("a token expires after ten minutes", async () => {
+  const keyId = await addGoogleKey();
+  const started = await call("/api/analyses", { as: "eng_a", method: "POST", body: { ...START, workspace_id: W_ACME, model_key_id: keyId } });
+  const token = github.dispatches[0].inputs.model_token;
+  state.analysis_model_tokens[0].expires_at = LONG_AGO;
+  const res = await call(`/api/runner/${started.body.id}/model-key`, { method: "POST", secret: env.RUNNER_SECRET, body: { token } });
+  assert.equal(res.status, 401);
+  assert.equal(state.analysis_model_tokens[0].used_at, null, "an expired token is not used up");
+});
+
+test("a withdrawn sign-off or a removed key stops the release, and the token is kept for a later try", async () => {
+  const keyId = await addGoogleKey();
+  const started = await call("/api/analyses", { as: "eng_a", method: "POST", body: { ...START, workspace_id: W_ACME, model_key_id: keyId } });
+  const token = github.dispatches[0].inputs.model_token;
+  const path = `/api/runner/${started.body.id}/model-key`;
+
+  withdraw();
+  const refused = await call(path, { method: "POST", secret: env.RUNNER_SECRET, body: { token } });
+  assert.equal(refused.status, 403);
+  assert.equal(state.analysis_model_tokens[0].used_at, null, "the refusal does not use up the token");
+
+  state.privacy_signoffs.push({ ...state.privacy_signoffs[0], id: randomUUID(), action: "signed_off", created_at: "2026-10-18T14:00:00.000Z" });
+  const later = await call(path, { method: "POST", secret: env.RUNNER_SECRET, body: { token } });
+  assert.equal(later.status, 200);
+});
+
+test("a key removed after the analysis started is not released", async () => {
+  const keyId = await addGoogleKey();
+  const started = await call("/api/analyses", { as: "eng_a", method: "POST", body: { ...START, workspace_id: W_ACME, model_key_id: keyId } });
+  const token = github.dispatches[0].inputs.model_token;
+  await call(`${KEYS()}/${keyId}`, { method: "DELETE", as: "admin_a" });
+  const res = await call(`/api/runner/${started.body.id}/model-key`, { method: "POST", secret: env.RUNNER_SECRET, body: { token } });
+  assert.equal(res.status, 403);
+});
+
+test("the analysis shows which model it used, never the key or the token", async () => {
+  const keyId = await addGoogleKey();
+  const started = await call("/api/analyses", { as: "eng_a", method: "POST", body: { ...START, workspace_id: W_ACME, model_key_id: keyId } });
+  const token = github.dispatches[0].inputs.model_token;
+  const res = await call(`/api/analyses/${started.body.id}`, { as: "eng_a" });
+  assert.equal(res.status, 200);
+  assert.equal(res.body.model_provider, "google");
+  assert.equal(res.body.model_notice_version, "2026-10-18.1");
+  const text = JSON.stringify(res.body);
+  assert.ok(!text.includes(GOOD_GOOGLE_KEY));
+  assert.ok(!text.includes(token));
+});
+
+test("if the token cannot be saved, the analysis is marked failed and the runner is not started", async () => {
+  const keyId = await addGoogleKey();
+  github.failTokens = true;
+  const res = await call("/api/analyses", { as: "eng_a", method: "POST", body: { ...START, workspace_id: W_ACME, model_key_id: keyId } });
+  assert.equal(res.status, 502);
+  assert.equal(github.dispatches.length, 0);
+  const row = state.analyses[state.analyses.length - 1];
+  assert.equal(row.status, "failed");
 });

@@ -34,6 +34,7 @@
 //   PATCH  /api/file-findings/:id                         approve or edit one file's purpose and suggestions (platform engineers)
 //   POST   /api/runner/:id/files                          one chunk of file-level results, up to 200 files (shared secret)
 //   POST   /api/runner/:id/result                         runner callback with findings (shared secret)
+//   POST   /api/runner/:id/model-key                      one-time exchange of a model token for the key (shared secret + token)
 //
 // A scheduled job deletes analyses past their expires_at, and writes a deletion record first.
 //
@@ -563,8 +564,8 @@ const PRIVACY_NAME_MAX = 200;
 // The key is encrypted with AES-GCM before it is saved. Only the last four characters are ever shown again.
 // A key is tested with one tiny request before it is saved, so a saved key is known to work.
 const MODEL_PROVIDERS = {
-  anthropic: { label: "Anthropic (Claude)", name: "Anthropic", testModel: "claude-haiku-5-5" },
-  google: { label: "Google (Gemini)", name: "Google", testModel: "gemini-3.5-flash" },
+  anthropic: { label: "Anthropic (Claude)", name: "Anthropic", testModel: "claude-haiku-5-5", runModel: "claude-haiku-5-5" },
+  google: { label: "Google (Gemini)", name: "Google", testModel: "gemini-3.5-flash", runModel: "gemini-3.5-flash" },
 };
 const MODEL_KEY_MIN = 20;
 const MODEL_KEY_MAX = 300;
@@ -712,6 +713,99 @@ async function removeModelKey(request, env, workspaceId, keyId) {
   return json({ removed: true });
 }
 
+// ---- Model for an analysis: the workspace's own key, released once to the runner ----
+// A new analysis may name one of the workspace's active keys. The Worker checks the sign-off and the key,
+// then issues a one-time token. The runner trades the token for the key once. The key never reaches the browser.
+const MODEL_TOKEN_TTL_MS = 10 * 60 * 1000;
+
+async function sha256Hex(text) {
+  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(text));
+  return [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, "0")).join("");
+}
+
+async function decryptModelKey(key, row) {
+  const plain = await crypto.subtle.decrypt({ name: "AES-GCM", iv: base64ToBytes(row.iv) }, key, base64ToBytes(row.ciphertext));
+  return new TextDecoder().decode(plain);
+}
+
+// Checks a model choice for a new analysis. Returns { key, notice_version } or { response }.
+async function chooseAnalysisModel(env, workspaceId, keyId) {
+  if (typeof keyId !== "string" || !UUID_PATTERN.test(keyId)) {
+    return { response: json({ error: "Choose a model from the list." }, 400) };
+  }
+  const signoffs = await privacyEvents(env, workspaceId);
+  if (signoffs.failed) return { response: json({ error: "Could not check the privacy sign-off. Try again in a minute." }, 502) };
+  const current = privacyCurrent(signoffs.events);
+  if (!current) return { response: json({ error: "Sign off the privacy notice on the Privacy tab before using a model." }, 409) };
+  const active = await activeModelKeys(env, workspaceId);
+  if (active.failed) return { response: json({ error: "Could not load the model keys. Try again in a minute." }, 502) };
+  const key = active.keys.find((k) => k.id === keyId);
+  if (!key) return { response: json({ error: "That model key is not set up for this workspace any more." }, 400) };
+  return { key, notice_version: current.notice_version };
+}
+
+// Issues the one-time token for an analysis. Returns the token, or null if it could not be saved.
+async function issueModelToken(env, analysisId, keyId) {
+  const token = base64url(crypto.getRandomValues(new Uint8Array(32)));
+  const made = await serviceRest(env, "analysis_model_tokens", {
+    method: "POST",
+    body: JSON.stringify({
+      analysis_id: analysisId,
+      model_key_id: keyId,
+      token_hash: await sha256Hex(token),
+      expires_at: new Date(Date.now() + MODEL_TOKEN_TTL_MS).toISOString(),
+    }),
+  });
+  return made.ok ? token : null;
+}
+
+// The runner's one exchange. Every check that can refuse runs before the token is used up, so a refusal
+// does not cost the token. Only the first request that marks the token used gets the key.
+async function runnerModelKey(request, env, id) {
+  if (!timingSafeEqual(request.headers.get("x-runner-secret") || "", env.RUNNER_SECRET || "")) {
+    return json({ error: "Unauthorized." }, 401);
+  }
+  const parsed = await readJson(request, 2_000);
+  if (parsed.error) return json({ error: parsed.error }, 400);
+  const token = typeof parsed.value?.token === "string" ? parsed.value.token : "";
+  if (!/^[A-Za-z0-9_-]{20,100}$/.test(token)) return json({ error: "Not allowed." }, 401);
+
+  const found = await serviceRest(env,
+    `analysis_model_tokens?token_hash=eq.${await sha256Hex(token)}&analysis_id=eq.${id}&select=id,model_key_id,expires_at,used_at`);
+  if (!found.ok) return json({ error: "Could not check the token. Try again in a minute." }, 502);
+  const [tokenRow] = await found.json();
+  if (!tokenRow || tokenRow.used_at || Date.parse(tokenRow.expires_at) <= Date.now()) {
+    return json({ error: "Not allowed." }, 401);
+  }
+
+  const keyRes = await serviceRest(env, `model_keys?id=eq.${tokenRow.model_key_id}&select=id,workspace_id,provider,ciphertext,iv,revoked_at`);
+  if (!keyRes.ok) return json({ error: "Could not load the model key. Try again in a minute." }, 502);
+  const [keyRow] = await keyRes.json();
+  if (!keyRow || keyRow.revoked_at) return json({ error: "The model key is no longer set up." }, 403);
+  const signoffs = await privacyEvents(env, keyRow.workspace_id);
+  if (signoffs.failed) return json({ error: "Could not check the privacy sign-off. Try again in a minute." }, 502);
+  if (!privacyCurrent(signoffs.events)) return json({ error: "The privacy sign-off has been withdrawn." }, 403);
+  const key = await encryptionKey(env);
+  if (!key) return json({ error: "Model keys are not set up on this server yet." }, 503);
+
+  const used = await serviceRest(env, `analysis_model_tokens?id=eq.${tokenRow.id}&used_at=is.null`, {
+    method: "PATCH",
+    headers: { prefer: "return=representation" },
+    body: JSON.stringify({ used_at: new Date().toISOString() }),
+  });
+  if (!used.ok) return json({ error: "Could not check the token. Try again in a minute." }, 502);
+  const marked = await used.json();
+  if (!marked.length) return json({ error: "Not allowed." }, 401);
+
+  let apiKey;
+  try {
+    apiKey = await decryptModelKey(key, keyRow);
+  } catch {
+    return json({ error: "Could not open the model key." }, 500);
+  }
+  return json({ provider: keyRow.provider, model: MODEL_PROVIDERS[keyRow.provider].runModel, api_key: apiKey });
+}
+
 const FREE_TIER_DATABASE_BYTES = 500 * 1024 * 1024;
 
 // Operators only: how full the database is, so the limit is seen before it is reached.
@@ -803,6 +897,15 @@ async function startAnalysis(request, env) {
     return json({ error: "Confirm that the code and its settings contain no patient information." }, 400);
   }
 
+  // Optional: the workspace's own model for the file purposes. Without it, the rules-only engine runs.
+  const keyId = body.model_key_id === undefined || body.model_key_id === null || body.model_key_id === "" ? null : body.model_key_id;
+  let model = null;
+  if (keyId) {
+    const chosen = await chooseAnalysisModel(env, access.workspace_id, keyId);
+    if (chosen.response) return chosen.response;
+    model = chosen;
+  }
+
   // The app must be able to read the repository, the same check the wizard shows in step 4.
   let readable;
   try {
@@ -825,10 +928,29 @@ async function startAnalysis(request, env) {
       ref: ref || null,
       app_name: name,
       data_rules_confirmed_at: new Date().toISOString(),
+      ...(model ? {
+        model_provider: model.key.provider,
+        model_key_id: model.key.id,
+        model_notice_version: model.notice_version,
+        model_chosen_by_email: normalizeEmail(auth.user.email),
+      } : {}),
     }),
   });
   if (!created.ok) return json({ error: "Could not create the analysis." }, 502);
   const [row] = await created.json();
+
+  // The runner gets a one-time token for the key, never the key itself. If the token cannot be saved, the run stops.
+  let modelToken = "";
+  if (model) {
+    modelToken = (await issueModelToken(env, row.id, model.key.id)) || "";
+    if (!modelToken) {
+      await serviceRest(env, `analyses?id=eq.${row.id}`, {
+        method: "PATCH",
+        body: JSON.stringify({ status: "failed", error: "Could not prepare the model for the analysis.", finished_at: new Date().toISOString() }),
+      });
+      return json({ error: "Could not prepare the model for the analysis. Try again in a minute." }, 502);
+    }
+  }
 
   // Start the runner. If this fails, mark the row failed so it is not stuck in "queued".
   const dispatch = await fetch(
@@ -844,7 +966,7 @@ async function startAnalysis(request, env) {
       },
       body: JSON.stringify({
         ref: "main",
-        inputs: { analysis_id: row.id, repo, ref: ref || "" },
+        inputs: { analysis_id: row.id, repo, ref: ref || "", model_token: modelToken },
       }),
     },
   );
@@ -1558,6 +1680,11 @@ async function route(request, env) {
     const fileChunk = path.match(/^\/api\/runner\/([^/]+)\/files$/);
     if (fileChunk && UUID_PATTERN.test(fileChunk[1]) && method === "POST") {
       return runnerFiles(request, env, fileChunk[1]);
+    }
+
+    const modelKey = path.match(/^\/api\/runner\/([^/]+)\/model-key$/);
+    if (modelKey && UUID_PATTERN.test(modelKey[1]) && method === "POST") {
+      return runnerModelKey(request, env, modelKey[1]);
     }
 
     const callback = path.match(/^\/api\/runner\/([^/]+)\/result$/);

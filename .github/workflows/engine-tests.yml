@@ -23,6 +23,10 @@ jobs:
         working-directory: engine
         run: python -m unittest test_discover.py -v
 
+      - name: Run the model purpose tests (keys never printed, code copies refused)
+        working-directory: engine
+        run: python -m unittest test_model_purposes.py -v
+
   worker-tests:
     runs-on: ubuntu-latest
     steps:

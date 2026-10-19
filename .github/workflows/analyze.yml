@@ -20,6 +20,11 @@ on:
         required: false
         type: string
         default: ""
+      model_token:
+        description: "One-time token for the workspace's own model key (optional, set by the API)"
+        required: false
+        type: string
+        default: ""
 
 permissions:
   contents: read
@@ -27,12 +32,19 @@ permissions:
 jobs:
   analyze:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 25
     env:
       ANALYSIS_ID: ${{ inputs.analysis_id }}
       TARGET_REPO: ${{ inputs.repo }}
       TARGET_REF: ${{ inputs.ref }}
     steps:
+      # The token is one-time and lasts ten minutes. Hide it from the log before any other step runs.
+      - name: Hide the model token
+        env:
+          MODEL_TOKEN: ${{ inputs.model_token }}
+        run: |
+          if [ -n "$MODEL_TOKEN" ]; then echo "::add-mask::$MODEL_TOKEN"; fi
+
       - name: Check out the Cutover engine
         uses: actions/checkout@v4
         with:
@@ -70,6 +82,20 @@ jobs:
           set -euo pipefail
           python3 cutover/engine/cutover_discover.py \
             --path "$RUNNER_TEMP/target" --out "$RUNNER_TEMP/reports"
+
+      # Optional. Only when the analysis was started with the workspace's own model. The key is exchanged
+      # for in memory and never printed. Without a model, or if this step fails, the rule-based purposes stay.
+      - name: Write file purposes with the chosen model
+        if: inputs.model_token != ''
+        continue-on-error: true
+        env:
+          MODEL_TOKEN: ${{ inputs.model_token }}
+          RUNNER_SECRET: ${{ secrets.RUNNER_SECRET }}
+          CALLBACK_URL: ${{ secrets.CUTOVER_API_URL }}
+        run: |
+          python3 cutover/engine/model_purposes.py \
+            --records "$RUNNER_TEMP/reports/target/files.json" --source "$RUNNER_TEMP/target" \
+            --callback "$CALLBACK_URL" --analysis-id "$ANALYSIS_ID"
 
       # File-level results go first, in chunks. If the free-tier cap stops them, the API has already
       # marked the analysis failed, so the findings are not sent.
