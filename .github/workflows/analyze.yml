@@ -32,7 +32,7 @@ permissions:
 jobs:
   analyze:
     runs-on: ubuntu-latest
-    timeout-minutes: 25
+    timeout-minutes: 35
     env:
       ANALYSIS_ID: ${{ inputs.analysis_id }}
       TARGET_REPO: ${{ inputs.repo }}

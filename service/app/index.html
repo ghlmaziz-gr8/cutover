@@ -2315,11 +2315,47 @@ pre{white-space:pre-wrap;word-break:break-word;background:var(--soft);padding:12
       }
     }
 
-    // Deep AI Assessment Results: each page rendered from its markup, in a frame with no scripts and no network.
+    // Deep AI assessment results: screens the workspace's own model drew from the code, with sample data only.
+    // Each one is shown in a frame with no scripts and no network. The server has already checked each drawing.
+    {
+      const screens = (cur && cur.screens) || [];
+      if (sees(role, "ui_portal") && screens.length) {
+        const c = shell("Deep AI assessment results", "Screens drawn from the code");
+        c.style.gridColumn = "1 / -1";
+        c.appendChild(el("span", "AI drew these screens from the code. Sample data only.", "tag ai"));
+        const tabs = el("div", null, "dp-tabs");
+        const frame = document.createElement("iframe");
+        frame.className = "dp-frame";
+        frame.setAttribute("sandbox", "");
+        frame.setAttribute("title", "Screen drawn by AI");
+        const show = (i) => {
+          [...tabs.children].forEach((b, j) => b.classList.toggle("on", j === i));
+          frame.srcdoc = screens[i].html;
+        };
+        screens.forEach((s, i) => {
+          const b = el("button", s.name, "dp-tab");
+          b.type = "button";
+          b.addEventListener("click", () => show(i));
+          tabs.appendChild(b);
+        });
+        const wrap = el("div", null, "dp-wrap");
+        wrap.appendChild(frame);
+        c.append(tabs, wrap);
+        show(0);
+        out.push(c);
+      } else if (sees(role, "ui_portal")) {
+        const c = shell("Deep AI assessment results", "No screens drawn");
+        c.style.gridColumn = "1 / -1";
+        c.appendChild(el("p", "No model was used for this analysis, so no screens were drawn. Start an analysis with a workspace model to draw them.", "muted small"));
+        out.push(c);
+      }
+    }
+
+    // Page previews: each page rendered from its markup, in a frame with no scripts and no network.
     {
       const pv = val("ui.page_preview");
       if (sees(role, "ui_portal") && pv && pv.pages && pv.pages.length) {
-        const c = shell("Deep AI Assessment Results", "Rendered from the code");
+        const c = shell("Page previews", "Rendered from the code");
         c.style.gridColumn = "1 / -1";
         const dyn = pv.pages.filter((p) => p.kind === "dynamic").length;
         const chips = el("div", null, "chips");
