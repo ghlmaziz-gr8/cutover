@@ -737,7 +737,16 @@ pre{white-space:pre-wrap;word-break:break-word;background:var(--soft);padding:12
     { id: "s-next", name: "Next steps", w: 10, min: 0.5 },
   ];
   const SCREENS = ["s-login", "s-denied", "s-role", "s-home", "s-name", "s-connect", "s-rules", "s-run", "s-review", "s-next", "s-plan", "s-files"];
-  const RUN_STAGES = ["Reading files", "Finding the stack", "Finding the data", "Finding the infrastructure", "Writing the report"];
+  const MODEL_LABELS = { anthropic: "Anthropic (Claude)", google: "Google (Gemini)" };
+  // The AI stage says whether the workspace's own model was added to this analysis, or opted out.
+  function aiStageName(a) {
+    return a.model_provider
+      ? `AI analysis added: ${MODEL_LABELS[a.model_provider] || a.model_provider}`
+      : "AI analysis opted out (rules only)";
+  }
+  function runStageNames(a) {
+    return ["Reading files", "Finding the stack", "Finding the data", "Finding the infrastructure", aiStageName(a), "Writing the report"];
+  }
   const STATUS_TEXT = { queued: "Waiting to start", running: "Running", complete: "Review ready", failed: "Failed" };
   const REPO_FORMAT = /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/;
   // Step 7: the four review cards and the categories each shows.
@@ -1803,7 +1812,7 @@ pre{white-space:pre-wrap;word-break:break-word;background:var(--soft);padding:12
     $("runTitle").textContent = `Analyzing ${cur.app_name || cur.repo}`;
     const flags = cur.findings && cur.findings.flags ? cur.findings.flags.length : 0;
     $("runStatus").textContent = st === "queued" ? "Waiting to start. This page updates by itself."
-      : st === "running" ? "Running. This page updates by itself. You can leave and come back."
+      : st === "running" ? `Running. ${aiStageName(cur)}. This page updates by itself. You can leave and come back.`
       : done ? `Analysis complete. ${flags === 0 ? "Nothing needs your review right now." : `${flags} ${flags === 1 ? "item needs" : "items need"} your review.`}`
       : (cur.error || "The analysis failed.");
 
@@ -1822,9 +1831,13 @@ pre{white-space:pre-wrap;word-break:break-word;background:var(--soft);padding:12
     $("viewFindings").disabled = !(done || failed);
     $("viewFindingsTop").disabled = $("viewFindings").disabled;
 
+    // Rebuilt when the stage names change, for example when this analysis has an AI stage and another has none.
     const list = $("stageList");
-    if (!list.childElementCount) {
-      for (const name of RUN_STAGES) {
+    const names = runStageNames(cur);
+    if (list.dataset.key !== names.join("|")) {
+      list.innerHTML = "";
+      list.dataset.key = names.join("|");
+      for (const name of names) {
         const li = el("li");
         li.appendChild(el("span", null, "tick"));
         li.appendChild(el("span", name));
@@ -1880,7 +1893,7 @@ pre{white-space:pre-wrap;word-break:break-word;background:var(--soft);padding:12
       }
       const target = Math.round((100 * (i + 1)) / n);
       items[i].classList.add("on");
-      $("runStatus").textContent = `${RUN_STAGES[i]}: done`;
+      $("runStatus").textContent = `${runStageNames(cur)[i]}: done`;
       arc.setAttribute("stroke-dashoffset", String(609.5 * (1 - target / 100)));
       countTo(prev, target, 900, (v) => { $("ringText").textContent = `${v}%`; });
       prev = target;
