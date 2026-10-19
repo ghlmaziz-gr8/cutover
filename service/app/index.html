@@ -1629,15 +1629,16 @@ pre{white-space:pre-wrap;word-break:break-word;background:var(--soft);padding:12
       form.appendChild(el("p", "Sign off the privacy notice above before adding a model key.", "muted small hint"));
     } else if (!data.can_change) {
       form.appendChild(el("p", "A workspace admin can add a key here.", "muted small hint"));
-    } else if (!data.keys.some((k) => k.provider === data.providers[0].id)) {
-      form.appendChild(modelKeyForm(data));
+    } else {
+      const free = data.providers.filter((p) => !data.keys.some((k) => k.provider === p.id));
+      if (free.length) form.appendChild(modelKeyForm(free));
     }
   }
 
-  function modelKeyForm(data) {
+  function modelKeyForm(providers) {
     const form = el("form", null, "model-key-form");
     const provider = document.createElement("select");
-    for (const p of data.providers) {
+    for (const p of providers) {
       const option = document.createElement("option");
       option.value = p.id;
       option.textContent = p.label;

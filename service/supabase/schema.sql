@@ -219,7 +219,7 @@ revoke update, delete, truncate, references, trigger on public.privacy_signoffs 
 create table if not exists public.model_keys (
   id               uuid primary key default gen_random_uuid(),
   workspace_id     uuid not null references public.workspaces (id) on delete cascade,
-  provider         text not null check (provider in ('anthropic')),
+  provider         text not null check (provider in ('anthropic', 'google')),
   ciphertext       text not null check (length(ciphertext) between 1 and 1000),
   iv               text not null check (length(iv) between 1 and 100),
   last4            text not null check (length(last4) = 4),
