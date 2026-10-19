@@ -749,7 +749,7 @@ pre{white-space:pre-wrap;word-break:break-word;background:var(--soft);padding:12
   // The AI stage says whether the workspace's own model was added to this analysis, or opted out.
   function aiStageName(a) {
     return a.model_provider
-      ? `AI analysis added: ${MODEL_LABELS[a.model_provider] || a.model_provider}`
+      ? `AI analysis chosen: ${MODEL_LABELS[a.model_provider] || a.model_provider}`
       : "AI analysis opted out (rules only)";
   }
   function runStageNames(a) {
@@ -1966,7 +1966,7 @@ pre{white-space:pre-wrap;word-break:break-word;background:var(--soft);padding:12
     $("reviewTitle").textContent = cur.app_name || cur.repo;
     const modelLabels = { anthropic: "Anthropic (Claude)", google: "Google (Gemini)" };
     const modelText = cur.model_provider
-      ? `Model: ${modelLabels[cur.model_provider] || cur.model_provider}, signed off under notice ${cur.model_notice_version}`
+      ? `Model chosen: ${modelLabels[cur.model_provider] || cur.model_provider}, signed off under notice ${cur.model_notice_version}`
       : "Model: none (rules only)";
     $("reviewMeta").textContent = `${cur.repo}${cur.ref ? " @ " + cur.ref : ""} · Commit: ${cur.commit_sha || "not known yet"} · Started by: ${cur.is_mine ? "you" : "a teammate"} · ${modelText} · Deleted after: ${new Date(cur.expires_at).toLocaleDateString()}`;
     renderReview(cur);
@@ -2383,7 +2383,10 @@ pre{white-space:pre-wrap;word-break:break-word;background:var(--soft);padding:12
       } else if (sees(role, "ui_portal")) {
         const c = shell("Deep AI assessment results", "No screens drawn");
         c.style.gridColumn = "1 / -1";
-        c.appendChild(el("p", "No model was used for this analysis, so no screens were drawn. Start an analysis with a workspace model to draw them.", "muted small"));
+        const note = cur.model_provider
+          ? "A model was chosen for this analysis, but it drew no screens. The provider may have stopped it, for example after a rate limit. The workflow log for this run shows the reason."
+          : "No model was chosen for this analysis, so no screens were drawn. Start an analysis with a workspace model to draw them.";
+        c.appendChild(el("p", note, "muted small"));
         out.push(c);
       }
     }
