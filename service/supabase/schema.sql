@@ -209,6 +209,9 @@ create index if not exists privacy_signoffs_workspace_idx on public.privacy_sign
 alter table public.privacy_signoffs enable row level security;
 revoke all on public.privacy_signoffs from anon, authenticated;
 grant select, insert on public.privacy_signoffs to service_role;
+-- Supabase gives service_role every privilege on new tables by default. Take back the rest,
+-- so sign-off rows can be added and read, but never changed or deleted.
+revoke update, delete, truncate, references, trigger on public.privacy_signoffs from service_role;
 
 -- First workspace admin, after the Worker is deployed. Replace the workspace name and email:
 --   insert into public.workspaces (name) values ('Customer name') returning id;
