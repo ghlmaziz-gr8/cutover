@@ -559,6 +559,155 @@ async function privacyWithdraw(request, env, workspaceId) {
 
 const PRIVACY_NAME_MAX = 200;
 
+// ---- Model keys: each workspace's own language model key, stored encrypted ----
+// The key is encrypted with AES-GCM before it is saved. Only the last four characters are ever shown again.
+// A key is tested with one tiny request before it is saved, so a saved key is known to work.
+const MODEL_PROVIDERS = {
+  anthropic: { label: "Anthropic (Claude)", testModel: "claude-haiku-5-5" },
+};
+const MODEL_KEY_MIN = 20;
+const MODEL_KEY_MAX = 300;
+
+function bytesToBase64(bytes) {
+  let binary = "";
+  for (const b of bytes) binary += String.fromCharCode(b);
+  return btoa(binary);
+}
+
+function base64ToBytes(text) {
+  const binary = atob(text);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+  return bytes;
+}
+
+// The encryption key must be 32 random bytes, set once as a Worker secret. Without it, keys cannot be saved.
+async function encryptionKey(env) {
+  if (!env.CUTOVER_KEY_ENCRYPTION_KEY) return null;
+  let raw;
+  try {
+    raw = base64ToBytes(env.CUTOVER_KEY_ENCRYPTION_KEY);
+  } catch {
+    return null;
+  }
+  if (raw.length !== 32) return null;
+  return crypto.subtle.importKey("raw", raw, "AES-GCM", false, ["encrypt", "decrypt"]);
+}
+
+async function encryptModelKey(key, plain) {
+  const iv = crypto.getRandomValues(new Uint8Array(12));
+  const data = new Uint8Array(await crypto.subtle.encrypt({ name: "AES-GCM", iv }, key, new TextEncoder().encode(plain)));
+  return { ciphertext: bytesToBase64(data), iv: bytesToBase64(iv) };
+}
+
+// Asks the provider whether the key works, with one tiny request. Never echoes the key or the provider's reply.
+async function testAnthropicKey(apiKey) {
+  let res;
+  try {
+    res = await fetch("https://api.anthropic.com/v1/messages", {
+      method: "POST",
+      headers: { "content-type": "application/json", "x-api-key": apiKey, "anthropic-version": "2023-06-01" },
+      body: JSON.stringify({
+        model: MODEL_PROVIDERS.anthropic.testModel,
+        max_tokens: 1,
+        messages: [{ role: "user", content: "Reply with OK." }],
+      }),
+    });
+  } catch {
+    return { ok: false, reason: "Could not reach Anthropic. Try again in a minute." };
+  }
+  if (res.ok) return { ok: true };
+  if (res.status === 401 || res.status === 403) {
+    return { ok: false, reason: "Anthropic did not accept this key. Check that you copied the whole key." };
+  }
+  if (res.status === 429) return { ok: false, reason: "Anthropic is limiting requests right now. Try again later." };
+  return { ok: false, reason: `Anthropic answered with an error (HTTP ${res.status}). Check the key and its credit, then try again.` };
+}
+
+// Active keys for a workspace: revoked ones are kept in the table for the record, but never listed.
+async function activeModelKeys(env, workspaceId) {
+  const res = await serviceRest(env, `model_keys?workspace_id=eq.${workspaceId}&select=id,provider,last4,created_by_email,created_at,revoked_at`);
+  if (!res.ok) return { failed: true };
+  const rows = (await res.json()).filter((r) => !r.revoked_at);
+  rows.sort((a, b) => String(b.created_at).localeCompare(String(a.created_at)));
+  return { keys: rows };
+}
+
+async function listModelKeys(request, env, workspaceId) {
+  const access = await workspaceAccess(env, request, workspaceId);
+  if (access.response) return access.response;
+  const found = await activeModelKeys(env, workspaceId);
+  if (found.failed) return json({ error: "Could not load the keys. Try again in a minute." }, 502);
+  return json({
+    providers: Object.entries(MODEL_PROVIDERS).map(([id, p]) => ({ id, label: p.label })),
+    can_change: access.member.is_admin === true,
+    keys: found.keys.map((k) => ({
+      id: k.id, provider: k.provider, last4: k.last4, added_by_email: k.created_by_email, added_at: k.created_at,
+    })),
+  });
+}
+
+async function addModelKey(request, env, workspaceId) {
+  const access = await workspaceAdmin(env, request, workspaceId);
+  if (access.response) return access.response;
+  const body = await readJson(request, 20_000);
+  if (body.error) return json({ error: body.error }, 400);
+  const value = body.value || {};
+  if (!Object.prototype.hasOwnProperty.call(MODEL_PROVIDERS, value.provider)) {
+    return json({ error: "Choose a provider from the list." }, 400);
+  }
+  const apiKey = typeof value.api_key === "string" ? value.api_key.trim() : "";
+  if (apiKey.length < MODEL_KEY_MIN || apiKey.length > MODEL_KEY_MAX || /\s/.test(apiKey)) {
+    return json({ error: "Paste the whole key, with nothing else around it." }, 400);
+  }
+  const signoffs = await privacyEvents(env, workspaceId);
+  if (signoffs.failed) return json({ error: "Could not check the privacy sign-off. Try again in a minute." }, 502);
+  if (!privacyCurrent(signoffs.events)) {
+    return json({ error: "Sign off the privacy notice on the Privacy tab before adding a model key." }, 409);
+  }
+  const key = await encryptionKey(env);
+  if (!key) return json({ error: "Model keys are not set up on this server yet. Ask the platform owner." }, 503);
+  const active = await activeModelKeys(env, workspaceId);
+  if (active.failed) return json({ error: "Could not check existing keys. Try again in a minute." }, 502);
+  if (active.keys.some((k) => k.provider === value.provider)) {
+    return json({ error: "A key for this provider is already saved. Remove it first to replace it." }, 409);
+  }
+  const tested = await testAnthropicKey(apiKey);
+  if (!tested.ok) return json({ error: tested.reason }, 400);
+  const sealed = await encryptModelKey(key, apiKey);
+  const made = await serviceRest(env, "model_keys", {
+    method: "POST",
+    headers: { prefer: "return=representation" },
+    body: JSON.stringify({
+      workspace_id: workspaceId,
+      provider: value.provider,
+      ciphertext: sealed.ciphertext,
+      iv: sealed.iv,
+      last4: apiKey.slice(-4),
+      created_by: access.user.id,
+      created_by_email: normalizeEmail(access.user.email),
+    }),
+  });
+  if (!made.ok) return json({ error: "Could not save the key. Try again in a minute." }, 502);
+  const [row] = await made.json();
+  return json({ id: row.id, provider: value.provider, last4: apiKey.slice(-4) }, 201);
+}
+
+async function removeModelKey(request, env, workspaceId, keyId) {
+  const access = await workspaceAdmin(env, request, workspaceId);
+  if (access.response) return access.response;
+  const found = await activeModelKeys(env, workspaceId);
+  if (found.failed) return json({ error: "Could not load the keys. Try again in a minute." }, 502);
+  if (!found.keys.some((k) => k.id === keyId)) return json({ error: "Not found." }, 404);
+  const made = await serviceRest(env, `model_keys?id=eq.${keyId}&workspace_id=eq.${workspaceId}`, {
+    method: "PATCH",
+    headers: { prefer: "return=minimal" },
+    body: JSON.stringify({ revoked_at: new Date().toISOString(), revoked_by_email: normalizeEmail(access.user.email) }),
+  });
+  if (!made.ok) return json({ error: "Could not remove the key. Try again in a minute." }, 502);
+  return json({ removed: true });
+}
+
 const FREE_TIER_DATABASE_BYTES = 500 * 1024 * 1024;
 
 // Operators only: how full the database is, so the limit is seen before it is reached.
@@ -1373,6 +1522,14 @@ async function route(request, env) {
       if (!step && method === "GET") return privacyStatus(request, env, workspaceId);
       if (step === "signoff" && method === "POST") return privacySignOff(request, env, workspaceId);
       if (step === "withdraw" && method === "POST") return privacyWithdraw(request, env, workspaceId);
+    }
+
+    const modelKeys = path.match(/^\/api\/workspaces\/([^/]+)\/model-keys(?:\/([^/]+))?$/);
+    if (modelKeys && UUID_PATTERN.test(modelKeys[1])) {
+      const [, workspaceId, keyId] = modelKeys;
+      if (!keyId && method === "GET") return listModelKeys(request, env, workspaceId);
+      if (!keyId && method === "POST") return addModelKey(request, env, workspaceId);
+      if (keyId && UUID_PATTERN.test(keyId) && method === "DELETE") return removeModelKey(request, env, workspaceId, keyId);
     }
 
     const ws = path.match(/^\/api\/workspaces\/([^/]+)\/(members|invitations)(?:\/(.+))?$/);

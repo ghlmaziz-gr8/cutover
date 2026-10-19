@@ -5,7 +5,7 @@
 
 import { test, beforeEach, afterEach } from "node:test";
 import assert from "node:assert/strict";
-import { generateKeyPairSync, randomUUID } from "node:crypto";
+import { generateKeyPairSync, randomUUID, randomBytes } from "node:crypto";
 import worker from "../src/index.mjs";
 
 const appKeys = generateKeyPairSync("rsa", {
@@ -24,7 +24,13 @@ const env = {
   GITHUB_APP_ID: "5361797",
   GITHUB_APP_PRIVATE_KEY: appKeys.privateKey,
   OPERATOR_EMAILS: "operator@cutover.test",
+  CUTOVER_KEY_ENCRYPTION_KEY: randomBytes(32).toString("base64"),
 };
+
+// Keys the fake provider accepts, refuses, or rate-limits. The test keys are long enough to pass the length check.
+const GOOD_KEY = "sk-ant-test-good-key-abcd1234";
+const BAD_KEY = "sk-ant-test-bad-key-zzzz0000";
+const BUSY_KEY = "sk-ant-test-busy-key-qqqq9999";
 
 // ---- Fixed identities and records ----
 const uid = (n) => `00000000-0000-4000-8000-${String(n).padStart(12, "0")}`;
@@ -122,6 +128,7 @@ function seed() {
     ],
     deletion_log: [],
     privacy_signoffs: [],
+    model_keys: [],
   };
 }
 
@@ -259,6 +266,13 @@ beforeEach(() => {
     }
     if (u.startsWith(`${env.SUPABASE_URL}/rest/v1/`)) return handleRest(u, init);
     if (u.startsWith("https://api.github.com/")) return handleGithub(u, init);
+    if (u === "https://api.anthropic.com/v1/messages") {
+      const key = init.headers?.["x-api-key"];
+      github.anthropicCalls = (github.anthropicCalls || 0) + 1;
+      if (key === GOOD_KEY) return j({ type: "message", content: [{ type: "text", text: "OK" }] });
+      if (key === BUSY_KEY) return j({ type: "error" }, 429);
+      return j({ type: "error", error: { message: "invalid x-api-key" } }, 401);
+    }
     return j({ message: "unmocked" }, 599);
   };
 });
@@ -982,4 +996,127 @@ test("sign-off rows are only read or inserted, never changed or deleted", async 
   const touched = outbound.filter((c) => c.url.includes("/rest/v1/privacy_signoffs"));
   assert.ok(touched.length > 0);
   assert.ok(touched.every((c) => c.method === "GET" || c.method === "POST"), "no PATCH or DELETE on sign-off rows");
+});
+
+// ---- Model keys ----
+
+const KEYS = (id = W_ACME) => `/api/workspaces/${id}/model-keys`;
+
+// A workspace that has signed off the privacy notice, so keys may be added.
+function signedOff(workspaceId = W_ACME) {
+  state.privacy_signoffs.push({
+    id: randomUUID(), workspace_id: workspaceId, user_id: PEOPLE.admin_a.id, email: PEOPLE.admin_a.email,
+    full_name: "Ada Admin", action: "signed_off", notice_version: "2026-10-18.1", notice_text: "text",
+    statements: [], created_at: NOW,
+  });
+}
+
+test("a key is tested first, then saved encrypted, and only the last four characters are shown", async () => {
+  signedOff();
+  const res = await call(KEYS(), { method: "POST", as: "admin_a", body: { provider: "anthropic", api_key: GOOD_KEY } });
+  assert.equal(res.status, 201);
+  assert.deepEqual(res.body, { id: res.body.id, provider: "anthropic", last4: "1234" });
+  assert.equal(state.model_keys.length, 1);
+  const row = state.model_keys[0];
+  assert.equal(row.last4, "1234");
+  assert.equal(row.created_by_email, PEOPLE.admin_a.email);
+  assert.ok(!row.ciphertext.includes("good-key"), "the stored value is not the key");
+  assert.ok(!JSON.stringify(state.model_keys).includes(GOOD_KEY), "the key does not appear anywhere in the stored rows");
+  const testCall = outbound.find((c) => c.url === "https://api.anthropic.com/v1/messages");
+  assert.ok(testCall, "the key was tested with the provider");
+  assert.equal(github.anthropicCalls, 1);
+});
+
+test("the key never comes back in any response, and never appears in the URL of any request", async () => {
+  signedOff();
+  const added = await call(KEYS(), { method: "POST", as: "admin_a", body: { provider: "anthropic", api_key: GOOD_KEY } });
+  const listed = await call(KEYS(), { as: "eng_a" });
+  assert.ok(!JSON.stringify(added.body).includes(GOOD_KEY));
+  assert.ok(!JSON.stringify(listed.body).includes(GOOD_KEY));
+  assert.ok(!outbound.some((c) => c.url.includes(GOOD_KEY)), "the key is never in a URL");
+});
+
+test("a key the provider refuses is not saved", async () => {
+  signedOff();
+  const res = await call(KEYS(), { method: "POST", as: "admin_a", body: { provider: "anthropic", api_key: BAD_KEY } });
+  assert.equal(res.status, 400);
+  assert.match(res.body.error, /did not accept this key/);
+  assert.equal(state.model_keys.length, 0);
+});
+
+test("a key cannot be added until the privacy notice is signed off", async () => {
+  const res = await call(KEYS(), { method: "POST", as: "admin_a", body: { provider: "anthropic", api_key: GOOD_KEY } });
+  assert.equal(res.status, 409);
+  assert.match(res.body.error, /Sign off the privacy notice/);
+  assert.equal(state.model_keys.length, 0);
+  assert.equal(github.anthropicCalls || 0, 0, "the provider is not contacted without a sign-off");
+});
+
+test("only a workspace admin can add or remove a key; members can see the list", async () => {
+  signedOff();
+  const add = await call(KEYS(), { method: "POST", as: "eng_a", body: { provider: "anthropic", api_key: GOOD_KEY } });
+  assert.equal(add.status, 403);
+  await call(KEYS(), { method: "POST", as: "admin_a", body: { provider: "anthropic", api_key: GOOD_KEY } });
+  const id = state.model_keys[0].id;
+  const remove = await call(`${KEYS()}/${id}`, { method: "DELETE", as: "eng_a" });
+  assert.equal(remove.status, 403);
+  const list = await call(KEYS(), { as: "eng_a" });
+  assert.equal(list.status, 200);
+  assert.equal(list.body.can_change, false);
+  assert.equal(list.body.keys.length, 1);
+});
+
+test("one active key per provider; a second is refused until the first is removed", async () => {
+  signedOff();
+  await call(KEYS(), { method: "POST", as: "admin_a", body: { provider: "anthropic", api_key: GOOD_KEY } });
+  const second = await call(KEYS(), { method: "POST", as: "admin_a", body: { provider: "anthropic", api_key: GOOD_KEY } });
+  assert.equal(second.status, 409);
+  const id = state.model_keys[0].id;
+  const removed = await call(`${KEYS()}/${id}`, { method: "DELETE", as: "admin_a" });
+  assert.equal(removed.status, 200);
+  const again = await call(KEYS(), { method: "POST", as: "admin_a", body: { provider: "anthropic", api_key: GOOD_KEY } });
+  assert.equal(again.status, 201);
+});
+
+test("removing a key keeps the record and drops it from the list", async () => {
+  signedOff();
+  await call(KEYS(), { method: "POST", as: "admin_a", body: { provider: "anthropic", api_key: GOOD_KEY } });
+  const id = state.model_keys[0].id;
+  await call(`${KEYS()}/${id}`, { method: "DELETE", as: "admin_a" });
+  assert.equal(state.model_keys.length, 1, "the row is kept");
+  assert.ok(state.model_keys[0].revoked_at, "marked as revoked");
+  assert.equal(state.model_keys[0].revoked_by_email, PEOPLE.admin_a.email);
+  const list = await call(KEYS(), { as: "admin_a" });
+  assert.deepEqual(list.body.keys, []);
+});
+
+test("rate-limited and malformed requests are refused without saving", async () => {
+  signedOff();
+  const busy = await call(KEYS(), { method: "POST", as: "admin_a", body: { provider: "anthropic", api_key: BUSY_KEY } });
+  assert.equal(busy.status, 400);
+  assert.match(busy.body.error, /limiting requests/);
+  const unknown = await call(KEYS(), { method: "POST", as: "admin_a", body: { provider: "nope", api_key: GOOD_KEY } });
+  assert.equal(unknown.status, 400);
+  const short = await call(KEYS(), { method: "POST", as: "admin_a", body: { provider: "anthropic", api_key: "short" } });
+  assert.equal(short.status, 400);
+  const spaced = await call(KEYS(), { method: "POST", as: "admin_a", body: { provider: "anthropic", api_key: `${GOOD_KEY} extra` } });
+  assert.equal(spaced.status, 400);
+  assert.equal(state.model_keys.length, 0);
+});
+
+test("keys cannot be saved while the server has no encryption key", async () => {
+  signedOff();
+  const noSecret = { ...env, CUTOVER_KEY_ENCRYPTION_KEY: undefined };
+  const res = await worker.fetch(request(KEYS(), { method: "POST", as: "admin_a", body: { provider: "anthropic", api_key: GOOD_KEY } }), noSecret);
+  assert.equal(res.status, 503);
+  assert.equal(state.model_keys.length, 0);
+});
+
+test("a key row is never deleted or given more rights than the Worker needs", async () => {
+  signedOff();
+  await call(KEYS(), { method: "POST", as: "admin_a", body: { provider: "anthropic", api_key: GOOD_KEY } });
+  await call(`${KEYS()}/${state.model_keys[0].id}`, { method: "DELETE", as: "admin_a" });
+  const touched = outbound.filter((c) => c.url.includes("/rest/v1/model_keys"));
+  assert.ok(touched.length > 0);
+  assert.ok(touched.every((c) => c.method !== "DELETE"), "rows are revoked, never deleted");
 });
