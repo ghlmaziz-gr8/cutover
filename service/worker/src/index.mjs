@@ -563,7 +563,8 @@ const PRIVACY_NAME_MAX = 200;
 // The key is encrypted with AES-GCM before it is saved. Only the last four characters are ever shown again.
 // A key is tested with one tiny request before it is saved, so a saved key is known to work.
 const MODEL_PROVIDERS = {
-  anthropic: { label: "Anthropic (Claude)", testModel: "claude-haiku-5-5" },
+  anthropic: { label: "Anthropic (Claude)", name: "Anthropic", testModel: "claude-haiku-5-5" },
+  google: { label: "Google (Gemini)", name: "Google", testModel: "gemini-3.5-flash" },
 };
 const MODEL_KEY_MIN = 20;
 const MODEL_KEY_MAX = 300;
@@ -601,27 +602,30 @@ async function encryptModelKey(key, plain) {
 }
 
 // Asks the provider whether the key works, with one tiny request. Never echoes the key or the provider's reply.
-async function testAnthropicKey(apiKey) {
+async function testModelKey(provider, apiKey) {
+  const config = MODEL_PROVIDERS[provider];
   let res;
   try {
-    res = await fetch("https://api.anthropic.com/v1/messages", {
-      method: "POST",
-      headers: { "content-type": "application/json", "x-api-key": apiKey, "anthropic-version": "2023-06-01" },
-      body: JSON.stringify({
-        model: MODEL_PROVIDERS.anthropic.testModel,
-        max_tokens: 1,
-        messages: [{ role: "user", content: "Reply with OK." }],
-      }),
-    });
+    res = provider === "google"
+      ? await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${config.testModel}:generateContent`, {
+          method: "POST",
+          headers: { "content-type": "application/json", "x-goog-api-key": apiKey },
+          body: JSON.stringify({ contents: [{ parts: [{ text: "Reply with OK." }] }], generationConfig: { maxOutputTokens: 1 } }),
+        })
+      : await fetch("https://api.anthropic.com/v1/messages", {
+          method: "POST",
+          headers: { "content-type": "application/json", "x-api-key": apiKey, "anthropic-version": "2023-06-01" },
+          body: JSON.stringify({ model: config.testModel, max_tokens: 1, messages: [{ role: "user", content: "Reply with OK." }] }),
+        });
   } catch {
-    return { ok: false, reason: "Could not reach Anthropic. Try again in a minute." };
+    return { ok: false, reason: `Could not reach ${config.name}. Try again in a minute.` };
   }
   if (res.ok) return { ok: true };
-  if (res.status === 401 || res.status === 403) {
-    return { ok: false, reason: "Anthropic did not accept this key. Check that you copied the whole key." };
+  if (res.status === 400 || res.status === 401 || res.status === 403) {
+    return { ok: false, reason: `${config.name} did not accept this key. Check that you copied the whole key, and that it is allowed to use this model.` };
   }
-  if (res.status === 429) return { ok: false, reason: "Anthropic is limiting requests right now. Try again later." };
-  return { ok: false, reason: `Anthropic answered with an error (HTTP ${res.status}). Check the key and its credit, then try again.` };
+  if (res.status === 429) return { ok: false, reason: `${config.name} is limiting requests right now. Try again later.` };
+  return { ok: false, reason: `${config.name} answered with an error (HTTP ${res.status}). Check the key and its credit, then try again.` };
 }
 
 // Active keys for a workspace: revoked ones are kept in the table for the record, but never listed.
@@ -672,7 +676,7 @@ async function addModelKey(request, env, workspaceId) {
   if (active.keys.some((k) => k.provider === value.provider)) {
     return json({ error: "A key for this provider is already saved. Remove it first to replace it." }, 409);
   }
-  const tested = await testAnthropicKey(apiKey);
+  const tested = await testModelKey(value.provider, apiKey);
   if (!tested.ok) return json({ error: tested.reason }, 400);
   const sealed = await encryptModelKey(key, apiKey);
   const made = await serviceRest(env, "model_keys", {

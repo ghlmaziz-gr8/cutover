@@ -31,6 +31,8 @@ const env = {
 const GOOD_KEY = "sk-ant-test-good-key-abcd1234";
 const BAD_KEY = "sk-ant-test-bad-key-zzzz0000";
 const BUSY_KEY = "sk-ant-test-busy-key-qqqq9999";
+const GOOD_GOOGLE_KEY = "AIza-test-good-key-google-5678";
+const BAD_GOOGLE_KEY = "AIza-test-bad-key-google-0000";
 
 // ---- Fixed identities and records ----
 const uid = (n) => `00000000-0000-4000-8000-${String(n).padStart(12, "0")}`;
@@ -266,6 +268,11 @@ beforeEach(() => {
     }
     if (u.startsWith(`${env.SUPABASE_URL}/rest/v1/`)) return handleRest(u, init);
     if (u.startsWith("https://api.github.com/")) return handleGithub(u, init);
+    if (u.startsWith("https://generativelanguage.googleapis.com/v1beta/models/")) {
+      const key = init.headers?.["x-goog-api-key"];
+      if (key === GOOD_GOOGLE_KEY) return j({ candidates: [{ content: { parts: [{ text: "OK" }] } }] });
+      return j({ error: { code: 400, message: "API key not valid." } }, 400);
+    }
     if (u === "https://api.anthropic.com/v1/messages") {
       const key = init.headers?.["x-api-key"];
       github.anthropicCalls = (github.anthropicCalls || 0) + 1;
@@ -1119,4 +1126,27 @@ test("a key row is never deleted or given more rights than the Worker needs", as
   const touched = outbound.filter((c) => c.url.includes("/rest/v1/model_keys"));
   assert.ok(touched.length > 0);
   assert.ok(touched.every((c) => c.method !== "DELETE"), "rows are revoked, never deleted");
+});
+
+// ---- Google (Gemini) keys ----
+
+test("a Google key is tested in its header, saved encrypted, and listed beside the Anthropic one", async () => {
+  signedOff();
+  const google = await call(KEYS(), { method: "POST", as: "admin_a", body: { provider: "google", api_key: GOOD_GOOGLE_KEY } });
+  assert.equal(google.status, 201);
+  assert.deepEqual(google.body, { id: google.body.id, provider: "google", last4: "5678" });
+  const anthropic = await call(KEYS(), { method: "POST", as: "admin_a", body: { provider: "anthropic", api_key: GOOD_KEY } });
+  assert.equal(anthropic.status, 201);
+  const list = await call(KEYS(), { as: "eng_a" });
+  assert.deepEqual(list.body.keys.map((k) => k.provider).sort(), ["anthropic", "google"]);
+  assert.ok(!outbound.some((c) => c.url.includes(GOOD_GOOGLE_KEY)), "the Google key is never in a URL");
+  assert.ok(!JSON.stringify(state.model_keys).includes(GOOD_GOOGLE_KEY), "the Google key is not stored in clear");
+});
+
+test("a Google key the provider refuses is not saved, with a Google-specific reason", async () => {
+  signedOff();
+  const res = await call(KEYS(), { method: "POST", as: "admin_a", body: { provider: "google", api_key: BAD_GOOGLE_KEY } });
+  assert.equal(res.status, 400);
+  assert.match(res.body.error, /Google did not accept this key/);
+  assert.equal(state.model_keys.length, 0);
 });
