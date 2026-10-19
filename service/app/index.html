@@ -496,6 +496,11 @@ pre{white-space:pre-wrap;word-break:break-word;background:var(--soft);padding:12
     <div class="card">
       <label class="check"><input type="checkbox" id="dataRules"> This code and its settings contain no patient information.</label>
     </div>
+    <div class="card">
+      <label for="modelChoice"><b>Model for the file purposes</b></label>
+      <select id="modelChoice" style="margin-top:8px"></select>
+      <p id="modelHint" class="small muted" style="margin:8px 0 0"></p>
+    </div>
     <p id="rulesMsg" class="small hint" role="status"></p>
     <div class="row wzNav">
       <button type="button" class="ghost" id="rulesBack">Back</button>
@@ -1908,7 +1913,11 @@ pre{white-space:pre-wrap;word-break:break-word;background:var(--soft);padding:12
     show("s-review");
     $("reviewFilesTop").hidden = !cur.can_plan;
     $("reviewTitle").textContent = cur.app_name || cur.repo;
-    $("reviewMeta").textContent = `${cur.repo}${cur.ref ? " @ " + cur.ref : ""} · Commit: ${cur.commit_sha || "not known yet"} · Started by: ${cur.is_mine ? "you" : "a teammate"} · Deleted after: ${new Date(cur.expires_at).toLocaleDateString()}`;
+    const modelLabels = { anthropic: "Anthropic (Claude)", google: "Google (Gemini)" };
+    const modelText = cur.model_provider
+      ? `Model: ${modelLabels[cur.model_provider] || cur.model_provider}, signed off under notice ${cur.model_notice_version}`
+      : "Model: none (rules only)";
+    $("reviewMeta").textContent = `${cur.repo}${cur.ref ? " @ " + cur.ref : ""} · Commit: ${cur.commit_sha || "not known yet"} · Started by: ${cur.is_mine ? "you" : "a teammate"} · ${modelText} · Deleted after: ${new Date(cur.expires_at).toLocaleDateString()}`;
     renderReview(cur);
     renderDiscussion(cur);
   }
@@ -3164,12 +3173,46 @@ a{color:#6d28d9;font-weight:600}`;
       $("startNow").disabled = true;
       setMsg("repoResult", "", false);
       show("s-rules");
+      loadModelChoice();
     } catch (err) {
       setMsg("repoResult", err.message, true);
     } finally {
       $("connectNext").disabled = false;
     }
   });
+
+  // The model for the file purposes. Only usable after the privacy notice is signed off, and only with a saved key.
+  // Without one, the analysis runs on the rules alone, which is the default.
+  async function loadModelChoice() {
+    const id = ws.id;
+    const select = $("modelChoice");
+    const hint = $("modelHint");
+    select.innerHTML = "";
+    select.appendChild(new Option("No model (rules only)", ""));
+    select.disabled = true;
+    hint.textContent = "Checking the model…";
+    try {
+      const [keys, privacy] = await Promise.all([
+        api(`/api/workspaces/${id}/model-keys`),
+        api(`/api/workspaces/${id}/privacy`),
+      ]);
+      if (!ws || ws.id !== id) return;
+      const labels = Object.fromEntries(keys.providers.map((p) => [p.id, p.label]));
+      for (const k of keys.keys) {
+        select.appendChild(new Option(`${labels[k.provider] || k.provider} · ends in ${k.last4}`, k.id));
+      }
+      if (!keys.keys.length) {
+        hint.textContent = "No model is set up for this workspace yet. The analysis will run on the rules alone.";
+      } else if (!privacy.signed_off) {
+        hint.textContent = "Sign off the privacy notice on the Privacy tab to use a model. The analysis will run on the rules alone.";
+      } else {
+        select.disabled = false;
+        hint.textContent = "The model reads the code of each file to write its purpose. Its reply is checked before it is kept.";
+      }
+    } catch (err) {
+      hint.textContent = err.message;
+    }
+  }
 
   $("rulesBack").addEventListener("click", () => show("s-connect"));
   $("dataRules").addEventListener("change", () => { $("startNow").disabled = !$("dataRules").checked; });
@@ -3180,6 +3223,7 @@ a{color:#6d28d9;font-weight:600}`;
     try {
       const body = { workspace_id: ws.id, app_name: wizard.appName, repo: wizard.repo, data_rules_confirmed: true };
       if (wizard.ref) body.ref = wizard.ref;
+      if ($("modelChoice").value) body.model_key_id = $("modelChoice").value;
       const res = await api("/api/analyses", { method: "POST", body: JSON.stringify(body) });
       cur = await api(`/api/analyses/${res.id}`);
       showRun();

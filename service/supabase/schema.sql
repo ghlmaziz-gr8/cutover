@@ -240,6 +240,29 @@ alter table public.model_keys enable row level security;
 revoke all on public.model_keys from anon, authenticated, service_role;
 grant select, insert, update on public.model_keys to service_role;
 
+-- The model an analysis was run with, and the key it used. Recorded when the analysis starts.
+alter table public.analyses add column if not exists model_provider text
+  check (model_provider in ('anthropic', 'google'));
+alter table public.analyses add column if not exists model_key_id uuid references public.model_keys (id) on delete set null;
+alter table public.analyses add column if not exists model_notice_version text check (length(model_notice_version) <= 40);
+alter table public.analyses add column if not exists model_chosen_by_email text check (length(model_chosen_by_email) <= 320);
+
+-- One-time tokens that let the runner collect an analysis's model key. Only a SHA-256 hash of the token is kept.
+-- A token works once, within ten minutes, for one analysis.
+create table if not exists public.analysis_model_tokens (
+  id           uuid primary key default gen_random_uuid(),
+  analysis_id  uuid not null references public.analyses (id) on delete cascade,
+  model_key_id uuid not null references public.model_keys (id) on delete cascade,
+  token_hash   text not null unique check (length(token_hash) = 64),
+  created_at   timestamptz not null default now(),
+  expires_at   timestamptz not null,
+  used_at      timestamptz
+);
+
+alter table public.analysis_model_tokens enable row level security;
+revoke all on public.analysis_model_tokens from anon, authenticated, service_role;
+grant select, insert, update on public.analysis_model_tokens to service_role;
+
 -- First workspace admin, after the Worker is deployed. Replace the workspace name and email:
 --   insert into public.workspaces (name) values ('Customer name') returning id;
 --   insert into public.invitations (workspace_id, email, role, is_admin)
