@@ -1298,3 +1298,38 @@ test("if the token cannot be saved, the analysis is marked failed and the runner
   const row = state.analyses[state.analyses.length - 1];
   assert.equal(row.status, "failed");
 });
+
+// ---- Where each file's purpose came from: the rules engine or the workspace's own model ----
+
+test("a file purpose is marked as the model's or the rules', and only those two values are accepted", async () => {
+  runningAnalysis();
+  const saved = await call(`/api/runner/${AN_RUNNING}/files`, {
+    method: "POST",
+    body: { files: [{ ...sampleFile("src/Model.java"), purpose_source: "model" }, sampleFile("src/Rules.java")] },
+    secret: env.RUNNER_SECRET,
+  });
+  assert.equal(saved.status, 201);
+  const rows = state.file_findings.filter((f) => f.analysis_id === AN_RUNNING);
+  assert.equal(rows.find((r) => r.path === "src/Model.java").purpose_source, "model");
+  assert.equal(rows.find((r) => r.path === "src/Rules.java").purpose_source, "rules", "rules is the default");
+
+  const bad = await call(`/api/runner/${AN_RUNNING}/files`, {
+    method: "POST",
+    body: { files: [{ ...sampleFile("src/Other.java"), purpose_source: "a person" }] },
+    secret: env.RUNNER_SECRET,
+  });
+  assert.equal(bad.status, 400);
+  assert.equal(state.file_findings.filter((f) => f.path === "src/Other.java").length, 0);
+});
+
+test("the file list tells the app which purposes the model wrote", async () => {
+  runningAnalysis();
+  await call(`/api/runner/${AN_RUNNING}/files`, {
+    method: "POST",
+    body: { files: [{ ...sampleFile("src/Model.java"), purpose_source: "model" }] },
+    secret: env.RUNNER_SECRET,
+  });
+  const list = await call(`/api/analyses/${AN_RUNNING}/files`, { as: "eng_a" });
+  assert.equal(list.status, 200);
+  assert.ok(JSON.stringify(list.body).includes('"purpose_source":"model"'));
+});

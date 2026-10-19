@@ -1252,7 +1252,7 @@ function suggestionsOk(value) {
 
 // File-level review. Only platform engineers see file-level results, for now.
 const FILE_PAGE_MAX = 200;
-const FILE_COLUMNS = "id,path,category,purpose,suggestions,review_status,reviewed_by_email,reviewed_at";
+const FILE_COLUMNS = "id,path,category,purpose,purpose_source,suggestions,review_status,reviewed_by_email,reviewed_at";
 
 async function listFiles(request, env, id) {
   const access = await analysisAccess(env, request, id);
@@ -1332,6 +1332,10 @@ function fileRecord(value) {
   if (!suggestionsOk(suggestions)) {
     return { error: "suggestions must be a list of up to 20 short items." };
   }
+  const purposeSource = value.purpose_source === undefined || value.purpose_source === null ? "rules" : value.purpose_source;
+  if (purposeSource !== "rules" && purposeSource !== "model") {
+    return { error: "purpose_source must be rules or model." };
+  }
   return {
     row: {
       path,
@@ -1339,6 +1343,7 @@ function fileRecord(value) {
       purpose: typeof value.purpose === "string" ? value.purpose : null,
       suggestions,
       sample_only: value.sample_only !== false,
+      purpose_source: purposeSource,
     },
   };
 }

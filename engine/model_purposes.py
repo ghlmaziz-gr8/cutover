@@ -197,6 +197,7 @@ def apply_purposes(records: list[dict], read_source: Callable[[str], str | None]
             stats["rules"] += 1
             continue
         record["purpose"] = purpose
+        record["purpose_source"] = "model"
         stats["model"] += 1
     return stats
 

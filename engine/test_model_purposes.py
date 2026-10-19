@@ -138,6 +138,8 @@ class ApplyTests(unittest.TestCase):
         self.assertEqual(recs[1]["purpose"], "Rule-based purpose.")
         self.assertEqual(recs[2]["purpose"], "Rule-based purpose.", "documentation is never sent")
         self.assertEqual(stats, {"model": 1, "rules": 1, "stopped": None})
+        self.assertEqual(recs[0]["purpose_source"], "model", "a model purpose is marked as the model's")
+        self.assertNotEqual(recs[1].get("purpose_source"), "model", "a rules purpose is not marked as the model's")
 
     def test_a_refusal_stops_the_rest(self):
         recs = records(("a.java", "source"), ("b.java", "source"))

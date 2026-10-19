@@ -186,6 +186,10 @@ alter table public.file_findings add column if not exists review_status text not
 alter table public.file_findings add column if not exists reviewed_by_email text;
 alter table public.file_findings add column if not exists reviewed_at timestamptz;
 create index if not exists file_findings_review_idx on public.file_findings (analysis_id, review_status);
+
+-- Who wrote each file's purpose: the rules engine, or the workspace's own model.
+alter table public.file_findings add column if not exists purpose_source text not null default 'rules'
+  check (purpose_source in ('rules', 'model'));
 grant select, insert on public.deletion_log to service_role;
 
 -- Privacy sign-off for a workspace. Append-only: each sign-off or withdrawal is a new row, and the
