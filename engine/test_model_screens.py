@@ -255,3 +255,58 @@ class ScreenContextTests(unittest.TestCase):
         self.assertIn("File path: Login.asp", text)
         self.assertIn("Files in the application:", text)
 
+
+ASP_DISPATCH = """<%
+Controlname = request("Controlname")
+If Controlname = "Projects" then
+    Call GetRows("Projects")
+ElseIf Controlname = "Tasks" then
+    response.write "<table><tr><td>Open tasks</td></tr></table>"
+ElseIf Controlname = "Logout" then
+    Session.Abandon
+    response.redirect "manageit.asp"
+End If
+End If
+%>
+<%
+Function GetRows(name)
+    response.write "<table><tr><td>" & name & "</td></tr></table>"
+End Function
+%>
+"""
+
+
+class ControlScreenTests(unittest.TestCase):
+    def test_each_branch_that_writes_output_is_one_screen(self):
+        from model_screens import split_control_screens
+        names = [name for name, _ in split_control_screens(ASP_DISPATCH)]
+        self.assertEqual(names, ["Projects", "Tasks"])
+
+    def test_a_branch_that_calls_a_writing_function_includes_that_function(self):
+        from model_screens import split_control_screens
+        projects = dict(split_control_screens(ASP_DISPATCH))["Projects"]
+        self.assertIn("Function GetRows(name)", projects)
+
+    def test_expansion_replaces_the_page_with_one_record_per_branch(self):
+        from model_screens import choose_screen_files, expand_control_screens
+        records = [{"path": "manageit.asp", "category": "other"}, {"path": "Other.asp", "category": "other"}]
+        pages = {"manageit.asp": ASP_DISPATCH, "Other.asp": "<html><body>plain</body></html>"}
+        out, read = expand_control_screens(records, pages.get)
+        paths = [r["path"] for r in out]
+        self.assertIn("manageit.asp?ControlName=Projects", paths)
+        self.assertIn("manageit.asp?ControlName=Tasks", paths)
+        self.assertNotIn("manageit.asp", paths)
+        self.assertIn("Other.asp", paths)
+        self.assertEqual(next(r for r in out if r["path"].endswith("Tasks")).get("name"), "Tasks")
+        self.assertIn("Open tasks", read("manageit.asp?ControlName=Tasks"))
+        self.assertEqual(read("Other.asp"), pages["Other.asp"])
+        self.assertEqual(len(choose_screen_files(out)), 3)
+
+    def test_control_screens_are_not_cut_to_the_file_limit(self):
+        from model_screens import choose_screen_files
+        records = [{"path": f"p{i}.htm", "category": "template"} for i in range(12)]
+        records += [{"path": f"manageit.asp?ControlName=S{i}", "category": "template", "control": f"S{i}"} for i in range(20)]
+        chosen = choose_screen_files(records)
+        self.assertEqual(sum(1 for r in chosen if "control" not in r), 8)
+        self.assertEqual(sum(1 for r in chosen if "control" in r), 20)
+

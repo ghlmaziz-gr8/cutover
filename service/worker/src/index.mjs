@@ -1405,7 +1405,8 @@ async function getAnalysis(request, env, id) {
 }
 
 // ---- Screens drawn by the workspace's own model from the code ----
-const SCREEN_MAX = 8;
+// One upload holds every drawing of an analysis: a classic ASP page is one drawing per screen branch.
+const SCREEN_MAX = 80;
 const SCREEN_MAX_CHARS = 40_000;
 // A drawn screen is a plain page. Anything that runs code, loads from elsewhere, or sends a form is refused.
 const SCREEN_REFUSED = [
@@ -1446,7 +1447,7 @@ async function runnerScreens(request, env, id) {
   if (analysis.status !== "queued" && analysis.status !== "running") {
     return json({ error: "This analysis is no longer taking results." }, 409);
   }
-  const parsed = await readJson(request, 400_000);
+  const parsed = await readJson(request, 4_000_000);
   if (parsed.error) return json({ error: parsed.error }, 400);
   const list = parsed.value?.screens;
   if (!Array.isArray(list) || list.length === 0 || list.length > SCREEN_MAX) {

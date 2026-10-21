@@ -31,7 +31,7 @@ from pathlib import Path
 from typing import Callable
 
 from model_screens import (SCREEN_MAX_TOKENS, SCREEN_PROMPT, ScreenError, StopDrawing, build_screen_text,
-                           draw_screens, post_screens, screen_context)
+                           draw_screens, expand_control_screens, post_screens, screen_context)
 
 MODEL_CATEGORIES = {"source", "template", "database", "integration"}
 MAX_MODEL_FILES = 200
@@ -347,7 +347,8 @@ def main(argv=None, opener=urllib.request.urlopen) -> int:
             raise ScreenError(str(err) or "request failed")
 
     screen_reasons: list[str] = []
-    screens, screen_stats = draw_screens(records, read_source, draw, reasons=screen_reasons)
+    screen_records, screen_source = expand_control_screens(records, read_source)
+    screens, screen_stats = draw_screens(screen_records, screen_source, draw, reasons=screen_reasons)
     del release, api_key
     if screen_stats["stopped"]:
         print(f"The provider refused the key or limited requests while drawing screens (HTTP {screen_stats['stopped']}).")
