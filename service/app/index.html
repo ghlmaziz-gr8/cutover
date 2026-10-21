@@ -180,6 +180,23 @@ form input + button{margin-top:16px}
 .fr-burst.go{animation:frBurst 1.7s ease-out forwards}
 @keyframes frBurst{0%{opacity:0;transform:translate(-50%,-50%) scale(.4)}15%{opacity:1;transform:translate(-50%,-50%) scale(1.15)}30%{transform:translate(-50%,-50%) scale(1)}75%{opacity:1}100%{opacity:0;transform:translate(-50%,-150%) scale(1)}}
 .fr-hud .small{margin:14px 2px 0}
+/* Scope choice: three next stages, with the locked ones shown clearly */
+.scope-opts{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;margin-top:14px}
+.scope-opt{position:relative;border:1px solid var(--line);border-radius:16px;padding:14px;background:var(--card);display:flex;flex-direction:column;gap:6px;transition:transform .25s,border-color .3s,box-shadow .3s}
+.scope-opt:hover{transform:translateY(-2px)}
+.scope-opt b{font-size:15px}
+.scope-opt .tag{align-self:flex-start;margin-top:auto}
+.scope-opt button{align-self:flex-start;margin-top:8px}
+.scope-opt.selected{border-color:var(--accent2);box-shadow:0 0 0 3px color-mix(in srgb,var(--accent2) 18%,transparent),0 10px 24px -12px var(--accent2);animation:scopeGlow 2.6s ease-in-out infinite}
+.scope-opt.locked{background:repeating-linear-gradient(135deg,transparent 0 10px,color-mix(in srgb,var(--muted) 6%,transparent) 10px 20px),var(--card);color:var(--muted)}
+.scope-opt.locked b{color:var(--muted)}
+.scope-opt .lock-ic{width:18px;height:18px;color:var(--muted);transform-origin:50% 0;animation:scopeWiggle 4s ease-in-out infinite}
+.scope-opt.shake{animation:scopeShake .45s}
+@keyframes scopeGlow{0%,100%{box-shadow:0 0 0 3px color-mix(in srgb,var(--accent2) 14%,transparent),0 10px 24px -12px var(--accent2)}50%{box-shadow:0 0 0 6px color-mix(in srgb,var(--accent2) 8%,transparent),0 14px 30px -10px var(--accent2)}}
+@keyframes scopeWiggle{0%,86%,100%{transform:rotate(0)}90%{transform:rotate(-14deg)}94%{transform:rotate(12deg)}97%{transform:rotate(-6deg)}}
+@keyframes scopeShake{0%,100%{transform:translateX(0)}20%{transform:translateX(-6px)}40%{transform:translateX(6px)}60%{transform:translateX(-4px)}80%{transform:translateX(3px)}}
+@media (max-width:720px){.scope-opts{grid-template-columns:1fr}}
+@media (prefers-reduced-motion:reduce){.scope-opt.selected,.scope-opt .lock-ic,.scope-opt.shake{animation:none}.scope-opt{transition:none}}
 .ph-shield{fill:var(--card);stroke:var(--accent);stroke-width:2.5;animation:phGlow 3s ease-in-out infinite}
 .ph-check{fill:none;stroke:var(--ok);stroke-width:4;stroke-linecap:round;stroke-linejoin:round;stroke-dasharray:60;stroke-dashoffset:60;animation:phDraw 3s ease-in-out infinite}
 @keyframes phDraw{0%,20%{stroke-dashoffset:60}60%,100%{stroke-dashoffset:0}}
@@ -704,6 +721,13 @@ pre{white-space:pre-wrap;word-break:break-word;background:var(--soft);padding:12
     <div class="row wzNav" style="margin:14px 0 4px">
       <button type="button" class="ghost" id="nextBackReviewTop">Back to findings</button>
       <button type="button" class="ghost" id="nextBackHomeTop">Back to analyses</button>
+    </div>
+    <div class="card scope-card" id="scopeCard">
+      <p class="eyebrow-sm">Next stage</p>
+      <h3 style="margin:4px 0 6px">Choose the scope</h3>
+      <p class="muted small" id="scopeNote" style="margin:0"></p>
+      <div class="scope-opts" id="scopeOpts"></div>
+      <p class="small hint" id="scopeMsg" role="status"></p>
     </div>
     <div class="cards2" style="margin-top:20px">
       <div class="card" style="margin-top:0">
@@ -3029,6 +3053,99 @@ a{color:#6d28d9;font-weight:600}`;
     show("s-next");
     $("inviteCardNext").hidden = !(ws && ws.is_admin);
     $("deleteCardNext").hidden = !cur.can_delete;
+    renderScope();
+  }
+
+  const SCOPE_OPTIONS = [
+    { key: "deeper", title: "Deeper assessment", body: "A purpose and suggestions for every file, plus business, systems and data documents, workflows and an architecture diagram.", needsDeeper: false },
+    { key: "modernize", title: "Modernize", body: "Three future-state proposals for the web application, each with its trade-offs.", needsDeeper: true },
+    { key: "migrate", title: "Migrate", body: "Move to Google Cloud, AWS or Azure. Then an intake form, then a Terraform draft to review.", needsDeeper: true },
+  ];
+  const SCOPE_LABEL = { deeper: "Deeper assessment", modernize: "Modernize", migrate: "Migrate" };
+
+  // Shows the three next stages. Modernize and Migrate stay locked until the deeper assessment is done.
+  function renderScope() {
+    const list = $("scopeOpts");
+    list.replaceChildren();
+    const canChoose = !!cur.can_plan;
+    const deeperDone = cur.deeper_done === true;
+    const note = cur.scope
+      ? `Chosen: ${SCOPE_LABEL[cur.scope]}${cur.scope_set_by_email ? ` by ${cur.scope_set_by_email}` : ""}.`
+      : "No scope chosen yet.";
+    $("scopeNote").textContent = canChoose
+      ? `${note} Choose the next stage for this analysis.`
+      : `${note} A platform engineer chooses the scope.`;
+    for (const o of SCOPE_OPTIONS) {
+      const locked = o.needsDeeper && !deeperDone;
+      const selected = cur.scope === o.key;
+      const card = el("div", null, "scope-opt" + (selected ? " selected" : "") + (locked ? " locked" : ""));
+      card.dataset.key = o.key;
+      const head = el("div", null, "row");
+      head.style.justifyContent = "space-between";
+      head.style.alignItems = "center";
+      head.appendChild(el("b", o.title));
+      if (locked) {
+        head.appendChild(lockIcon());
+      }
+      card.appendChild(head);
+      card.appendChild(el("div", o.body, "small muted"));
+      if (locked) {
+        card.appendChild(el("span", "Locked until the deeper assessment is complete", "tag"));
+      } else if (selected) {
+        card.appendChild(el("span", "Selected", "tag ai"));
+      } else {
+        card.appendChild(el("span", "Available", "tag"));
+      }
+      if (canChoose && !selected && !locked) {
+        const b = el("button", `Choose ${o.title.toLowerCase()}`, "ghost small-btn");
+        b.type = "button";
+        b.addEventListener("click", () => setScope(o.key));
+        card.appendChild(b);
+      }
+      if (canChoose && locked) {
+        // A locked option explains itself when pressed, and shakes so it is clearly not available yet.
+        card.setAttribute("role", "button");
+        card.tabIndex = 0;
+        const explain = () => {
+          card.classList.remove("shake");
+          void card.offsetWidth;
+          card.classList.add("shake");
+          setMsg("scopeMsg", `${o.title} unlocks after the deeper assessment is complete.`, true);
+        };
+        card.addEventListener("click", explain);
+        card.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") explain(); });
+      }
+      list.appendChild(card);
+    }
+  }
+
+  function lockIcon() {
+    const ns = "http://www.w3.org/2000/svg";
+    const svg = document.createElementNS(ns, "svg");
+    svg.setAttribute("viewBox", "0 0 24 24");
+    svg.setAttribute("class", "lock-ic");
+    svg.setAttribute("aria-hidden", "true");
+    const body = document.createElementNS(ns, "rect");
+    body.setAttribute("x", "5"); body.setAttribute("y", "11"); body.setAttribute("width", "14"); body.setAttribute("height", "10"); body.setAttribute("rx", "2");
+    body.setAttribute("fill", "currentColor");
+    const shackle = document.createElementNS(ns, "path");
+    shackle.setAttribute("d", "M8 11V8a4 4 0 0 1 8 0v3");
+    shackle.setAttribute("fill", "none");
+    shackle.setAttribute("stroke", "currentColor");
+    shackle.setAttribute("stroke-width", "2");
+    svg.append(shackle, body);
+    return svg;
+  }
+
+  async function setScope(key) {
+    try {
+      await api(`/api/analyses/${cur.id}/scope`, { method: "PATCH", body: JSON.stringify({ scope: key }) });
+      cur = await api(`/api/analyses/${cur.id}`);
+      renderScope();
+      setMsg("scopeMsg", `${SCOPE_LABEL[key]} is now the next stage.`);
+    } catch (err) {
+      setMsg("scopeMsg", err.message, true);
+    }
   }
 
   $("downloadBtn").addEventListener("click", () => {

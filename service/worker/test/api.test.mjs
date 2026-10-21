@@ -1501,3 +1501,18 @@ test("the people who may see UI findings see the drawn screens; others do not", 
   const auditor = await call(`/api/analyses/${AN_RUNNING}`, { as: "aud_a" });
   assert.deepEqual(auditor.body.screens, []);
 });
+
+test("only platform engineers choose the scope, and deeper is the only choice until the deeper assessment is done", async () => {
+  const denied = await call(`/api/analyses/${AN_ACME}/scope`, { as: "aud_a", method: "PATCH", body: { scope: "deeper" } });
+  assert.equal(denied.status, 403);
+  const bad = await call(`/api/analyses/${AN_ACME}/scope`, { as: "eng_a", method: "PATCH", body: { scope: "rebuild" } });
+  assert.equal(bad.status, 400);
+  const locked = await call(`/api/analyses/${AN_ACME}/scope`, { as: "eng_a", method: "PATCH", body: { scope: "migrate" } });
+  assert.equal(locked.status, 409);
+  assert.match(locked.body.error, /deeper assessment/);
+  const deeper = await call(`/api/analyses/${AN_ACME}/scope`, { as: "eng_a", method: "PATCH", body: { scope: "deeper" } });
+  assert.equal(deeper.status, 200);
+  const saved = state.analyses.find((a) => a.id === AN_ACME);
+  assert.equal(saved.scope, "deeper");
+  assert.equal(saved.scope_set_by_email, PEOPLE.eng_a.email);
+});
