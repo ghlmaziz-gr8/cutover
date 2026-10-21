@@ -1932,3 +1932,30 @@ test("a structure cannot be changed while its analysis is running, and the runne
   const wrong = await call(`/api/runner/${AN_RUNNING}/db-metadata`, { secret: "wrong" });
   assert.equal(wrong.status, 401);
 });
+
+// ---- Running a finished analysis again ----
+
+test("a platform engineer runs a finished analysis again; the earlier results are cleared and the structure is kept", async () => {
+  await call(`/api/analyses/${AN_ACME}/db-metadata`, { as: "eng_a", method: "PUT", body: STRUCTURE() });
+  const before = github.dispatches.length;
+  const res = await call(`/api/analyses/${AN_ACME}/rerun`, { as: "eng_a", method: "POST" });
+  assert.equal(res.status, 202);
+  assert.deepEqual(res.body, { id: AN_ACME, status: "queued" });
+  const row = state.analyses.find((a) => a.id === AN_ACME);
+  assert.equal(row.status, "queued");
+  assert.equal(row.findings, null, "the earlier findings are cleared");
+  assert.equal(row.deeper_done, false);
+  assert.equal(github.dispatches.length, before + 1, "the runner is started again");
+  assert.equal(github.dispatches.at(-1).inputs.analysis_id, AN_ACME);
+  assert.equal(github.dispatches.at(-1).inputs.repo, row.repo);
+  assert.equal(state.analysis_db_metadata.filter((m) => m.analysis_id === AN_ACME).length, 1, "the saved structure is kept");
+  assert.equal(state.analysis_screens.filter((s) => s.analysis_id === AN_ACME).length, 0);
+});
+
+test("only platform engineers can run again, and a running analysis is not started a second time", async () => {
+  const auditor = await call(`/api/analyses/${AN_ACME}/rerun`, { as: "aud_a", method: "POST" });
+  assert.equal(auditor.status, 403);
+  runningAnalysis();
+  const busy = await call(`/api/analyses/${AN_RUNNING}/rerun`, { as: "eng_a", method: "POST" });
+  assert.equal(busy.status, 409);
+});

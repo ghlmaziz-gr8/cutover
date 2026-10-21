@@ -917,6 +917,7 @@ pre{white-space:pre-wrap;word-break:break-word;background:var(--soft);padding:12
         <input type="file" id="dbFile" accept=".json,application/json">
         <button type="button" id="dbUpload">Upload structure</button>
         <button type="button" class="ghost" id="dbRemove" hidden>Remove</button>
+        <button type="button" id="dbRerun" hidden>Run again with this structure</button>
       </div>
       <p class="small hint" id="dbMsg" role="status"></p>
     </div>
@@ -3878,6 +3879,8 @@ const REGION_OPTS = {
       $("dbFile").disabled = !canChange;
       $("dbUpload").disabled = !canChange;
       $("dbRemove").hidden = !(s.present && canChange);
+      const finished = cur.status === "complete" || cur.status === "failed";
+      $("dbRerun").hidden = !(s.present && canChange && finished);
       if (busy) setMsg("dbMsg", "Wait for the analysis to finish before changing the database structure.");
       else if (!s.can_change) setMsg("dbMsg", "Only platform engineers can change the database structure.");
       else setMsg("dbMsg", "");
@@ -3899,8 +3902,18 @@ const REGION_OPTS = {
     try {
       const saved = await api(`/api/analyses/${cur.id}/db-metadata`, { method: "PUT", body: JSON.stringify(doc) });
       $("dbFile").value = "";
-      setMsg("dbMsg", `Saved: ${saved.tables} tables and ${saved.fields} fields. The next run of this analysis will read them. Running a finished analysis again is not available yet.`);
+      setMsg("dbMsg", `Saved: ${saved.tables} tables and ${saved.fields} fields. Run the analysis again to read them.`);
       await renderDbCard();
+    } catch (err) {
+      setMsg("dbMsg", err.message, true);
+    }
+  });
+
+  $("dbRerun").addEventListener("click", async () => {
+    try {
+      await api(`/api/analyses/${cur.id}/rerun`, { method: "POST" });
+      await refreshAnalysis();
+      setMsg("dbMsg", "Running again. The results will appear when the run finishes.");
     } catch (err) {
       setMsg("dbMsg", err.message, true);
     }
