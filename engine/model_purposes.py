@@ -30,7 +30,8 @@ import urllib.request
 from pathlib import Path
 from typing import Callable
 
-from model_screens import (SCREEN_MAX_TOKENS, SCREEN_PROMPT, ScreenError, StopDrawing, draw_screens, post_screens)
+from model_screens import (SCREEN_MAX_TOKENS, SCREEN_PROMPT, ScreenError, StopDrawing, build_screen_text,
+                           draw_screens, post_screens, screen_context)
 
 MODEL_CATEGORIES = {"source", "template", "database", "integration"}
 MAX_MODEL_FILES = 200
@@ -335,8 +336,9 @@ def main(argv=None, opener=urllib.request.urlopen) -> int:
 
     # Screens: the same key, the same run. Only when the provider has not refused the key.
     def draw(record, code):
+        text = build_screen_text(record["path"], code, screen_context(records, record["path"]))
         try:
-            return call_provider(provider, model, api_key, build_user_text(record["path"], code), opener=opener,
+            return call_provider(provider, model, api_key, text, opener=opener,
                                  base_url=base_url, token_field=token_field,
                                  system=SCREEN_PROMPT, max_tokens=SCREEN_MAX_TOKENS)
         except ProviderStopped as err:
