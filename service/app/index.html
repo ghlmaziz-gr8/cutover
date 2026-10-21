@@ -3363,9 +3363,10 @@ a{color:#6d28d9;font-weight:600}`;
       const card = el("button", null, "cloud-opt" + (chosen ? " selected" : ""));
       card.type = "button";
       card.style.setProperty("--cc", c.color);
-      card.disabled = !canEdit || chosen;
+      // The chosen card is not disabled, so it keeps its colours. It simply does nothing when pressed.
+      card.disabled = !canEdit;
       card.append(el("span", c.label, "cloud-name"), el("span", chosen ? "Chosen" : "", "small muted"));
-      card.addEventListener("click", () => setCloud(c.key));
+      card.addEventListener("click", () => { if (!chosen) setCloud(c.key); });
       opts.appendChild(card);
     }
     const hasCloud = !!cur.cloud && cur.cloud !== "undecided";
