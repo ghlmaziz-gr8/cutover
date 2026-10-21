@@ -827,6 +827,20 @@ pre{white-space:pre-wrap;word-break:break-word;background:var(--soft);padding:12
         </div>
       </div>
     </div>
+    <div class="card" id="dbCard" style="margin-top:20px">
+      <h2>Database structure</h2>
+      <p class="muted small" style="margin-top:6px">
+        Upload the .json file made by the read-only script (access_metadata.py) to add the table and field names of a database.
+        The file holds names, types, sizes, nullability and row counts only. It holds no row values.
+      </p>
+      <p class="small" id="dbStatus" style="margin:10px 0 0"></p>
+      <div class="row" style="margin-top:12px">
+        <input type="file" id="dbFile" accept=".json,application/json">
+        <button type="button" id="dbUpload">Upload structure</button>
+        <button type="button" class="ghost" id="dbRemove" hidden>Remove</button>
+      </div>
+      <p class="small hint" id="dbMsg" role="status"></p>
+    </div>
     <div class="cards2" style="margin-top:20px">
       <div class="card" style="margin-top:0">
         <h3 style="margin-top:0">Download the report</h3>
@@ -3327,6 +3341,7 @@ a{color:#6d28d9;font-weight:600}`;
     $("deleteCardNext").hidden = !cur.can_delete;
     renderScope();
     renderMigrate();
+    renderDbCard();
     const deeperReady = cur.deeper_done === true;
     $("deeperNoteNext").textContent = deeperReady
       ? "Ready. It covers the business, systems, data and workflows, with an architecture overview."
@@ -3766,6 +3781,59 @@ const REGION_OPTS = {
       setMsg("intakeMsg", "Intake confirmed. A platform engineer can now make the Terraform draft.");
     } catch (err) {
       setMsg("intakeMsg", err.message, true);
+    }
+  });
+
+  // ---- Database structure: the names and counts a platform engineer uploads for this analysis ----
+
+  const DB_FILE_MAX = 2_000_000;
+
+  async function renderDbCard() {
+    const busy = cur.status === "queued" || cur.status === "running";
+    try {
+      const s = await api(`/api/analyses/${cur.id}/db-metadata`);
+      const canChange = !!s.can_change && !busy;
+      $("dbStatus").textContent = s.present
+        ? `Saved: ${s.tables} tables and ${s.fields} fields, uploaded by ${s.uploaded_by} on ${new Date(s.uploaded_at).toLocaleDateString()}.`
+        : "None saved. Databases are identified by their file type only.";
+      $("dbFile").disabled = !canChange;
+      $("dbUpload").disabled = !canChange;
+      $("dbRemove").hidden = !(s.present && canChange);
+      if (busy) setMsg("dbMsg", "Wait for the analysis to finish before changing the database structure.");
+      else if (!s.can_change) setMsg("dbMsg", "Only platform engineers can change the database structure.");
+      else setMsg("dbMsg", "");
+    } catch (err) {
+      setMsg("dbMsg", err.message, true);
+    }
+  }
+
+  $("dbUpload").addEventListener("click", async () => {
+    const file = $("dbFile").files[0];
+    if (!file) return setMsg("dbMsg", "Choose the .json file made by access_metadata.py first.", true);
+    if (file.size > DB_FILE_MAX) return setMsg("dbMsg", "That file is too large. A structure file is normally a few hundred kilobytes.", true);
+    let doc;
+    try {
+      doc = JSON.parse(await file.text());
+    } catch {
+      return setMsg("dbMsg", "That file is not valid JSON. Use the file made by access_metadata.py.", true);
+    }
+    try {
+      const saved = await api(`/api/analyses/${cur.id}/db-metadata`, { method: "PUT", body: JSON.stringify(doc) });
+      $("dbFile").value = "";
+      setMsg("dbMsg", `Saved: ${saved.tables} tables and ${saved.fields} fields. The next run of this analysis will read them. Running a finished analysis again is not available yet.`);
+      await renderDbCard();
+    } catch (err) {
+      setMsg("dbMsg", err.message, true);
+    }
+  });
+
+  $("dbRemove").addEventListener("click", async () => {
+    try {
+      await api(`/api/analyses/${cur.id}/db-metadata`, { method: "DELETE" });
+      setMsg("dbMsg", "Removed.");
+      await renderDbCard();
+    } catch (err) {
+      setMsg("dbMsg", err.message, true);
     }
   });
 

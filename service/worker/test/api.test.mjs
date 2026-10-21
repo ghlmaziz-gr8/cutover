@@ -7,6 +7,7 @@ import { test, beforeEach, afterEach } from "node:test";
 import assert from "node:assert/strict";
 import { generateKeyPairSync, randomUUID, randomBytes } from "node:crypto";
 import worker from "../src/index.mjs";
+import { validateDbMetadata } from "../src/db-metadata.mjs";
 
 const appKeys = generateKeyPairSync("rsa", {
   modulusLength: 2048,
@@ -136,6 +137,7 @@ function seed() {
     model_keys: [],
     analysis_model_tokens: [],
     analysis_screens: [],
+    analysis_db_metadata: [],
   };
 }
 
@@ -1847,4 +1849,86 @@ test("providers: a Google model name cannot carry a slash, which would change th
   const res = await call(KEYS(), { method: "POST", as: "admin_a", body: { provider: "google", api_key: GOOD_GOOGLE_KEY, model: "models/evil:x" } });
   assert.equal(res.status, 400);
   assert.match(res.body.error, /Google model names/);
+});
+
+// ---- Database structure from access_metadata.py: names, types and counts only ----
+
+const STRUCTURE = (overrides = {}) => ({
+  format: "cutover-db-metadata/1",
+  database: "ManageIt.mdb",
+  engine: "Microsoft Access",
+  tables: [{ name: "Login", row_count: 12, columns: [{ name: "LoginID", type: "Text", nullable: true }] }],
+  ...overrides,
+});
+
+test("the structure file validator keeps names, types and counts, and refuses anything else", () => {
+  const ok = validateDbMetadata(STRUCTURE());
+  assert.equal(ok.error, undefined);
+  assert.equal(ok.tables, 1);
+  assert.equal(ok.fields, 1);
+  assert.equal(validateDbMetadata(STRUCTURE({ tables: [{ name: "T", row_count: null, columns: [] }] })).error, undefined, "a null row count is fine");
+  assert.ok(validateDbMetadata(STRUCTURE({ extra: "x" })).error, "an unknown top-level key is refused");
+  assert.ok(validateDbMetadata(STRUCTURE({ format: "other/1" })).error, "another format is refused");
+  assert.ok(validateDbMetadata(STRUCTURE({ tables: [{ name: "T", columns: [], rows: [["secret"]] }] })).error, "row values are refused");
+  assert.ok(validateDbMetadata(STRUCTURE({ tables: [{ name: "T", columns: [{ name: "A", type: "Text", nullable: true, sample: "x" }] }] })).error, "a sample value in a field is refused");
+  assert.ok(validateDbMetadata(STRUCTURE({ tables: [{ name: "T", row_count: -1, columns: [] }] })).error, "a negative count is refused");
+  assert.ok(validateDbMetadata(STRUCTURE({ tables: [{ name: "T", columns: [{ name: "A", type: "Text", nullable: "yes" }] }] })).error, "nullable must be true or false");
+  assert.ok(validateDbMetadata(STRUCTURE({ tables: [{ name: "", columns: [] }] })).error, "a table needs a name");
+});
+
+test("a platform engineer saves a structure; members see the counts; the runner reads the file", async () => {
+  const saved = await call(`/api/analyses/${AN_ACME}/db-metadata`, { as: "eng_a", method: "PUT", body: STRUCTURE() });
+  assert.equal(saved.status, 201);
+  assert.deepEqual(saved.body, { saved: true, tables: 1, fields: 1 });
+  assert.equal(state.analysis_db_metadata.length, 1);
+  assert.equal(state.analysis_db_metadata[0].uploaded_by, PEOPLE.eng_a.email);
+
+  const engineer = await call(`/api/analyses/${AN_ACME}/db-metadata`, { as: "eng_a" });
+  assert.equal(engineer.body.present, true);
+  assert.equal(engineer.body.tables, 1);
+  assert.equal(engineer.body.can_change, true);
+
+  const auditor = await call(`/api/analyses/${AN_ACME}/db-metadata`, { as: "aud_a" });
+  assert.equal(auditor.status, 200, "members can see the counts");
+  assert.equal(auditor.body.can_change, false);
+  assert.equal(auditor.body.tables, 1);
+
+  const read = await call(`/api/runner/${AN_ACME}/db-metadata`, { secret: env.RUNNER_SECRET });
+  assert.equal(read.status, 200);
+  assert.deepEqual(read.body, STRUCTURE(), "the runner receives the file as it was saved");
+});
+
+test("only platform engineers can save or remove a structure, and a second save replaces the first", async () => {
+  const notEngineer = await call(`/api/analyses/${AN_ACME}/db-metadata`, { as: "aud_a", method: "PUT", body: STRUCTURE() });
+  assert.equal(notEngineer.status, 403);
+  const stranger = await call(`/api/analyses/${AN_ACME}/db-metadata`, { as: "stranger", method: "PUT", body: STRUCTURE() });
+  assert.equal(stranger.status, 404, "someone outside the workspace is told nothing exists");
+
+  await call(`/api/analyses/${AN_ACME}/db-metadata`, { as: "eng_a", method: "PUT", body: STRUCTURE() });
+  await call(`/api/analyses/${AN_ACME}/db-metadata`, { as: "eng_a", method: "PUT", body: STRUCTURE({ tables: [] }) });
+  assert.equal(state.analysis_db_metadata.length, 1, "the second file replaces the first");
+  assert.equal(state.analysis_db_metadata[0].table_count, 0);
+
+  const notRemover = await call(`/api/analyses/${AN_ACME}/db-metadata`, { as: "aud_a", method: "DELETE" });
+  assert.equal(notRemover.status, 403);
+  const removed = await call(`/api/analyses/${AN_ACME}/db-metadata`, { as: "eng_a", method: "DELETE" });
+  assert.deepEqual(removed.body, { removed: true });
+  const after = await call(`/api/runner/${AN_ACME}/db-metadata`, { secret: env.RUNNER_SECRET });
+  assert.equal(after.status, 404, "once removed, the run finds no structure");
+});
+
+test("a structure with row values is refused and nothing is saved", async () => {
+  const res = await call(`/api/analyses/${AN_ACME}/db-metadata`, {
+    as: "eng_a", method: "PUT", body: STRUCTURE({ tables: [{ name: "Login", columns: [], rows: [["alice@example.test"]] }] }),
+  });
+  assert.equal(res.status, 400);
+  assert.equal(state.analysis_db_metadata.length, 0);
+});
+
+test("a structure cannot be changed while its analysis is running, and the runner needs the shared secret", async () => {
+  runningAnalysis();
+  const busy = await call(`/api/analyses/${AN_RUNNING}/db-metadata`, { as: "eng_a", method: "PUT", body: STRUCTURE() });
+  assert.equal(busy.status, 409);
+  const wrong = await call(`/api/runner/${AN_RUNNING}/db-metadata`, { secret: "wrong" });
+  assert.equal(wrong.status, 401);
 });

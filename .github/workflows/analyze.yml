@@ -81,12 +81,31 @@ jobs:
         with:
           python-version: "3.12"
 
+      # Optional. The database structure a platform engineer saved for this analysis: table, field and row-count
+      # names from access_metadata.py. Without one, a database is identified by its file signature only.
+      - name: Fetch the database structure, if one was saved
+        env:
+          RUNNER_SECRET: ${{ secrets.RUNNER_SECRET }}
+          CALLBACK_URL: ${{ secrets.CUTOVER_API_URL }}
+        run: |
+          code=$(curl -sS -o "$RUNNER_TEMP/db-metadata.json" -w '%{http_code}' \
+            -H "x-runner-secret: $RUNNER_SECRET" \
+            "$CALLBACK_URL/api/runner/$ANALYSIS_ID/db-metadata") || code=000
+          if [ "$code" = "200" ]; then
+            echo "A database structure was saved for this analysis and will be read."
+          else
+            rm -f "$RUNNER_TEMP/db-metadata.json"
+            echo "No database structure to read (status $code)."
+          fi
+
       # Page screenshots are off on the free tier: the report keeps the drawn page and its visible text instead.
       - name: Run the discovery engine
         run: |
           set -euo pipefail
+          extra=()
+          if [ -f "$RUNNER_TEMP/db-metadata.json" ]; then extra=(--db-metadata "$RUNNER_TEMP/db-metadata.json"); fi
           python3 cutover/engine/cutover_discover.py \
-            --path "$RUNNER_TEMP/target" --out "$RUNNER_TEMP/reports"
+            --path "$RUNNER_TEMP/target" --out "$RUNNER_TEMP/reports" "${extra[@]}"
 
       # Optional. Only when the analysis was started with the workspace's own model. The key is exchanged
       # for in memory and never printed. Without a model, or if this step fails, the rule-based purposes stay.

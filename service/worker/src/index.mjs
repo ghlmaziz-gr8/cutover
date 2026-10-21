@@ -1,5 +1,6 @@
 import { COST_RATES } from "./cost-rates.mjs";
 import { MODEL_PROVIDERS, MODEL_NAME_PATTERN, customBaseUrl } from "./model-providers.mjs";
+import { validateDbMetadata } from "./db-metadata.mjs";
 
 // Cutover SaaS API (Cloudflare Worker).
 //
@@ -45,6 +46,10 @@ import { MODEL_PROVIDERS, MODEL_NAME_PATTERN, customBaseUrl } from "./model-prov
 //   POST   /api/runner/:id/result                         runner callback with findings (shared secret)
 //   POST   /api/runner/:id/model-key                      one-time exchange of a model token for the key (shared secret + token)
 //   POST   /api/runner/:id/screens                        screens drawn from the code by the model (shared secret)
+//   GET    /api/analyses/:id/db-metadata                  whether a database structure is saved, and its counts (members)
+//   PUT    /api/analyses/:id/db-metadata                  save a database structure file from access_metadata.py (platform engineers)
+//   DELETE /api/analyses/:id/db-metadata                  remove it (platform engineers)
+//   GET    /api/runner/:id/db-metadata                    the saved structure for the run (shared secret)
 //
 // A scheduled job deletes analyses past their expires_at, and writes a deletion record first.
 //
@@ -1216,6 +1221,80 @@ async function startAnalysis(request, env) {
   }
 
   return json({ id: row.id, status: row.status }, 202);
+}
+
+// ---- Database structure: table, field and row-count names from access_metadata.py. No row values. ----
+
+const MAX_DB_METADATA_BYTES = 2_000_000;
+
+// Shows whether a structure is saved, with its counts. Members see the counts, not the names.
+async function getDbMetadataSummary(request, env, id) {
+  const access = await analysisAccess(env, request, id);
+  if (access.response) return access.response;
+  const res = await serviceRest(env, `analysis_db_metadata?analysis_id=eq.${id}&select=table_count,field_count,uploaded_by,uploaded_at`);
+  if (!res.ok) return json({ error: "Could not load the database structure." }, 502);
+  const [row] = await res.json();
+  return json({
+    present: Boolean(row),
+    tables: row ? row.table_count : null,
+    fields: row ? row.field_count : null,
+    uploaded_by: row ? row.uploaded_by : null,
+    uploaded_at: row ? row.uploaded_at : null,
+    can_change: canStart(access.member),
+  });
+}
+
+// Saves a structure file, replacing any earlier one. Refused while the analysis is running, so a run sees one file.
+async function saveDbMetadata(request, env, id) {
+  const access = await analysisAccess(env, request, id);
+  if (access.response) return access.response;
+  if (!canStart(access.member)) return json({ error: "Only platform engineers can add the database structure." }, 403);
+  if (access.row.status === "queued" || access.row.status === "running") {
+    return json({ error: "Wait for the analysis to finish before changing the database structure." }, 409);
+  }
+  const parsed = await readJson(request, MAX_DB_METADATA_BYTES);
+  if (parsed.error) return json({ error: parsed.error }, 400);
+  const checked = validateDbMetadata(parsed.value);
+  if (checked.error) return json({ error: checked.error }, 400);
+  const cleared = await serviceRest(env, `analysis_db_metadata?analysis_id=eq.${id}`, { method: "DELETE" });
+  if (!cleared.ok) return json({ error: "Could not save the database structure." }, 502);
+  const made = await serviceRest(env, "analysis_db_metadata", {
+    method: "POST",
+    headers: { prefer: "return=minimal" },
+    body: JSON.stringify({
+      analysis_id: id,
+      doc: checked.value,
+      table_count: checked.tables,
+      field_count: checked.fields,
+      uploaded_by: access.user.email,
+    }),
+  });
+  if (!made.ok) return json({ error: "Could not save the database structure." }, 502);
+  return json({ saved: true, tables: checked.tables, fields: checked.fields }, 201);
+}
+
+async function deleteDbMetadata(request, env, id) {
+  const access = await analysisAccess(env, request, id);
+  if (access.response) return access.response;
+  if (!canStart(access.member)) return json({ error: "Only platform engineers can remove the database structure." }, 403);
+  if (access.row.status === "queued" || access.row.status === "running") {
+    return json({ error: "Wait for the analysis to finish before changing the database structure." }, 409);
+  }
+  const res = await serviceRest(env, `analysis_db_metadata?analysis_id=eq.${id}`, { method: "DELETE" });
+  if (!res.ok) return json({ error: "Could not remove the database structure." }, 502);
+  return json({ removed: true });
+}
+
+// The runner's read of the saved structure. It sends the file on to the engine and nothing else.
+async function runnerDbMetadata(request, env, id) {
+  if (!timingSafeEqual(request.headers.get("x-runner-secret") || "", env.RUNNER_SECRET || "")) {
+    return json({ error: "Unauthorized." }, 401);
+  }
+  const res = await serviceRest(env, `analysis_db_metadata?analysis_id=eq.${id}&select=doc`);
+  if (!res.ok) return json({ error: "Could not load the database structure." }, 502);
+  const [row] = await res.json();
+  if (!row) return json({ error: "No database structure saved." }, 404);
+  return json(row.doc);
 }
 
 async function getAnalysis(request, env, id) {
@@ -2390,6 +2469,12 @@ async function route(request, env) {
     if (analysisIntake && UUID_PATTERN.test(analysisIntake[1]) && method === "PUT") return saveIntake(request, env, analysisIntake[1]);
     const analysisIntakeConfirm = path.match(/^\/api\/analyses\/([^/]+)\/intake\/confirm$/);
     if (analysisIntakeConfirm && UUID_PATTERN.test(analysisIntakeConfirm[1]) && method === "POST") return confirmIntake(request, env, analysisIntakeConfirm[1]);
+    const analysisDbMetadata = path.match(/^\/api\/analyses\/([^/]+)\/db-metadata$/);
+    if (analysisDbMetadata && UUID_PATTERN.test(analysisDbMetadata[1])) {
+      if (method === "GET") return getDbMetadataSummary(request, env, analysisDbMetadata[1]);
+      if (method === "PUT") return saveDbMetadata(request, env, analysisDbMetadata[1]);
+      if (method === "DELETE") return deleteDbMetadata(request, env, analysisDbMetadata[1]);
+    }
     const analysisScope = path.match(/^\/api\/analyses\/([^/]+)\/scope$/);
     if (analysisScope && UUID_PATTERN.test(analysisScope[1]) && method === "PATCH") return setScope(request, env, analysisScope[1]);
 
@@ -2449,6 +2534,11 @@ async function route(request, env) {
     const modelKey = path.match(/^\/api\/runner\/([^/]+)\/model-key$/);
     if (modelKey && UUID_PATTERN.test(modelKey[1]) && method === "POST") {
       return runnerModelKey(request, env, modelKey[1]);
+    }
+
+    const dbMetadataRead = path.match(/^\/api\/runner\/([^/]+)\/db-metadata$/);
+    if (dbMetadataRead && UUID_PATTERN.test(dbMetadataRead[1]) && method === "GET") {
+      return runnerDbMetadata(request, env, dbMetadataRead[1]);
     }
 
     const screensUpload = path.match(/^\/api\/runner\/([^/]+)\/screens$/);
