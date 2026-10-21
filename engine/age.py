@@ -84,3 +84,31 @@ def git_dates(git_output: str) -> dict[str, tuple[str, str]]:
         newest.setdefault(line, current)
         oldest[line] = current
     return {path: (oldest[path], newest[path]) for path in newest}
+
+
+def origin_estimate(files: dict[str, str], now_year: int, history: dict) -> dict:
+    """When the application was probably first written, from the years the code gives about itself (copyright
+    lines, headers and dates in each file). Git dates are not used for this: a repository uploaded later has its
+    own commit date, which says when this copy was committed, not when the application was built."""
+    per_file_min: list[int] = []
+    for text in files.values():
+        years = years_in_text(text, now_year) if text else []
+        if years:
+            per_file_min.append(min(years))
+    per_file_min.sort()
+    evidence: list[str] = []
+    if history.get("available"):
+        evidence.append(
+            f"Git history in this repository starts {history.get('first_commit')} with "
+            f"{history.get('total_commits')} commit(s). That is when this copy was committed, not when the application was built.")
+    if not per_file_min:
+        evidence.insert(0, f"No year is written in the code of the {len(files)} text files read, so no origin is estimated.")
+        return {"earliest_year": None, "typical_year": None, "latest_year": None, "files_with_years": 0,
+                "files_scanned": len(files), "confidence": "none", "evidence": evidence}
+    earliest, typical, latest = per_file_min[0], per_file_min[len(per_file_min) // 2], per_file_min[-1]
+    evidence.insert(0, f"Years written in {len(per_file_min)} of the {len(files)} text files read: earliest {earliest}, "
+                       f"typical {typical}, latest {latest}.")
+    return {"earliest_year": earliest, "typical_year": typical, "latest_year": latest,
+            "files_with_years": len(per_file_min), "files_scanned": len(files),
+            "confidence": "medium" if len(per_file_min) >= 10 else "low", "evidence": evidence}
+

@@ -78,6 +78,24 @@ class PurposeTests(unittest.TestCase):
 
 
 class HelperTests(unittest.TestCase):
+    def test_origin_comes_from_years_in_the_code_not_from_the_upload_date(self):
+        from age import origin_estimate
+        files = {
+            "a.asp": "' Copyright 1997 Acme\n<html></html>",
+            "b.asp": "' Created 2001-03-12\n",
+            "c.asp": "no year here",
+        }
+        history = {"available": True, "first_commit": "2026-10-21", "total_commits": 1}
+        est = origin_estimate(files, 2026, history)
+        self.assertEqual((est["earliest_year"], est["latest_year"], est["files_with_years"]), (1997, 2001, 2))
+        self.assertTrue(any("2026-10-21" in line and "not when the application was built" in line for line in est["evidence"]))
+
+    def test_no_years_means_no_origin(self):
+        from age import origin_estimate
+        est = origin_estimate({"a.asp": "plain"}, 2026, {"available": False})
+        self.assertIsNone(est["earliest_year"])
+        self.assertEqual(est["confidence"], "none")
+
     def test_classic_asp_role_checks_are_read_but_assignments_are_not(self):
         import tempfile
         from cutover_discover import Repo, detect_ui

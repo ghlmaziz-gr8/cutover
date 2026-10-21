@@ -242,6 +242,13 @@ def _day(ts: int) -> str:
     return dt.datetime.fromtimestamp(ts, dt.timezone.utc).strftime("%Y-%m-%d")
 
 
+def history_with_origin(root: Path, now: dt.datetime, files: dict[str, str]) -> dict:
+    """Git history, plus the estimate of when the application was first written from the code itself."""
+    h = history(root, now)
+    h["origin"] = age.origin_estimate(files, now.year, h)
+    return h
+
+
 def history(root: Path, now: dt.datetime) -> dict:
     if not is_repo_root(root):
         return {"available": False, "reason": "This folder is not the root of a git repository, so history is not read."}
@@ -1073,7 +1080,7 @@ def analyze(repo: Repo, root: Path, now: dt.datetime, source: dict, metadata: li
         "schema_version": SCHEMA_VERSION,
         "generated_at": now.strftime("%Y-%m-%dT%H:%M:%SZ"),
         "source": source,
-        "history": history(root, now),
+        "history": history_with_origin(root, now, repo.files),
         "findings": out,
         "flags": sorted(k for k, v in out.items() if v.get("severity")),
         "limitations": LIMITATIONS,
