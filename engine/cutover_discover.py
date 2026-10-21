@@ -361,6 +361,33 @@ def detect_purpose(repo: Repo, out: dict) -> None:
     )
 
 
+# Pack names that describe a language already named from a build file, so the list does not say it twice.
+SAME_LANGUAGE = {
+    "Java and Spring Boot": "Java/JVM", "JSP": "Java/JVM",
+    "C# and ASP.NET": ".NET", "ASP.NET Razor and Web Forms": ".NET",
+    "Classic ASP include": "Classic ASP",
+}
+
+
+def add_source_languages(records: list[dict], out: dict) -> None:
+    """Adds the languages found in the source files. Build files alone miss code with no build file, such as
+    classic ASP sites and plain JavaScript."""
+    finding = out.get("stack.languages")
+    if finding is None:
+        return
+    langs = list(finding["value"]) if finding["value"] != ["none found"] else []
+    found = set()
+    for r in records:
+        if r.get("language"):
+            found.add(SAME_LANGUAGE.get(r["language"], r["language"]))
+        if r.get("kind") == "web" and r.get("format") in ("JavaScript", "TypeScript"):
+            found.add("JavaScript/TypeScript")
+    for name in sorted(found):
+        if name not in langs:
+            langs.append(name)
+    finding["value"] = langs or ["none found"]
+
+
 def detect_stack(repo: Repo, out: dict) -> None:
     poms = [p for p in repo.paths if p == "pom.xml" or p.endswith("/pom.xml")]
     gradles = [p for p in repo.paths if p.endswith(("build.gradle", "build.gradle.kts"))]
@@ -1026,6 +1053,7 @@ def analyze(repo: Repo, root: Path, now: dt.datetime, source: dict, metadata: li
     out["legacy.inventory"] = F("legacy.inventory", "stack", "Every file, by kind and language", summary, "verified",
                                 [r["path"] for r in records if r["identified_by"] == "none"][:EVIDENCE_LIMIT],
                                 note="Each file is listed in inventory.json with its kind, language, age range and encoding. Unidentified files are named, never guessed at.")
+    add_source_languages(records, out)
     detect_epic(repo, out)
     detect_containers(repo, out)
     detect_delivery(repo, out)

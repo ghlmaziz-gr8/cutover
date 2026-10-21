@@ -78,6 +78,24 @@ class PurposeTests(unittest.TestCase):
 
 
 class HelperTests(unittest.TestCase):
+    def test_source_files_add_languages_that_build_files_miss(self):
+        from cutover_discover import add_source_languages
+        out = {"stack.languages": {"value": ["none found"]}}
+        records = [
+            {"path": "a.asp", "language": "Classic ASP", "kind": "text", "format": None},
+            {"path": "b.asp", "language": "Classic ASP include", "kind": "text", "format": None},
+            {"path": "site.js", "language": None, "kind": "web", "format": "JavaScript"},
+            {"path": "Orders.java", "language": "Java and Spring Boot", "kind": "text", "format": None},
+        ]
+        add_source_languages(records, out)
+        self.assertEqual(out["stack.languages"]["value"], ["Classic ASP", "Java/JVM", "JavaScript/TypeScript"])
+
+    def test_a_java_build_file_is_not_named_twice(self):
+        from cutover_discover import add_source_languages
+        out = {"stack.languages": {"value": ["Java/JVM"]}}
+        add_source_languages([{"path": "A.java", "language": "Java and Spring Boot", "kind": "text", "format": None}], out)
+        self.assertEqual(out["stack.languages"]["value"], ["Java/JVM"])
+
     def test_an_empty_result_is_not_a_point(self):
         from cutover_discover import is_point
         self.assertFalse(is_point({"value": ["none found"]}))
