@@ -2731,7 +2731,24 @@ pre{white-space:pre-wrap;word-break:break-word;background:var(--soft);padding:12
   function renderFindingItem(item) {
     const card = el("div", null, "finding" + (item.severity ? " sev-" + item.severity : ""));
     card.appendChild(el("h4", item.title));
-    card.appendChild(el("p", fmtValue(item.value)));
+    // A structure finding carries each table with its fields. The summary line leaves the list out; the list follows.
+    const hasDetail = item.value && typeof item.value === "object" && Array.isArray(item.value.detail);
+    const summary = hasDetail ? Object.fromEntries(Object.entries(item.value).filter(([k]) => k !== "detail")) : item.value;
+    card.appendChild(el("p", fmtValue(summary)));
+    if (hasDetail) {
+      for (const t of item.value.detail) {
+        const table = document.createElement("details");
+        table.className = "ds-table";
+        const head = el("summary", t.name);
+        const n = t.fields.length;
+        head.appendChild(el("span", `${n} ${n === 1 ? "field" : "fields"}${t.row_count != null ? ` · ${t.row_count} rows` : ""}`, "muted small"));
+        table.appendChild(head);
+        const list = el("ul", null, "ds-fields");
+        for (const f of t.fields) list.appendChild(el("li", `${f.name} · ${f.type}${f.nullable ? "" : " · required"}`));
+        table.appendChild(list);
+        card.appendChild(table);
+      }
+    }
     if (item.note) card.appendChild(el("p", item.note, "muted small"));
     const details = document.createElement("details");
     details.appendChild(el("summary", "Show details"));
@@ -2866,9 +2883,11 @@ pre{white-space:pre-wrap;word-break:break-word;background:var(--soft);padding:12
       }
       return c;
     }
+    // These entities are long. They are listed only under "Show findings", not as rows in the card.
+    const EXPAND_ONLY = ["data.tables_in_code", "data.routines_in_code", "data.database_metadata"];
     const kv = el("div", null, "kv");
-    for (const item of found) kv.append(el("span", item.title), el("span", fmtValue(item.value)));
-    c.appendChild(kv);
+    for (const item of found.filter((i) => !EXPAND_ONLY.includes(i.id))) kv.append(el("span", item.title), el("span", fmtValue(item.value)));
+    if (kv.childElementCount) c.appendChild(kv);
     c.appendChild(findingBars(found));
     const verified = found.filter((i) => i.confidence === "verified").length;
     const inferred = found.length - verified;
