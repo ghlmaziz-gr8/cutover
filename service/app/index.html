@@ -202,6 +202,22 @@ form input + button{margin-top:16px}
 .arch-layer b{font-size:14px}
 .arch-arrow{text-align:center;color:var(--accent);font-size:12px;line-height:1.4;animation:archPulse 2s ease-in-out infinite}
 .deeper-sec li{margin:6px 0}
+/* Migrate: cloud choice and intake form */
+.migrate-box{margin-top:18px;border-top:1px dashed var(--line);padding-top:16px}
+.cloud-opts{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;margin-top:12px}
+.cloud-opt{position:relative;text-align:left;border:1px solid var(--line);border-radius:14px;padding:12px 12px 12px 18px;background:var(--card);display:flex;flex-direction:column;gap:4px;overflow:hidden;cursor:pointer;transition:transform .2s,box-shadow .3s,border-color .3s}
+.cloud-opt::before{content:"";position:absolute;left:0;top:0;bottom:0;width:5px;background:var(--cc)}
+.cloud-opt:not(:disabled):hover{transform:translateY(-2px)}
+.cloud-opt.selected{border-color:var(--cc);box-shadow:0 0 0 3px color-mix(in srgb,var(--cc) 20%,transparent);animation:cloudPop .5s ease-out}
+.cloud-opt:disabled{cursor:default}
+.cloud-name{font-weight:700;color:var(--fg)}
+@keyframes cloudPop{0%{transform:scale(.97)}60%{transform:scale(1.02)}100%{transform:scale(1)}}
+.intake-progress{height:8px;border-radius:999px;background:color-mix(in srgb,var(--accent) 12%,var(--card));overflow:hidden;margin-top:12px}
+.intake-fill{height:100%;width:0;background:linear-gradient(90deg,var(--accent),var(--accent2));transition:width .6s cubic-bezier(.2,.8,.2,1)}
+.intake-form label{display:block;margin-top:12px;font-size:13px;color:var(--muted)}
+.intake-form input,.intake-form select{width:100%;margin-top:4px}
+@media (max-width:720px){.cloud-opts{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media (prefers-reduced-motion:reduce){.cloud-opt.selected{animation:none}.cloud-opt{transition:none}.intake-fill{transition:none}}
 .prop{border:1px solid var(--line);border-radius:16px;padding:14px;margin-top:12px;background:var(--card)}
 .prop .tag{margin-left:8px}
 .deeper-sec .src{display:block;font-size:12px;color:var(--muted)}
@@ -744,6 +760,30 @@ pre{white-space:pre-wrap;word-break:break-word;background:var(--soft);padding:12
       <p class="muted small" id="scopeNote" style="margin:0"></p>
       <div class="scope-opts" id="scopeOpts"></div>
       <p class="small hint" id="scopeMsg" role="status"></p>
+      <div class="migrate-box" id="migrateBox" hidden>
+        <h3 style="margin:0 0 6px">Migrate: target cloud</h3>
+        <p class="muted small" id="migrateNote"></p>
+        <div class="cloud-opts" id="cloudOpts"></div>
+        <div id="intakeWrap" hidden>
+          <h3 style="margin:18px 0 4px">Intake form</h3>
+          <p class="muted small" style="margin:0">Describe settings only. Do not enter patient data or personal email addresses.</p>
+          <div class="intake-progress" aria-hidden="true"><div class="intake-fill" id="intakeFill"></div></div>
+          <p class="small muted" id="intakeCount" style="margin:6px 0 0"></p>
+          <form id="intakeForm" class="intake-form">
+            <label>Region <input id="inRegion" maxlength="60" placeholder="For example: us-east-1"></label>
+            <label>Network <select id="inNetwork"><option value="">Choose</option><option value="new">New network</option><option value="existing">Existing network</option></select></label>
+            <label>Sign-in provider <select id="inSignIn"><option value="">Choose</option><option value="google">Google</option><option value="microsoft">Microsoft Entra ID</option><option value="other">Other</option></select></label>
+            <label>Compliance requirements <input id="inCompliance" maxlength="200" placeholder="For example: HIPAA. Write None if there are none."></label>
+            <label>Expected users <input id="inUsers" type="number" min="1" max="10000000" placeholder="For example: 400"></label>
+            <label>Data residency <input id="inResidency" maxlength="120" placeholder="For example: United States"></label>
+            <div class="row" style="justify-content:flex-end;margin-top:14px">
+              <button type="submit" id="intakeSave">Save intake</button>
+              <button type="button" class="ghost" id="intakeConfirm" disabled>Confirm intake</button>
+            </div>
+            <p class="small hint" id="intakeMsg" role="status"></p>
+          </form>
+        </div>
+      </div>
     </div>
     <div class="cards2" style="margin-top:20px">
       <div class="card" style="margin-top:0">
@@ -3104,6 +3144,7 @@ a{color:#6d28d9;font-weight:600}`;
     $("inviteCardNext").hidden = !(ws && ws.is_admin);
     $("deleteCardNext").hidden = !cur.can_delete;
     renderScope();
+    renderMigrate();
     const deeperReady = cur.deeper_done === true;
     $("deeperNoteNext").textContent = deeperReady
       ? "Ready. It covers the business, systems, data and workflows, with an architecture overview."
@@ -3236,7 +3277,7 @@ a{color:#6d28d9;font-weight:600}`;
   const SCOPE_OPTIONS = [
     { key: "deeper", title: "Deeper assessment", body: "A purpose and suggestions for every file, plus business, systems and data documents, workflows and an architecture diagram.", needsDeeper: false },
     { key: "modernize", title: "Modernize", body: "Three future-state proposals for the web application, each with its trade-offs.", needsDeeper: true, note: "The three proposals are on the deeper assessment page. Choosing this records your decision." },
-    { key: "migrate", title: "Migrate", body: "Move to Google Cloud, AWS or Azure. Then an intake form, then a Terraform draft to review.", needsDeeper: true, note: "Not built yet. Choosing this records your decision only; the cloud choice and intake form come next." },
+    { key: "migrate", title: "Migrate", body: "Move to Google Cloud, AWS or Azure. Then an intake form, then a Terraform draft to review.", needsDeeper: true, note: "Choosing this opens the target cloud and the intake form below." },
   ];
   const SCOPE_LABEL = { deeper: "Deeper assessment", modernize: "Modernize", migrate: "Migrate" };
 
@@ -3297,6 +3338,107 @@ a{color:#6d28d9;font-weight:600}`;
     }
   }
 
+  const CLOUD_OPTS = [
+    { key: "google", label: "Google Cloud", color: "#4285f4" },
+    { key: "aws", label: "AWS", color: "#ff9900" },
+    { key: "azure", label: "Azure", color: "#0078d4" },
+    { key: "undecided", label: "Not decided yet", color: "var(--muted)" },
+  ];
+  const INTAKE_KEYS = ["inRegion", "inNetwork", "inSignIn", "inCompliance", "inUsers", "inResidency"];
+
+  // Migrate: the cloud is chosen first, then the intake form. Only platform engineers change either.
+  function renderMigrate() {
+    const box = $("migrateBox");
+    box.hidden = cur.scope !== "migrate";
+    if (box.hidden) return;
+    const canEdit = !!cur.can_plan;
+    const cloudLabel = (key) => (CLOUD_OPTS.find((c) => c.key === key) || {}).label;
+    $("migrateNote").textContent = cur.cloud
+      ? `Chosen: ${cloudLabel(cur.cloud)}${cur.cloud_set_by_email ? ` by ${cur.cloud_set_by_email}` : ""}.`
+      : "No cloud chosen yet.";
+    const opts = $("cloudOpts");
+    opts.replaceChildren();
+    for (const c of CLOUD_OPTS) {
+      const chosen = cur.cloud === c.key;
+      const card = el("button", null, "cloud-opt" + (chosen ? " selected" : ""));
+      card.type = "button";
+      card.style.setProperty("--cc", c.color);
+      card.disabled = !canEdit || chosen;
+      card.append(el("span", c.label, "cloud-name"), el("span", chosen ? "Chosen" : "", "small muted"));
+      card.addEventListener("click", () => setCloud(c.key));
+      opts.appendChild(card);
+    }
+    const hasCloud = !!cur.cloud && cur.cloud !== "undecided";
+    $("intakeWrap").hidden = !hasCloud;
+    if (!hasCloud) {
+      $("migrateNote").textContent += cur.cloud === "undecided"
+        ? " The intake form opens once a cloud is chosen."
+        : " Choose a cloud to open the intake form.";
+      return;
+    }
+    const saved = cur.intake || {};
+    const values = {
+      inRegion: saved.region || "", inNetwork: saved.network || "", inSignIn: saved.sign_in || "",
+      inCompliance: saved.compliance || "", inUsers: saved.expected_users || "", inResidency: saved.residency || "",
+    };
+    for (const key of INTAKE_KEYS) {
+      $(key).value = values[key];
+      $(key).disabled = !canEdit;
+    }
+    const filled = INTAKE_KEYS.filter((key) => String(values[key]).trim() !== "").length;
+    $("intakeFill").style.width = `${Math.round((100 * filled) / INTAKE_KEYS.length)}%`;
+    $("intakeCount").textContent = `${filled} of ${INTAKE_KEYS.length} fields saved`;
+    $("intakeSave").disabled = !canEdit;
+    const confirmed = !!cur.intake_confirmed_at;
+    $("intakeConfirm").disabled = !canEdit || confirmed || !cur.intake;
+    $("intakeConfirm").textContent = confirmed ? `Confirmed by ${cur.intake_confirmed_by_email}` : "Confirm intake";
+  }
+
+  async function refreshAnalysis() {
+    cur = await api(`/api/analyses/${cur.id}`);
+    renderScope();
+    renderMigrate();
+  }
+
+  async function setCloud(key) {
+    try {
+      await api(`/api/analyses/${cur.id}/cloud`, { method: "PATCH", body: JSON.stringify({ cloud: key }) });
+      await refreshAnalysis();
+      setMsg("intakeMsg", key === "undecided" ? "Saved: not decided yet." : `Saved: ${CLOUD_OPTS.find((c) => c.key === key).label}.`);
+    } catch (err) {
+      setMsg("scopeMsg", err.message, true);
+    }
+  }
+
+  $("intakeForm").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const body = {
+      region: $("inRegion").value.trim(),
+      network: $("inNetwork").value,
+      sign_in: $("inSignIn").value,
+      compliance: $("inCompliance").value.trim(),
+      expected_users: Number($("inUsers").value),
+      residency: $("inResidency").value.trim(),
+    };
+    try {
+      await api(`/api/analyses/${cur.id}/intake`, { method: "PUT", body: JSON.stringify(body) });
+      await refreshAnalysis();
+      setMsg("intakeMsg", "Intake saved. Confirm it when every field is right.");
+    } catch (err) {
+      setMsg("intakeMsg", err.message, true);
+    }
+  });
+
+  $("intakeConfirm").addEventListener("click", async () => {
+    try {
+      await api(`/api/analyses/${cur.id}/intake/confirm`, { method: "POST" });
+      await refreshAnalysis();
+      setMsg("intakeMsg", "Intake confirmed. A platform engineer can now make the Terraform draft.");
+    } catch (err) {
+      setMsg("intakeMsg", err.message, true);
+    }
+  });
+
   function lockIcon() {
     const ns = "http://www.w3.org/2000/svg";
     const svg = document.createElementNS(ns, "svg");
@@ -3320,6 +3462,7 @@ a{color:#6d28d9;font-weight:600}`;
       await api(`/api/analyses/${cur.id}/scope`, { method: "PATCH", body: JSON.stringify({ scope: key }) });
       cur = await api(`/api/analyses/${cur.id}`);
       renderScope();
+      renderMigrate();
       setMsg("scopeMsg", `${SCOPE_LABEL[key]} is now the next stage.`);
     } catch (err) {
       setMsg("scopeMsg", err.message, true);

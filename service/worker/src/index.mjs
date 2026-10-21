@@ -26,6 +26,9 @@
 //   DELETE /api/comments/:id                              delete a comment (its author, or a workspace admin)
 //   POST   /api/analyses/:id/actions                      add an action item (not auditors)
 //   PATCH  /api/actions/:id                               open or close an action item (not auditors)
+//   PATCH  /api/analyses/:id/cloud                         choose the target cloud for Migrate (platform engineers)
+//   PUT    /api/analyses/:id/intake                        save the intake form for Migrate (platform engineers)
+//   POST   /api/analyses/:id/intake/confirm                confirm the saved intake (platform engineers)
 //   PATCH  /api/analyses/:id/scope                       choose deeper, modernize or migrate (platform engineers)
 //   POST   /api/analyses/:id/contingencies                add a contingency plan (platform engineers)
 //   PATCH  /api/contingencies/:id                         edit or set the status of a contingency (platform engineers)
@@ -944,6 +947,7 @@ const NOTIFY_KINDS = [
   "analysis_started", "analysis_complete", "analysis_failed", "privacy_signed_off", "privacy_withdrawn",
   "model_key_added", "model_key_removed", "comment_added", "action_added", "action_done",
   "scope_chosen", "deeper_ready", "plan_accepted", "plan_rejected", "purposes_approved",
+  "cloud_chosen", "intake_confirmed",
 ];
 
 async function notifyPeople(env, workspaceId, userIds, note) {
@@ -1443,6 +1447,102 @@ async function addContingency(request, env, id) {
   });
   if (!res.ok) return json({ error: "Could not save the contingency." }, 502);
   return json({ saved: true }, 201);
+}
+
+// ---- Migrate: the target cloud, then the intake form that the Terraform draft will use ----
+const CLOUDS = { google: "Google Cloud", aws: "AWS", azure: "Azure", undecided: "Not decided yet" };
+const NETWORKS = ["new", "existing"];
+const SIGN_INS = ["google", "microsoft", "other"];
+
+// Free text in the intake must describe settings, not people. A personal email address is refused.
+function describesNoPerson(text) {
+  return !/[^\s@]+@[^\s@]+\.[^\s@]+/.test(text);
+}
+
+// Checks the intake form. Every field is required.
+function intakeFields(value) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return { error: "Send the intake form as an object." };
+  const text = (key, max) => (typeof value[key] === "string" ? value[key].trim() : "");
+  const region = text("region", 60);
+  const residency = text("residency", 120);
+  const compliance = text("compliance", 200);
+  const network = value.network;
+  const signIn = value.sign_in;
+  const users = Number(value.expected_users);
+  if (!region) return { error: "Region is required." };
+  if (!NETWORKS.includes(network)) return { error: "Network must be new or existing." };
+  if (!SIGN_INS.includes(signIn)) return { error: "Sign-in provider must be google, microsoft or other." };
+  if (!compliance) return { error: "Compliance requirements are required. Write None if there are none." };
+  if (!Number.isInteger(users) || users < 1 || users > 10_000_000) return { error: "Expected users must be a whole number from 1 to 10,000,000." };
+  if (!residency) return { error: "Data residency is required." };
+  for (const [label, content] of [["Region", region], ["Compliance requirements", compliance], ["Data residency", residency]]) {
+    if (!describesNoPerson(content)) return { error: `${label} must not contain a personal email address. Describe the setting instead.` };
+  }
+  return { fields: { region, network, sign_in: signIn, compliance, expected_users: users, residency } };
+}
+
+async function setCloud(request, env, id) {
+  const access = await analysisAccess(env, request, id);
+  if (access.response) return access.response;
+  if (!canStart(access.member)) return json({ error: "Only platform engineers can choose the cloud." }, 403);
+  const parsed = await readJson(request);
+  if (parsed.error) return json({ error: parsed.error }, 400);
+  const cloud = parsed.value && parsed.value.cloud;
+  if (!Object.prototype.hasOwnProperty.call(CLOUDS, cloud)) return json({ error: "Choose google, aws, azure or undecided." }, 400);
+  if (access.row.scope !== "migrate") return json({ error: "Choose Migrate as the next stage first." }, 409);
+  const changed = access.row.cloud !== cloud;
+  // A different cloud makes the saved intake and its confirmation out of date, so they are cleared.
+  const change = changed
+    ? { cloud, cloud_set_by_email: access.user.email, cloud_set_at: new Date().toISOString(), intake_confirmed_by_email: null, intake_confirmed_at: null }
+    : { cloud, cloud_set_by_email: access.user.email, cloud_set_at: new Date().toISOString() };
+  const res = await serviceRest(env, `analyses?id=eq.${id}`, {
+    method: "PATCH", headers: { prefer: "return=minimal" }, body: JSON.stringify(change),
+  });
+  if (!res.ok) return json({ error: "Could not save the cloud." }, 502);
+  if (changed) {
+    await notifyPeople(env, access.row.workspace_id, await analysisAudienceExcept(env, access.row, access.user.id), {
+      kind: "cloud_chosen", tone: "info", title: `Cloud chosen: ${CLOUDS[cloud]}`,
+      body: `${access.row.app_name || access.row.repo}: chosen by ${access.user.email}.`, analysis_id: id,
+    });
+  }
+  return json({ saved: true });
+}
+
+async function saveIntake(request, env, id) {
+  const access = await analysisAccess(env, request, id);
+  if (access.response) return access.response;
+  if (!canStart(access.member)) return json({ error: "Only platform engineers can fill in the intake." }, 403);
+  if (access.row.scope !== "migrate") return json({ error: "Choose Migrate as the next stage first." }, 409);
+  if (!access.row.cloud || access.row.cloud === "undecided") return json({ error: "Choose a cloud before the intake form." }, 409);
+  const parsed = await readJson(request);
+  if (parsed.error) return json({ error: parsed.error }, 400);
+  const checked = intakeFields(parsed.value);
+  if (checked.error) return json({ error: checked.error }, 400);
+  const res = await serviceRest(env, `analyses?id=eq.${id}`, {
+    method: "PATCH", headers: { prefer: "return=minimal" },
+    body: JSON.stringify({ intake: checked.fields, intake_saved_at: new Date().toISOString(), intake_confirmed_by_email: null, intake_confirmed_at: null }),
+  });
+  if (!res.ok) return json({ error: "Could not save the intake." }, 502);
+  return json({ saved: true });
+}
+
+async function confirmIntake(request, env, id) {
+  const access = await analysisAccess(env, request, id);
+  if (access.response) return access.response;
+  if (!canStart(access.member)) return json({ error: "Only platform engineers can confirm the intake." }, 403);
+  if (!access.row.intake || intakeFields(access.row.intake).error) {
+    return json({ error: "Save every field of the intake before confirming it." }, 409);
+  }
+  const res = await serviceRest(env, `analyses?id=eq.${id}`, {
+    method: "PATCH", headers: { prefer: "return=minimal" },
+    body: JSON.stringify({ intake_confirmed_by_email: access.user.email, intake_confirmed_at: new Date().toISOString() }),
+  });
+  if (!res.ok) return json({ error: "Could not confirm the intake." }, 502);
+  await notifyPeople(env, access.row.workspace_id, await analysisAudienceExcept(env, access.row, access.user.id), {
+    kind: "intake_confirmed", tone: "success", title: `Intake confirmed: ${CLOUDS[access.row.cloud]}`,
+    body: `${access.row.app_name || access.row.repo}: confirmed by ${access.user.email}. The Terraform draft can now be made.`, analysis_id: id,
+  });
+  return json({ confirmed: true });
 }
 
 // Saves the next stage for one analysis. Modernize and Migrate wait for the deeper assessment to finish.
@@ -1950,6 +2050,12 @@ async function route(request, env) {
     const oneAction = path.match(/^\/api\/actions\/([^/]+)$/);
     if (oneAction && UUID_PATTERN.test(oneAction[1]) && method === "PATCH") return updateAction(request, env, oneAction[1]);
 
+    const analysisCloud = path.match(/^\/api\/analyses\/([^/]+)\/cloud$/);
+    if (analysisCloud && UUID_PATTERN.test(analysisCloud[1]) && method === "PATCH") return setCloud(request, env, analysisCloud[1]);
+    const analysisIntake = path.match(/^\/api\/analyses\/([^/]+)\/intake$/);
+    if (analysisIntake && UUID_PATTERN.test(analysisIntake[1]) && method === "PUT") return saveIntake(request, env, analysisIntake[1]);
+    const analysisIntakeConfirm = path.match(/^\/api\/analyses\/([^/]+)\/intake\/confirm$/);
+    if (analysisIntakeConfirm && UUID_PATTERN.test(analysisIntakeConfirm[1]) && method === "POST") return confirmIntake(request, env, analysisIntakeConfirm[1]);
     const analysisScope = path.match(/^\/api\/analyses\/([^/]+)\/scope$/);
     if (analysisScope && UUID_PATTERN.test(analysisScope[1]) && method === "PATCH") return setScope(request, env, analysisScope[1]);
 
