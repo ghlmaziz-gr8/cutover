@@ -3023,14 +3023,31 @@ pre{white-space:pre-wrap;word-break:break-word;background:var(--soft);padding:12
       }
     }
 
-    // Age and history: from git, so no finding categories apply.
+    // Age and history: the origin comes from the years the code gives about itself; git shows this copy. No finding categories apply.
     {
-      const c = shell("History", history.available ? `${Math.round(history.application_age_years)} years, ${history.release_tag_count} releases` : "Age and history");
+      const origin = history.origin || {};
+      const c = shell("History", origin.earliest_year
+        ? `Likely built around ${origin.typical_year}`
+        : (history.available ? `${history.release_tag_count} releases in this repository` : "Age and history"));
+      if (origin.earliest_year) {
+        const kv0 = el("div", null, "kv");
+        kv0.append(el("span", "Earliest year in the code"), el("span", String(origin.earliest_year)));
+        kv0.append(el("span", "Typical year in the code"), el("span", String(origin.typical_year)));
+        kv0.append(el("span", "Latest year in the code"), el("span", String(origin.latest_year)));
+        kv0.append(el("span", "Files with a year"), el("span", `${origin.files_with_years} of ${origin.files_scanned} text files`));
+        c.appendChild(kv0);
+        const tags0 = el("div", null, "tags");
+        tags0.appendChild(el("span", `Estimate, ${origin.confidence} confidence`, "tag"));
+        c.appendChild(tags0);
+      } else if (origin.evidence && origin.evidence.length) {
+        c.appendChild(el("p", origin.evidence[0], "muted small"));
+      }
+      for (const line of (origin.evidence || []).slice(origin.earliest_year ? 0 : 1)) c.appendChild(el("p", line, "muted small"));
       if (!history.available) c.appendChild(el("p", history.reason || "Repository history not available.", "muted small"));
       else {
         const kv = el("div", null, "kv");
         const day = (t) => (t ? String(t).slice(0, 10) : "not known");
-        kv.append(el("span", "First commit"), el("span", day(history.first_commit)));
+        kv.append(el("span", "First commit here"), el("span", day(history.first_commit)));
         kv.append(el("span", "Tagged versions"), el("span", `${history.release_tag_count}${history.latest_release_tag ? ` (latest ${history.latest_release_tag})` : ""}`));
         kv.append(el("span", "Last code change"), el("span", `${day(history.last_commit)} (${history.days_since_last_commit} days ago)`));
         kv.append(el("span", "Commits, last 12 months"), el("span", String(history.commits_last_12_months)));
@@ -3048,7 +3065,7 @@ pre{white-space:pre-wrap;word-break:break-word;background:var(--soft);padding:12
           c.appendChild(el("p", "No yearly history for this analysis. Run a new analysis to see it.", "muted small"));
         }
         const tags = el("div", null, "tags");
-        tags.appendChild(el("span", "Verified from git history", "tag t-ok"));
+        tags.appendChild(el("span", "Commit dates: this copy in git", "tag t-ok"));
         c.appendChild(tags);
       }
       out.push(c);
