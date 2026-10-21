@@ -1580,3 +1580,19 @@ test("the owner hears when the deeper assessment is ready, and a run without it 
   await call(`/api/runner/${uid(265)}/result`, { method: "POST", secret: env.RUNNER_SECRET, body: { status: "complete", findings: {} } });
   assert.equal(state.notifications.filter((n) => n.kind === "deeper_ready").length, 1, "no new notice without documents");
 });
+
+test("a modernize proposal is shown only to roles that may see every category it relies on", async () => {
+  const deeper = {
+    sections: [], architecture: { layers: [] }, limits: [],
+    modernize: [
+      { id: "keep", title: "Keep the platform", effort: "low", categories: [], points: ["p"], tradeoffs: ["t"], basis: [] },
+      { id: "managed", title: "Move to managed services", effort: "high", categories: ["data"], points: ["p"], tradeoffs: ["t"], basis: ["data.tables"] },
+    ],
+  };
+  runningAnalysisWithId(uid(266));
+  await call(`/api/runner/${uid(266)}/result`, { method: "POST", secret: env.RUNNER_SECRET, body: { status: "complete", findings: { deeper } } });
+  const engineer = await call(`/api/analyses/${uid(266)}`, { as: "eng_a" });
+  assert.deepEqual(engineer.body.findings.deeper.modernize.map((p) => p.id), ["keep", "managed"]);
+  const security = await call(`/api/analyses/${uid(266)}`, { as: "sec_a" });
+  assert.deepEqual(security.body.findings.deeper.modernize.map((p) => p.id), ["keep"], "security does not see data-based proposals");
+});

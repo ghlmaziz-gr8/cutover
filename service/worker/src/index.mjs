@@ -220,6 +220,10 @@ function visibleDeeper(deeper, role) {
     architecture: deeper.architecture
       ? { ...deeper.architecture, layers: (deeper.architecture.layers || []).filter((layer) => allow(layer.category)) }
       : null,
+    // A proposal is shown only when every category it relies on is one the role may see.
+    modernize: Array.isArray(deeper.modernize)
+      ? deeper.modernize.filter((proposal) => (proposal.categories || []).every((category) => allow(category)))
+      : [],
   };
 }
 

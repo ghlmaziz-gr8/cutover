@@ -11,6 +11,7 @@
 window.CUTOVER_GUIDE = {
   updated: "2026-10-21",
   whatsNew: [
+    "2026-10-21: The deeper assessment page has three Modernize proposals to review. They are not decisions and are not costed yet. Migrate is not built yet; choosing it records the decision only.",
     "2026-10-21: A bell at the top right lists what changed for you: analysis progress, the next stage, the deeper assessment, plans, file purposes, privacy sign-offs, model keys, comments and action items.",
     "2026-10-21: Next steps has a scope choice. Choose the deeper assessment now. Modernize and Migrate unlock once it is complete.",
     "2026-10-21: A deeper assessment page describes the business, systems, data and workflows, with an architecture overview. It is also in the PDF report.",
@@ -145,6 +146,7 @@ window.CUTOVER_GUIDE = {
       body: [
         "Open the deeper assessment from What next once the analysis has finished with its documents. It describes the business, the systems and delivery, the data, and the screens and actions, with an architecture overview.",
         "Each point names the finding it came from. You see only the points your role may see. The same content is in the PDF report.",
+        "Below the sections are three Modernize proposals, each with its effort and trade-offs. They are options to review, not decisions.",
       ],
       actions: [],
       refs: ["deeperOpen", "deeperArch"],
@@ -210,6 +212,10 @@ window.CUTOVER_GUIDE = {
       a: "They unlock once the deeper assessment is complete. Until then the card shows the reason, and choosing them is refused." },
     { q: "Where is the deeper assessment?", step: "deeper",
       a: "Open What next and press Open the deeper assessment. It appears once the analysis has finished with its documents. An analysis started before this update does not have it, so start a new analysis." },
+    { q: "What are the Modernize proposals?", step: "deeper",
+      a: "Three options for the application, from keep and tighten to managed cloud services. Each lists its effort, trade-offs and the findings it is based on. They are for review and are not costed yet." },
+    { q: "Can I choose Migrate yet?", step: "scope",
+      a: "You can record the choice, but the cloud choice and intake form are not built yet, so nothing follows it for now." },
     { q: "How do I export the risk plan?", step: "plan",
       a: "The accepted plans are in the PDF report. Press Back to findings, then Export PDF, then choose Save as PDF in the print window. Rejected plans are left out." },
     { q: "What do the stages on planning mean?", step: "plan",
