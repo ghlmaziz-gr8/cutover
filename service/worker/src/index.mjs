@@ -1180,7 +1180,7 @@ async function getAnalysis(request, env, id) {
   }
   return json({
     ...analysis,
-    cost_lines: analysis.cost_users ? costLines(analysis.cost_users) : null,
+    cost_lines: analysis.cost_users ? costLines(analysis.cost_users, tableCountOf(findings)) : null,
     findings: visibleReport(findings, member.role),
     screens,
     is_mine: owner_id === user.id,
@@ -1542,7 +1542,10 @@ function costSqlMonthly(users) {
     + tier.storage_gib * db.per_gib_storage_hour * hours;
 }
 
+const NO_DATABASE_LINE = "No database cost is estimated, because no database tables were found in the SQL scripts.";
+
 function costUsd(value) {
+  if (value < 0.005) return "$0";
   return value >= 10 ? `$${Math.round(value).toLocaleString("en-US")}` : `$${value.toFixed(2)}`;
 }
 
@@ -1557,17 +1560,28 @@ function costNote() {
     + "Not costed: AWS and Azure, and network, backups, high availability and logging. Estimates, not quotes.";
 }
 
+// The table count from the analysis findings, or null when the scan did not record one.
+function tableCountOf(findings) {
+  const count = findings && findings.findings && findings.findings["data.tables"]
+    && findings.findings["data.tables"].value && findings.findings["data.tables"].value.count;
+  return typeof count === "number" ? count : null;
+}
+
 // The three lines shown for a number of users: containers, managed database, and the note.
-function costLines(users) {
+// With no database tables found, the managed line says so instead of giving a database cost.
+function costLines(users, tableCount = null) {
   const size = COST_RATES.sizing;
   const n = users.toLocaleString("en-US");
   const runLow = costRunMonthly(users, size.requests_per_user_per_day_low);
   const runHigh = costRunMonthly(users, size.requests_per_user_per_day_high);
   const db = costSqlMonthly(users);
   const tier = costDatabaseTier(users);
+  const managedLine = tableCount === 0
+    ? NO_DATABASE_LINE
+    : `Estimated Google Cloud cost for ${n} users: ${costRange(runLow + db, runHigh + db)} a month for Cloud SQL for PostgreSQL (${tier.vcpu} vCPU, ${tier.memory_gib} GiB memory, ${tier.storage_gib} GiB storage, about ${costUsd(db)}) plus the application on Cloud Run.`;
   return [
     `Estimated Google Cloud cost for ${n} users: ${costRange(runLow, runHigh)} a month for the application containers on Cloud Run (compute and requests only).`,
-    `Estimated Google Cloud cost for ${n} users: ${costRange(runLow + db, runHigh + db)} a month for Cloud SQL for PostgreSQL (${tier.vcpu} vCPU, ${tier.memory_gib} GiB memory, ${tier.storage_gib} GiB storage, about ${costUsd(db)}) plus the application on Cloud Run.`,
+    managedLine,
     costNote(),
   ];
 }
@@ -1593,7 +1607,7 @@ async function setCostUsers(request, env, id) {
     kind: "cost_users_set", tone: "info", title: `Users for the estimate: ${users.toLocaleString("en-US")}`,
     body: `${access.user.email} set the number of users for the Modernize cost estimate.`, analysis_id: id,
   });
-  return json({ saved: true, users, lines: costLines(users) });
+  return json({ saved: true, users, lines: costLines(users, tableCountOf(access.row.findings)) });
 }
 
 async function setCloud(request, env, id) {

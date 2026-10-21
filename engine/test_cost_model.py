@@ -73,3 +73,24 @@ class ProposalCostTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class NoTablesTests(unittest.TestCase):
+    def _report(self, count):
+        return {"findings": {"data.tables": {"id": "data.tables", "category": "data",
+                                             "value": {"count": count, "names": []}}}}
+
+    def test_no_tables_means_no_database_cost_and_says_so(self):
+        keep, containerize, managed = deeper_docs.modernize(self._report(0))
+        self.assertIn("No database tables were found", managed["points"][0])
+        self.assertIn(cost_model.NO_DATABASE_LINE, managed["points"])
+        self.assertFalse(any("Cloud SQL" in p for p in managed["points"]))
+        self.assertEqual(len([p for p in containerize["points"] if p.startswith("Estimated Google Cloud cost")]), 3)
+
+    def test_one_table_is_not_pluralised_wrongly(self):
+        managed = deeper_docs.modernize(self._report(1))[2]
+        self.assertIn("for the 1 table,", managed["points"][0])
+
+    def test_a_true_zero_is_shown_as_zero_dollars(self):
+        self.assertEqual(cost_model._usd(0.0), "$0")
+        self.assertEqual(cost_model._range(0.0, 0.0), "about $0")
