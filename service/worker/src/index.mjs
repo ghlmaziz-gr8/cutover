@@ -1,4 +1,5 @@
 import { COST_RATES } from "./cost-rates.mjs";
+import { MODEL_PROVIDERS, MODEL_NAME_PATTERN, customBaseUrl } from "./model-providers.mjs";
 
 // Cutover SaaS API (Cloudflare Worker).
 //
@@ -604,10 +605,6 @@ const PRIVACY_NAME_MAX = 200;
 // ---- Model keys: each workspace's own language model key, stored encrypted ----
 // The key is encrypted with AES-GCM before it is saved. Only the last four characters are ever shown again.
 // A key is tested with one tiny request before it is saved, so a saved key is known to work.
-const MODEL_PROVIDERS = {
-  anthropic: { label: "Anthropic (Claude)", name: "Anthropic", testModel: "claude-haiku-5-5", runModel: "claude-haiku-5-5" },
-  google: { label: "Google (Gemini)", name: "Google", testModel: "gemini-3.5-flash", runModel: "gemini-3.5-flash" },
-};
 const MODEL_KEY_MIN = 20;
 const MODEL_KEY_MAX = 300;
 
@@ -643,48 +640,92 @@ async function encryptModelKey(key, plain) {
   return { ciphertext: bytesToBase64(data), iv: bytesToBase64(iv) };
 }
 
-// Asks the provider whether the key works, with one tiny request. Never echoes the key or the provider's reply.
-async function testModelKey(provider, apiKey) {
-  const config = MODEL_PROVIDERS[provider];
+// Asks the provider whether the key and the model work, with one tiny request. Never echoes the key or the reply.
+async function testModelKey(entry, apiKey, model, baseUrl) {
   let res;
   try {
-    res = provider === "google"
-      ? await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${config.testModel}:generateContent`, {
-          method: "POST",
-          headers: { "content-type": "application/json", "x-goog-api-key": apiKey },
-          body: JSON.stringify({ contents: [{ parts: [{ text: "Reply with OK." }] }], generationConfig: { maxOutputTokens: 1 } }),
-        })
-      : await fetch("https://api.anthropic.com/v1/messages", {
-          method: "POST",
-          headers: { "content-type": "application/json", "x-api-key": apiKey, "anthropic-version": "2023-06-01" },
-          body: JSON.stringify({ model: config.testModel, max_tokens: 1, messages: [{ role: "user", content: "Reply with OK." }] }),
-        });
+    if (entry.protocol === "google") {
+      res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`, {
+        method: "POST",
+        headers: { "content-type": "application/json", "x-goog-api-key": apiKey },
+        body: JSON.stringify({ contents: [{ parts: [{ text: "Reply with OK." }] }], generationConfig: { maxOutputTokens: 1 } }),
+      });
+    } else if (entry.protocol === "anthropic") {
+      res = await fetch("https://api.anthropic.com/v1/messages", {
+        method: "POST",
+        headers: { "content-type": "application/json", "x-api-key": apiKey, "anthropic-version": "2023-06-01" },
+        body: JSON.stringify({ model, max_tokens: 1, messages: [{ role: "user", content: "Reply with OK." }] }),
+      });
+    } else {
+      res = await fetch(`${baseUrl}/chat/completions`, {
+        method: "POST",
+        headers: { "content-type": "application/json", authorization: `Bearer ${apiKey}` },
+        body: JSON.stringify({
+          model,
+          [entry.tokenField || "max_tokens"]: 1,
+          messages: [{ role: "user", content: "Reply with OK." }],
+        }),
+      });
+    }
   } catch {
-    return { ok: false, reason: `Could not reach ${config.name}. Try again in a minute.` };
+    return { ok: false, reason: `Could not reach ${entry.name}. Try again in a minute.` };
   }
   if (res.ok) return { ok: true };
-  if (res.status === 400 || res.status === 401 || res.status === 403) {
-    return { ok: false, reason: `${config.name} did not accept this key. Check that you copied the whole key, and that it is allowed to use this model.` };
+  if (res.status === 404) {
+    return { ok: false, reason: `${entry.name} did not find the model "${model}". Check the model name, or choose another model.` };
   }
-  if (res.status === 429) return { ok: false, reason: `${config.name} is limiting requests right now. Try again later.` };
-  return { ok: false, reason: `${config.name} answered with an error (HTTP ${res.status}). Check the key and its credit, then try again.` };
+  if (res.status === 400 || res.status === 401 || res.status === 403) {
+    return { ok: false, reason: `${entry.name} did not accept this key. Check that you copied the whole key, and that it is allowed to use this model.` };
+  }
+  if (res.status === 429) return { ok: false, reason: `${entry.name} is limiting requests right now. Try again later.` };
+  return { ok: false, reason: `${entry.name} answered with an error (HTTP ${res.status}). Check the key, the model and the address, then try again.` };
+}
+
+// The name a person sees for a key: the provider's label, or the name they gave their own provider.
+function keyLabel(row) {
+  const entry = MODEL_PROVIDERS[row.provider];
+  if (entry && entry.custom) return row.label || "Your own provider";
+  return entry ? entry.label : row.provider;
 }
 
 // Active keys for a workspace: revoked ones are kept in the table for the record, but never listed.
 async function activeModelKeys(env, workspaceId) {
-  const res = await serviceRest(env, `model_keys?workspace_id=eq.${workspaceId}&select=id,provider,last4,created_by_email,created_at,revoked_at`);
+  const res = await serviceRest(env, `model_keys?workspace_id=eq.${workspaceId}&select=id,provider,last4,label,model,base_url,created_by_email,created_at,revoked_at`);
   if (!res.ok) return { failed: true };
   const rows = (await res.json()).filter((r) => !r.revoked_at);
   rows.sort((a, b) => String(b.created_at).localeCompare(String(a.created_at)));
   return { keys: rows };
 }
 
-// Whether the workspace lets its own model draw screens. Off unless a workspace admin turns it on.
-async function workspaceDrawsScreens(env, workspaceId) {
-  const res = await serviceRest(env, `workspaces?id=eq.${workspaceId}&select=ai_screens`);
-  if (!res.ok) return false;
-  const [row] = await res.json();
-  return row?.ai_screens === true;
+// What the page needs to show each provider: its name, its key page, its default model and its quest.
+function providerCards() {
+  return Object.entries(MODEL_PROVIDERS).map(([id, p]) => ({
+    id,
+    label: p.label,
+    custom: p.custom === true,
+    key_page: p.keyPage,
+    key_page_label: p.keyPageLabel,
+    default_model: p.defaultModel,
+    quest: p.quest,
+  }));
+}
+
+async function listModelKeys(request, env, workspaceId) {
+  const access = await workspaceAccess(env, request, workspaceId);
+  if (access.response) return access.response;
+  const found = await activeModelKeys(env, workspaceId);
+  if (found.failed) return json({ error: "Could not load the keys. Try again in a minute." }, 502);
+  return json({
+    providers: providerCards(),
+    can_change: access.member.is_admin === true,
+    draw_screens: await workspaceDrawsScreens(env, workspaceId),
+    keys: found.keys.map((k) => ({
+      id: k.id, provider: k.provider, label: keyLabel(k),
+      model: k.model || (MODEL_PROVIDERS[k.provider] || {}).defaultModel || null,
+      host: k.base_url ? new URL(k.base_url).hostname : null,
+      last4: k.last4, added_by_email: k.created_by_email, added_at: k.created_at,
+    })),
+  });
 }
 
 async function setModelScreens(request, env, workspaceId) {
@@ -702,19 +743,31 @@ async function setModelScreens(request, env, workspaceId) {
   return json({ draw_screens: enabled });
 }
 
-async function listModelKeys(request, env, workspaceId) {
-  const access = await workspaceAccess(env, request, workspaceId);
-  if (access.response) return access.response;
-  const found = await activeModelKeys(env, workspaceId);
-  if (found.failed) return json({ error: "Could not load the keys. Try again in a minute." }, 502);
-  return json({
-    providers: Object.entries(MODEL_PROVIDERS).map(([id, p]) => ({ id, label: p.label })),
-    can_change: access.member.is_admin === true,
-    draw_screens: await workspaceDrawsScreens(env, workspaceId),
-    keys: found.keys.map((k) => ({
-      id: k.id, provider: k.provider, last4: k.last4, added_by_email: k.created_by_email, added_at: k.created_at,
-    })),
-  });
+// Whether the workspace lets its own model draw screens. Off unless a workspace admin turns it on.
+async function workspaceDrawsScreens(env, workspaceId) {
+  const res = await serviceRest(env, `workspaces?id=eq.${workspaceId}&select=ai_screens`);
+  if (!res.ok) return false;
+  const [row] = await res.json();
+  return row?.ai_screens === true;
+}
+
+// Checks what a person typed for a provider. Returns the values to save, or an error message.
+function providerChoice(value, entry) {
+  let label = null;
+  let baseUrl = null;
+  if (entry.custom) {
+    label = typeof value.label === "string" ? value.label.trim() : "";
+    if (!label || label.length > 60) return { error: "Give your provider a name of up to 60 characters." };
+    baseUrl = customBaseUrl(value.base_url);
+    if (!baseUrl) return { error: "The address must start with https:// and be a real web address, for example https://api.example.com/v1." };
+  }
+  const typed = typeof value.model === "string" ? value.model.trim() : "";
+  const model = typed || entry.defaultModel;
+  if (!model) return { error: "Type the model name the provider gives you." };
+  if (!MODEL_NAME_PATTERN.test(model)) return { error: "The model name can use letters, numbers and . _ - / : only." };
+  // Google's model name becomes part of the address, so it cannot contain a slash or a colon.
+  if (entry.protocol === "google" && /[/:]/.test(model)) return { error: "Google model names use letters, numbers, dots, underscores and dashes only." };
+  return { label, baseUrl, model };
 }
 
 async function addModelKey(request, env, workspaceId) {
@@ -723,13 +776,14 @@ async function addModelKey(request, env, workspaceId) {
   const body = await readJson(request, 20_000);
   if (body.error) return json({ error: body.error }, 400);
   const value = body.value || {};
-  if (!Object.prototype.hasOwnProperty.call(MODEL_PROVIDERS, value.provider)) {
-    return json({ error: "Choose a provider from the list." }, 400);
-  }
+  const entry = Object.prototype.hasOwnProperty.call(MODEL_PROVIDERS, value.provider) ? MODEL_PROVIDERS[value.provider] : null;
+  if (!entry) return json({ error: "Choose a provider from the list." }, 400);
   const apiKey = typeof value.api_key === "string" ? value.api_key.trim() : "";
   if (apiKey.length < MODEL_KEY_MIN || apiKey.length > MODEL_KEY_MAX || /\s/.test(apiKey)) {
     return json({ error: "Paste the whole key, with nothing else around it." }, 400);
   }
+  const choice = providerChoice(value, entry);
+  if (choice.error) return json({ error: choice.error }, 400);
   const signoffs = await privacyEvents(env, workspaceId);
   if (signoffs.failed) return json({ error: "Could not check the privacy sign-off. Try again in a minute." }, 502);
   if (!privacyCurrent(signoffs.events)) {
@@ -739,10 +793,11 @@ async function addModelKey(request, env, workspaceId) {
   if (!key) return json({ error: "Model keys are not set up on this server yet. Ask the platform owner." }, 503);
   const active = await activeModelKeys(env, workspaceId);
   if (active.failed) return json({ error: "Could not check existing keys. Try again in a minute." }, 502);
-  if (active.keys.some((k) => k.provider === value.provider)) {
+  // A provider from the list is saved once. Your own providers can be added as many times as needed.
+  if (!entry.custom && active.keys.some((k) => k.provider === value.provider)) {
     return json({ error: "A key for this provider is already saved. Remove it first to replace it." }, 409);
   }
-  const tested = await testModelKey(value.provider, apiKey);
+  const tested = await testModelKey(entry, apiKey, choice.model, choice.baseUrl || entry.baseUrl);
   if (!tested.ok) return json({ error: tested.reason }, 400);
   const sealed = await encryptModelKey(key, apiKey);
   const made = await serviceRest(env, "model_keys", {
@@ -751,6 +806,9 @@ async function addModelKey(request, env, workspaceId) {
     body: JSON.stringify({
       workspace_id: workspaceId,
       provider: value.provider,
+      label: choice.label,
+      model: choice.model,
+      base_url: choice.baseUrl,
       ciphertext: sealed.ciphertext,
       iv: sealed.iv,
       last4: apiKey.slice(-4),
@@ -760,11 +818,12 @@ async function addModelKey(request, env, workspaceId) {
   });
   if (!made.ok) return json({ error: "Could not save the key. Try again in a minute." }, 502);
   const [row] = await made.json();
+  const name = keyLabel({ provider: value.provider, label: choice.label });
   await notifyPeople(env, workspaceId, await adminIdsExcept(env, workspaceId, access.user.id), {
     kind: "model_key_added", tone: "ai", title: "Language model added",
-    body: `${MODEL_PROVIDERS[value.provider].label} key ending in ${apiKey.slice(-4)} was added.`,
+    body: `${name} key ending in ${apiKey.slice(-4)} was added.`,
   });
-  return json({ id: row.id, provider: value.provider, last4: apiKey.slice(-4) }, 201);
+  return json({ id: row.id, provider: value.provider, label: name, model: choice.model, last4: apiKey.slice(-4) }, 201);
 }
 
 async function removeModelKey(request, env, workspaceId, keyId) {
@@ -782,7 +841,7 @@ async function removeModelKey(request, env, workspaceId, keyId) {
   const removed = found.keys.find((k) => k.id === keyId);
   await notifyPeople(env, workspaceId, await adminIdsExcept(env, workspaceId, access.user.id), {
     kind: "model_key_removed", tone: "warning", title: "Language model removed",
-    body: `${MODEL_PROVIDERS[removed.provider]?.label || removed.provider} key ending in ${removed.last4} was removed.`,
+    body: `${keyLabel(removed)} key ending in ${removed.last4} was removed.`,
   });
   return json({ removed: true });
 }
@@ -852,7 +911,7 @@ async function runnerModelKey(request, env, id) {
     return json({ error: "Not allowed." }, 401);
   }
 
-  const keyRes = await serviceRest(env, `model_keys?id=eq.${tokenRow.model_key_id}&select=id,workspace_id,provider,ciphertext,iv,revoked_at`);
+  const keyRes = await serviceRest(env, `model_keys?id=eq.${tokenRow.model_key_id}&select=id,workspace_id,provider,label,model,base_url,ciphertext,iv,revoked_at`);
   if (!keyRes.ok) return json({ error: "Could not load the model key. Try again in a minute." }, 502);
   const [keyRow] = await keyRes.json();
   if (!keyRow || keyRow.revoked_at) return json({ error: "The model key is no longer set up." }, 403);
@@ -877,7 +936,15 @@ async function runnerModelKey(request, env, id) {
   } catch {
     return json({ error: "Could not open the model key." }, 500);
   }
-  return json({ provider: keyRow.provider, model: MODEL_PROVIDERS[keyRow.provider].runModel, api_key: apiKey });
+  // The runner gets the protocol, the model, and the address for providers that take one. The key is sent once.
+  const entry = MODEL_PROVIDERS[keyRow.provider];
+  return json({
+    provider: entry.protocol,
+    model: keyRow.model || entry.defaultModel,
+    base_url: entry.custom ? keyRow.base_url : (entry.baseUrl || null),
+    token_field: entry.tokenField || "max_tokens",
+    api_key: apiKey,
+  });
 }
 
 const FREE_TIER_DATABASE_BYTES = 500 * 1024 * 1024;

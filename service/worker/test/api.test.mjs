@@ -33,6 +33,7 @@ const BAD_KEY = "sk-ant-test-bad-key-zzzz0000";
 const BUSY_KEY = "sk-ant-test-busy-key-qqqq9999";
 const GOOD_GOOGLE_KEY = "AIza-test-good-key-google-5678";
 const BAD_GOOGLE_KEY = "AIza-test-bad-key-google-0000";
+const GOOD_OPENAI_KEY = "sk-test-openai-compatible-key-7777";
 
 // ---- Fixed identities and records ----
 const uid = (n) => `00000000-0000-4000-8000-${String(n).padStart(12, "0")}`;
@@ -279,6 +280,14 @@ beforeEach(() => {
       const key = init.headers?.["x-goog-api-key"];
       if (key === GOOD_GOOGLE_KEY) return j({ candidates: [{ content: { parts: [{ text: "OK" }] } }] });
       return j({ error: { code: 400, message: "API key not valid." } }, 400);
+    }
+    // Any provider that speaks the chat-completions shape: one check for the key, and one for the model name.
+    if (u.endsWith("/chat/completions")) {
+      github.chatCalls = (github.chatCalls || 0) + 1;
+      if (init.headers?.authorization !== `Bearer ${GOOD_OPENAI_KEY}`) return j({ error: { message: "bad key" } }, 401);
+      const requested = JSON.parse(init.body).model;
+      if (requested === "no-such-model") return j({ error: { message: "model not found" } }, 404);
+      return j({ choices: [{ message: { content: "OK" } }] });
     }
     if (u === "https://api.anthropic.com/v1/messages") {
       const key = init.headers?.["x-api-key"];
@@ -1029,7 +1038,7 @@ test("a key is tested first, then saved encrypted, and only the last four charac
   signedOff();
   const res = await call(KEYS(), { method: "POST", as: "admin_a", body: { provider: "anthropic", api_key: GOOD_KEY } });
   assert.equal(res.status, 201);
-  assert.deepEqual(res.body, { id: res.body.id, provider: "anthropic", last4: "1234" });
+  assert.deepEqual(res.body, { id: res.body.id, provider: "anthropic", label: "Anthropic (Claude)", model: "claude-haiku-5-5", last4: "1234" });
   assert.equal(state.model_keys.length, 1);
   const row = state.model_keys[0];
   assert.equal(row.last4, "1234");
@@ -1141,7 +1150,7 @@ test("a Google key is tested in its header, saved encrypted, and listed beside t
   signedOff();
   const google = await call(KEYS(), { method: "POST", as: "admin_a", body: { provider: "google", api_key: GOOD_GOOGLE_KEY } });
   assert.equal(google.status, 201);
-  assert.deepEqual(google.body, { id: google.body.id, provider: "google", last4: "5678" });
+  assert.deepEqual(google.body, { id: google.body.id, provider: "google", label: "Google (Gemini)", model: "gemini-3.5-flash", last4: "5678" });
   const anthropic = await call(KEYS(), { method: "POST", as: "admin_a", body: { provider: "anthropic", api_key: GOOD_KEY } });
   assert.equal(anthropic.status, 201);
   const list = await call(KEYS(), { as: "eng_a" });
@@ -1331,7 +1340,7 @@ test("the runner trades its token once for the key; wrong, reused, or misdirecte
 
   const released = await call(path, { method: "POST", secret: env.RUNNER_SECRET, body: { token } });
   assert.equal(released.status, 200);
-  assert.deepEqual(released.body, { provider: "google", model: "gemini-3.5-flash", api_key: GOOD_GOOGLE_KEY });
+  assert.deepEqual(released.body, { provider: "google", model: "gemini-3.5-flash", base_url: null, token_field: "max_tokens", api_key: GOOD_GOOGLE_KEY });
   assert.equal(released.body.api_key, GOOD_GOOGLE_KEY);
 
   const again = await call(path, { method: "POST", secret: env.RUNNER_SECRET, body: { token } });
@@ -1741,4 +1750,101 @@ test("Modernize estimate: with no database tables, the managed line says so and 
   const view = await call(`/api/analyses/${AN_ACME}`, { as: "eng_a" });
   assert.equal(view.body.cost_lines[0].startsWith("Estimated Google Cloud cost for 100 users: about $0 a month"), true, "containers line shows $0");
   assert.equal(view.body.cost_lines[1], "No database cost is estimated, because no database tables were found in the SQL scripts.");
+});
+
+test("providers: each one has its own story, and every link in it is https", async () => {
+  const { MODEL_PROVIDERS } = await import("../src/model-providers.mjs");
+  for (const [id, p] of Object.entries(MODEL_PROVIDERS)) {
+    assert.ok(["anthropic", "google", "openai"].includes(p.protocol), `${id} has a known protocol`);
+    assert.ok(p.label && p.name, id);
+    assert.ok(p.quest.chapters.length >= 3 && p.quest.title && p.quest.prologue && p.quest.epilogue, `${id} has a story`);
+    for (const chapter of p.quest.chapters) {
+      if (chapter.url) assert.match(chapter.url, /^https:\/\//, `${id}: ${chapter.url}`);
+    }
+    if (p.protocol === "openai" && !p.custom) assert.match(p.baseUrl, /^https:\/\//, id);
+  }
+  assert.equal(MODEL_PROVIDERS.custom.custom, true, "custom is the way to add a provider that is not listed");
+});
+
+test("providers: a listed provider that speaks the chat-completions shape is tested and saved with its own address and model", async () => {
+  signedOff();
+  const res = await call(KEYS(), { method: "POST", as: "admin_a", body: { provider: "mistral", api_key: GOOD_OPENAI_KEY } });
+  assert.equal(res.status, 201);
+  assert.deepEqual(res.body, { id: res.body.id, provider: "mistral", label: "Mistral AI", model: "mistral-large-latest", last4: "7777" });
+  assert.ok(outbound.some((c) => c.url === "https://api.mistral.ai/v1/chat/completions"), "tested at its own address");
+  assert.ok(!outbound.some((c) => c.url.includes(GOOD_OPENAI_KEY)), "the key is never in a URL");
+  const again = await call(KEYS(), { method: "POST", as: "admin_a", body: { provider: "mistral", api_key: GOOD_OPENAI_KEY } });
+  assert.equal(again.status, 409, "a listed provider is saved once");
+});
+
+test("providers: a model the provider does not know is refused with the model named, and nothing is saved", async () => {
+  signedOff();
+  const res = await call(KEYS(), { method: "POST", as: "admin_a", body: { provider: "mistral", api_key: GOOD_OPENAI_KEY, model: "no-such-model" } });
+  assert.equal(res.status, 400);
+  assert.match(res.body.error, /did not find the model "no-such-model"/);
+  assert.equal(state.model_keys.length, 0);
+});
+
+test("providers: a provider with no default model needs a model name, and a bad name is refused", async () => {
+  signedOff();
+  const none = await call(KEYS(), { method: "POST", as: "admin_a", body: { provider: "groq", api_key: GOOD_OPENAI_KEY } });
+  assert.equal(none.status, 400);
+  assert.match(none.body.error, /Type the model name/);
+  const bad = await call(KEYS(), { method: "POST", as: "admin_a", body: { provider: "groq", api_key: GOOD_OPENAI_KEY, model: "bad name!" } });
+  assert.equal(bad.status, 400);
+  assert.match(bad.body.error, /letters, numbers/);
+});
+
+test("custom provider: an https address with a real host is needed, and the name and model are required", async () => {
+  signedOff();
+  const base = { provider: "custom", api_key: GOOD_OPENAI_KEY, label: "Team model", model: "team-model-1" };
+  const refused = [
+    { base_url: "http://llm.example.com/v1" },
+    { base_url: "https://localhost/v1" },
+    { base_url: "https://10.0.0.5/v1" },
+    { base_url: "https://user:pw@llm.example.com/v1" },
+    { base_url: "not a web address" },
+  ];
+  for (const extra of refused) {
+    const res = await call(KEYS(), { method: "POST", as: "admin_a", body: { ...base, ...extra } });
+    assert.equal(res.status, 400, JSON.stringify(extra));
+    assert.match(res.body.error, /https:\/\//);
+  }
+  const noName = await call(KEYS(), { method: "POST", as: "admin_a", body: { ...base, label: "", base_url: "https://llm.example.com/v1" } });
+  assert.equal(noName.status, 400);
+  assert.equal(state.model_keys.length, 0);
+});
+
+test("custom provider: any number can be added, each with its own name, address and model, and the list shows the host", async () => {
+  signedOff();
+  // A new provider name, a trailing slash and a different model are all fine.
+  const first = await call(KEYS(), { method: "POST", as: "admin_a", body: { provider: "custom", api_key: GOOD_OPENAI_KEY, label: "Team model", base_url: "https://llm.example.com/v1/", model: "team-model-1" } });
+  assert.equal(first.status, 201);
+  const second = await call(KEYS(), { method: "POST", as: "admin_a", body: { provider: "custom", api_key: GOOD_OPENAI_KEY, label: "Second model", base_url: "https://other.example.org/api", model: "team-model-2" } });
+  assert.equal(second.status, 201, "a second custom provider is allowed");
+  const list = await call(KEYS(), { as: "eng_a" });
+  const names = list.body.keys.map((k) => [k.label, k.host, k.model]).sort();
+  assert.deepEqual(names, [["Second model", "other.example.org", "team-model-2"], ["Team model", "llm.example.com", "team-model-1"]]);
+  assert.ok(list.body.providers.some((p) => p.id === "custom" && p.custom === true), "the list offers the custom option");
+  assert.ok(!JSON.stringify(list.body).includes(GOOD_OPENAI_KEY), "the key is never listed");
+});
+
+test("providers: the runner gets the protocol, model and address, and never the key until it trades its token", async () => {
+  signedOff();
+  const made = await call(KEYS(), { method: "POST", as: "admin_a", body: { provider: "custom", api_key: GOOD_OPENAI_KEY, label: "Team model", base_url: "https://llm.example.com/v1", model: "team-model-1" } });
+  assert.equal(made.status, 201);
+  const keyId = made.body.id;
+  const started = await call("/api/analyses", { as: "eng_a", method: "POST", body: { ...START, workspace_id: W_ACME, model_key_id: keyId } });
+  const token = github.dispatches.at(-1).inputs.model_token;
+  const path = `/api/runner/${started.body.id}/model-key`;
+  const released = await call(path, { method: "POST", secret: env.RUNNER_SECRET, body: { token } });
+  assert.equal(released.status, 200);
+  assert.deepEqual(released.body, { provider: "openai", model: "team-model-1", base_url: "https://llm.example.com/v1", token_field: "max_tokens", api_key: GOOD_OPENAI_KEY });
+});
+
+test("providers: a Google model name cannot carry a slash, which would change the address", async () => {
+  signedOff();
+  const res = await call(KEYS(), { method: "POST", as: "admin_a", body: { provider: "google", api_key: GOOD_GOOGLE_KEY, model: "models/evil:x" } });
+  assert.equal(res.status, 400);
+  assert.match(res.body.error, /Google model names/);
 });

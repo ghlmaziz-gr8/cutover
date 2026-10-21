@@ -41,9 +41,13 @@ MAX_PURPOSE_CHARS = 400
 GOOGLE_MIN_OUTPUT_TOKENS = 1024
 MIN_COPIED_LINE = 25
 COPY_WINDOW = 30
-PROVIDERS = {"anthropic", "google"}
+# The request shapes the runner knows. "openai" is the chat-completions shape that most providers accept,
+# so a new provider in the Worker's list needs no change here.
+PROVIDERS = {"anthropic", "google", "openai"}
+TOKEN_FIELDS = {"max_tokens", "max_completion_tokens"}
+BASE_URL = re.compile(r"^https://[A-Za-z0-9.-]+\.[A-Za-z]{2,}(/[A-Za-z0-9._~/-]*)?$")
 UUID = re.compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$", re.I)
-MODEL_NAME = re.compile(r"^[A-Za-z0-9._-]{1,80}$")
+MODEL_NAME = re.compile(r"^[A-Za-z0-9._/:-]{1,120}$")
 
 SYSTEM = (
     "You describe one file from a healthcare software application, for a migration assessment. "
@@ -83,9 +87,19 @@ def build_user_text(path: str, code: str) -> str:
 
 
 def build_request(provider: str, model: str, api_key: str, user_text: str,
-                  system: str = SYSTEM, max_tokens: int = 160) -> tuple[str, dict, bytes]:
+                  system: str = SYSTEM, max_tokens: int = 160, base_url: str | None = None,
+                  token_field: str = "max_tokens") -> tuple[str, dict, bytes]:
     """Returns the URL, headers and body for one request. The key only ever goes in a header."""
-    if provider == "anthropic":
+    if provider == "openai":
+        if not base_url or not BASE_URL.match(base_url):
+            raise ProviderError("no secure address for this provider")
+        if token_field not in TOKEN_FIELDS:
+            raise ProviderError("unknown output limit field")
+        url = base_url.rstrip("/") + "/chat/completions"
+        headers = {"content-type": "application/json", "authorization": f"Bearer {api_key}"}
+        body = {"model": model, token_field: max_tokens,
+                "messages": [{"role": "system", "content": system}, {"role": "user", "content": user_text}]}
+    elif provider == "anthropic":
         url = "https://api.anthropic.com/v1/messages"
         headers = {"content-type": "application/json", "x-api-key": api_key, "anthropic-version": "2023-06-01"}
         body = {"model": model, "max_tokens": max_tokens, "system": system,
@@ -102,6 +116,13 @@ def build_request(provider: str, model: str, api_key: str, user_text: str,
 
 
 def reply_text(provider: str, payload: dict) -> str:
+    if provider == "openai":
+        choices = payload.get("choices") or []
+        if not choices or not isinstance(choices[0], dict):
+            return ""
+        message = choices[0].get("message") or {}
+        content = message.get("content") if isinstance(message, dict) else None
+        return content if isinstance(content, str) else ""
     if provider == "anthropic":
         blocks = payload.get("content") or []
         return "".join(b.get("text", "") for b in blocks if isinstance(b, dict) and b.get("type") == "text")
@@ -114,6 +135,9 @@ def reply_text(provider: str, payload: dict) -> str:
 
 def reply_cut_off(provider: str, payload: dict) -> bool:
     """True when the provider stopped because it ran out of output room, so the reply may end mid-sentence."""
+    if provider == "openai":
+        choices = payload.get("choices") or []
+        return bool(choices) and isinstance(choices[0], dict) and choices[0].get("finish_reason") == "length"
     if provider == "anthropic":
         return payload.get("stop_reason") == "max_tokens"
     candidates = payload.get("candidates") or []
@@ -148,8 +172,10 @@ def accept_purpose(reply: str, code: str) -> str | None:
 
 
 def call_provider(provider: str, model: str, api_key: str, user_text: str, opener=urllib.request.urlopen,
-                  system: str = SYSTEM, max_tokens: int = 160) -> str:
-    url, headers, body = build_request(provider, model, api_key, user_text, system=system, max_tokens=max_tokens)
+                  system: str = SYSTEM, max_tokens: int = 160, base_url: str | None = None,
+                  token_field: str = "max_tokens") -> str:
+    url, headers, body = build_request(provider, model, api_key, user_text, system=system, max_tokens=max_tokens,
+                                       base_url=base_url, token_field=token_field)
     req = urllib.request.Request(url, data=body, method="POST", headers=headers)
     try:
         with opener(req, timeout=60) as res:
@@ -185,6 +211,8 @@ def exchange_token(callback: str, analysis_id: str, secret: str, token: str, ope
         and body.get("provider") in PROVIDERS
         and isinstance(body.get("model"), str) and MODEL_NAME.match(body["model"])
         and isinstance(body.get("api_key"), str) and len(body["api_key"]) >= 20
+        and (body.get("provider") != "openai" or (isinstance(body.get("base_url"), str) and BASE_URL.match(body["base_url"])))
+        and body.get("token_field", "max_tokens") in TOKEN_FIELDS
     )
     if not valid:
         raise ReleaseError(None)
@@ -278,12 +306,14 @@ def main(argv=None, opener=urllib.request.urlopen) -> int:
         return 1
 
     provider, model, api_key = release["provider"], release["model"], release["api_key"]
+    base_url, token_field = release.get("base_url"), release.get("token_field", "max_tokens")
     read_source = make_source_reader(Path(args.source))
     purpose_reasons: list[str] = []
     stats = apply_purposes(
         records,
         read_source,
-        lambda record, code: call_provider(provider, model, api_key, build_user_text(record["path"], code), opener=opener),
+        lambda record, code: call_provider(provider, model, api_key, build_user_text(record["path"], code), opener=opener,
+                                           base_url=base_url, token_field=token_field),
         reasons=purpose_reasons,
     )
     if stats["model"]:
@@ -307,6 +337,7 @@ def main(argv=None, opener=urllib.request.urlopen) -> int:
     def draw(record, code):
         try:
             return call_provider(provider, model, api_key, build_user_text(record["path"], code), opener=opener,
+                                 base_url=base_url, token_field=token_field,
                                  system=SCREEN_PROMPT, max_tokens=SCREEN_MAX_TOKENS)
         except ProviderStopped as err:
             raise StopDrawing(err.status)

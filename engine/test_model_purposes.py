@@ -256,3 +256,48 @@ class MainTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class ChatCompletionsTests(unittest.TestCase):
+    """Any provider that speaks the chat-completions shape: its address comes from the Worker, never from the file."""
+    BASE = "https://llm.example.com/v1"
+
+    def test_the_request_goes_to_the_chosen_address_with_the_key_in_a_header_only(self):
+        url, headers, body = mp.build_request("openai", "team-model-1", KEY, "File path: a.java",
+                                              base_url=self.BASE + "/", token_field="max_completion_tokens")
+        self.assertEqual(url, self.BASE + "/chat/completions")
+        self.assertEqual(headers["authorization"], f"Bearer {KEY}")
+        self.assertNotIn(KEY, url)
+        payload = json.loads(body)
+        self.assertEqual(payload["model"], "team-model-1")
+        self.assertIn("max_completion_tokens", payload)
+        self.assertNotIn("max_tokens", payload)
+        self.assertEqual(payload["messages"][0]["role"], "system")
+
+    def test_an_address_that_is_not_https_is_refused(self):
+        for bad in (None, "http://llm.example.com/v1", "https://localhost/v1", "https://10.0.0.5/v1"):
+            with self.assertRaises(mp.ProviderError):
+                mp.build_request("openai", "m", KEY, "hi", base_url=bad)
+
+    def test_the_reply_and_a_cut_off_reply_are_read(self):
+        ok = {"choices": [{"message": {"content": "A"}, "finish_reason": "stop"}]}
+        self.assertEqual(mp.reply_text("openai", ok), "A")
+        self.assertFalse(mp.reply_cut_off("openai", ok))
+        cut = {"choices": [{"message": {"content": "A"}, "finish_reason": "length"}]}
+        self.assertTrue(mp.reply_cut_off("openai", cut))
+        self.assertEqual(mp.reply_text("openai", {}), "")
+
+    def test_a_released_key_needs_a_secure_address_for_this_shape(self):
+        body = json.dumps({"provider": "openai", "model": "team-model-1", "api_key": KEY, "base_url": "http://x.example.com"}).encode()
+        with self.assertRaises(mp.ReleaseError):
+            mp.exchange_token("https://cutover.example", "a1", "secret", "token",
+                              opener=lambda req, timeout: FakeResponse(body))
+        good = json.dumps({"provider": "openai", "model": "team-model-1", "api_key": KEY,
+                           "base_url": self.BASE, "token_field": "max_completion_tokens"}).encode()
+        released = mp.exchange_token("https://cutover.example", "a1", "secret", "token",
+                                     opener=lambda req, timeout: FakeResponse(good))
+        self.assertEqual(released["base_url"], self.BASE)
+
+    def test_a_model_name_with_a_slash_is_accepted(self):
+        self.assertTrue(mp.MODEL_NAME.match("MiniMaxAI/MiniMax-M3"))
+        self.assertFalse(mp.MODEL_NAME.match("bad name!"))
