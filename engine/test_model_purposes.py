@@ -79,7 +79,9 @@ class RequestTests(unittest.TestCase):
         url, headers, body = mp.build_request("google", "gemini-3.5-flash", KEY, "hi")
         self.assertEqual(url, "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash:generateContent")
         self.assertEqual(headers["x-goog-api-key"], KEY)
-        self.assertEqual(json.loads(body)["generationConfig"]["maxOutputTokens"], 160)
+        self.assertEqual(json.loads(body)["generationConfig"]["maxOutputTokens"], mp.GOOGLE_MIN_OUTPUT_TOKENS)
+        url, headers, body = mp.build_request("anthropic", "claude-haiku-5-5", KEY, "hi")
+        self.assertEqual(json.loads(body)["max_tokens"], 160)
 
     def test_replies_are_read_from_each_provider_shape(self):
         self.assertEqual(mp.reply_text("anthropic", {"content": [{"type": "text", "text": "A"}, {"type": "text", "text": "B"}]}), "AB")
@@ -106,6 +108,37 @@ class CallTests(unittest.TestCase):
         body = json.dumps({"candidates": [{"content": {"parts": [{"text": "Reads orders."}]}}]}).encode()
         text = mp.call_provider("google", "gemini-3.5-flash", KEY, "hi", opener=lambda req, timeout: FakeResponse(body))
         self.assertEqual(text, "Reads orders.")
+
+
+class CutOffTests(unittest.TestCase):
+    """A reply that stopped at the output limit can end mid-sentence, so it is never used."""
+
+    def test_a_google_reply_cut_off_at_the_limit_is_refused(self):
+        body = json.dumps({"candidates": [{"content": {"parts": [{"text": "This HTML file serves"}]}, "finishReason": "MAX_TOKENS"}]}).encode()
+        with self.assertRaises(mp.ProviderError) as caught:
+            mp.call_provider("google", "gemini-3.5-flash", KEY, "hi", opener=lambda req, timeout: FakeResponse(body))
+        self.assertEqual(str(caught.exception), "reply cut off")
+
+    def test_an_anthropic_reply_cut_off_at_the_limit_is_refused(self):
+        body = json.dumps({"content": [{"type": "text", "text": "This file"}], "stop_reason": "max_tokens"}).encode()
+        with self.assertRaises(mp.ProviderError):
+            mp.call_provider("anthropic", "claude-haiku-5-5", KEY, "hi", opener=lambda req, timeout: FakeResponse(body))
+
+    def test_a_finished_reply_is_still_used(self):
+        body = json.dumps({"candidates": [{"content": {"parts": [{"text": "Reads orders."}]}, "finishReason": "STOP"}]}).encode()
+        text = mp.call_provider("google", "gemini-3.5-flash", KEY, "hi", opener=lambda req, timeout: FakeResponse(body))
+        self.assertEqual(text, "Reads orders.")
+
+    def test_a_cut_off_reply_keeps_the_rule_based_purpose_and_says_why(self):
+        recs = records(("a.java", "source"))
+        reasons = []
+
+        def ask(rec, code):
+            raise mp.ProviderError("reply cut off")
+        stats = mp.apply_purposes(recs, {"a.java": "x"}.get, ask, reasons=reasons)
+        self.assertEqual(recs[0]["purpose"], "Rule-based purpose.")
+        self.assertEqual(stats, {"model": 0, "rules": 1, "stopped": None})
+        self.assertEqual(reasons, ["reply cut off"])
 
 
 class ExchangeTests(unittest.TestCase):
