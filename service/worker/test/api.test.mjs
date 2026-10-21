@@ -1653,6 +1653,7 @@ test("Terraform: made only from a confirmed intake, as numbered drafts that are 
   assert.match(body, /expected users: 400/);
 
   analysis.cloud = "azure";
+  analysis.intake = { ...analysis.intake, region: "eastus" };
   const second = await call(`/api/analyses/${AN_ACME}/terraform`, { as: "eng_a", method: "POST" });
   assert.equal(second.body.version, 2);
   assert.equal(state.terraform_versions.find((v) => v.version === 1).content, body, "the first draft is kept as it was");
@@ -1666,16 +1667,38 @@ test("Terraform: made only from a confirmed intake, as numbered drafts that are 
   assert.ok(state.notifications.some((n) => n.kind === "terraform_drafted" && n.user_id !== PEOPLE.eng_a.id));
 });
 
-test("Terraform: a quote or line break in the intake cannot end a string early", async () => {
+test("Terraform: a region the cloud does not accept is refused, so no draft is made from it", async () => {
   const analysis = state.analyses.find((a) => a.id === AN_ACME);
   analysis.scope = "migrate";
   analysis.deeper_done = true;
   analysis.cloud = "google";
   analysis.intake = { region: 'us"central\n1', network: "existing", sign_in: "other", compliance: "None", expected_users: 10, residency: "EU" };
   analysis.intake_confirmed_at = NOW;
+  const before = state.terraform_versions.length;
   const res = await call(`/api/analyses/${AN_ACME}/terraform`, { as: "eng_a", method: "POST" });
-  assert.equal(res.status, 201);
+  assert.equal(res.status, 409);
+  assert.equal(state.terraform_versions.length, before, "no draft was written");
+
+  analysis.intake = { ...analysis.intake, region: "us-central1" };
+  const ok = await call(`/api/analyses/${AN_ACME}/terraform`, { as: "eng_a", method: "POST" });
+  assert.equal(ok.status, 201);
   const content = state.terraform_versions.at(-1).content;
-  assert.match(content, /region = "us central 1"/);
-  assert.doesNotMatch(content, /us"central/);
+  assert.match(content, /region = "us-central1"/);
+  assert.doesNotMatch(content, /"central/);
+});
+
+test("intake: the region must be one the chosen cloud accepts", async () => {
+  const analysis = state.analyses.find((a) => a.id === AN_ACME);
+  analysis.scope = "migrate";
+  analysis.deeper_done = true;
+  analysis.cloud = "azure";
+  const intake = { region: "us-east-1", network: "new", sign_in: "google", compliance: "None", expected_users: 50, residency: "EU" };
+  const wrongCloud = await call(`/api/analyses/${AN_ACME}/intake`, { as: "eng_a", method: "PUT", body: intake });
+  assert.equal(wrongCloud.status, 400, "an AWS region is refused for Azure");
+  assert.match(wrongCloud.body.error, /Azure/);
+  const typed = await call(`/api/analyses/${AN_ACME}/intake`, { as: "eng_a", method: "PUT", body: { ...intake, region: "asda" } });
+  assert.equal(typed.status, 400, "a made-up name is refused");
+  const good = await call(`/api/analyses/${AN_ACME}/intake`, { as: "eng_a", method: "PUT", body: { ...intake, region: "westeurope" } });
+  assert.equal(good.status, 200);
+  assert.equal(state.analyses.find((a) => a.id === AN_ACME).intake.region, "westeurope");
 });

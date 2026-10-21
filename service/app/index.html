@@ -772,7 +772,7 @@ pre{white-space:pre-wrap;word-break:break-word;background:var(--soft);padding:12
           <div class="intake-progress" aria-hidden="true"><div class="intake-fill" id="intakeFill"></div></div>
           <p class="small muted" id="intakeCount" style="margin:6px 0 0"></p>
           <form id="intakeForm" class="intake-form">
-            <label>Region <input id="inRegion" maxlength="60" placeholder="For example: us-east-1"></label>
+            <label>Region <select id="inRegion"><option value="">Choose a cloud first</option></select></label>
             <label>Network <select id="inNetwork"><option value="">Choose</option><option value="new">New network</option><option value="existing">Existing network</option></select></label>
             <label>Sign-in provider <select id="inSignIn"><option value="">Choose</option><option value="google">Google</option><option value="microsoft">Microsoft Entra ID</option><option value="other">Other</option></select></label>
             <label>Compliance requirements <input id="inCompliance" maxlength="200" placeholder="For example: HIPAA. Write None if there are none."></label>
@@ -3356,6 +3356,24 @@ a{color:#6d28d9;font-weight:600}`;
     { key: "undecided", label: "Not decided yet", color: "var(--muted)" },
   ];
   const TF_CLOUDS = ["google", "aws", "azure"];
+  // Regions each cloud accepts. Kept identical to REGIONS in service/worker/src/index.mjs (checked by a test).
+const REGION_OPTS = {
+  aws: ["us-east-1", "us-east-2", "us-west-1", "us-west-2", "ca-central-1", "ca-west-1", "eu-west-1", "eu-west-2", "eu-west-3",
+    "eu-central-1", "eu-central-2", "eu-north-1", "eu-south-1", "eu-south-2", "ap-south-1", "ap-south-2", "ap-southeast-1",
+    "ap-southeast-2", "ap-southeast-3", "ap-northeast-1", "ap-northeast-2", "ap-northeast-3", "ap-east-1", "sa-east-1",
+    "me-south-1", "me-central-1", "af-south-1", "il-central-1"],
+  google: ["us-central1", "us-east1", "us-east4", "us-east5", "us-south1", "us-west1", "us-west2", "us-west3", "us-west4",
+    "northamerica-northeast1", "northamerica-northeast2", "southamerica-east1", "europe-west1", "europe-west2", "europe-west3",
+    "europe-west4", "europe-west6", "europe-west8", "europe-west9", "europe-west10", "europe-west12", "europe-north1",
+    "europe-central2", "europe-southwest1", "asia-east1", "asia-east2", "asia-northeast1", "asia-northeast2", "asia-northeast3",
+    "asia-south1", "asia-south2", "asia-southeast1", "asia-southeast2", "australia-southeast1", "australia-southeast2",
+    "me-central1", "me-west1", "africa-south1"],
+  azure: ["eastus", "eastus2", "westus", "westus2", "westus3", "centralus", "northcentralus", "southcentralus", "westcentralus",
+    "canadacentral", "canadaeast", "brazilsouth", "northeurope", "westeurope", "uksouth", "ukwest", "francecentral",
+    "germanywestcentral", "swedencentral", "norwayeast", "switzerlandnorth", "polandcentral", "italynorth", "australiaeast",
+    "australiasoutheast", "japaneast", "japanwest", "koreacentral", "southeastasia", "eastasia", "centralindia", "southindia",
+    "uaenorth", "southafricanorth", "qatarcentral"],
+};
   const INTAKE_KEYS = ["inRegion", "inNetwork", "inSignIn", "inCompliance", "inUsers", "inResidency"];
 
   // Migrate: the cloud is chosen first, then the intake form. Only platform engineers change either.
@@ -3395,6 +3413,14 @@ a{color:#6d28d9;font-weight:600}`;
       inRegion: saved.region || "", inNetwork: saved.network || "", inSignIn: saved.sign_in || "",
       inCompliance: saved.compliance || "", inUsers: saved.expected_users || "", inResidency: saved.residency || "",
     };
+    const regionSel = $("inRegion");
+    regionSel.replaceChildren(el("option", "Choose a region", null));
+    regionSel.firstChild.value = "";
+    for (const r of REGION_OPTS[cur.cloud] || []) {
+      const o = el("option", r, null);
+      o.value = r;
+      regionSel.appendChild(o);
+    }
     for (const key of INTAKE_KEYS) {
       $(key).value = values[key];
       $(key).disabled = !canEdit;
