@@ -24,6 +24,7 @@ import { validateDbMetadata } from "./db-metadata.mjs";
 //   GET    /api/admin/database                            database size against the free-tier limit (operators)
 //   GET    /api/analyses?workspace=                       analyses in one workspace (members)
 //   POST   /api/analyses                                  start an analysis (platform engineers)
+//   POST   /api/analyses/upload                            start an analysis of a zip of the code (query: workspace_id, app_name, data_rules_confirmed, model_key_id)
 //   GET    /api/analyses/:id                              one analysis, limited to what your role may see
 //   DELETE /api/analyses/:id                              delete (the person who started it, or a workspace admin)
 //   POST   /api/analyses/:id/comments                     add a comment (members)
@@ -1217,6 +1218,170 @@ async function startAnalysis(request, env) {
   return json({ id: row.id, status: row.status }, 202);
 }
 
+// ---- Upload a zip of the code from this computer, for an analysis without GitHub ----
+
+// The zip is stored privately for the run only. The runner reads it once, then the Worker deletes it.
+const MAX_UPLOAD_BYTES = 50 * 1024 * 1024;
+const SOURCE_BUCKET = "analysis-sources";
+const UPLOAD_REPO = "upload/archive";
+
+function storageUrl(env, objectPath) {
+  return `${env.SUPABASE_URL}/storage/v1/object/${SOURCE_BUCKET}/${objectPath}`;
+}
+
+function storageHeaders(env, extra = {}) {
+  return { apikey: env.SUPABASE_SERVICE_ROLE_KEY, authorization: `Bearer ${env.SUPABASE_SERVICE_ROLE_KEY}`, ...extra };
+}
+
+// Deletes the stored zip of an analysis, if it has one. Returns false if the file could not be removed.
+async function deleteSourceFile(env, row) {
+  if (!row || !row.source_path) return true;
+  const res = await fetch(storageUrl(env, row.source_path), { method: "DELETE", headers: storageHeaders(env) });
+  if (!res.ok && res.status !== 404) return false;
+  const cleared = await serviceRest(env, `analyses?id=eq.${row.id}`, {
+    method: "PATCH",
+    headers: { prefer: "return=minimal" },
+    body: JSON.stringify({ source_path: null }),
+  });
+  return cleared.ok;
+}
+
+// Starts an analysis of an uploaded zip. The zip comes as the request body, the settings in the query string.
+async function startUpload(request, env) {
+  const auth = await requireUser(env, request);
+  if (auth.response) return auth.response;
+  const query = new URL(request.url).searchParams;
+  const access = await workspaceAccessAs(env, auth, query.get("workspace_id"));
+  if (access.response) return access.response;
+  if (!canStart(access.member)) return json({ error: "Only platform engineers can start analyses." }, 403);
+
+  const name = (query.get("app_name") || "").trim();
+  if (!name || name.length > MAX_TITLE) {
+    return json({ error: `Give the application a name of 1 to ${MAX_TITLE} characters.` }, 400);
+  }
+  if (query.get("data_rules_confirmed") !== "true") {
+    return json({ error: "Confirm that the code and its settings contain no patient information." }, 400);
+  }
+  const declared = Number(request.headers.get("content-length") || 0);
+  if (declared > MAX_UPLOAD_BYTES) {
+    return json({ error: "The zip is larger than 50 MB. Remove files that are not code, such as builds, images or backups, and try again." }, 413);
+  }
+  const bytes = new Uint8Array(await request.arrayBuffer());
+  if (bytes.byteLength > MAX_UPLOAD_BYTES) {
+    return json({ error: "The zip is larger than 50 MB. Remove files that are not code, and try again." }, 413);
+  }
+  if (bytes.byteLength < 4 || bytes[0] !== 0x50 || bytes[1] !== 0x4b) {
+    return json({ error: "Upload a .zip file of the code." }, 400);
+  }
+
+  const keyId = query.get("model_key_id") || null;
+  let model = null;
+  if (keyId) {
+    const chosen = await chooseAnalysisModel(env, access.workspace_id, keyId);
+    if (chosen.response) return chosen.response;
+    model = chosen;
+  }
+
+  const id = crypto.randomUUID();
+  const objectPath = `${id}.zip`;
+  const stored = await fetch(storageUrl(env, objectPath), {
+    method: "POST",
+    headers: storageHeaders(env, { "content-type": "application/zip", "x-upsert": "false" }),
+    body: bytes,
+  });
+  if (!stored.ok) return json({ error: "Could not save the upload. Try again in a minute." }, 502);
+
+  const created = await serviceRest(env, "analyses", {
+    method: "POST",
+    headers: { prefer: "return=representation" },
+    body: JSON.stringify({
+      id,
+      owner_id: auth.user.id,
+      workspace_id: access.workspace_id,
+      repo: UPLOAD_REPO,
+      ref: null,
+      app_name: name,
+      source_kind: "upload",
+      source_path: objectPath,
+      data_rules_confirmed_at: new Date().toISOString(),
+      ...(model ? {
+        model_provider: model.key.provider,
+        model_key_id: model.key.id,
+        model_notice_version: model.notice_version,
+        model_chosen_by_email: normalizeEmail(auth.user.email),
+      } : {}),
+    }),
+  });
+  if (!created.ok) {
+    await fetch(storageUrl(env, objectPath), { method: "DELETE", headers: storageHeaders(env) });
+    return json({ error: "Could not create the analysis." }, 502);
+  }
+  const [row] = await created.json();
+  await notifyPeople(env, access.workspace_id, [auth.user.id], {
+    kind: "analysis_started",
+    tone: model ? "ai" : "info",
+    title: `Analysis started: ${name}`,
+    body: model ? "An AI model is reading the uploaded code. This usually takes 5 to 8 minutes." : "Reading the uploaded code with the rules. This usually takes a few minutes.",
+    analysis_id: row.id,
+  });
+
+  const failRun = async (message) => {
+    await serviceRest(env, `analyses?id=eq.${row.id}`, {
+      method: "PATCH",
+      body: JSON.stringify({ status: "failed", error: message, finished_at: new Date().toISOString() }),
+    });
+    await deleteSourceFile(env, row);
+  };
+
+  let modelToken = "";
+  if (model) {
+    modelToken = (await issueModelToken(env, row.id, model.key.id)) || "";
+    if (!modelToken) {
+      await failRun("Could not prepare the model for the analysis.");
+      return json({ error: "Could not prepare the model for the analysis. Try again in a minute." }, 502);
+    }
+  }
+  const dispatch = await dispatchRunner(env, {
+    analysis_id: row.id,
+    repo: UPLOAD_REPO,
+    ref: "",
+    model_token: modelToken,
+    draw_screens: model ? await workspaceDrawsScreens(env, access.workspace_id) : false,
+    source_upload: true,
+  });
+  if (!dispatch.ok) {
+    await failRun("Could not start the analysis runner.");
+    return json({ error: "Could not start the analysis runner." }, 502);
+  }
+  return json({ id: row.id, status: row.status }, 202);
+}
+
+// The runner reads the zip once, with the shared secret, and the Worker deletes it when the run is over.
+async function runnerSource(request, env, id) {
+  if (!timingSafeEqual(request.headers.get("x-runner-secret") || "", env.RUNNER_SECRET || "")) {
+    return json({ error: "Unauthorized." }, 401);
+  }
+  const found = await loadAnalysis(env, id);
+  if (found.failed) return json({ error: "Could not load the analysis." }, 502);
+  if (found.missing || found.row.source_kind !== "upload" || !found.row.source_path) {
+    return json({ error: "No uploaded code for this analysis." }, 404);
+  }
+  const res = await fetch(storageUrl(env, found.row.source_path), { headers: storageHeaders(env) });
+  if (!res.ok) return json({ error: "Could not read the upload." }, 502);
+  return new Response(res.body, { headers: { "content-type": "application/zip", "cache-control": "no-store" } });
+}
+
+async function runnerDeleteSource(request, env, id) {
+  if (!timingSafeEqual(request.headers.get("x-runner-secret") || "", env.RUNNER_SECRET || "")) {
+    return json({ error: "Unauthorized." }, 401);
+  }
+  const found = await loadAnalysis(env, id);
+  if (found.failed) return json({ error: "Could not load the analysis." }, 502);
+  if (found.missing) return json({ deleted: true });
+  if (!(await deleteSourceFile(env, found.row))) return json({ error: "Could not delete the upload." }, 502);
+  return json({ deleted: true });
+}
+
 // ---- Database structure: table, field and row-count names from access_metadata.py. No row values. ----
 
 const MAX_DB_METADATA_BYTES = 2_000_000;
@@ -1319,6 +1484,9 @@ async function rerunAnalysis(request, env, id) {
   if (row.status !== "complete" && row.status !== "failed") {
     return json({ error: "This analysis is still running." }, 409);
   }
+  if (row.source_kind === "upload") {
+    return json({ error: "The uploaded code was deleted after the first run. Upload the code again to run the analysis." }, 409);
+  }
 
   // The same model as the first run, if it had one. The key must still be active and the privacy notice still signed off.
   let modelToken = "";
@@ -1342,7 +1510,7 @@ async function rerunAnalysis(request, env, id) {
   });
   if (!reset.ok) return json({ error: "Could not start the run again. Try again in a minute." }, 502);
 
-  const dispatch = await dispatchRunner(env, { analysis_id: id, repo: row.repo, ref: row.ref || "", model_token: modelToken, draw_screens: drawScreens });
+  const dispatch = await dispatchRunner(env, { analysis_id: id, repo: row.repo, ref: row.ref || "", model_token: modelToken, draw_screens: drawScreens, source_upload: false });
   if (!dispatch.ok) {
     await serviceRest(env, `analyses?id=eq.${id}`, {
       method: "PATCH",
@@ -1483,6 +1651,7 @@ async function deleteAnalysis(request, env, id) {
   if (!(await recordDeletion(env, [{ id, repo: access.row.repo }], "requested"))) {
     return json({ error: "Could not record the deletion, so nothing was deleted." }, 502);
   }
+  if (!(await deleteSourceFile(env, access.row))) return json({ error: "Could not delete the uploaded code. Try again in a minute." }, 502);
   const res = await serviceRest(env, `analyses?id=eq.${id}`, {
     method: "DELETE",
     headers: { prefer: "return=minimal" },
@@ -2504,6 +2673,7 @@ async function route(request, env) {
     if (oneWorkspace && method === "DELETE") return deleteWorkspace(request, env, oneWorkspace[1]);
 
     if (path === "/api/analyses" && method === "POST") return startAnalysis(request, env);
+    if (path === "/api/analyses/upload" && method === "POST") return startUpload(request, env);
     if (path === "/api/analyses" && method === "GET") return listAnalyses(request, env);
 
     const one = path.match(/^\/api\/analyses\/([^/]+)$/);
@@ -2606,6 +2776,10 @@ async function route(request, env) {
     if (dbMetadataRead && UUID_PATTERN.test(dbMetadataRead[1]) && method === "GET") {
       return runnerDbMetadata(request, env, dbMetadataRead[1]);
     }
+
+    const sourceRead = path.match(/^\/api\/runner\/([^/]+)\/source$/);
+    if (sourceRead && UUID_PATTERN.test(sourceRead[1]) && method === "GET") return runnerSource(request, env, sourceRead[1]);
+    if (sourceRead && UUID_PATTERN.test(sourceRead[1]) && method === "DELETE") return runnerDeleteSource(request, env, sourceRead[1]);
 
     const screensUpload = path.match(/^\/api\/runner\/([^/]+)\/screens$/);
     if (screensUpload && UUID_PATTERN.test(screensUpload[1]) && method === "POST") {

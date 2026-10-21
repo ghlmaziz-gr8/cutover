@@ -558,6 +558,11 @@ pre{white-space:pre-wrap;word-break:break-word;background:var(--soft);padding:12
   @keyframes questFlash{0%{box-shadow:0 0 0 0 rgba(5,150,105,.6)}100%{box-shadow:0 0 0 22px rgba(5,150,105,0)}}
   @keyframes questReady{0%,100%{box-shadow:0 0 0 0 rgba(109,40,217,0)}50%{box-shadow:0 0 0 6px rgba(109,40,217,.3)}}
   @media (prefers-reduced-motion: reduce){.quest *,.quest{animation:none!important;transition:none!important}}
+.src-choice{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px}
+.src-opt{display:grid;gap:4px;text-align:left;padding:12px 14px;border-radius:14px;border:1px solid var(--line);background:var(--card);color:var(--fg);cursor:pointer;font:inherit}
+.src-opt span{font-size:13px;color:var(--muted)}
+.src-opt[aria-checked="true"]{border-color:var(--accent);box-shadow:0 0 0 2px color-mix(in srgb,var(--accent) 25%,transparent)}
+@media (max-width:560px){.src-choice{grid-template-columns:1fr}}
 </style>
 </head>
 <body>
@@ -814,12 +819,28 @@ pre{white-space:pre-wrap;word-break:break-word;background:var(--soft);padding:12
   <section id="s-connect" class="screen wiz" hidden>
     <p class="eyebrow">Step 4</p>
     <h2 style="margin:8px 0 6px">Connect the code</h2>
-    <p class="muted">Paste the GitHub location of the code. Cutover checks that it can read it before going on.</p>
+    <p class="muted">Choose where the code is. Use GitHub, or upload a zip of the code from this computer if you do not use GitHub.</p>
     <div class="card">
-      <label for="repo">Code location (GitHub)</label>
-      <input id="repo" placeholder="owner/name" autocomplete="off">
-      <label for="ref">Branch, tag or commit (optional)</label>
-      <input id="ref" placeholder="Leave blank for the default branch" autocomplete="off">
+      <div class="src-choice" role="radiogroup" aria-label="Where the code is">
+        <button type="button" class="src-opt" id="srcGithub" role="radio" aria-checked="true">
+          <strong>From GitHub</strong><span>Cutover reads the repository.</span>
+        </button>
+        <button type="button" class="src-opt" id="srcUpload" role="radio" aria-checked="false">
+          <strong>Upload a zip</strong><span>A copy of the code from this computer. No GitHub needed.</span>
+        </button>
+      </div>
+      <div id="srcGithubBox">
+        <label for="repo">Code location (GitHub)</label>
+        <input id="repo" placeholder="owner/name" autocomplete="off">
+        <label for="ref">Branch, tag or commit (optional)</label>
+        <input id="ref" placeholder="Leave blank for the default branch" autocomplete="off">
+      </div>
+      <div id="srcUploadBox" hidden>
+        <label for="zipFile">Zip file of the code (up to 50 MB)</label>
+        <input id="zipFile" type="file" accept=".zip,application/zip">
+        <p id="zipInfo" class="small" aria-live="polite"></p>
+        <p class="small hint">To make the zip: on a Mac, right-click the folder and choose Compress. On Windows, right-click the folder, choose Send to, then Compressed (zipped) folder. Leave out builds, images and backups. The zip is deleted when the analysis ends.</p>
+      </div>
       <p id="repoResult" class="small hint" role="status"></p>
     </div>
     <div class="row wzNav">
@@ -4844,10 +4865,13 @@ const REGION_OPTS = {
   // ---- Steps 3 to 5: start a new assessment ----
 
   $("startNew").addEventListener("click", () => {
-    wizard = { appName: "", repo: "", ref: "" };
+    wizard = { appName: "", repo: "", ref: "", source: "github", zip: null };
     $("appName").value = "";
     $("repo").value = "";
     $("ref").value = "";
+    $("zipFile").value = "";
+    $("zipInfo").textContent = "";
+    chooseSource("github");
     $("dataRules").checked = false;
     $("startNow").disabled = true;
     setMsg("nameMsg", "", false);
@@ -4970,8 +4994,42 @@ const REGION_OPTS = {
     });
   });
 
+  // Step 4: GitHub, or a zip of the code from this computer. The zip is checked here and sent when the analysis starts.
+  const MAX_ZIP_BYTES = 50 * 1024 * 1024;
+  let sourceKind = "github";
+  function chooseSource(kind) {
+    sourceKind = kind;
+    $("srcGithub").setAttribute("aria-checked", String(kind === "github"));
+    $("srcUpload").setAttribute("aria-checked", String(kind === "upload"));
+    $("srcGithubBox").hidden = kind !== "github";
+    $("srcUploadBox").hidden = kind !== "upload";
+    setMsg("repoResult", "", false);
+  }
+  $("srcGithub").addEventListener("click", () => chooseSource("github"));
+  $("srcUpload").addEventListener("click", () => chooseSource("upload"));
+  $("zipFile").addEventListener("change", () => {
+    const file = $("zipFile").files[0];
+    if (!file) { $("zipInfo").textContent = ""; return; }
+    const size = `${(file.size / 1048576).toFixed(1)} MB`;
+    $("zipInfo").textContent = file.size > MAX_ZIP_BYTES ? `${file.name} is ${size}. The limit is 50 MB.` : `${file.name}, ${size}`;
+  });
+
   // Step 4 checks that Cutover can read the repository before it moves on.
   $("connectNext").addEventListener("click", async () => {
+    if (sourceKind === "upload") {
+      const file = $("zipFile").files[0];
+      if (!file || !/\.zip$/i.test(file.name)) return setMsg("repoResult", "Choose a .zip file of the code.", true);
+      if (file.size > MAX_ZIP_BYTES) return setMsg("repoResult", "The zip is larger than 50 MB. Remove files that are not code, and try again.", true);
+      wizard.source = "upload";
+      wizard.zip = file;
+      wizard.repo = "";
+      wizard.ref = "";
+      $("repoSummary").textContent = `${wizard.appName}: uploaded ${file.name} (${(file.size / 1048576).toFixed(1)} MB). The zip is deleted when the analysis ends.`;
+      $("dataRules").checked = false;
+      $("startNow").disabled = true;
+      show("s-rules");
+      return;
+    }
     const repo = $("repo").value.trim();
     const ref = $("ref").value.trim();
     if (!REPO_FORMAT.test(repo)) return setMsg("repoResult", "Use the form owner/name, for example: acme/patient-portal.", true);
@@ -4993,6 +5051,7 @@ const REGION_OPTS = {
       }
       const when = r.last_changed ? `, last changed ${new Date(r.last_changed).toLocaleDateString()}` : "";
       const partial = r.truncated ? " (very large repository: the count may be partial)" : "";
+      wizard.source = "github";
       wizard.repo = repo;
       wizard.ref = ref;
       $("repoSummary").textContent = `${wizard.appName}: found ${r.files} files${when}${partial}.`;
@@ -5048,10 +5107,18 @@ const REGION_OPTS = {
     $("startNow").disabled = true;
     setMsg("rulesMsg", "Starting analysis...", false);
     try {
-      const body = { workspace_id: ws.id, app_name: wizard.appName, repo: wizard.repo, data_rules_confirmed: true };
-      if (wizard.ref) body.ref = wizard.ref;
-      if ($("modelChoice").value) body.model_key_id = $("modelChoice").value;
-      const res = await api("/api/analyses", { method: "POST", body: JSON.stringify(body) });
+      let res;
+      if (wizard.source === "upload") {
+        // The zip is the request body; the settings are in the query string.
+        const params = new URLSearchParams({ workspace_id: ws.id, app_name: wizard.appName, data_rules_confirmed: "true" });
+        if ($("modelChoice").value) params.set("model_key_id", $("modelChoice").value);
+        res = await api(`/api/analyses/upload?${params.toString()}`, { method: "POST", headers: { "content-type": "application/zip" }, body: wizard.zip });
+      } else {
+        const body = { workspace_id: ws.id, app_name: wizard.appName, repo: wizard.repo, data_rules_confirmed: true };
+        if (wizard.ref) body.ref = wizard.ref;
+        if ($("modelChoice").value) body.model_key_id = $("modelChoice").value;
+        res = await api("/api/analyses", { method: "POST", body: JSON.stringify(body) });
+      }
       cur = await api(`/api/analyses/${res.id}`);
       showRun();
     } catch (err) {
