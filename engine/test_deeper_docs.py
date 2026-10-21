@@ -67,5 +67,29 @@ class BuildTests(unittest.TestCase):
         self.assertIsNone(point["category"])
 
 
+class ModernizeTests(unittest.TestCase):
+    def test_there_are_always_three_proposals_in_order_of_effort(self):
+        doc = dd.build({"findings": {}})
+        self.assertEqual([p["id"] for p in doc["modernize"]], ["keep", "containerize", "managed"])
+        self.assertEqual([p["effort"] for p in doc["modernize"]], ["low", "medium", "high"])
+
+    def test_a_proposal_names_the_findings_it_relies_on_and_their_categories(self):
+        doc = dd.build(report(
+            finding("containers.images", "containers", {"count": 2}),
+            finding("data.tables", "data", {"count": 9, "names": []}),
+        ))
+        keep, containerize, managed = doc["modernize"]
+        self.assertEqual(keep["basis"], ["containers.images"])
+        self.assertEqual(keep["categories"], ["containers"])
+        self.assertEqual(managed["basis"], ["data.tables"])
+        self.assertIn("9 tables", managed["points"][0])
+
+    def test_a_proposal_says_it_is_not_costed_by_its_trade_offs_and_is_never_empty(self):
+        for proposal in dd.build({"findings": {}})["modernize"]:
+            self.assertTrue(proposal["tradeoffs"])
+            self.assertTrue(proposal["points"])
+            self.assertEqual(proposal["categories"], [])
+
+
 if __name__ == "__main__":
     unittest.main()

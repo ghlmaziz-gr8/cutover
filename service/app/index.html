@@ -202,6 +202,8 @@ form input + button{margin-top:16px}
 .arch-layer b{font-size:14px}
 .arch-arrow{text-align:center;color:var(--accent);font-size:12px;line-height:1.4;animation:archPulse 2s ease-in-out infinite}
 .deeper-sec li{margin:6px 0}
+.prop{border:1px solid var(--line);border-radius:16px;padding:14px;margin-top:12px;background:var(--card)}
+.prop .tag{margin-left:8px}
 .deeper-sec .src{display:block;font-size:12px;color:var(--muted)}
 .dp-layer{fill:var(--card);stroke:var(--accent);stroke-width:2;animation:dpLift 2.8s ease-in-out infinite}
 .dp-layer.l2{animation-delay:.4s;stroke:var(--accent2)}
@@ -918,6 +920,7 @@ pre{white-space:pre-wrap;word-break:break-word;background:var(--soft);padding:12
     </div>
     <div class="card" id="deeperArch"></div>
     <div id="deeperSections"></div>
+    <div id="deeperModern"></div>
     <div class="card" id="deeperLimits"></div>
     <div class="row wzNav">
       <button type="button" class="ghost" id="deeperBackBottom">Back to next steps</button>
@@ -3159,12 +3162,46 @@ a{color:#6d28d9;font-weight:600}`;
       }
       sections.appendChild(card);
     }
+    renderModernize(deeper);
     limits.appendChild(el("h3", "How to read this", null));
     limits.firstChild.style.marginTop = "0";
     const ul = el("ul", null, null);
     ul.style.paddingLeft = "18px";
     for (const item of deeper.limits || []) ul.appendChild(el("li", item, "small muted"));
     limits.appendChild(ul);
+  }
+
+  // Three proposals for the application. They are for review, not decisions, and not costed.
+  function renderModernize(deeper) {
+    const box = $("deeperModern");
+    box.replaceChildren();
+    const proposals = deeper.modernize || [];
+    if (!proposals.length) return;
+    const card = el("div", null, "card deeper-sec");
+    card.appendChild(el("h3", "Modernize: three proposals", null));
+    card.firstChild.style.marginTop = "0";
+    card.appendChild(el("p", "These are options to review, not decisions. None is costed yet. Choosing Modernize on What next records the decision.", "muted small"));
+    for (const p of proposals) {
+      const item = el("div", null, "prop");
+      const head = el("div", null, "row");
+      head.style.justifyContent = "space-between";
+      head.style.alignItems = "center";
+      head.append(el("b", p.title), el("span", `${p.effort} effort`, "tag"));
+      item.appendChild(head);
+      item.appendChild(el("div", p.summary, "small"));
+      const points = el("ul", null, null);
+      points.style.paddingLeft = "18px";
+      for (const text of p.points || []) points.appendChild(el("li", text, "small"));
+      item.appendChild(points);
+      item.appendChild(el("div", "Trade-offs", "small"));
+      const trade = el("ul", null, null);
+      trade.style.paddingLeft = "18px";
+      for (const text of p.tradeoffs || []) trade.appendChild(el("li", text, "small muted"));
+      item.appendChild(trade);
+      if ((p.basis || []).length) item.appendChild(el("div", `Based on ${p.basis.join(", ")}`, "src"));
+      card.appendChild(item);
+    }
+    box.appendChild(card);
   }
 
   // The same content for the PDF report, as a plain section.
@@ -3180,6 +3217,15 @@ a{color:#6d28d9;font-weight:600}`;
       for (const p of section.points) ul.appendChild(el("li", p.text, "small"));
       wrap.appendChild(ul);
     }
+    if ((deeper.modernize || []).length) {
+      wrap.appendChild(el("p", "Modernize: three proposals (for review, not decided, not costed)", "report-sum"));
+      for (const p of deeper.modernize) {
+        wrap.appendChild(el("p", `${p.title} (${p.effort} effort): ${p.summary}`, "small"));
+        const ul = el("ul", null, null);
+        for (const t of p.tradeoffs || []) ul.appendChild(el("li", `Trade-off: ${t}`, "small"));
+        wrap.appendChild(ul);
+      }
+    }
     return wrap;
   }
 
@@ -3189,8 +3235,8 @@ a{color:#6d28d9;font-weight:600}`;
 
   const SCOPE_OPTIONS = [
     { key: "deeper", title: "Deeper assessment", body: "A purpose and suggestions for every file, plus business, systems and data documents, workflows and an architecture diagram.", needsDeeper: false },
-    { key: "modernize", title: "Modernize", body: "Three future-state proposals for the web application, each with its trade-offs.", needsDeeper: true },
-    { key: "migrate", title: "Migrate", body: "Move to Google Cloud, AWS or Azure. Then an intake form, then a Terraform draft to review.", needsDeeper: true },
+    { key: "modernize", title: "Modernize", body: "Three future-state proposals for the web application, each with its trade-offs.", needsDeeper: true, note: "The three proposals are on the deeper assessment page. Choosing this records your decision." },
+    { key: "migrate", title: "Migrate", body: "Move to Google Cloud, AWS or Azure. Then an intake form, then a Terraform draft to review.", needsDeeper: true, note: "Not built yet. Choosing this records your decision only; the cloud choice and intake form come next." },
   ];
   const SCOPE_LABEL = { deeper: "Deeper assessment", modernize: "Modernize", migrate: "Migrate" };
 
@@ -3220,6 +3266,7 @@ a{color:#6d28d9;font-weight:600}`;
       }
       card.appendChild(head);
       card.appendChild(el("div", o.body, "small muted"));
+      if (o.note && !locked) card.appendChild(el("div", o.note, "small"));
       if (locked) {
         card.appendChild(el("span", "Locked until the deeper assessment is complete", "tag"));
       } else if (selected) {

@@ -177,6 +177,77 @@ def _architecture(report: dict) -> dict:
     return {"layers": layers}
 
 
+def _proposal(pid: str, title: str, effort: str, summary: str, tradeoffs: list[str], points: list[str], basis: list[str], categories: list[str]) -> dict:
+    return {"id": pid, "title": title, "effort": effort, "summary": summary, "tradeoffs": tradeoffs,
+            "points": points, "basis": basis, "categories": categories}
+
+
+def modernize(report: dict) -> list[dict]:
+    """Three future-state proposals for the application, built from the findings. Each is for review,
+    not a decision, and none is costed. Each lists the findings it relies on and the categories they come from."""
+    containers = _finding(report, "containers.images")
+    ci = _finding(report, "delivery.ci")
+    iac = _finding(report, "infrastructure.as_code")
+    tables = _finding(report, "data.tables")
+    table_count = _count(_value(report, "data.tables"), "count")
+
+    keep_points = []
+    keep_basis = []
+    if containers:
+        keep_points.append("Pin the container images to fixed versions, so a rebuild gives the same result.")
+        keep_basis.append("containers.images")
+    if ci:
+        keep_points.append("Keep the existing pipeline and add a test step that must pass before a deploy.")
+        keep_basis.append("delivery.ci")
+    else:
+        keep_points.append("No pipeline was found in the repository. Add one that builds and tests every change.")
+    keep = _proposal(
+        "keep", "Keep the current platform and tighten it", "low",
+        "Leave the application where it runs now, and fix the gaps the findings show.",
+        ["Lowest change and risk. The team keeps the skills it has.",
+         "The limits of the current hosting remain."],
+        keep_points, keep_basis, [f["category"] for f in (containers, ci) if f] or [],
+    )
+
+    container_points = [
+        "Package each part of the application as a container image, built the same way every time.",
+    ]
+    container_basis = []
+    if containers:
+        container_points.append("Start from the container images the code already references.")
+        container_basis.append("containers.images")
+    if iac:
+        container_points.append("Describe the environments in the infrastructure code that already exists.")
+        container_basis.append("infrastructure.as_code")
+    if ci:
+        container_basis.append("delivery.ci")
+    containerize = _proposal(
+        "containerize", "Package the application in containers and automate delivery", "medium",
+        "Make builds and deploys repeatable across environments.",
+        ["Repeatable builds and deploys. Easier to move later.",
+         "Needs container skills and a registry to hold the images."],
+        container_points, container_basis, [f["category"] for f in (containers, ci, iac) if f] or [],
+    )
+
+    managed_summary = ("Use a managed database for the " + str(table_count) + " tables, and managed hosting for the application.") \
+        if table_count is not None else "Use a managed database and managed hosting for the application."
+    managed_points = [managed_summary]
+    managed_basis = []
+    if tables:
+        managed_basis.append("data.tables")
+    if iac:
+        managed_points.append("Build on the infrastructure code that already exists, so the cloud set-up is written down.")
+        managed_basis.append("infrastructure.as_code")
+    managed = _proposal(
+        "managed", "Move the database and hosting to managed cloud services", "high",
+        "Let the cloud provider run backups, scaling and patching.",
+        ["Less to run and patch. Backups and scaling come from the provider.",
+         "Needs the cloud choice and intake first, and a planned data migration."],
+        managed_points, managed_basis, [f["category"] for f in (tables, iac) if f] or [],
+    )
+    return [keep, containerize, managed]
+
+
 def build(report: dict) -> dict:
     """The deeper assessment for one discovery report: four sections, an architecture overview, and the limits."""
     sections = [
@@ -185,4 +256,4 @@ def build(report: dict) -> dict:
         {"id": "data", "title": "Data: what is stored", "points": _data(report)},
         {"id": "workflows", "title": "Workflows: screens and actions", "points": _workflows(report)},
     ]
-    return {"sections": sections, "architecture": _architecture(report), "limits": LIMITS}
+    return {"sections": sections, "architecture": _architecture(report), "modernize": modernize(report), "limits": LIMITS}
