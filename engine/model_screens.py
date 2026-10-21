@@ -26,8 +26,10 @@ SCREEN_MAX_CHARS = 40_000
 SCREEN_MAX_TOKENS = 16_000
 
 SCREEN_PROMPT = (
-    "You draw one screen of a healthcare software application as a single self-contained HTML page, "
-    "so people can see what it looks like. Keep the layout, headings, labels and buttons from the file. "
+    "You draw one screen of a software application as a single self-contained HTML page, "
+    "so people can see what it looks like. Keep the layout, headings, labels and buttons from the file, in the "
+    "application's own words. The other files listed with the screen show what the application is for: keep "
+    "to that subject and never invent a different kind of business or system. "
     "Fill every field with sample data only: invented names, numbers and dates. Never copy real values from the code. "
     "Put all styling in one <style> tag. Do not use scripts, links to other sites, images from the web, forms or frames. "
     "Reply with the HTML only, with no commentary and no markdown code fences."
@@ -56,8 +58,19 @@ class ScreenError(Exception):
     """One screen could not be drawn. Only that screen is skipped."""
 
 
+# Classic ASP pages are screens too, but include files and copies of the pages are not.
+ASP_SKIP = re.compile(r"(^|/)(original|includefiles|test|tests)/|(^|/)inc[_a-z]*\.asp$|commonfunctions", re.I)
+
+
+def is_screen_file(record: dict) -> bool:
+    path = record.get("path", "")
+    if record.get("category") in SCREEN_CATEGORIES:
+        return True
+    return path.lower().endswith(".asp") and not ASP_SKIP.search(path)
+
+
 def choose_screen_files(records: list[dict], limit: int = SCREEN_MAX) -> list[dict]:
-    return [r for r in records if r.get("category") in SCREEN_CATEGORIES][:limit]
+    return [r for r in records if is_screen_file(r)][:limit]
 
 
 def screen_problem(html: str) -> str | None:
@@ -69,6 +82,32 @@ def screen_problem(html: str) -> str | None:
     if any(rx.search(html) for rx in REFUSED):
         return "A screen used something a drawing may not use: scripts, links to other sites, forms or frames."
     return None
+
+
+def screen_context(records: list[dict], path: str, limit: int = 12, path_limit: int = 60) -> str:
+    """What the application is about, from the other files: their names and the purposes recorded for them.
+    The names often say most (Projects, Tickets, Login), so a drawing stays in the application's subject."""
+    purposes: list[str] = []
+    seen: set[str] = set()
+    names: list[str] = []
+    for r in records:
+        if r.get("path") == path:
+            continue
+        if len(names) < path_limit:
+            names.append(r["path"])
+        purpose = r.get("purpose")
+        if purpose and purpose not in seen and len(purposes) < limit and "not yet classified" not in purpose:
+            seen.add(purpose)
+            purposes.append(f"- {r['path']}: {purpose}")
+    parts = ["Files in the application: " + (", ".join(names) or "none")]
+    if purposes:
+        parts.append("What some of them are for:\n" + "\n".join(purposes))
+    return "\n".join(parts)
+
+
+def build_screen_text(path: str, code: str, context: str) -> str:
+    return (f"Other files in this application, with what each is for:\n{context}\n\n"
+            f"File path: {path}\n\n<file>\n{code}\n</file>")
 
 
 def screen_name(path: str) -> str:

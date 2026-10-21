@@ -235,3 +235,23 @@ class RunTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class ScreenContextTests(unittest.TestCase):
+    def test_the_context_names_the_other_files_and_leaves_out_unclassified_purposes(self):
+        from model_screens import build_screen_text, screen_context
+        records = [
+            {"path": "Projects.asp", "purpose": "Lists projects."},
+            {"path": "TaskManager.asp", "purpose": "File of a type not yet classified."},
+            {"path": "Tickets.asp", "purpose": "Lists projects."},
+            {"path": "HelpDesk.asp", "purpose": "Help desk tickets."},
+        ]
+        context = screen_context(records, "Login.asp")
+        self.assertIn("Files in the application: Projects.asp, TaskManager.asp, Tickets.asp, HelpDesk.asp", context)
+        self.assertIn("- Projects.asp: Lists projects.", context)
+        self.assertNotIn("not yet classified", context)
+        self.assertEqual(context.count("Lists projects."), 1)
+        text = build_screen_text("Login.asp", "<html></html>", context)
+        self.assertIn("File path: Login.asp", text)
+        self.assertIn("Files in the application:", text)
+
