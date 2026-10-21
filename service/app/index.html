@@ -411,7 +411,38 @@ pre{white-space:pre-wrap;word-break:break-word;background:var(--soft);padding:12
   .tag.new::before{content:"";width:7px;height:7px;border-radius:50%;background:var(--accent2);animation:pulseDot 1.6s ease-in-out infinite}
   @keyframes pulseDot{0%,100%{box-shadow:0 0 0 0 color-mix(in srgb,var(--accent2) 55%,transparent)}50%{box-shadow:0 0 0 6px transparent}}
   @media (prefers-reduced-motion:reduce){.tag.new::before{animation:none}}
-  </style>
+
+  /* Key quest: a story panel that walks through making a provider key. */
+  .quest{border:1px solid var(--line);border-radius:14px;padding:14px 14px 12px;margin:10px 0 14px;background:linear-gradient(180deg,var(--soft),var(--card));position:relative;overflow:hidden}
+  .quest::before{content:"";position:absolute;inset:0;background:radial-gradient(circle at 90% -10%,rgba(236,72,153,.18),transparent 45%);pointer-events:none}
+  .quest-head{display:flex;align-items:center;gap:10px;position:relative}
+  .quest-sigil{display:inline-grid;place-items:center;width:30px;height:30px;border-radius:50%;background:var(--grad);color:#fff;font-size:15px;box-shadow:0 0 0 0 rgba(236,72,153,.6);animation:questSigil 2.4s ease-in-out infinite}
+  .quest-title{font-family:var(--display);font-size:17px}
+  .quest-count{margin-left:auto;color:var(--muted)}
+  .quest-bar{height:8px;border-radius:99px;background:var(--line);margin:12px 0 12px;overflow:hidden;position:relative}
+  .quest-fill{height:100%;width:0;border-radius:99px;background:var(--grad);background-size:200% 100%;transition:width .6s cubic-bezier(.2,.8,.2,1);animation:questShine 2.6s linear infinite}
+  .quest-map{display:flex;gap:10px;align-items:center;flex-wrap:wrap;position:relative}
+  .quest-node{width:38px;height:38px;border-radius:50%;border:2px solid var(--line);background:var(--card);color:var(--muted);font-weight:700;cursor:pointer;transition:transform .2s,box-shadow .2s,background .2s}
+  .quest-node:not(:disabled):hover{transform:translateY(-2px) scale(1.06)}
+  .quest-node:disabled{opacity:.45;cursor:not-allowed}
+  .quest-node.now{border-color:var(--accent2);color:var(--fg);box-shadow:0 0 0 4px rgba(236,72,153,.18);animation:questPulse 1.6s ease-in-out infinite}
+  .quest-node.done{background:var(--ok);border-color:var(--ok);color:#fff}
+  .quest-story{margin-top:14px;padding:14px;border-radius:12px;background:var(--card);border:1px dashed var(--line);animation:questEnter .45s ease both;position:relative}
+  .quest-chapter{font-family:var(--display);font-size:15px;color:var(--accent);margin-bottom:4px}
+  .quest-actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}
+  .quest-prologue{font-style:italic;color:var(--muted);margin:0 0 8px}
+  .quest-text{min-height:3.2em;cursor:pointer}
+  .quest-end{font-family:var(--display);font-size:16px;color:var(--ok);margin:0 0 4px}
+  .quest-flash{animation:questFlash .9s ease}
+  .model-key-form input.quest-ready{animation:questReady 1.4s ease 2}
+  @keyframes questSigil{0%,100%{box-shadow:0 0 0 0 rgba(236,72,153,.55)}50%{box-shadow:0 0 0 8px rgba(236,72,153,0)}}
+  @keyframes questShine{from{background-position:0 0}to{background-position:200% 0}}
+  @keyframes questPulse{0%,100%{transform:scale(1)}50%{transform:scale(1.08)}}
+  @keyframes questEnter{from{opacity:0;transform:translateX(12px)}to{opacity:1;transform:none}}
+  @keyframes questFlash{0%{box-shadow:0 0 0 0 rgba(5,150,105,.6)}100%{box-shadow:0 0 0 22px rgba(5,150,105,0)}}
+  @keyframes questReady{0%,100%{box-shadow:0 0 0 0 rgba(109,40,217,0)}50%{box-shadow:0 0 0 6px rgba(109,40,217,.3)}}
+  @media (prefers-reduced-motion: reduce){.quest *,.quest{animation:none!important;transition:none!important}}
+</style>
 </head>
 <body>
 <div id="printReport"></div>
@@ -1984,6 +2015,129 @@ pre{white-space:pre-wrap;word-break:break-word;background:var(--soft);padding:12
     }
   }
 
+  // The key quest: a short story for each provider that walks through making a key. Progress is kept
+  // in the page only, never stored, and the key itself is never shown here.
+  const QUESTS = {
+    google: {
+      title: "The Gemini Key",
+      prologue: "A key is needed to open the model. Forge one, guard it, and bring it back here.",
+      chapters: [
+        { icon: "\u2691", name: "The gate", text: "Open Google AI Studio and sign in with the Google account that should own the key.",
+          url: "https://aistudio.google.com/apikey", cta: "Open AI Studio" },
+        { icon: "\u2756", name: "The project", text: "New accounts get a project when they accept the terms. If you already use Google Cloud, open Dashboard, choose Projects, then Import projects, and pick the one you want." },
+        { icon: "\u2726", name: "The forging", text: "On the API Keys page, press Create API key.",
+          url: "https://aistudio.google.com/apikey", cta: "Go to the API Keys page" },
+        { icon: "\u25C8", name: "The vault", text: "Copy the key now. Treat it like a password: never share it or paste it into chat or email. Paste it in the box below. Cutover tests it before saving and shows only its last four characters." },
+      ],
+      epilogue: "Quest complete. Paste your key in the box below.",
+    },
+    anthropic: {
+      title: "The Claude Key",
+      prologue: "A key is needed to open the model. Forge one, guard it, and bring it back here.",
+      chapters: [
+        { icon: "\u2691", name: "The gate", text: "Sign in to the Claude Console, or create an account if you don't have one.",
+          url: "https://platform.claude.com/", cta: "Open the Claude Console" },
+        { icon: "\u2756", name: "The ledger", text: "Open the API keys page in the Console.",
+          url: "https://platform.claude.com/settings/keys", cta: "Open the API keys page" },
+        { icon: "\u2726", name: "The forging", text: "Press Create key, give it a name, and choose an expiry. Set Linked account to yourself for your own use, or to a service account for shared use." },
+        { icon: "\u25C8", name: "The vault", text: "The full key starts with sk-ant- and is shown only once. Copy it and paste it in the box below. If you lose it, create a new key. Cutover tests it before saving and shows only its last four characters." },
+      ],
+      epilogue: "Quest complete. Paste your key in the box below.",
+    },
+  };
+
+  function questPanel(providerId, onComplete) {
+    const quest = QUESTS[providerId];
+    const wrap = el("section", null, "quest");
+    if (!quest) return wrap;
+    const n = quest.chapters.length;
+    let done = 0;
+    let open = 0;
+    const head = el("div", null, "quest-head");
+    head.append(el("span", "\u2726", "quest-sigil"), el("b", quest.title, "quest-title"));
+    const count = el("span", "", "quest-count small");
+    head.appendChild(count);
+    const bar = el("div", null, "quest-bar");
+    bar.setAttribute("role", "progressbar");
+    bar.setAttribute("aria-valuemin", "0");
+    bar.setAttribute("aria-valuemax", String(n));
+    const fill = el("div", null, "quest-fill");
+    bar.appendChild(fill);
+    const map = el("div", null, "quest-map");
+    const story = el("div", null, "quest-story");
+    wrap.append(head, bar, map, story);
+
+    // Types the text out one letter at a time. A click finishes it at once, and reduced motion shows it at once.
+    const reduceMotion = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    let typing = null;
+    function typewrite(node, full) {
+      if (typing) clearInterval(typing);
+      if (reduceMotion) { node.textContent = full; return; }
+      let i = 0;
+      node.textContent = "";
+      node.addEventListener("click", () => { if (typing) clearInterval(typing); node.textContent = full; }, { once: true });
+      typing = setInterval(() => {
+        i += 2;
+        node.textContent = full.slice(0, i);
+        if (i >= full.length) { clearInterval(typing); typing = null; }
+      }, 22);
+    }
+
+    function draw(flash) {
+      bar.setAttribute("aria-valuenow", String(done));
+      fill.style.width = `${(done / n) * 100}%`;
+      count.textContent = done === n ? "Complete" : `Chapter ${open + 1} of ${n}`;
+      map.replaceChildren();
+      quest.chapters.forEach((c, i) => {
+        const node = el("button", i < done ? "\u2713" : String(i + 1), "quest-node" + (i < done ? " done" : "") + (i === open ? " now" : ""));
+        node.type = "button";
+        node.disabled = i > done;
+        node.setAttribute("aria-label", `Chapter ${i + 1}: ${c.name}${i < done ? ", done" : i > done ? ", locked" : ""}`);
+        node.addEventListener("click", () => { open = i; draw(false); });
+        map.appendChild(node);
+      });
+      story.replaceChildren();
+      story.style.animation = "none";
+      void story.offsetWidth;
+      story.style.animation = "";
+      if (flash) {
+        wrap.classList.remove("quest-flash");
+        void wrap.offsetWidth;
+        wrap.classList.add("quest-flash");
+      }
+      if (done === n) {
+        story.append(el("p", quest.epilogue, "quest-end"));
+        story.appendChild(el("p", "Only the last four characters are shown after saving.", "small muted"));
+        if (onComplete) onComplete();
+        return;
+      }
+      const c = quest.chapters[open];
+      if (done === 0 && open === 0) story.appendChild(el("p", quest.prologue, "quest-prologue small"));
+      const body = el("p", "", "small quest-text");
+      story.append(el("div", `${c.icon} Chapter ${open + 1}: ${c.name}`, "quest-chapter"), body);
+      typewrite(body, c.text);
+      const actions = el("div", null, "quest-actions");
+      if (c.url) {
+        const link = el("a", c.cta, "btn ghost small-btn");
+        link.href = c.url;
+        link.target = "_blank";
+        link.rel = "noopener noreferrer";
+        actions.appendChild(link);
+      }
+      if (open === done) {
+        const next = el("button", done + 1 === n ? "Finish this chapter" : "Done, next chapter", "btn small-btn");
+        next.type = "button";
+        next.addEventListener("click", () => { done += 1; open = Math.min(done, n - 1); draw(true); });
+        actions.appendChild(next);
+      } else {
+        actions.appendChild(el("span", "Done", "tag"));
+      }
+      story.appendChild(actions);
+    }
+    draw(false);
+    return wrap;
+  }
+
   function modelKeyForm(providers) {
     const form = el("form", null, "model-key-form");
     const provider = document.createElement("select");
@@ -1993,6 +2147,9 @@ pre{white-space:pre-wrap;word-break:break-word;background:var(--soft);padding:12
       option.textContent = p.label;
       provider.appendChild(option);
     }
+    const questSlot = el("div", null, null);
+    const showQuest = () => questSlot.replaceChildren(questPanel(provider.value, () => input.classList.add("quest-ready")));
+    provider.addEventListener("change", showQuest);
     const label = el("label", "Key", null);
     label.htmlFor = "modelKeyInput";
     const input = document.createElement("input");
@@ -2003,7 +2160,8 @@ pre{white-space:pre-wrap;word-break:break-word;background:var(--soft);padding:12
     input.placeholder = "Paste the whole key";
     const button = el("button", "Test and save");
     button.type = "submit";
-    form.append(el("label", "Provider", null), provider, label, input, button);
+    form.append(el("label", "Provider", null), provider, questSlot, label, input, button);
+    showQuest();
     form.addEventListener("submit", async (e) => {
       e.preventDefault();
       const apiKey = input.value.trim();
