@@ -872,7 +872,8 @@ def detect_infrastructure(repo: Repo, out: dict) -> None:
     }
     has_iac = bool(tf or bicep or helm or cfn or k8s)
     out["infrastructure.as_code"] = F(
-        "infrastructure.as_code", "infrastructure", "Infrastructure defined as code", summary, "verified",
+        "infrastructure.as_code", "infrastructure",
+        "Infrastructure defined as code" if has_iac else "No infrastructure as code found", summary, "verified",
         tf + bicep + helm + cfn + k8s + compose,
         note=None if has_iac else "No infrastructure-as-code found. The live environment must be inventoried through read-only cloud access or the inventory script.",
         severity=None if has_iac else "medium",
