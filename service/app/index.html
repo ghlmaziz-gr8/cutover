@@ -176,6 +176,9 @@ button.danger{background:transparent;color:var(--bad);box-shadow:none;border:1.5
 .ds-table{margin:6px 0;border-left:2px solid var(--line);padding-left:10px}
 .ds-table>summary{cursor:pointer;font-size:14px}
 .ds-table>summary .muted{margin-left:8px}
+.ds-names{margin:6px 0}
+.ds-names>summary{cursor:pointer;font-size:14px}
+.ds-names-list{line-height:1.6;overflow-wrap:anywhere}
 .ds-fields{margin:6px 0 4px;padding-left:18px;font-size:13px;color:var(--muted,#64748b)}
 
 @media (max-width:640px){
@@ -2733,8 +2736,19 @@ pre{white-space:pre-wrap;word-break:break-word;background:var(--soft);padding:12
     card.appendChild(el("h4", item.title));
     // A structure finding carries each table with its fields. The summary line leaves the list out; the list follows.
     const hasDetail = item.value && typeof item.value === "object" && Array.isArray(item.value.detail);
-    const summary = hasDetail ? Object.fromEntries(Object.entries(item.value).filter(([k]) => k !== "detail")) : item.value;
+    // A list of names (such as screens or tables from code) shows its count; the names follow under Show.
+    const hasNames = !hasDetail && item.value && typeof item.value === "object" && !Array.isArray(item.value)
+      && Array.isArray(item.value.names) && item.value.names.length > 0;
+    const hidden = hasDetail ? ["detail"] : hasNames ? ["names"] : [];
+    const summary = hidden.length ? Object.fromEntries(Object.entries(item.value).filter(([k]) => !hidden.includes(k))) : item.value;
     card.appendChild(el("p", fmtValue(summary)));
+    if (hasNames) {
+      const names = document.createElement("details");
+      names.className = "ds-names";
+      names.appendChild(el("summary", `Show the ${item.value.names.length} names`));
+      names.appendChild(el("p", item.value.names.join(", "), "ds-names-list"));
+      card.appendChild(names);
+    }
     if (hasDetail) {
       for (const t of item.value.detail) {
         const table = document.createElement("details");
