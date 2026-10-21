@@ -204,6 +204,25 @@ async function analysisAccess(env, request, analysisId) {
 const canStart = (member) => member.role === "platform_engineer";
 const canWorkItems = (member) => member.role !== "auditor";
 
+// The deeper assessment follows the same rule as the findings: each point and layer carries the category
+// of the finding it came from, and a role sees only the categories it may see. Points with no category
+// (such as the version history) are shown to everyone.
+function visibleDeeper(deeper, role) {
+  if (!deeper || typeof deeper !== "object") return null;
+  const allowed = Object.prototype.hasOwnProperty.call(ROLE_CATEGORIES, role) ? ROLE_CATEGORIES[role] : [];
+  const allow = (category) => !category || allowed === "all" || allowed.includes(category);
+  return {
+    ...deeper,
+    sections: (deeper.sections || []).map((section) => ({
+      ...section,
+      points: (section.points || []).filter((point) => allow(point.category)),
+    })),
+    architecture: deeper.architecture
+      ? { ...deeper.architecture, layers: (deeper.architecture.layers || []).filter((layer) => allow(layer.category)) }
+      : null,
+  };
+}
+
 // Keeps only the findings the role may see. Flags and counts follow the same rule.
 function visibleReport(report, role) {
   if (!report || typeof report !== "object") return null;
@@ -216,6 +235,7 @@ function visibleReport(report, role) {
   const flags = (report.flags || []).filter((id) => Object.prototype.hasOwnProperty.call(shown, id));
   return {
     ...report,
+    deeper: visibleDeeper(report.deeper, role),
     findings: shown,
     flags,
     counts: { total: Object.keys(all).length, shown: Object.keys(shown).length },
@@ -1663,6 +1683,8 @@ async function runnerResult(request, env, id) {
     findings: body.status === "complete" ? body.findings || null : null,
     error: body.status === "failed" ? String(body.error || "Analysis failed.").slice(0, 500) : null,
     finished_at: new Date().toISOString(),
+    // The deeper assessment is done once the run has sent its documents.
+    deeper_done: body.status === "complete" && Boolean(body.findings && body.findings.deeper),
   };
   const res = await serviceRest(env, `analyses?id=eq.${id}`, {
     method: "PATCH",

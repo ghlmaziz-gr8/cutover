@@ -1516,3 +1516,31 @@ test("only platform engineers choose the scope, and deeper is the only choice un
   assert.equal(saved.scope, "deeper");
   assert.equal(saved.scope_set_by_email, PEOPLE.eng_a.email);
 });
+
+test("the deeper assessment is marked done when a run sends it, and each role sees only its own points", async () => {
+  const deeper = {
+    sections: [
+      { id: "data", title: "Data", points: [{ text: "2 tables in the SQL scripts: visits, orders.", category: "data", basis: "data.tables" }] },
+      { id: "workflows", title: "Workflows", points: [{ text: "Screen \"Check-in\": 1 forms.", category: "ui_portal", basis: "ui.screens" }, { text: "Version history.", category: null, basis: null }] },
+    ],
+    architecture: { layers: [{ layer: "Data", detail: "2 tables", category: "data" }, { layer: "Screens", detail: "1 screens", category: "ui_portal" }] },
+    limits: ["Structure only."],
+  };
+  runningAnalysisWithId(uid(262));
+  await call(`/api/runner/${uid(262)}/result`, { method: "POST", secret: env.RUNNER_SECRET, body: { status: "complete", findings: { deeper } } });
+  const saved = state.analyses.find((a) => a.id === uid(262));
+  assert.equal(saved.deeper_done, true);
+
+  const engineer = await call(`/api/analyses/${uid(262)}`, { as: "eng_a" });
+  assert.equal(engineer.body.findings.deeper.sections[0].points.length, 1);
+  assert.equal(engineer.body.findings.deeper.architecture.layers.length, 2);
+
+  const auditor = await call(`/api/analyses/${uid(262)}`, { as: "aud_a" });
+  const auditorPoints = auditor.body.findings.deeper.sections.flatMap((s) => s.points).map((p) => p.text);
+  assert.deepEqual(auditorPoints, ["Version history."], "an auditor sees only the points with no category");
+  assert.deepEqual(auditor.body.findings.deeper.architecture.layers, []);
+
+  runningAnalysisWithId(uid(263));
+  await call(`/api/runner/${uid(263)}/result`, { method: "POST", secret: env.RUNNER_SECRET, body: { status: "complete", findings: {} } });
+  assert.equal(state.analyses.find((a) => a.id === uid(263)).deeper_done, false, "a run without documents is not done");
+});
