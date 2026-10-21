@@ -1,0 +1,41 @@
+name: terraform-check
+
+# Validates every Terraform draft the Worker can produce, using Terraform itself, so a draft that
+# Terraform would reject is caught before merge. Runs on changes to the Worker or the workflow.
+on:
+  pull_request:
+    paths:
+      - "service/worker/**"
+      - ".github/workflows/terraform-check.yml"
+  push:
+    branches: [main]
+    paths:
+      - "service/worker/**"
+      - ".github/workflows/terraform-check.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.9.8"
+      - name: Write one draft per cloud and network choice
+        run: node service/worker/scripts/write-terraform-samples.mjs "$RUNNER_TEMP/drafts"
+      - name: Initialise and validate each draft (no cloud account is used)
+        run: |
+          set -e
+          for dir in "$RUNNER_TEMP"/drafts/*/; do
+            echo "::group::$(basename "$dir")"
+            terraform -chdir="$dir" init -backend=false -input=false
+            terraform -chdir="$dir" validate
+            echo "::endgroup::"
+          done

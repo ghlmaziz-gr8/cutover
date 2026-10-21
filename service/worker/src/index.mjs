@@ -1579,7 +1579,7 @@ function hclText(value) {
   return String(value).replace(/[\\"\r\n]/g, " ").trim();
 }
 
-function terraformFor(cloud, intake) {
+export function terraformFor(cloud, intake) {
   const region = hclText(intake.region);
   const newNetwork = intake.network === "new";
   const header = [
