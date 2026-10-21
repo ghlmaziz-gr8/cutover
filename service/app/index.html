@@ -3224,6 +3224,57 @@ a{color:#6d28d9;font-weight:600}`;
   }
 
   // Three proposals for the application. They are for review, not decisions, and not costed.
+  // The engineer enters how many people use the application. The estimate lines below then use that number.
+  function costUsersBox(deeper) {
+    const box = el("div", null, "cost-users");
+    box.style.margin = "8px 0 12px";
+    const row = el("div", null, "row");
+    row.style.alignItems = "center";
+    row.style.flexWrap = "wrap";
+    row.style.gap = "8px";
+    const input = el("input", null, null);
+    input.type = "number";
+    input.min = "1";
+    input.max = "10000000";
+    input.step = "1";
+    input.placeholder = "For example: 400";
+    input.setAttribute("aria-label", "Number of users for the cost estimate");
+    input.value = cur.cost_users || "";
+    input.disabled = !cur.can_plan;
+    const save = el("button", "Save users", "btn");
+    save.type = "button";
+    save.disabled = !cur.can_plan;
+    row.append(el("span", "Number of users", "small"), input, save);
+    box.appendChild(row);
+    const msg = el("p", "", "small muted");
+    msg.style.margin = "6px 0 0";
+    box.appendChild(msg);
+    const lines = cur.cost_lines || [];
+    if (cur.cost_users) {
+      box.appendChild(el("p", `Estimate for ${cur.cost_users.toLocaleString("en-US")} users, set by ${cur.cost_users_set_by_email || "a platform engineer"}.`, "small"));
+      for (const text of lines) box.appendChild(el("p", text, "small"));
+    } else {
+      box.appendChild(el("p", "No number of users set yet. The cost lines in each proposal use three sample sizes.", "small muted"));
+    }
+    save.addEventListener("click", async () => {
+      msg.className = "small muted";
+      msg.textContent = "Saving…";
+      try {
+        const res = await api(`/api/analyses/${cur.id}/cost-users`, { method: "PUT", body: JSON.stringify({ users: Number(input.value) }) });
+        cur.cost_users = res.users;
+        cur.cost_users_set_by_email = me ? me.email : "";
+        cur.cost_lines = res.lines;
+        renderModernize(deeper);
+        const after = $("deeperModern").querySelector(".cost-users p");
+        if (after) after.textContent = "Saved. The estimate below uses this number.";
+      } catch (err) {
+        msg.className = "err small hint";
+        msg.textContent = err.message;
+      }
+    });
+    return box;
+  }
+
   function renderModernize(deeper) {
     const box = $("deeperModern");
     box.replaceChildren();
@@ -3232,7 +3283,8 @@ a{color:#6d28d9;font-weight:600}`;
     const card = el("div", null, "card deeper-sec");
     card.appendChild(el("h3", "Modernize: three proposals", null));
     card.firstChild.style.marginTop = "0";
-    card.appendChild(el("p", "These are options to review, not decisions. None is costed yet. Choosing Modernize on What next records the decision.", "muted small"));
+    card.appendChild(el("p", "These are options to review, not decisions. The costs are estimates for Google Cloud only. Choosing Modernize on What next records the decision.", "muted small"));
+    card.appendChild(costUsersBox(deeper));
     for (const p of proposals) {
       const item = el("div", null, "prop");
       const head = el("div", null, "row");

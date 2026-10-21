@@ -1,3 +1,5 @@
+import { COST_RATES } from "./cost-rates.mjs";
+
 // Cutover SaaS API (Cloudflare Worker).
 //
 // Each customer has a workspace. A person sees only the workspaces they were invited to,
@@ -949,7 +951,7 @@ const NOTIFY_KINDS = [
   "analysis_started", "analysis_complete", "analysis_failed", "privacy_signed_off", "privacy_withdrawn",
   "model_key_added", "model_key_removed", "comment_added", "action_added", "action_done",
   "scope_chosen", "deeper_ready", "plan_accepted", "plan_rejected", "purposes_approved",
-  "cloud_chosen", "intake_confirmed", "terraform_drafted",
+  "cloud_chosen", "intake_confirmed", "terraform_drafted", "cost_users_set",
 ];
 
 async function notifyPeople(env, workspaceId, userIds, note) {
@@ -1178,6 +1180,7 @@ async function getAnalysis(request, env, id) {
   }
   return json({
     ...analysis,
+    cost_lines: analysis.cost_users ? costLines(analysis.cost_users) : null,
     findings: visibleReport(findings, member.role),
     screens,
     is_mine: owner_id === user.id,
@@ -1505,6 +1508,92 @@ function intakeFields(value, cloud) {
     if (!describesNoPerson(content)) return { error: `${label} must not contain a personal email address. Describe the setting instead.` };
   }
   return { fields: { region, network, sign_in: signIn, compliance, expected_users: users, residency } };
+}
+
+// Modernize cost estimate for a number of users. The same rules as engine/cost_model.py, with the rates from
+// cost-rates.mjs. Estimates only: Google Cloud only, and network, backups, high availability and logging are left out.
+const COST_USERS_MAX = 10000000;
+
+function costRunMonthly(users, requestsPerUserPerDay) {
+  const run = COST_RATES.cloud_run;
+  const size = COST_RATES.sizing;
+  const requests = users * requestsPerUserPerDay * size.days_per_month;
+  const vcpuSeconds = requests * size.seconds_per_request * size.vcpu_per_request;
+  const gibSeconds = requests * size.seconds_per_request * size.gib_per_request;
+  const billableVcpu = Math.max(0, vcpuSeconds - run.free_vcpu_seconds);
+  const billableGib = Math.max(0, gibSeconds - run.free_gib_seconds);
+  const billableRequests = Math.max(0, requests - run.free_requests);
+  return billableVcpu * run.cpu_per_vcpu_second
+    + billableGib * run.memory_per_gib_second
+    + (billableRequests / 1000000) * run.per_million_requests;
+}
+
+function costDatabaseTier(users) {
+  const tiers = COST_RATES.sizing.database_tiers;
+  return tiers.find((tier) => users <= tier.max_users) || tiers[tiers.length - 1];
+}
+
+function costSqlMonthly(users) {
+  const db = COST_RATES.cloud_sql_postgres;
+  const tier = costDatabaseTier(users);
+  const hours = db.hours_per_month;
+  return tier.vcpu * db.per_vcpu_hour * hours
+    + tier.memory_gib * db.per_gib_memory_hour * hours
+    + tier.storage_gib * db.per_gib_storage_hour * hours;
+}
+
+function costUsd(value) {
+  return value >= 10 ? `$${Math.round(value).toLocaleString("en-US")}` : `$${value.toFixed(2)}`;
+}
+
+function costRange(low, high) {
+  const a = costUsd(low);
+  const b = costUsd(high);
+  return a === b ? `about ${a}` : `about ${a} to ${b}`;
+}
+
+function costNote() {
+  return `Rates from Google Cloud's published prices, checked ${COST_RATES.checked}, in ${COST_RATES.currency}. `
+    + "Not costed: AWS and Azure, and network, backups, high availability and logging. Estimates, not quotes.";
+}
+
+// The three lines shown for a number of users: containers, managed database, and the note.
+function costLines(users) {
+  const size = COST_RATES.sizing;
+  const n = users.toLocaleString("en-US");
+  const runLow = costRunMonthly(users, size.requests_per_user_per_day_low);
+  const runHigh = costRunMonthly(users, size.requests_per_user_per_day_high);
+  const db = costSqlMonthly(users);
+  const tier = costDatabaseTier(users);
+  return [
+    `Estimated Google Cloud cost for ${n} users: ${costRange(runLow, runHigh)} a month for the application containers on Cloud Run (compute and requests only).`,
+    `Estimated Google Cloud cost for ${n} users: ${costRange(runLow + db, runHigh + db)} a month for Cloud SQL for PostgreSQL (${tier.vcpu} vCPU, ${tier.memory_gib} GiB memory, ${tier.storage_gib} GiB storage, about ${costUsd(db)}) plus the application on Cloud Run.`,
+    costNote(),
+  ];
+}
+
+// The engineer enters how many people use the application. The Modernize estimate then uses that number.
+async function setCostUsers(request, env, id) {
+  const access = await analysisAccess(env, request, id);
+  if (access.response) return access.response;
+  if (!canStart(access.member)) return json({ error: "Only platform engineers can set the number of users." }, 403);
+  const parsed = await readJson(request);
+  if (parsed.error) return json({ error: parsed.error }, 400);
+  const users = Number(parsed.value && parsed.value.users);
+  if (!Number.isInteger(users) || users < 1 || users > COST_USERS_MAX) {
+    return json({ error: `Enter a whole number of users from 1 to ${COST_USERS_MAX.toLocaleString("en-US")}.` }, 400);
+  }
+  if (!access.row.deeper_done) return json({ error: "Finish the deeper assessment first." }, 409);
+  const res = await serviceRest(env, `analyses?id=eq.${id}`, {
+    method: "PATCH", headers: { prefer: "return=minimal" },
+    body: JSON.stringify({ cost_users: users, cost_users_set_by_email: access.user.email, cost_users_set_at: new Date().toISOString() }),
+  });
+  if (!res.ok) return json({ error: "Could not save the number of users." }, 502);
+  await notifyPeople(env, access.row.workspace_id, await analysisAudienceExcept(env, access.row, access.user.id), {
+    kind: "cost_users_set", tone: "info", title: `Users for the estimate: ${users.toLocaleString("en-US")}`,
+    body: `${access.user.email} set the number of users for the Modernize cost estimate.`, analysis_id: id,
+  });
+  return json({ saved: true, users, lines: costLines(users) });
 }
 
 async function setCloud(request, env, id) {
@@ -2212,6 +2301,8 @@ async function route(request, env) {
     const analysisTerraform = path.match(/^\/api\/analyses\/([^/]+)\/terraform$/);
     if (analysisTerraform && UUID_PATTERN.test(analysisTerraform[1]) && method === "GET") return listTerraform(request, env, analysisTerraform[1]);
     if (analysisTerraform && UUID_PATTERN.test(analysisTerraform[1]) && method === "POST") return draftTerraform(request, env, analysisTerraform[1]);
+    const analysisCostUsers = path.match(/^\/api\/analyses\/([^/]+)\/cost-users$/);
+    if (analysisCostUsers && UUID_PATTERN.test(analysisCostUsers[1]) && method === "PUT") return setCostUsers(request, env, analysisCostUsers[1]);
     const analysisCloud = path.match(/^\/api\/analyses\/([^/]+)\/cloud$/);
     if (analysisCloud && UUID_PATTERN.test(analysisCloud[1]) && method === "PATCH") return setCloud(request, env, analysisCloud[1]);
     const analysisIntake = path.match(/^\/api\/analyses\/([^/]+)\/intake$/);
