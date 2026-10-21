@@ -198,6 +198,31 @@ def not_read_yet(files: dict[str, str], paths: list[str], limit: int) -> list[di
     return rows
 
 
+# ---- Views, stored procedures and functions named in CREATE statements in the code ----
+
+ROUTINE_RX = re.compile(
+    r"\bcreate\s+(?:or\s+(?:replace|alter)\s+)?(view|procedure|proc|function)\s+"
+    r"(?:\[?[A-Za-z_]\w*\]?\s*\.\s*)?\[?([A-Za-z_][A-Za-z0-9_]*)\]?",
+    re.I,
+)
+ROUTINE_KIND = {"view": "views", "procedure": "procedures", "proc": "procedures", "function": "functions"}
+# Only code and SQL files. Documentation that shows a CREATE statement is not counted.
+ROUTINE_EXTS = (".sql", ".asp", ".inc", ".prc", ".fnc", ".pks", ".pkb", ".vbs", ".bas", ".cls", ".cs", ".java",
+                ".php", ".pl", ".prg", ".pas", ".dpr", ".cbl", ".cob", ".vb", ".ps", ".pb")
+
+
+def routines(files: dict[str, str]) -> dict[str, dict[str, str]]:
+    """Views, stored procedures and functions named by CREATE statements, by kind. A name is merged without regard
+    to case, and the first spelling seen is kept."""
+    found: dict[str, dict[str, str]] = {"views": {}, "procedures": {}, "functions": {}}
+    for path, text in files.items():
+        if not path.lower().endswith(ROUTINE_EXTS):
+            continue
+        for m in ROUTINE_RX.finditer(text):
+            found[ROUTINE_KIND[m.group(1).lower()]].setdefault(m.group(2).lower(), m.group(2))
+    return found
+
+
 # ---- Metadata files from the read-only script (access_metadata.py) ----
 
 META_FORMAT = "cutover-db-metadata/1"

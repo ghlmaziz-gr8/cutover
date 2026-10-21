@@ -167,6 +167,17 @@ button.danger{background:transparent;color:var(--bad);box-shadow:none;border:1.5
 @keyframes exSweep{from{left:-40%}to{left:100%}}
 @keyframes exNudgeUp{0%,100%{transform:translateY(0)}50%{transform:translateY(-3px)}}
 @media (prefers-reduced-motion:reduce){.run-banner *,.db-pick-icon{animation:none!important}}
+.ds-counts{display:flex;flex-wrap:wrap;gap:8px;margin:8px 0 4px}
+.ds-count{border:1px solid var(--line);border-radius:999px;padding:4px 12px;font-size:13px}
+.ds-count b{font-family:var(--display);color:var(--accent);margin-right:4px}
+.ds-details{margin-top:10px}
+.ds-details>summary{cursor:pointer;font-weight:600;color:var(--accent)}
+.ds-body{margin-top:8px}
+.ds-table{margin:6px 0;border-left:2px solid var(--line);padding-left:10px}
+.ds-table>summary{cursor:pointer;font-size:14px}
+.ds-table>summary .muted{margin-left:8px}
+.ds-fields{margin:6px 0 4px;padding-left:18px;font-size:13px;color:var(--muted,#64748b)}
+
 @media (max-width:640px){
   .ex-flow{grid-template-columns:1fr;justify-items:center}
   .ex-lane{display:none}
@@ -932,25 +943,6 @@ pre{white-space:pre-wrap;word-break:break-word;background:var(--soft);padding:12
         </div>
       </div>
     </div>
-    <div class="card" id="dbCard" style="margin-top:20px">
-      <h2>Database structure</h2>
-      <p class="muted small" style="margin-top:6px">
-        Upload the .json file made by the read-only script (access_metadata.py) to add the table and field names of a database.
-        The file holds names, types, sizes, nullability and row counts only. It holds no row values.
-      </p>
-      <p class="small" id="dbStatus" style="margin:10px 0 0"></p>
-      <div class="row" style="margin-top:12px">
-        <label class="db-pick" for="dbFile">
-          <span class="db-pick-icon" aria-hidden="true">⤒</span>
-          <span class="db-pick-text">Choose structure file<span class="db-file-name" id="dbFileName">No file chosen yet</span></span>
-        </label>
-        <input type="file" id="dbFile" class="db-file-input" accept=".json,application/json">
-        <button type="button" id="dbUpload">Upload structure</button>
-        <button type="button" class="ghost" id="dbRemove" hidden>Remove</button>
-        <button type="button" id="dbRerun" hidden>Run again with this structure</button>
-      </div>
-      <p class="small hint" id="dbMsg" role="status"></p>
-    </div>
     <div class="cards2" style="margin-top:20px">
       <div class="card" style="margin-top:0">
         <h3 style="margin-top:0">Download the report</h3>
@@ -1123,6 +1115,40 @@ pre{white-space:pre-wrap;word-break:break-word;background:var(--soft);padding:12
         <h3 style="margin:0 0 6px">What is this?</h3>
         <p class="muted small" style="margin:0">A plain-language description of the application, built from what the code shows: what it does, the technology and delivery, the data it stores, and the screens and actions. Each point names the finding it came from, so it can be checked.</p>
       </div>
+    </div>
+    <div class="run-banner" id="runBannerD" role="status" aria-live="polite" hidden>
+      <span class="pulse" aria-hidden="true"></span>
+      <div><b id="runBannerTitleD">Analysis running</b><span class="stage" id="runBannerStageD"></span></div>
+      <div class="run-bar" aria-hidden="true"><i></i></div>
+    </div>
+    <div class="card" id="dbCard" style="margin-top:0">
+      <h2>Database structure</h2>
+      <p class="muted small" style="margin-top:6px">
+        Upload the .json file made by the read-only script (access_metadata.py) to add the table and field names of a database.
+        The file holds names, types, sizes, nullability and row counts only. It holds no row values.
+      </p>
+      <p class="small" id="dbStatus" style="margin:10px 0 0"></p>
+      <div class="row" style="margin-top:12px">
+        <label class="db-pick" for="dbFile">
+          <span class="db-pick-icon" aria-hidden="true">⤒</span>
+          <span class="db-pick-text">Choose structure file<span class="db-file-name" id="dbFileName">No file chosen yet</span></span>
+        </label>
+        <input type="file" id="dbFile" class="db-file-input" accept=".json,application/json">
+        <button type="button" id="dbUpload">Upload structure</button>
+        <button type="button" class="ghost" id="dbRemove" hidden>Remove</button>
+      </div>
+      <p class="small hint" id="dbMsg" role="status"></p>
+    </div>
+    <div class="card" id="deeperRunCard" style="margin-top:20px">
+      <h2>Run the deeper assessment</h2>
+      <p class="muted small" style="margin-top:6px">
+        This reads the code again and builds the business, systems, data and workflow documents. It includes the database structure above when one is saved.
+      </p>
+      <p class="small hint" style="margin-top:8px">The database structure appears under Data structure on the report when this run finishes.</p>
+      <div class="row" style="margin-top:12px">
+        <button type="button" id="deeperRun">Run deeper assessment</button>
+      </div>
+      <p class="small hint" id="deeperRunMsg" role="status"></p>
     </div>
     <div class="card" id="deeperArch"></div>
     <div id="deeperSections"></div>
@@ -2993,36 +3019,74 @@ pre{white-space:pre-wrap;word-break:break-word;background:var(--soft);padding:12
       out.push(c);
     }
 
-    // Data structure: tables grouped by the first word of their name, and the migrations.
+    // Data structure: counts of tables, views, stored procedures and functions. Names and fields are behind "Show".
     {
       const c = shell("Data", "Data structure");
       if (!sees(role, "data")) out.push(hidden(c));
       else {
-        const tables = val("data.tables");
+        const meta = val("data.database_metadata");
+        const codeTables = val("data.tables");
+        const routines = val("data.routines_in_code");
         const migrations = val("data.migrations");
-        if (!tables || !tables.count) {
+        const tableCount = meta ? meta.tables : (codeTables && codeTables.count) || 0;
+        const routineTotal = routines ? routines.views + routines.procedures + routines.functions : 0;
+        if (!tableCount && !routineTotal) {
           const empty = el("div", null, "seg seg-empty");
           empty.setAttribute("role", "img");
-          empty.setAttribute("aria-label", "No database tables");
+          empty.setAttribute("aria-label", "No database objects yet");
           c.appendChild(empty);
-          c.appendChild(el("p", "No database tables found in the code reviewed.", "muted small"));
+          c.appendChild(el("p", "Not yet. Upload the database structure on the Deeper assessment page and run it. The tables appear here when it finishes.", "muted small"));
         } else {
-          const parts = [`${tables.count} ${tables.count === 1 ? "table" : "tables"}`];
-          if (migrations && migrations.scripts) parts.push(`${migrations.scripts} schema migrations (${migrations.tool})`);
-          c.appendChild(el("p", parts.join(" · "), "muted small"));
-          const groups = {};
-          for (const name of tables.names || []) {
-            const parts = String(name).toLowerCase().split("_");
-            const key = parts.length > 1 ? parts[0] : "other";
-            groups[key] = (groups[key] || 0) + 1;
+          const counts = el("div", null, "ds-counts");
+          const items = [
+            [tableCount, tableCount === 1 ? "table" : "tables"],
+            [routines ? routines.views : 0, "views"],
+            [routines ? routines.procedures : 0, "stored procedures"],
+            [routines ? routines.functions : 0, "functions"],
+          ];
+          for (const [n, label] of items) {
+            const chip = el("span", null, "ds-count");
+            chip.appendChild(el("b", String(n)));
+            chip.appendChild(document.createTextNode(` ${label}`));
+            counts.appendChild(chip);
           }
-          const rows = Object.entries(groups).sort((a, b) => b[1] - a[1]).slice(0, 6)
-            .map(([k, v], i) => ({ label: k === "other" ? "Other" : k, value: v, color: ["var(--accent)", "var(--accent2)", "var(--accent3)", "var(--ok)", "var(--warn)", "#7c3aed"][i % 6] }));
-          if (rows.length) c.appendChild(hbars(rows));
+          c.appendChild(counts);
+          if (migrations && migrations.scripts) c.appendChild(el("p", `${migrations.scripts} schema migrations (${migrations.tool})`, "muted small"));
           const tags = el("div", null, "tags");
-          if (migrations && migrations.scripts) tags.appendChild(el("span", "Verified from migrations", "tag t-ok"));
-          tags.appendChild(el("span", "Inferred: grouped by table name", "tag t-inf"));
+          if (meta) tags.appendChild(el("span", "Verified from the structure file", "tag t-ok"));
+          else tags.appendChild(el("span", "Inferred: table names from code", "tag t-inf"));
+          if (routines) tags.appendChild(el("span", "Found in code", "tag t-ok"));
           c.appendChild(tags);
+
+          const details = document.createElement("details");
+          details.className = "ds-details";
+          details.appendChild(el("summary", "Show the tables and objects"));
+          const body = el("div", null, "ds-body");
+          if (meta && Array.isArray(meta.detail) && meta.detail.length) {
+            for (const t of meta.detail) {
+              const item = document.createElement("details");
+              item.className = "ds-table";
+              const head = el("summary", t.name);
+              const n = t.fields.length;
+              head.appendChild(el("span", `${n} ${n === 1 ? "field" : "fields"}${t.row_count != null ? ` · ${t.row_count} rows` : ""}`, "muted small"));
+              item.appendChild(head);
+              const list = el("ul", null, "ds-fields");
+              for (const f of t.fields) list.appendChild(el("li", `${f.name} · ${f.type}${f.nullable ? "" : " · required"}`));
+              item.appendChild(list);
+              body.appendChild(item);
+            }
+          } else if (codeTables && Array.isArray(codeTables.names) && codeTables.names.length) {
+            body.appendChild(el("p", "Table names from the code only. Upload the structure to see fields and row counts.", "muted small"));
+            body.appendChild(el("p", codeTables.names.join(", "), "small"));
+          }
+          if (routines) {
+            for (const [label, key] of [["Views", "views"], ["Stored procedures", "procedures"], ["Functions", "functions"]]) {
+              const names = (routines.names && routines.names[key]) || [];
+              body.appendChild(el("p", names.length ? `${label}: ${names.join(", ")}` : `${label}: none found in the code.`, "small"));
+            }
+          }
+          details.appendChild(body);
+          c.appendChild(details);
         }
       }
       out.push(c);
@@ -3466,6 +3530,10 @@ a{color:#6d28d9;font-weight:600}`;
   function showDeeper() {
     show("s-deeper");
     renderDeeper();
+    renderDbCard();
+    renderDeeperRun();
+    updateRunBanner();
+    startRunBanner();
   }
 
   // Draws the architecture overview and the sections. The findings have already been filtered for this role.
@@ -3913,8 +3981,6 @@ const REGION_OPTS = {
       $("dbFile").disabled = !canChange;
       $("dbUpload").disabled = !canChange;
       $("dbRemove").hidden = !(s.present && canChange);
-      const finished = cur.status === "complete" || cur.status === "failed";
-      $("dbRerun").hidden = !(s.present && canChange && finished);
       if (busy) setMsg("dbMsg", "Wait for the analysis to finish before changing the database structure.");
       else if (!s.can_change) setMsg("dbMsg", "Only platform engineers can change the database structure.");
       else setMsg("dbMsg", "");
@@ -3951,20 +4017,28 @@ const REGION_OPTS = {
   let runBannerTimer = null;
   let runStageIndex = 0;
 
+  // Each screen has its own banner. The one on the screen that is open is shown.
+  const RUN_BANNERS = [
+    { screen: "s-next", box: "runBanner", title: "runBannerTitle", stage: "runBannerStage" },
+    { screen: "s-deeper", box: "runBannerD", title: "runBannerTitleD", stage: "runBannerStageD" },
+  ];
+
   function updateRunBanner() {
     const busy = cur && (cur.status === "queued" || cur.status === "running");
-    const visible = !$("s-next").hidden;
-    $("runBanner").hidden = !(busy && visible);
-    if (!busy || !visible) return;
-    const stages = runStageNames(cur);
-    $("runBannerTitle").textContent = cur.status === "queued" ? "Queued: the run starts shortly" : "Analysis running";
-    $("runBannerStage").textContent = `${stages[runStageIndex % stages.length]}. Stay on this page to follow along; it updates when the run finishes.`;
+    const stages = busy ? runStageNames(cur) : [];
+    for (const b of RUN_BANNERS) {
+      const visible = !$(b.screen).hidden;
+      $(b.box).hidden = !(busy && visible);
+      if (!busy || !visible) continue;
+      $(b.title).textContent = cur.status === "queued" ? "Queued: the run starts shortly" : "Analysis running";
+      $(b.stage).textContent = `${stages[runStageIndex % stages.length]}. Stay on this page to follow along; it updates when the run finishes.`;
+    }
   }
 
   function startRunBanner() {
     clearInterval(runBannerTimer);
     runBannerTimer = setInterval(async () => {
-      if ($("s-next").hidden) return clearInterval(runBannerTimer);
+      if ($("s-next").hidden && $("s-deeper").hidden) return clearInterval(runBannerTimer);
       runStageIndex += 1;
       const wasBusy = cur && (cur.status === "queued" || cur.status === "running");
       if (wasBusy && runStageIndex % 3 === 0) {
@@ -3972,6 +4046,7 @@ const REGION_OPTS = {
           cur = await api(`/api/analyses/${cur.id}`);
           if (cur.status !== "queued" && cur.status !== "running") {
             await renderDbCard();
+            renderDeeperRun();
             renderScope();
           }
         } catch {
@@ -3982,13 +4057,24 @@ const REGION_OPTS = {
     }, 2500);
   }
 
-  $("dbRerun").addEventListener("click", async () => {
+  // The deeper assessment runs the analysis again, with the database structure if one is saved.
+  function renderDeeperRun() {
+    const busy = cur.status === "queued" || cur.status === "running";
+    const finished = cur.status === "complete" || cur.status === "failed";
+    $("deeperRun").disabled = busy || !finished || !cur.can_plan;
+    setMsg("deeperRunMsg", busy ? "A run is already going. Wait for it to finish." : "", false);
+  }
+
+  $("deeperRun").addEventListener("click", async () => {
     try {
       await api(`/api/analyses/${cur.id}/rerun`, { method: "POST" });
       await refreshAnalysis();
-      setMsg("dbMsg", "Running again. The results will appear when the run finishes.");
+      setMsg("deeperRunMsg", "Running the deeper assessment. This page shows the progress.");
+      renderDeeperRun();
+      updateRunBanner();
+      startRunBanner();
     } catch (err) {
-      setMsg("dbMsg", err.message, true);
+      setMsg("deeperRunMsg", err.message, true);
     }
   });
 
