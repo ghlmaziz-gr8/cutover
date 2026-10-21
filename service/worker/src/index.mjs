@@ -939,6 +939,7 @@ const NOTIFY_TONES = ["info", "success", "warning", "danger", "ai"];
 const NOTIFY_KINDS = [
   "analysis_started", "analysis_complete", "analysis_failed", "privacy_signed_off", "privacy_withdrawn",
   "model_key_added", "model_key_removed", "comment_added", "action_added", "action_done",
+  "scope_chosen", "deeper_ready", "plan_accepted", "plan_rejected", "purposes_approved",
 ];
 
 async function notifyPeople(env, workspaceId, userIds, note) {
@@ -958,6 +959,19 @@ async function notifyPeople(env, workspaceId, userIds, note) {
   } catch {
     // A notification that cannot be saved must not undo the action it reports.
   }
+}
+
+// The platform engineers in a workspace, except the person who caused the event.
+async function engineerIdsExcept(env, workspaceId, exceptUserId) {
+  const res = await serviceRest(env, `members?workspace_id=eq.${workspaceId}&role=eq.platform_engineer&select=user_id`);
+  if (!res.ok) return [];
+  return (await res.json()).map((m) => m.user_id).filter((id) => id !== exceptUserId);
+}
+
+// The people who should hear about a change to one analysis: its owner and the engineers, except the actor.
+async function analysisAudienceExcept(env, row, exceptUserId) {
+  const engineers = await engineerIdsExcept(env, row.workspace_id, exceptUserId);
+  return [...new Set([row.owner_id, ...engineers])].filter((id) => id !== exceptUserId);
 }
 
 // The workspace's admins, except the person who caused the event (they already know).
@@ -1449,13 +1463,18 @@ async function setScope(request, env, id) {
     body: JSON.stringify({ scope, scope_set_by_email: access.user.email, scope_set_at: new Date().toISOString() }),
   });
   if (!res.ok) return json({ error: "Could not save the scope." }, 502);
+  const labels = { deeper: "Deeper assessment", modernize: "Modernize", migrate: "Migrate" };
+  await notifyPeople(env, access.row.workspace_id, await analysisAudienceExcept(env, access.row, access.user.id), {
+    kind: "scope_chosen", tone: "info", title: `Next stage chosen: ${labels[scope]}`,
+    body: `${access.row.app_name || access.row.repo}: chosen by ${access.user.email}.`, analysis_id: id,
+  });
   return json({ saved: true });
 }
 
 async function updateContingency(request, env, id) {
   const auth = await requireUser(env, request);
   if (auth.response) return auth.response;
-  const found = await serviceRest(env, `contingencies?id=eq.${id}&select=id,analysis_id,status`);
+  const found = await serviceRest(env, `contingencies?id=eq.${id}&select=id,analysis_id,status,risk`);
   if (!found.ok) return json({ error: "Could not load the contingency." }, 502);
   const [item] = await found.json();
   if (!item) return json({ error: "Not found." }, 404);
@@ -1478,6 +1497,15 @@ async function updateContingency(request, env, id) {
     body: JSON.stringify(change),
   });
   if (!res.ok) return json({ error: "Could not update the contingency." }, 502);
+  if ((change.status === "accepted" || change.status === "rejected") && change.status !== item.status) {
+    const accepted = change.status === "accepted";
+    await notifyPeople(env, access.row.workspace_id, await analysisAudienceExcept(env, access.row, auth.user.id), {
+      kind: accepted ? "plan_accepted" : "plan_rejected",
+      tone: accepted ? "success" : "warning",
+      title: `${accepted ? "Plan accepted" : "Plan left out"}: ${access.row.app_name || access.row.repo}`,
+      body: String(item.risk || "").slice(0, 140), analysis_id: item.analysis_id,
+    });
+  }
   return json({ updated: true });
 }
 
@@ -1575,6 +1603,10 @@ async function approveAllFiles(request, env, id) {
     body: JSON.stringify({ review_status: "approved", reviewed_by_email: access.user.email, reviewed_at: new Date().toISOString() }),
   });
   if (!res.ok) return json({ error: "Could not approve the file results." }, 502);
+  await notifyPeople(env, access.row.workspace_id, await analysisAudienceExcept(env, access.row, access.user.id), {
+    kind: "purposes_approved", tone: "success", title: `File purposes approved: ${access.row.app_name || access.row.repo}`,
+    body: "The file-level results are approved and will go into the report.", analysis_id: id,
+  });
   return json({ approved: true });
 }
 
@@ -1697,6 +1729,12 @@ async function runnerResult(request, env, id) {
     await notifyPeople(env, saved.workspace_id, [saved.owner_id], body.status === "complete"
       ? { kind: "analysis_complete", tone: "success", title: `Analysis complete: ${saved.app_name}`, body: "The findings are ready for review.", analysis_id: id }
       : { kind: "analysis_failed", tone: "danger", title: `Analysis failed: ${saved.app_name}`, body: update.error || "The run did not finish.", analysis_id: id });
+    if (update.deeper_done) {
+      await notifyPeople(env, saved.workspace_id, [saved.owner_id], {
+        kind: "deeper_ready", tone: "success", title: `Deeper assessment ready: ${saved.app_name}`,
+        body: "The business, systems, data and workflow documents are ready. Modernize and Migrate can now be chosen.", analysis_id: id,
+      });
+    }
   }
   return json({ saved: true });
 }

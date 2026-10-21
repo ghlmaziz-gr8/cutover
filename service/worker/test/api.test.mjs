@@ -1544,3 +1544,39 @@ test("the deeper assessment is marked done when a run sends it, and each role se
   await call(`/api/runner/${uid(263)}/result`, { method: "POST", secret: env.RUNNER_SECRET, body: { status: "complete", findings: {} } });
   assert.equal(state.analyses.find((a) => a.id === uid(263)).deeper_done, false, "a run without documents is not done");
 });
+
+test("choosing a scope, approving file purposes and accepting a plan tell the others, never the person who did it", async () => {
+  const scope = await call(`/api/analyses/${AN_ACME}/scope`, { as: "eng_a", method: "PATCH", body: { scope: "deeper" } });
+  assert.equal(scope.status, 200);
+  const chosen = state.notifications.filter((n) => n.kind === "scope_chosen");
+  assert.ok(chosen.length > 0, "someone hears about the scope");
+  assert.ok(chosen.every((n) => n.user_id !== PEOPLE.eng_a.id), "not the person who chose it");
+  assert.ok(chosen.every((n) => n.tone === "info"));
+
+  const approved = await call(`/api/analyses/${AN_ACME}/files/approve-all`, { as: "eng_a", method: "POST" });
+  assert.equal(approved.status, 200);
+  const purposes = state.notifications.filter((n) => n.kind === "purposes_approved");
+  assert.ok(purposes.length > 0);
+  assert.ok(purposes.every((n) => n.user_id !== PEOPLE.eng_a.id));
+  assert.ok(purposes.every((n) => n.tone === "success"));
+
+  const accept = await call(`/api/contingencies/${CONTINGENCY_ACME}`, { as: "admin_a", method: "PATCH", body: { status: "accepted" } });
+  assert.equal(accept.status, 200);
+  const plans = state.notifications.filter((n) => n.kind === "plan_accepted");
+  assert.ok(plans.length > 0);
+  assert.ok(plans.every((n) => n.user_id !== PEOPLE.admin_a.id));
+  assert.ok(plans.every((n) => n.tone === "success"));
+});
+
+test("the owner hears when the deeper assessment is ready, and a run without it does not say so", async () => {
+  runningAnalysisWithId(uid(264));
+  await call(`/api/runner/${uid(264)}/result`, { method: "POST", secret: env.RUNNER_SECRET, body: { status: "complete", findings: { deeper: { sections: [], architecture: { layers: [] }, limits: [] } } } });
+  const ready = state.notifications.filter((n) => n.kind === "deeper_ready");
+  assert.equal(ready.length, 1);
+  assert.equal(ready[0].user_id, PEOPLE.eng_a.id);
+  assert.equal(ready[0].tone, "success");
+
+  runningAnalysisWithId(uid(265));
+  await call(`/api/runner/${uid(265)}/result`, { method: "POST", secret: env.RUNNER_SECRET, body: { status: "complete", findings: {} } });
+  assert.equal(state.notifications.filter((n) => n.kind === "deeper_ready").length, 1, "no new notice without documents");
+});
