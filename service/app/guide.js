@@ -11,6 +11,7 @@
 window.CUTOVER_GUIDE = {
   updated: "2026-10-21",
   whatsNew: [
+    "2026-10-21: If the scan finds no database tables, the managed database option says so and gives no database cost. Zero costs now read as $0, and one table is no longer shown as 1 tables.",
     "2026-10-21: On the deeper assessment page, a platform engineer can enter the number of users. The Modernize cost lines then use that number, not the sample sizes. The number is saved with who set it and when, and the others on the analysis are told.",
     "2026-10-21: The Modernize proposals for a container setup and a managed database show estimated Google Cloud costs for 100, 1,000 and 10,000 users, with the rates' check date. The rates are kept in one file, so they can be updated without changing the page.",
     "2026-10-21: The intake region is chosen from a list for the cloud you picked. The server also refuses a region that cloud does not have, so a Terraform draft never uses an invalid one.",
@@ -233,7 +234,7 @@ window.CUTOVER_GUIDE = {
     { q: "What are the Modernize proposals?", step: "deeper",
       a: "Three options for the application, from keep and tighten to managed cloud services. Each lists its effort, trade-offs and the findings it is based on. The two cloud options show estimated Google Cloud costs, for the number of users a platform engineer enters or for three sample sizes, with the date the rates were checked. Estimates only: AWS and Azure are not costed yet, and network, backups and high availability are left out." },
     { q: "How do I get the cost estimate for my own number of users?", step: "deeper",
-      a: "On the deeper assessment page, under Modernize, a platform engineer types the number of users and presses Save users. The cost lines then use that number. Until it is set, the proposals show three sample sizes. Estimates use Google Cloud's published prices and leave out network, backups and high availability." },
+      a: "On the deeper assessment page, under Modernize, a platform engineer types the number of users and presses Save users. The cost lines then use that number. Until it is set, the proposals show three sample sizes. If the scan found no database tables, the database line says so instead of giving a cost. Estimates use Google Cloud's published prices and leave out network, backups and high availability." },
     { q: "Where is the Terraform draft?", step: "migrate",
       a: "Under the intake form on What next, once the intake is confirmed. Press Make the Terraform draft. Open Show the code to read it, or Download .tf to save it. Each draft is a DRAFT for review, with sample values to replace." },
     { q: "What does Migrate ask me?", step: "migrate",

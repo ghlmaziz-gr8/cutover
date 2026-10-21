@@ -43,7 +43,12 @@ def cloud_sql_monthly(rates: dict, users: int) -> float:
             + tier["storage_gib"] * db["per_gib_storage_hour"] * hours)
 
 
+NO_DATABASE_LINE = "No database cost is estimated, because no database tables were found in the SQL scripts."
+
+
 def _usd(value: float) -> str:
+    if value < 0.005:
+        return "$0"
     return f"${value:,.0f}" if value >= 10 else f"${value:,.2f}"
 
 
@@ -75,11 +80,14 @@ def cost_note(rates: dict) -> str:
             "Not costed: AWS and Azure, and network, backups, high availability and logging. Estimates, not quotes.")
 
 
-def cost_points(rates: dict, proposal_id: str) -> list[str]:
-    """Cost lines for a proposal. The keep proposal gets none, because its cost depends on the current hosting."""
+def cost_points(rates: dict, proposal_id: str, table_count: int | None = None) -> list[str]:
+    """Cost lines for a proposal. The keep proposal gets none, because its cost depends on the current hosting.
+    With no database tables found, the managed proposal gets no database cost line."""
     samples = rates["sizing"]["sample_user_counts"]
     if proposal_id == "containerize":
         return [containerized_line(rates, n) for n in samples] + [cost_note(rates)]
     if proposal_id == "managed":
+        if table_count == 0:
+            return [NO_DATABASE_LINE, cost_note(rates)]
         return [managed_line(rates, n) for n in samples] + [cost_note(rates)]
     return []

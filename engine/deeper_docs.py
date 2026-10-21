@@ -232,8 +232,15 @@ def modernize(report: dict) -> list[dict]:
         container_points, container_basis, [f["category"] for f in (containers, ci, iac) if f] or [],
     )
 
-    managed_summary = ("Use a managed database for the " + str(table_count) + " tables, and managed hosting for the application.") \
-        if table_count is not None else "Use a managed database and managed hosting for the application."
+    if table_count == 0:
+        managed_summary = ("No database tables were found in the SQL scripts, so a managed database may not be needed. "
+                           "Confirm how the application stores its data before choosing this option.")
+    elif table_count == 1:
+        managed_summary = "Use a managed database for the 1 table, and managed hosting for the application."
+    elif table_count is not None:
+        managed_summary = f"Use a managed database for the {table_count} tables, and managed hosting for the application."
+    else:
+        managed_summary = "Use a managed database and managed hosting for the application."
     managed_points = [managed_summary]
     managed_basis = []
     if tables:
@@ -250,7 +257,7 @@ def modernize(report: dict) -> list[dict]:
     )
     rates = cost_model.load_rates()
     containerize["points"] += cost_model.cost_points(rates, "containerize")
-    managed["points"] += cost_model.cost_points(rates, "managed")
+    managed["points"] += cost_model.cost_points(rates, "managed", table_count)
     return [keep, containerize, managed]
 
 

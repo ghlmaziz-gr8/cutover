@@ -1732,3 +1732,13 @@ test("Modernize estimate: the Worker's rates match the engine's cost_rates.json,
   const engine = JSON.parse(readFileSync(new URL("../../../engine/cost_rates.json", import.meta.url), "utf8"));
   assert.deepEqual(COST_RATES, engine);
 });
+
+test("Modernize estimate: with no database tables, the managed line says so and gives no database cost", async () => {
+  const analysis = state.analyses.find((a) => a.id === AN_ACME);
+  analysis.findings = { findings: { "data.tables": { id: "data.tables", category: "data", value: { count: 0, names: [] } } } };
+  analysis.deeper_done = true;
+  analysis.cost_users = 100;
+  const view = await call(`/api/analyses/${AN_ACME}`, { as: "eng_a" });
+  assert.equal(view.body.cost_lines[0].startsWith("Estimated Google Cloud cost for 100 users: about $0 a month"), true, "containers line shows $0");
+  assert.equal(view.body.cost_lines[1], "No database cost is estimated, because no database tables were found in the SQL scripts.");
+});
