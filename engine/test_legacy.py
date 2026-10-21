@@ -230,3 +230,23 @@ class TablePrecedenceTests(unittest.TestCase):
     def test_nothing_found_is_none(self):
         import deeper_docs
         self.assertEqual(deeper_docs._tables({"findings": {}}), (None, None))
+
+
+class RoutineTests(unittest.TestCase):
+    def test_views_procedures_and_functions_are_counted_once_each(self):
+        files = {
+            "db/schema.sql": "CREATE OR REPLACE VIEW dbo.vw_Active AS SELECT 1;\n"
+                             "create procedure [dbo].[GetUsers] as select 1\n"
+                             "CREATE FUNCTION fnTotal(@x int) RETURNS int AS BEGIN RETURN @x END\n"
+                             "create proc GetUsers as select 2\n",
+            "pages/list.asp": "<% 'CREATE VIEW ActiveUsers' %>",
+        }
+        found = legacy.routines(files)
+        self.assertEqual(sorted(found["views"].values()), ["ActiveUsers", "vw_Active"])
+        self.assertEqual(list(found["procedures"].values()), ["GetUsers"], "a name twice is counted once")
+        self.assertEqual(list(found["functions"].values()), ["fnTotal"])
+
+    def test_documentation_is_not_counted(self):
+        files = {"README.md": "CREATE VIEW example AS SELECT 1", "notes.txt": "create procedure demo"}
+        found = legacy.routines(files)
+        self.assertEqual(found, {"views": {}, "procedures": {}, "functions": {}})

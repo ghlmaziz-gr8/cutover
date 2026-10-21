@@ -931,6 +931,14 @@ def detect_legacy(repo: Repo, root: Path, out: dict, metadata: list[dict]) -> No
                                        set().union(*code_tables.values()),
                                        note="Read from SQL in legacy code, in string literals and in statements. The database itself is not opened, so these are the names the code uses, not a schema.")
 
+    routine_names = legacy.routines(repo.files)
+    out["data.routines_in_code"] = F("data.routines_in_code", "data", "Views, stored procedures and functions in code",
+                                     {"views": len(routine_names["views"]), "procedures": len(routine_names["procedures"]),
+                                      "functions": len(routine_names["functions"]),
+                                      "names": {k: sorted(v.values(), key=str.lower)[:200] for k, v in routine_names.items()}},
+                                     "verified", set(),
+                                     note="Read from CREATE statements in the code. Objects that exist only inside a database, such as Access saved queries, appear once a structure file lists them.")
+
     dbs = legacy.database_files(root, repo.paths)
     if dbs:
         out["legacy.databases"] = F("legacy.databases", "data", "Database files found",
@@ -948,10 +956,13 @@ def detect_legacy(repo: Repo, root: Path, out: dict, metadata: list[dict]) -> No
 
     if metadata:
         tables = [t for doc in metadata for t in doc["tables"]]
+        detail = [{"name": t["name"], "row_count": t.get("row_count"),
+                   "fields": [{"name": c["name"], "type": c["type"], "nullable": c["nullable"]} for c in t["columns"]]}
+                  for t in sorted(tables, key=lambda t: t["name"].lower())][:300]
         out["data.database_metadata"] = F(
             "data.database_metadata", "data", "Tables and fields from metadata files",
             {"databases": len(metadata), "tables": len(tables), "fields": sum(len(t["columns"]) for t in tables),
-             "table_names": sorted({t["name"] for t in tables}, key=str.lower)[:300]},
+             "table_names": sorted({t["name"] for t in tables}, key=str.lower)[:300], "detail": detail},
             "verified", [doc["database"] for doc in metadata],
             note="From the read-only metadata script: names, types, nullability and row counts. No row values are included.")
 
