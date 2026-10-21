@@ -41,6 +41,7 @@ from pathlib import Path
 
 import deeper_docs
 import file_inventory
+import legacy
 
 SCHEMA_VERSION = "0.1"
 MAX_FILE_BYTES = 2_000_000
@@ -54,9 +55,11 @@ TEXT_EXTS = (
     ".json", ".sql", ".html", ".htm", ".jsp", ".xhtml", ".cshtml", ".py", ".js",
     ".ts", ".tsx", ".jsx", ".vue", ".cs", ".csproj", ".go", ".mod", ".tf",
     ".bicep", ".sh", ".md", ".txt", ".hl7", ".toml", ".cfg", ".ini", ".conf", ".env",
-)
+) + legacy.LEGACY_TEXT_EXTS
 LIMITATIONS = [
     "Static analysis only. Nothing is built, run, or connected to.",
+    "Database files are identified by their signature. Their contents are not opened. Tables and fields come only from metadata files written by the read-only script.",
+    "Tier 3 languages are counted by file extension and not read.",
     "Route annotations are counted but not joined with class-level prefixes, so full URL paths are not rebuilt.",
     "Screens are counted from template and page files. Fragments and email templates are included in that count.",
     "Roles that exist only in an identity provider or a database are not visible.",
@@ -165,6 +168,7 @@ class Repo:
         self.root = root
         self.paths: list[str] = []
         self.files: dict[str, str] = {}
+        self.too_large: list[str] = []
         for dirpath, dirnames, filenames in os.walk(root):
             dirnames[:] = [d for d in dirnames if d not in SKIP_DIRS]
             for name in filenames:
@@ -177,6 +181,7 @@ class Repo:
                     continue
                 try:
                     if full.stat().st_size > MAX_FILE_BYTES:
+                        self.too_large.append(rel)
                         continue
                     self.files[rel] = full.read_text(encoding="utf-8", errors="replace")
                 except OSError:
@@ -847,12 +852,90 @@ def detect_infrastructure(repo: Repo, out: dict) -> None:
     )
 
 
-def analyze(repo: Repo, root: Path, now: dt.datetime, source: dict) -> dict:
+def detect_legacy(repo: Repo, root: Path, out: dict, metadata: list[dict]) -> None:
+    """Legacy languages, screens in classic ASP, tables used in legacy SQL, database files, and the metadata
+    from the read-only script. Tier 3 files are counted, not read."""
+    langs: dict[str, dict] = {}
+    lang_files: dict[str, set[str]] = defaultdict(set)
+    for p in repo.paths:
+        lang = legacy.language_of(p, repo.files.get(p))
+        if not lang:
+            continue
+        row = langs.setdefault(lang[0], {"tier": lang[1], "files": 0})
+        row["tier"] = min(row["tier"], lang[1])
+        row["files"] += 1
+        lang_files[lang[0]].add(p)
+    if langs:
+        rows = [f"{name} (tier {v['tier']}): {v['files']} files, {'read as source' if v['tier'] < 3 else 'not read'}"
+                for name, v in sorted(langs.items(), key=lambda kv: (kv[1]["tier"], kv[0]))]
+        out["legacy.languages"] = F("legacy.languages", "stack", "Legacy languages detected", rows, "verified",
+                                    set().union(*lang_files.values()),
+                                    note="Tier 1 and 2 are read as source. Tier 3 is counted by file extension only.")
+
+    views = legacy.asp_views(repo.files)
+    pages = legacy.asp_pages(repo.paths)
+    pages_without_views = [p for p in pages if p in repo.files and not legacy.views_in(repo.files[p])]
+    if views or pages:
+        out["legacy.views"] = F("legacy.views", "ui_portal", "Screens switched in classic ASP code",
+                                {"count": len(views), "names": sorted(views, key=str.lower)[:200]}, "verified",
+                                set(views.values()),
+                                note="Each distinct ControlName value is one screen. Names come from the code and are capped at 200.")
+        # Screens: each view, plus each page that does not switch views. Pages that switch views are not counted twice.
+        prior = out.get("ui.screens", {}).get("value") or 0
+        if not isinstance(prior, int):
+            prior = 0
+        total = prior + len(views) + len(pages_without_views)
+        out["ui.screens"] = F("ui.screens", "ui_portal", "Screens (templates, page components and ASP views)", total,
+                              "inferred", set(views.values()) | set(pages_without_views),
+                              note="Each template or page component counts as one screen, and each classic ASP view counts as one. Fragments and email templates are included, so confirm the count with the team.")
+
+    code_tables = legacy.sql_tables(repo.files)
+    if code_tables:
+        out["data.tables_in_code"] = F("data.tables_in_code", "data", "Tables used in SQL in legacy code",
+                                       {"count": len(code_tables), "names": list(code_tables)}, "inferred",
+                                       {f for fs in code_tables.values() for f in fs},
+                                       note="Read from SQL strings in classic ASP and other legacy code. The database itself is not opened, so these are the names the code uses, not a schema.")
+
+    dbs = legacy.database_files(root, repo.paths)
+    if dbs:
+        out["legacy.databases"] = F("legacy.databases", "data", "Database files found",
+                                    [f"{d['engine']} (tier {d['tier']}): {d['path']} ({d['identified']})" for d in dbs],
+                                    "verified", [d["path"] for d in dbs],
+                                    note="Identified from the first bytes of each file where possible. The contents are not opened here.")
+        engines = sorted({d["engine"] for d in dbs if d["tier"] < 3})
+        current = out.get("data.database_engines")
+        if current is not None and engines:
+            names = [v for v in (current.get("value") or []) if v != "none found"]
+            ev = set(current.get("evidence") or []) | {d["path"] for d in dbs}
+            out["data.database_engines"] = F("data.database_engines", "data", "Database engines",
+                                             sorted(set(names) | set(engines)), "verified", ev,
+                                             note="From JDBC URLs, driver dependencies and database file signatures.")
+
+    if metadata:
+        tables = [t for doc in metadata for t in doc["tables"]]
+        out["data.database_metadata"] = F(
+            "data.database_metadata", "data", "Tables and fields from metadata files",
+            {"databases": len(metadata), "tables": len(tables), "fields": sum(len(t["columns"]) for t in tables),
+             "table_names": sorted({t["name"] for t in tables}, key=str.lower)[:300]},
+            "verified", [doc["database"] for doc in metadata],
+            note="From the read-only metadata script: names, types, nullability and row counts. No row values are included.")
+
+    skipped = [{"path": r["path"], "reason": r["reason"]} for r in legacy.not_read_yet(repo.files, repo.paths, 0)]
+    skipped += [{"path": p, "reason": "Over the 2 MB limit, so not read."} for p in repo.too_large]
+    if skipped:
+        out["legacy.not_read"] = F("legacy.not_read", "stack", "Files listed but not read",
+                                   {"count": len(skipped), "files": [r["path"] for r in skipped][:100]},
+                                   "verified", [r["path"] for r in skipped],
+                                   note="Each file is listed with the reason it was not read. Confirm these by hand.")
+
+
+def analyze(repo: Repo, root: Path, now: dt.datetime, source: dict, metadata: list[dict] | None = None) -> dict:
     out: dict = {}
     detect_stack(repo, out)
     detect_purpose(repo, out)
     detect_ui(repo, out)
     detect_data(repo, out)
+    detect_legacy(repo, root, out, metadata or [])
     detect_epic(repo, out)
     detect_containers(repo, out)
     detect_delivery(repo, out)
@@ -1008,8 +1091,20 @@ def _capture_pages(sync_playwright, chrome, pages, root: Path) -> None:
             browser.close()
 
 
+def load_metadata(paths: list[str]) -> list[dict]:
+    """Reads and checks each metadata file from the read-only script. A file with anything other than names,
+    types, nullability and row counts is refused."""
+    docs = []
+    for p in paths:
+        try:
+            docs.append(legacy.validate_metadata(json.loads(Path(p).read_text(encoding="utf-8"))))
+        except (OSError, json.JSONDecodeError, ValueError) as error:
+            raise RuntimeError(f"{p}: {error}") from error
+    return docs
+
+
 def analyze_and_write(root: Path, label: str, out_dir: str, now: dt.datetime, source: dict,
-                      shots: bool = False) -> int:
+                      shots: bool = False, metadata_paths: list[str] | None = None) -> int:
     repo = Repo(root)
     commit = None
     if is_repo_root(root):
@@ -1017,7 +1112,7 @@ def analyze_and_write(root: Path, label: str, out_dir: str, now: dt.datetime, so
             commit = git(root, "rev-parse", "HEAD").strip()
         except RuntimeError:
             commit = None
-    report = analyze(repo, root, now, {**source, "commit": commit})
+    report = analyze(repo, root, now, {**source, "commit": commit}, load_metadata(metadata_paths or []))
     # The deeper assessment is built from the findings just produced, so it adds no extra reads of the code.
     report["deeper"] = deeper_docs.build(report)
     if shots:
@@ -1045,6 +1140,8 @@ def main(argv=None) -> int:
     ap.add_argument("--out", default="reports", help="Output folder (default: reports)")
     ap.add_argument("--screenshots", action="store_true",
                     help="Keep a picture of each static page (needs Playwright and Chromium)")
+    ap.add_argument("--db-metadata", action="append", default=[], metavar="FILE",
+                    help="Metadata file from access_metadata.py (table and field names, row counts). Repeatable.")
     args = ap.parse_args(argv)
 
     now = dt.datetime.now(dt.timezone.utc)
@@ -1059,12 +1156,14 @@ def main(argv=None) -> int:
             root = Path(tmp) / "source"
             clone_repo(url, root, args.ref, token)
             return analyze_and_write(root, label, args.out, now,
-                                     {"type": "github", "url": url, "ref": args.ref}, shots=args.screenshots)
+                                     {"type": "github", "url": url, "ref": args.ref}, shots=args.screenshots,
+                                     metadata_paths=args.db_metadata)
 
     root = Path(args.path).expanduser().resolve()
     if not root.is_dir():
         ap.error("--path must be an existing folder")
-    return analyze_and_write(root, root.name, args.out, now, {"type": "local", "ref": None}, shots=args.screenshots)
+    return analyze_and_write(root, root.name, args.out, now, {"type": "local", "ref": None}, shots=args.screenshots,
+                             metadata_paths=args.db_metadata)
 
 
 if __name__ == "__main__":
