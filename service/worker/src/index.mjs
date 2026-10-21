@@ -541,6 +541,10 @@ async function privacySignOff(request, env, workspaceId) {
   if (privacyCurrent(found.events)) return json({ error: "This workspace is already signed off." }, 409);
   const made = await recordPrivacyEvent(env, access, "signed_off", input.name, PRIVACY_STATEMENTS.map((s) => s.id));
   if (!made.ok) return json({ error: "Could not record the sign-off. Try again in a minute." }, 502);
+  await notifyPeople(env, workspaceId, await adminIdsExcept(env, workspaceId, access.user.id), {
+    kind: "privacy_signed_off", tone: "success", title: "Privacy sign-off recorded",
+    body: `${input.name} signed off the privacy notice. Language models can now be set up for this workspace.`,
+  });
   return json({ signed_off: true }, 201);
 }
 
@@ -556,6 +560,10 @@ async function privacyWithdraw(request, env, workspaceId) {
   if (!privacyCurrent(found.events)) return json({ error: "There is no sign-off to withdraw." }, 409);
   const made = await recordPrivacyEvent(env, access, "withdrawn", input.name, []);
   if (!made.ok) return json({ error: "Could not record the withdrawal. Try again in a minute." }, 502);
+  await notifyPeople(env, workspaceId, await adminIdsExcept(env, workspaceId, access.user.id), {
+    kind: "privacy_withdrawn", tone: "warning", title: "Privacy sign-off withdrawn",
+    body: `${input.name} withdrew the sign-off. Stored model keys stop being usable until a new sign-off.`,
+  });
   return json({ signed_off: false }, 201);
 }
 
@@ -720,6 +728,10 @@ async function addModelKey(request, env, workspaceId) {
   });
   if (!made.ok) return json({ error: "Could not save the key. Try again in a minute." }, 502);
   const [row] = await made.json();
+  await notifyPeople(env, workspaceId, await adminIdsExcept(env, workspaceId, access.user.id), {
+    kind: "model_key_added", tone: "ai", title: "Language model added",
+    body: `${MODEL_PROVIDERS[value.provider].label} key ending in ${apiKey.slice(-4)} was added.`,
+  });
   return json({ id: row.id, provider: value.provider, last4: apiKey.slice(-4) }, 201);
 }
 
@@ -735,6 +747,11 @@ async function removeModelKey(request, env, workspaceId, keyId) {
     body: JSON.stringify({ revoked_at: new Date().toISOString(), revoked_by_email: normalizeEmail(access.user.email) }),
   });
   if (!made.ok) return json({ error: "Could not remove the key. Try again in a minute." }, 502);
+  const removed = found.keys.find((k) => k.id === keyId);
+  await notifyPeople(env, workspaceId, await adminIdsExcept(env, workspaceId, access.user.id), {
+    kind: "model_key_removed", tone: "warning", title: "Language model removed",
+    body: `${MODEL_PROVIDERS[removed.provider]?.label || removed.provider} key ending in ${removed.last4} was removed.`,
+  });
   return json({ removed: true });
 }
 
@@ -896,6 +913,74 @@ async function listAnalyses(request, env) {
   return json(rows.map(({ owner_id, ...rest }) => ({ ...rest, is_mine: owner_id === access.user.id })));
 }
 
+// ---- Notifications: saved per person, shown by the portal's bell. Writing one never fails the action that caused it. ----
+const NOTIFY_TONES = ["info", "success", "warning", "danger", "ai"];
+const NOTIFY_KINDS = [
+  "analysis_started", "analysis_complete", "analysis_failed", "privacy_signed_off", "privacy_withdrawn",
+  "model_key_added", "model_key_removed", "comment_added", "action_added", "action_done",
+];
+
+async function notifyPeople(env, workspaceId, userIds, note) {
+  const ids = [...new Set((userIds || []).filter((id) => typeof id === "string" && UUID_PATTERN.test(id)))];
+  if (ids.length === 0 || !NOTIFY_KINDS.includes(note.kind) || !NOTIFY_TONES.includes(note.tone)) return;
+  const rows = ids.map((user_id) => ({
+    workspace_id: workspaceId,
+    user_id,
+    analysis_id: note.analysis_id || null,
+    kind: note.kind,
+    tone: note.tone,
+    title: String(note.title).slice(0, 160),
+    body: String(note.body || "").slice(0, 400),
+  }));
+  try {
+    await serviceRest(env, "notifications", { method: "POST", headers: { prefer: "return=minimal" }, body: JSON.stringify(rows) });
+  } catch {
+    // A notification that cannot be saved must not undo the action it reports.
+  }
+}
+
+// The workspace's admins, except the person who caused the event (they already know).
+async function adminIdsExcept(env, workspaceId, exceptUserId) {
+  const res = await serviceRest(env, `members?workspace_id=eq.${workspaceId}&is_admin=eq.true&select=user_id`);
+  if (!res.ok) return [];
+  return (await res.json()).map((m) => m.user_id).filter((id) => id !== exceptUserId);
+}
+
+async function listNotifications(request, env) {
+  const auth = await requireUser(env, request);
+  if (auth.response) return auth.response;
+  const [recent, unread] = await Promise.all([
+    serviceRest(env, `notifications?user_id=eq.${auth.user.id}&select=id,workspace_id,analysis_id,kind,tone,title,body,read_at,created_at,workspace:workspaces(name)&order=created_at.desc&limit=40`),
+    serviceRest(env, `notifications?user_id=eq.${auth.user.id}&read_at=is.null&select=id`),
+  ]);
+  if (!recent.ok || !unread.ok) return json({ error: "Could not load notifications." }, 502);
+  const items = (await recent.json())
+    .sort((a, b) => String(b.created_at).localeCompare(String(a.created_at)))
+    .map((n) => ({
+      id: n.id, workspace_id: n.workspace_id, workspace_name: n.workspace?.name || "", analysis_id: n.analysis_id || null,
+      kind: n.kind, tone: n.tone, title: n.title, body: n.body, read_at: n.read_at, created_at: n.created_at,
+    }));
+  return json({ unread: (await unread.json()).length, items });
+}
+
+async function markNotificationsRead(request, env) {
+  const auth = await requireUser(env, request);
+  if (auth.response) return auth.response;
+  const parsed = await readJson(request, 8_000);
+  if (parsed.error) return json({ error: parsed.error }, 400);
+  const value = parsed.value || {};
+  const ids = Array.isArray(value.ids) ? value.ids.filter((id) => typeof id === "string" && UUID_PATTERN.test(id)).slice(0, 100) : [];
+  if (value.all !== true && ids.length === 0) return json({ error: "Send the ids to mark, or all: true." }, 400);
+  const only = value.all === true ? "" : `&id=in.(${ids.join(",")})`;
+  const res = await serviceRest(env, `notifications?user_id=eq.${auth.user.id}&read_at=is.null${only}`, {
+    method: "PATCH",
+    headers: { prefer: "return=minimal" },
+    body: JSON.stringify({ read_at: new Date().toISOString() }),
+  });
+  if (!res.ok) return json({ error: "Could not update notifications." }, 502);
+  return json({ saved: true });
+}
+
 async function startAnalysis(request, env) {
   const auth = await requireUser(env, request);
   if (auth.response) return auth.response;
@@ -963,6 +1048,13 @@ async function startAnalysis(request, env) {
   });
   if (!created.ok) return json({ error: "Could not create the analysis." }, 502);
   const [row] = await created.json();
+  await notifyPeople(env, access.workspace_id, [auth.user.id], {
+    kind: "analysis_started",
+    tone: model ? "ai" : "info",
+    title: `Analysis started: ${name}`,
+    body: model ? "An AI model is reading the code. This usually takes 5 to 8 minutes." : "Reading the code with the rules. This usually takes a few minutes.",
+    analysis_id: row.id,
+  });
 
   // The runner gets a one-time token for the key, never the key itself. If the token cannot be saved, the run stops.
   let modelToken = "";
@@ -1156,6 +1248,11 @@ async function addComment(request, env, id) {
     body: JSON.stringify({ analysis_id: id, author_id: access.user.id, author_email: access.user.email, body: text }),
   });
   if (!res.ok) return json({ error: "Could not save the comment." }, 502);
+  if (access.row.owner_id !== access.user.id) {
+    await notifyPeople(env, access.row.workspace_id, [access.row.owner_id], {
+      kind: "comment_added", tone: "info", title: `New comment on ${access.row.app_name}`, body: text.slice(0, 140), analysis_id: id,
+    });
+  }
   return json({ saved: true }, 201);
 }
 
@@ -1197,6 +1294,11 @@ async function addAction(request, env, id) {
     body: JSON.stringify({ analysis_id: id, title, created_by: access.user.id, created_by_email: access.user.email }),
   });
   if (!res.ok) return json({ error: "Could not save the action item." }, 502);
+  if (access.row.owner_id !== access.user.id) {
+    await notifyPeople(env, access.row.workspace_id, [access.row.owner_id], {
+      kind: "action_added", tone: "warning", title: `New action item on ${access.row.app_name}`, body: title.slice(0, 140), analysis_id: id,
+    });
+  }
   return json({ saved: true }, 201);
 }
 
@@ -1227,6 +1329,11 @@ async function updateAction(request, env, id) {
     body: JSON.stringify(change),
   });
   if (!res.ok) return json({ error: "Could not update the action item." }, 502);
+  if (status === "done" && access.row.owner_id !== auth.user.id) {
+    await notifyPeople(env, access.row.workspace_id, [access.row.owner_id], {
+      kind: "action_done", tone: "success", title: `Action item done on ${access.row.app_name}`, body: auth.user.email, analysis_id: item.analysis_id,
+    });
+  }
   return json({ updated: true });
 }
 
@@ -1533,10 +1640,16 @@ async function runnerResult(request, env, id) {
   };
   const res = await serviceRest(env, `analyses?id=eq.${id}`, {
     method: "PATCH",
-    headers: { prefer: "return=minimal" },
+    headers: { prefer: "return=representation" },
     body: JSON.stringify(update),
   });
   if (!res.ok) return json({ error: "Could not save the result." }, 502);
+  const [saved] = await res.json().catch(() => []);
+  if (saved) {
+    await notifyPeople(env, saved.workspace_id, [saved.owner_id], body.status === "complete"
+      ? { kind: "analysis_complete", tone: "success", title: `Analysis complete: ${saved.app_name}`, body: "The findings are ready for review.", analysis_id: id }
+      : { kind: "analysis_failed", tone: "danger", title: `Analysis failed: ${saved.app_name}`, body: update.error || "The run did not finish.", analysis_id: id });
+  }
   return json({ saved: true });
 }
 
@@ -1753,6 +1866,9 @@ async function route(request, env) {
     const oneContingency = path.match(/^\/api\/contingencies\/([^/]+)$/);
     if (oneContingency && UUID_PATTERN.test(oneContingency[1]) && method === "PATCH") return updateContingency(request, env, oneContingency[1]);
     if (oneContingency && UUID_PATTERN.test(oneContingency[1]) && method === "DELETE") return deleteContingency(request, env, oneContingency[1]);
+
+    if (path === "/api/notifications" && method === "GET") return listNotifications(request, env);
+    if (path === "/api/notifications/read" && method === "POST") return markNotificationsRead(request, env);
 
     const privacy = path.match(/^\/api\/workspaces\/([^/]+)\/privacy(?:\/(signoff|withdraw))?$/);
     if (privacy && UUID_PATTERN.test(privacy[1])) {
