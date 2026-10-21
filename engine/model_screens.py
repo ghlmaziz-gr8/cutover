@@ -85,9 +85,24 @@ def inspect_reply(reply: str) -> tuple[str | None, str | None]:
     start = re.search(r"<!doctype|<html|<body", text, re.I)
     if not start:
         return None, "reply had no HTML page"
-    html = text[start.start():].strip()
+    html = tidy_page(text[start.start():].strip())
     problem = screen_problem(html)
     return (html, None) if problem is None else (None, problem)
+
+
+# Tags that do nothing harmful in a drawing but trip the refusal rules: page metadata, extra links and
+# form wrappers the model adds out of habit. They are removed, not refused. Scripts, frames, outside
+# links and event handlers are still refused.
+TIDY = [
+    re.compile(r"<\s*(meta|base|link)\b[^>]*>", re.I),
+    re.compile(r"<\s*/?\s*form\b[^>]*>", re.I),
+]
+
+
+def tidy_page(html: str) -> str:
+    for rx in TIDY:
+        html = rx.sub("", html)
+    return html
 
 
 def clean_reply(reply: str) -> str | None:

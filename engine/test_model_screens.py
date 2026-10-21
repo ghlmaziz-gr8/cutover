@@ -53,6 +53,26 @@ class RefusalTests(unittest.TestCase):
         self.assertIsNotNone(ms.screen_problem("<html><body>" + "x" * 40_000 + "</body></html>"))
 
 
+class TidyTests(unittest.TestCase):
+    def test_page_metadata_and_form_wrappers_are_removed_not_refused(self):
+        html = ('<!doctype html><html><head><meta charset="utf-8"><link rel="stylesheet" href="x.css"><base href="/">'
+                '</head><body><form method="post"><label>Visit</label><input value="10:30"></form>'
+                '<p>Sample visit at 10:30, Room 4.</p></body></html>')
+        page, problem = ms.inspect_reply(html)
+        self.assertIsNone(problem)
+        self.assertNotIn("<meta", page)
+        self.assertNotIn("<form", page)
+        self.assertNotIn("</form", page)
+        self.assertIn("<input value=\"10:30\">", page)
+
+    def test_scripts_and_outside_links_are_still_refused(self):
+        for body in ('<script>x()</script>', '<img src="https://example.test/a.png">', '<p onclick="x()">Visit at 10:30</p>'):
+            with self.subTest(body=body):
+                page, problem = ms.inspect_reply(f'<!doctype html><html><body><p>Sample visit at 10:30.</p>{body}</body></html>')
+                self.assertIsNone(page)
+                self.assertIsNotNone(problem)
+
+
 class CleanReplyTests(unittest.TestCase):
     def test_a_fenced_reply_is_unwrapped(self):
         self.assertEqual(ms.clean_reply("```html\n" + PAGE + "\n```"), PAGE)
