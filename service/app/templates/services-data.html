@@ -1,0 +1,89 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Services over a modern database · Cutover template</title>
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600..800&family=DM+Sans:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#f7f6ff; --fg:#1d1640; --muted:#66607f; --card:#ffffff; --line:#e4e0f6;
+  --accent:#6d28d9; --accent2:#ec4899; --accent3:#0891b2; --ok:#059669; --warn:#d97706;
+  --soft:#efeafd; --grad:linear-gradient(120deg,#6d28d9,#ec4899 55%,#f59e0b);
+  --display:"Bricolage Grotesque",system-ui,sans-serif; --body:"DM Sans",system-ui,sans-serif;
+  color-scheme:light;
+}
+@media (prefers-color-scheme:dark){
+  :root:not([data-theme="light"]){
+    --bg:#120e26; --fg:#f3f0ff; --muted:#a9a2c9; --card:#1c1735; --line:#2f2857;
+    --accent:#a78bfa; --accent2:#f472b6; --accent3:#22d3ee; --ok:#34d399; --warn:#fbbf24;
+    --soft:#261f4a; color-scheme:dark;
+  }
+}
+:root[data-theme="dark"]{
+  --bg:#120e26; --fg:#f3f0ff; --muted:#a9a2c9; --card:#1c1735; --line:#2f2857;
+  --accent:#a78bfa; --accent2:#f472b6; --accent3:#22d3ee; --ok:#34d399; --warn:#fbbf24;
+  --soft:#261f4a; color-scheme:dark;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);font:16px/1.55 var(--body)}
+.wrap{max-width:880px;margin:0 auto;padding:24px 16px 56px}
+a{color:var(--accent)}
+.back{font-size:14px;text-decoration:none;font-weight:700}
+.hero{margin:22px 0 26px;padding:28px;border-radius:24px;background:var(--card);border:1px solid var(--line);position:relative;overflow:hidden}
+.hero::before{content:"";position:absolute;inset:0 0 auto 0;height:5px;background:var(--grad)}
+.eyebrow{font-size:12px;letter-spacing:.12em;text-transform:uppercase;font-weight:700;color:var(--accent2);margin:0 0 6px}
+h1{font:800 clamp(28px,5vw,40px)/1.1 var(--display);margin:0 0 10px}
+h2{font:700 22px/1.2 var(--display);margin:30px 0 10px}
+.lead{margin:0;color:var(--muted);font-size:17px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:18px;padding:18px 20px;margin-top:14px}
+ol.steps{margin:0;padding:0;list-style:none;display:grid;gap:10px;counter-reset:s}
+ol.steps li{counter-increment:s;display:grid;grid-template-columns:34px 1fr;gap:12px;align-items:start;padding:12px 14px;border-radius:14px;border:1px solid var(--line);background:var(--card)}
+ol.steps li::before{content:counter(s);width:34px;height:34px;border-radius:50%;background:var(--grad);color:#fff;font-weight:800;display:grid;place-items:center}
+ul{margin:8px 0 0;padding-left:20px}
+.two{display:grid;gap:14px;grid-template-columns:1fr 1fr}
+@media (max-width:640px){.two{grid-template-columns:1fr}}
+.flow{display:grid;grid-template-columns:1fr 28px 1fr 28px 1fr;gap:10px;align-items:center;margin-top:12px}
+.flow div{padding:14px 12px;border-radius:14px;text-align:center;font-weight:700;font-size:14px;background:var(--soft);border:1px solid var(--line)}
+.flow span{text-align:center;color:var(--accent3);font-weight:800}
+@media (max-width:640px){.flow{grid-template-columns:1fr}.flow span{transform:rotate(90deg);height:20px}}
+.tag{display:inline-block;margin:4px 6px 0 0;padding:4px 10px;border-radius:999px;font-size:13px;font-weight:700;background:var(--soft);color:var(--accent)}
+.note{color:var(--muted);font-size:14px;margin-top:22px}
+</style>
+</head>
+<body>
+<div class="wrap">
+<a class="back" href="../index.html">← Back to Cutover</a>
+<section class="hero">
+  <p class="eyebrow">Modernized template · data</p>
+  <h1>Services over a modern database</h1>
+  <p class="lead">Move the business rules out of stored procedures and into services that the team can test and deploy. The data then moves to a modern database in steps, with each step checked before the next.</p>
+</section>
+<h2>When it fits</h2>
+<div class="card">
+  <p>Cutover recommends this when the findings show stored procedures, functions or views that hold logic, and code that reads and writes many tables.</p>
+  <span class="tag">Stored procedures</span><span class="tag">Views and functions</span><span class="tag">Tables used in code</span>
+</div>
+<h2>How the move goes</h2>
+<ol class="steps">
+  <li><div><strong>List the routines.</strong> Use the routines and tables from the expanded findings to see what each piece of logic reads and writes.</div></li>
+  <li><div><strong>Write the services</strong> for one area at a time, with tests that compare their results with the old routines.</div></li>
+  <li><div><strong>Run both side by side</strong> and compare the outputs for real data before any switch.</div></li>
+  <li><div><strong>Switch each area over</strong> and retire the routines it replaced.</div></li>
+  <li><div><strong>Move the data</strong> to the new database last, in copies that are checked against the source.</div></li>
+</ol>
+<h2>How it fits together</h2>
+<div class="flow">
+  <div>Application</div><span>→</span><div>Services and rules</div><span>→</span><div>Database</div>
+</div>
+<h2>What stays and what changes</h2>
+<div class="two">
+  <div class="card"><strong>Stays for now</strong><ul><li>The screens and how users work</li><li>The data itself, until the last step</li></ul></div>
+  <div class="card"><strong>Changes</strong><ul><li>Logic moves from the database into tested code</li><li>Schema changes are kept in migrations</li><li>The database engine can be replaced</li></ul></div>
+</div>
+<h2>Main risks</h2>
+<div class="card"><ul><li>Routines often hold rules nobody wrote down. Compare outputs on real data before retiring any routine.</li><li>Reports and batch jobs may call routines directly. List them before the switch.</li><li>Date, rounding and text rules differ between engines. Test them explicitly.</li></ul></div>
+<p class="note">This is a template, not a plan for one application. The routines and tables named in the review are the starting list.</p>
+</div>
+</body>
+</html>

@@ -1216,6 +1216,7 @@ pre{white-space:pre-wrap;word-break:break-word;background:var(--soft);padding:12
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.39.0/dist/umd/supabase.js"></script>
 <script src="config.js"></script>
 <script src="guide.js"></script>
+<script src="modernize.js"></script>
 <script>
 (() => {
   "use strict";
@@ -3439,6 +3440,35 @@ a{color:#6d28d9;font-weight:600}`;
     return w;
   }
 
+  // Modernized templates: rules pick the options from the findings (no model), and each one previews on its own page.
+  function modernizeSection(shown) {
+    const wrap = el("div", null, "modern");
+    wrap.appendChild(el("h3", "Modernized templates"));
+    wrap.appendChild(el("p", "Chosen by rules from these findings. Each one opens its own preview page.", "muted small"));
+    const grid = el("div", null, "rgrid");
+    const picks = window.Modernize ? window.Modernize.choose(shown) : [];
+    for (const p of picks) {
+      const c = el("div", null, "rcard");
+      const label = p.fit === "recommended" ? "Recommended" : p.fit === "possible" ? "Possible" : "Weaker fit";
+      c.appendChild(el("p", label, "eyebrow-sm"));
+      c.appendChild(el("h3", p.title));
+      c.appendChild(el("p", p.summary, "muted small"));
+      if (p.reasons.length) {
+        const tags = el("div", null, "tags");
+        p.reasons.forEach((r) => tags.appendChild(el("span", r, "tag")));
+        c.appendChild(tags);
+      }
+      const link = document.createElement("a");
+      link.href = p.href;
+      link.textContent = "Open the preview →";
+      link.style.cssText = "display:inline-block;margin-top:10px;font-weight:700;color:var(--accent)";
+      c.appendChild(link);
+      grid.appendChild(c);
+    }
+    wrap.appendChild(grid);
+    return wrap;
+  }
+
   function renderReview(row) {
     const box = $("reviewBody");
     box.innerHTML = "";
@@ -3529,6 +3559,8 @@ a{color:#6d28d9;font-weight:600}`;
     box.appendChild(grid);
     // Entrance order: cards and panels appear one after another.
     box.querySelectorAll(".rcard, .panel, .stat").forEach((n, i) => n.style.setProperty("--i", String(i)));
+
+    box.appendChild(modernizeSection(Object.fromEntries(all.filter(Boolean).map((i) => [i.id, i]))));
 
     if (report.limitations && report.limitations.length) {
       box.appendChild(el("h3", "What this review does not cover"));
