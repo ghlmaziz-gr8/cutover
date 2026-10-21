@@ -11,6 +11,7 @@
 window.CUTOVER_GUIDE = {
   updated: "2026-10-21",
   whatsNew: [
+    "2026-10-21: Every file in the repository is listed with its kind and, where known, its language. Twelve more legacy languages are read as source: COBOL, Visual Basic 6, Delphi, PL/SQL, T-SQL, Perl, PHP (older), PowerBuilder, Natural, Progress, RPG and FoxPro. Each file gets an age range, from git history and from years written in the file, with the evidence named. Files that cannot be identified are named, not guessed at.",
     "2026-10-21: The assessment now reads classic ASP and VBScript pages, counts each screen the code switches on (ControlName views), and lists the tables the code uses in SQL. It identifies Microsoft Access and SQLite files by their file signature. Access table and field names come from a read-only metadata file that the platform engineer runs inside their own environment. Files that are listed but not read are named, with the reason.",
     "2026-10-21: You can connect as many language models as you like. Pick a provider from the list (ChatGPT, Claude, Gemini, Mistral, Grok, DeepSeek, Groq, OpenRouter, Together AI and more) and follow its key quest. If yours is not listed, choose Your own provider, give it a name, its https address and its model name.",
     "2026-10-21: If the scan finds no database tables, the managed database option says so and gives no database cost. Zero costs now read as $0, and one table is no longer shown as 1 tables.",
@@ -254,6 +255,8 @@ window.CUTOVER_GUIDE = {
       a: "Sign off the privacy notice first. Then choose the provider from the list and follow its quest on the Language model card. Each chapter links to the provider's own page. Check the model name, paste the whole key and press Test and save. You can add several providers." },
     { q: "Why does the assessment show a database that it cannot read?", step: "deeper",
       a: "Cutover identifies a database file from its first bytes, and it never opens the database. Table and field names come from a metadata file that the platform engineer creates with the read-only script, inside their own environment. The file holds names, types, nullability and row counts only. Anything else in the file is refused. Tables used in SQL in the code are listed as names the code uses, not as a confirmed schema." },
+    { q: "What does the assessment do with a language it does not know?", step: "deeper",
+      a: "It lists every file with its kind and says what it could not identify. Files in a language with no reader are named as detected but not analysed, and nothing is guessed about their contents. The inventory file in each report holds one line per file, with its kind, language, age range and encoding." },
     { q: "My provider is not in the list. What do I do?", step: "model",
       a: "Choose Your own provider. Give it a name, its API address (a secure address beginning with https, for example https://api.example.com/v1) and the exact model name. The provider must offer a chat API in the OpenAI chat-completions shape. Then paste the key and press Test and save." },
     { q: "Where is the Terraform draft?", step: "migrate",
