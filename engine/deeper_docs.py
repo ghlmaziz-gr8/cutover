@@ -111,8 +111,28 @@ def _systems(report: dict) -> list[dict]:
     return points
 
 
+def _tables(report: dict) -> tuple[int | None, str | None]:
+    """The table count the documents and the cost estimate use, and the finding it comes from. The best source wins:
+    the client's own database metadata, then CREATE TABLE in SQL scripts, then table names used in legacy code."""
+    if _finding(report, "data.database_metadata"):
+        return _count(_value(report, "data.database_metadata"), "tables"), "data.database_metadata"
+    if _finding(report, "data.tables") and (_count(_value(report, "data.tables"), "count") or 0) > 0:
+        return _count(_value(report, "data.tables"), "count"), "data.tables"
+    if _finding(report, "data.tables_in_code"):
+        return _count(_value(report, "data.tables_in_code"), "count"), "data.tables_in_code"
+    if _finding(report, "data.tables"):
+        return 0, "data.tables"
+    return None, None
+
+
 def _data(report: dict) -> list[dict]:
     points = []
+    metadata = _finding(report, "data.database_metadata")
+    if metadata:
+        value = _value(report, "data.database_metadata")
+        names = _names(value.get("table_names") or [])
+        text = f"{value.get('tables', 0)} tables in the client's database, with {value.get('fields', 0)} fields in total"
+        points.append(_point(f"{text}: {names}." if names else f"{text}.", metadata))
     tables = _finding(report, "data.tables")
     if tables:
         value = _value(report, "data.tables")
@@ -120,6 +140,12 @@ def _data(report: dict) -> list[dict]:
         names = _names(value.get("names") or [])
         text = f"{count} tables in the SQL scripts" if count is not None else "Tables in the SQL scripts"
         points.append(_point(f"{text}: {names}." if names else f"{text}.", tables))
+    in_code = _finding(report, "data.tables_in_code")
+    if in_code:
+        value = _value(report, "data.tables_in_code")
+        names = _names(value.get("names") or [])
+        text = f"{value.get('count', 0)} tables are used in SQL in the legacy code, and the database itself was not opened"
+        points.append(_point(f"{text}: {names}." if names else f"{text}.", in_code))
     engines = _finding(report, "data.database_engines")
     if engines:
         names = _list_value(report, "data.database_engines", "engines", "names")
@@ -127,7 +153,10 @@ def _data(report: dict) -> list[dict]:
     migrations = _finding(report, "data.migrations")
     if migrations:
         tool = _value(report, "data.migrations").get("tool")
-        points.append(_point(f"Schema changes are managed with {tool}." if tool else "Schema changes are managed with a migration tool.", migrations))
+        if tool and tool != "none found":
+            points.append(_point(f"Schema changes are managed with {tool}.", migrations))
+        else:
+            points.append(_point("No schema migration tool was found.", migrations))
     entities = _finding(report, "data.entities")
     if entities:
         count = _count(_value(report, "data.entities"), "count")
@@ -166,9 +195,9 @@ def _architecture(report: dict) -> dict:
     endpoints = _count(_value(report, "ui.endpoints"), "count")
     if endpoints is not None and _finding(report, "ui.endpoints"):
         layers.append({"layer": "Services", "detail": f"{endpoints} endpoints", "category": "ui_portal", "basis": "ui.endpoints"})
-    tables = _count(_value(report, "data.tables"), "count")
-    if tables is not None and _finding(report, "data.tables"):
-        layers.append({"layer": "Data", "detail": f"{tables} tables", "category": "data", "basis": "data.tables"})
+    tables, table_basis = _tables(report)
+    if tables is not None and table_basis:
+        layers.append({"layer": "Data", "detail": f"{tables} tables", "category": "data", "basis": table_basis})
     hosting = []
     if _finding(report, "containers.images"):
         hosting.append("containers")
@@ -191,8 +220,8 @@ def modernize(report: dict) -> list[dict]:
     containers = _finding(report, "containers.images")
     ci = _finding(report, "delivery.ci")
     iac = _finding(report, "infrastructure.as_code")
-    tables = _finding(report, "data.tables")
-    table_count = _count(_value(report, "data.tables"), "count")
+    table_count, table_basis = _tables(report)
+    tables = _finding(report, table_basis) if table_basis else None
 
     keep_points = []
     keep_basis = []
@@ -243,8 +272,10 @@ def modernize(report: dict) -> list[dict]:
         managed_summary = "Use a managed database and managed hosting for the application."
     managed_points = [managed_summary]
     managed_basis = []
-    if tables:
-        managed_basis.append("data.tables")
+    if table_basis:
+        managed_basis.append(table_basis)
+        if table_basis == "data.tables_in_code":
+            managed_points.append("The table count comes from SQL in the code, not from the database. Confirm it with the database's own metadata.")
     if iac:
         managed_points.append("Build on the infrastructure code that already exists, so the cloud set-up is written down.")
         managed_basis.append("infrastructure.as_code")
