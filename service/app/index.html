@@ -138,6 +138,27 @@ form input + button{margin-top:16px}
 @keyframes aiShimmer{0%{background-position:0% 50%}100%{background-position:300% 50%}}
 @keyframes aiPulse{0%,100%{transform:scale(1);opacity:1}50%{transform:scale(1.7);opacity:.35}}
 @media (prefers-reduced-motion:reduce){.ai-pill,.ai-pill .dot{animation:none}}
+
+/* File-level results: a short explainer, a small illustration, and the workflow stage */
+.fr-intro{display:flex;gap:16px;align-items:center;margin-top:0}
+.fr-art{flex:0 0 auto;width:84px;height:70px;overflow:visible}
+.fr-page{fill:var(--card);stroke:var(--accent);stroke-width:2}
+.fr-page.p1{opacity:.4}
+.fr-line rect{fill:var(--accent2);opacity:.55;animation:frBlink 2.6s ease-in-out infinite}
+.fr-line rect:nth-child(2){animation-delay:.25s}
+.fr-line rect:nth-child(3){animation-delay:.5s}
+.fr-scan{fill:var(--accent3);animation:frScan 2.6s ease-in-out infinite}
+@keyframes frScan{0%{transform:translateY(0);opacity:0}15%,85%{opacity:1}100%{transform:translateY(50px);opacity:0}}
+@keyframes frBlink{0%,100%{opacity:.25}50%{opacity:.9}}
+.fr-steps{list-style:none;display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:8px;padding:0;margin:16px 0 0}
+.fr-steps li{display:flex;align-items:center;gap:10px;padding:10px 12px;border:1px solid var(--line);border-radius:14px;font-size:13.5px;color:var(--muted);background:var(--card);transition:border-color .3s,background .3s,color .3s}
+.fr-dot{width:22px;height:22px;border-radius:50%;flex:0 0 auto;border:2px solid var(--line);display:grid;place-items:center;font-size:11px;font-weight:700;transition:background .3s,border-color .3s}
+.fr-steps li.done{color:var(--fg)}
+.fr-steps li.done .fr-dot{background:var(--ok);border-color:var(--ok);color:#fff}
+.fr-steps li.now{color:var(--fg);border-color:var(--accent2);background:color-mix(in srgb,var(--accent2) 8%,var(--card))}
+.fr-steps li.now .fr-dot{border-color:var(--accent2);background:var(--accent2);color:#fff;animation:aiPulse 1.6s ease-in-out infinite}
+@media (prefers-reduced-motion:reduce){.fr-scan,.fr-line rect,.fr-steps li.now .fr-dot{animation:none}.fr-scan{opacity:.8}}
+@media (max-width:560px){.fr-intro{flex-direction:column;align-items:flex-start}}
 label.check{display:flex;gap:10px;align-items:flex-start;font-weight:400;margin-top:16px}
 label.check input[type="checkbox"]{flex:0 0 auto;width:18px;height:18px;margin:3px 0 0;accent-color:var(--accent)}
 .err{color:var(--bad)}
@@ -733,6 +754,29 @@ pre{white-space:pre-wrap;word-break:break-word;background:var(--soft);padding:12
     <p class="eyebrow">Review</p>
     <h2 style="margin:8px 0 6px">File-level results</h2>
     <p class="muted small" id="filesMeta"></p>
+    <div class="card fr-intro">
+      <svg class="fr-art" viewBox="0 0 96 80" aria-hidden="true">
+        <rect class="fr-page p1" x="10" y="4" width="44" height="56" rx="6"/>
+        <rect class="fr-page p2" x="24" y="10" width="44" height="56" rx="6"/>
+        <g class="fr-line">
+          <rect x="34" y="24" width="24" height="4" rx="2"/>
+          <rect x="34" y="34" width="18" height="4" rx="2"/>
+          <rect x="34" y="44" width="22" height="4" rx="2"/>
+        </g>
+        <rect class="fr-scan" x="22" y="8" width="48" height="3" rx="1.5"/>
+      </svg>
+      <div>
+        <h3 style="margin:0 0 6px">What is this?</h3>
+        <p class="muted small" style="margin:0">Cutover reads every file in the repository and writes a short, plain-English purpose for each one, with suggestions for the move. A platform engineer checks each entry. Only approved entries go into the final report.</p>
+      </div>
+    </div>
+    <ol class="fr-steps" id="frSteps" aria-label="Workflow stage">
+      <li><span class="fr-dot"></span>Scan the repository</li>
+      <li><span class="fr-dot"></span>Write a purpose per file</li>
+      <li><span class="fr-dot"></span>Engineer review</li>
+      <li><span class="fr-dot"></span>Final in the report</li>
+    </ol>
+    <p class="small" id="frNow" style="margin:10px 2px 0" role="status"></p>
     <div class="row wzNav" style="margin:14px 0 4px">
       <button type="button" class="ghost" id="filesBackReview">Back to findings</button>
       <button type="button" id="filesApproveAll">Approve all drafts</button>
@@ -3326,7 +3370,28 @@ a{color:#6d28d9;font-weight:600}`;
       : "No file-level results yet. They appear here once the analysis sends them.";
     const list = $("filesList");
     list.innerHTML = "";
+    updateFlow(counts);
     for (const f of fileRows) list.appendChild(fileItem(f));
+  }
+
+  // Shows where the file review sits in the workflow: scanning, writing, engineer review, or final.
+  function updateFlow(counts) {
+    let now = 0;
+    let note = "Cutover is scanning the repository. Files appear here as the analysis sends them.";
+    if (fileRows.length && counts.draft) {
+      now = 2;
+      note = `Engineer review: ${counts.draft} file${counts.draft === 1 ? "" : "s"} still waiting for approval. Approve or edit each one.`;
+    } else if (fileRows.length) {
+      now = 4;
+      note = "Every file is approved. These purposes now go into the final report.";
+    }
+    [...$("frSteps").children].forEach((li, i) => {
+      const done = i < now;
+      li.classList.toggle("done", done);
+      li.classList.toggle("now", !done && i === now && now < 4);
+      li.querySelector(".fr-dot").textContent = done ? "✓" : String(i + 1);
+    });
+    $("frNow").textContent = note;
   }
 
   function fileItem(f) {
