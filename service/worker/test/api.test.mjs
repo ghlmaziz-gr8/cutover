@@ -1246,6 +1246,17 @@ test("screens from the model are off by default, only an admin can turn them on,
   assert.equal(github.dispatches.at(-1).inputs.draw_screens, false, "without a model, no screens are drawn");
 });
 
+test("the browser may send PUT from the app (the screens setting needs it)", async () => {
+  const appEnv = { ...env, APP_ORIGIN: "https://app.cutover.site" };
+  const res = await worker.fetch(new Request("https://api.test/api/workspaces/" + W_ACME + "/model-screens", {
+    method: "OPTIONS",
+    headers: { origin: "https://app.cutover.site", "access-control-request-method": "PUT" },
+  }), appEnv);
+  assert.equal(res.status, 204);
+  assert.equal(res.headers.get("access-control-allow-origin"), "https://app.cutover.site");
+  assert.match(res.headers.get("access-control-allow-methods"), /\bPUT\b/);
+});
+
 test("the runner trades its token once for the key; wrong, reused, or misdirected tokens get nothing", async () => {
   const keyId = await addGoogleKey();
   const started = await call("/api/analyses", { as: "eng_a", method: "POST", body: { ...START, workspace_id: W_ACME, model_key_id: keyId } });
