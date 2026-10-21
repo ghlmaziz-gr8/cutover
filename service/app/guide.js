@@ -11,6 +11,7 @@
 window.CUTOVER_GUIDE = {
   updated: "2026-10-21",
   whatsNew: [
+    "2026-10-21: Adding a language model has a key quest for each provider. Pick Google (Gemini) or Anthropic (Claude) to see the steps as a short story with chapters, from the provider's own key page to pasting the key.",
     "2026-10-21: If the scan finds no database tables, the managed database option says so and gives no database cost. Zero costs now read as $0, and one table is no longer shown as 1 tables.",
     "2026-10-21: On the deeper assessment page, a platform engineer can enter the number of users. The Modernize cost lines then use that number, not the sample sizes. The number is saved with who set it and when, and the others on the analysis are told.",
     "2026-10-21: The Modernize proposals for a container setup and a managed database show estimated Google Cloud costs for 100, 1,000 and 10,000 users, with the rates' check date. The rates are kept in one file, so they can be updated without changing the page.",
@@ -193,6 +194,18 @@ window.CUTOVER_GUIDE = {
       refs: ["inviteEmail", "inviteBtn"],
     },
     {
+      id: "model",
+      title: "Add a language model key",
+      who: "admins",
+      body: [
+        "After the privacy notice is signed off, choose a provider: Google (Gemini) or Anthropic (Claude). A quest walks you through making a key from that provider's own page.",
+        "Paste the whole key and press Test and save. Cutover tests it with the provider before saving, and shows only its last four characters afterwards.",
+        "Keys are kept encrypted. The key is never shown again and is never sent to the browser.",
+      ],
+      actions: [{ type: "go", label: "Go to Workspaces", tab: "workspaces" }],
+      refs: ["modelKeyForm"],
+    },
+    {
       id: "customer",
       title: "Create a customer workspace",
       who: "operators",
@@ -235,6 +248,8 @@ window.CUTOVER_GUIDE = {
       a: "Three options for the application, from keep and tighten to managed cloud services. Each lists its effort, trade-offs and the findings it is based on. The two cloud options show estimated Google Cloud costs, for the number of users a platform engineer enters or for three sample sizes, with the date the rates were checked. Estimates only: AWS and Azure are not costed yet, and network, backups and high availability are left out." },
     { q: "How do I get the cost estimate for my own number of users?", step: "deeper",
       a: "On the deeper assessment page, under Modernize, a platform engineer types the number of users and presses Save users. The cost lines then use that number. Until it is set, the proposals show three sample sizes. If the scan found no database tables, the database line says so instead of giving a cost. Estimates use Google Cloud's published prices and leave out network, backups and high availability." },
+    { q: "How do I add a Gemini or Claude key?", step: "model",
+      a: "Sign off the privacy notice first. Then choose the provider and follow the quest on the Language model card. Each chapter links to the provider's own page. Paste the whole key and press Test and save." },
     { q: "Where is the Terraform draft?", step: "migrate",
       a: "Under the intake form on What next, once the intake is confirmed. Press Make the Terraform draft. Open Show the code to read it, or Download .tf to save it. Each draft is a DRAFT for review, with sample values to replace." },
     { q: "What does Migrate ask me?", step: "migrate",
