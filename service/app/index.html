@@ -180,7 +180,11 @@ form input + button{margin-top:16px}
 .fr-burst.go{animation:frBurst 1.7s ease-out forwards}
 @keyframes frBurst{0%{opacity:0;transform:translate(-50%,-50%) scale(.4)}15%{opacity:1;transform:translate(-50%,-50%) scale(1.15)}30%{transform:translate(-50%,-50%) scale(1)}75%{opacity:1}100%{opacity:0;transform:translate(-50%,-150%) scale(1)}}
 .fr-hud .small{margin:14px 2px 0}
-@media (prefers-reduced-motion:reduce){.fr-scan,.fr-line rect,.fr-fill,.fr-shine,.fr-nodes li.now .fr-node,.fr-nodes li.pop .fr-node,.fr-burst.go{animation:none}.fr-scan{opacity:.8}.fr-burst.go{opacity:1}}
+.ph-shield{fill:var(--card);stroke:var(--accent);stroke-width:2.5;animation:phGlow 3s ease-in-out infinite}
+.ph-check{fill:none;stroke:var(--ok);stroke-width:4;stroke-linecap:round;stroke-linejoin:round;stroke-dasharray:60;stroke-dashoffset:60;animation:phDraw 3s ease-in-out infinite}
+@keyframes phDraw{0%,20%{stroke-dashoffset:60}60%,100%{stroke-dashoffset:0}}
+@keyframes phGlow{0%,100%{filter:drop-shadow(0 0 0 transparent)}50%{filter:drop-shadow(0 0 8px var(--accent2))}}
+@media (prefers-reduced-motion:reduce){.fr-scan,.fr-line rect,.fr-fill,.fr-shine,.fr-nodes li.now .fr-node,.fr-nodes li.pop .fr-node,.fr-burst.go,.ph-shield,.ph-check{animation:none}.fr-scan{opacity:.8}.fr-burst.go{opacity:1}.ph-check{stroke-dashoffset:0}}
 @media (max-width:560px){.fr-intro{flex-direction:column;align-items:flex-start}}
 label.check{display:flex;gap:10px;align-items:flex-start;font-weight:400;margin-top:16px}
 label.check input[type="checkbox"]{flex:0 0 auto;width:18px;height:18px;margin:3px 0 0;accent-color:var(--accent)}
@@ -740,6 +744,31 @@ pre{white-space:pre-wrap;word-break:break-word;background:var(--soft);padding:12
     <div class="row wzNav" style="margin:14px 0 4px">
       <button type="button" class="ghost" id="planBackNext">Back to next steps</button>
       <button type="button" class="ghost" id="planBackReview">Back to findings</button>
+    </div>
+    <div class="card fr-intro">
+      <svg class="fr-art" viewBox="0 0 96 80" aria-hidden="true">
+        <path class="ph-shield" d="M48 6 L82 18 V40 C82 58 66 70 48 76 C30 70 14 58 14 40 V18 Z"/>
+        <path class="ph-check" d="M34 42 L44 52 L63 30"/>
+      </svg>
+      <div>
+        <h3 style="margin:0 0 6px">What is this?</h3>
+        <p class="muted small" style="margin:0">Plan for what could go wrong during the cutover, and how to get back to the current system. Cutover drafts suggestions from the findings. A platform engineer reviews each one, and accepted plans go into the export.</p>
+      </div>
+    </div>
+    <div class="card fr-hud" id="phHud" role="status" aria-live="polite">
+      <div class="fr-top">
+        <span class="fr-kicker" id="phKicker">STAGE 1 OF 3</span>
+        <span class="fr-pct" id="phPct">0%</span>
+      </div>
+      <div class="fr-title" id="phTitle">Draft the risks</div>
+      <div class="fr-bar"><div class="fr-fill" id="phFill"></div><div class="fr-shine"></div></div>
+      <ol class="fr-nodes" id="phSteps" style="grid-template-columns:repeat(3,1fr)" aria-label="Planning stage">
+        <li><span class="fr-node"><span>1</span></span>Draft</li>
+        <li><span class="fr-node"><span>2</span></span>Review</li>
+        <li><span class="fr-node"><span>3</span></span>Export</li>
+      </ol>
+      <p class="small muted" id="phNote"></p>
+      <div class="fr-burst" id="phBurst" aria-hidden="true"></div>
     </div>
     <div class="card">
       <p class="muted small" id="planNote" style="margin:0"></p>
@@ -3232,6 +3261,56 @@ a{color:#6d28d9;font-weight:600}`;
     const items = cur.contingencies || [];
     if (!items.length) list.appendChild(el("li", "No contingencies yet.", "muted small"));
     for (const c of items) list.appendChild(planItem(c, canPlan));
+    renderPlanHud(items);
+  }
+
+  let planLast = { id: null, now: -1 };
+
+  // Status panel for planning: draft, then engineer review, then export. A finished review plays the burst.
+  function renderPlanHud(items) {
+    const total = items.length;
+    const accepted = items.filter((c) => c.status === "accepted").length;
+    const rejected = items.filter((c) => c.status === "rejected").length;
+    const decided = accepted + rejected;
+    const waiting = total - decided;
+    let now = 0;
+    let pct = 0;
+    let title = "Draft the risks";
+    let note = "No risks yet. Draft proposals from the findings, or add your own below.";
+    if (total && waiting) {
+      now = 1;
+      pct = Math.round((100 * decided) / total);
+      title = "Engineer review";
+      note = `${waiting} waiting for a decision · ${accepted} accepted · ${rejected} rejected`;
+    } else if (total) {
+      now = 2;
+      pct = 100;
+      title = "Ready for the export";
+      note = `${accepted} accepted${rejected ? ` · ${rejected} left out` : ""}. Accepted plans go into the export.`;
+    }
+    $("phKicker").textContent = now < 2 ? `STAGE ${now + 1} OF 3` : "ALL STAGES CLEARED";
+    $("phTitle").textContent = title;
+    $("phPct").textContent = `${pct}%`;
+    $("phFill").style.width = `${pct}%`;
+    $("phNote").textContent = note;
+    [...$("phSteps").children].forEach((li, i) => {
+      const done = i < now;
+      li.classList.toggle("done", done);
+      li.classList.toggle("now", !done && i === now && now < 2);
+      li.querySelector(".fr-node span").textContent = done ? "✓" : String(i + 1);
+    });
+    if (planLast.id === cur.id && now > planLast.now) {
+      const node = $("phSteps").children[now - 1];
+      node.classList.remove("pop");
+      void node.offsetWidth;
+      node.classList.add("pop");
+      const burst = $("phBurst");
+      burst.textContent = now === 2 ? "PLAN READY" : "STAGE CLEARED";
+      burst.classList.remove("go");
+      void burst.offsetWidth;
+      burst.classList.add("go");
+    }
+    planLast = { id: cur.id, now };
   }
 
   function planItem(c, canPlan) {
