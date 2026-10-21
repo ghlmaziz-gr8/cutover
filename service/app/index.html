@@ -196,6 +196,20 @@ form input + button{margin-top:16px}
 @keyframes scopeWiggle{0%,86%,100%{transform:rotate(0)}90%{transform:rotate(-14deg)}94%{transform:rotate(12deg)}97%{transform:rotate(-6deg)}}
 @keyframes scopeShake{0%,100%{transform:translateX(0)}20%{transform:translateX(-6px)}40%{transform:translateX(6px)}60%{transform:translateX(-4px)}80%{transform:translateX(3px)}}
 @media (max-width:720px){.scope-opts{grid-template-columns:1fr}}
+
+/* Deeper assessment: architecture overview and sections */
+.arch-layer{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;padding:12px 14px;border-radius:14px;border:1px solid var(--line);border-left:4px solid var(--c,var(--accent));background:var(--card);animation:archIn .5s both;animation-delay:calc(var(--i,0) * 120ms)}
+.arch-layer b{font-size:14px}
+.arch-arrow{text-align:center;color:var(--accent);font-size:12px;line-height:1.4;animation:archPulse 2s ease-in-out infinite}
+.deeper-sec li{margin:6px 0}
+.deeper-sec .src{display:block;font-size:12px;color:var(--muted)}
+.dp-layer{fill:var(--card);stroke:var(--accent);stroke-width:2;animation:dpLift 2.8s ease-in-out infinite}
+.dp-layer.l2{animation-delay:.4s;stroke:var(--accent2)}
+.dp-layer.l3{animation-delay:.8s;stroke:var(--accent3)}
+@keyframes archIn{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
+@keyframes archPulse{0%,100%{opacity:.45}50%{opacity:1}}
+@keyframes dpLift{0%,100%{transform:translateY(0)}50%{transform:translateY(-3px)}}
+@media (prefers-reduced-motion:reduce){.arch-layer,.arch-arrow,.dp-layer{animation:none}}
 @media (prefers-reduced-motion:reduce){.scope-opt.selected,.scope-opt .lock-ic,.scope-opt.shake{animation:none}.scope-opt{transition:none}}
 .ph-shield{fill:var(--card);stroke:var(--accent);stroke-width:2.5;animation:phGlow 3s ease-in-out infinite}
 .ph-check{fill:none;stroke:var(--ok);stroke-width:4;stroke-linecap:round;stroke-linejoin:round;stroke-dasharray:60;stroke-dashoffset:60;animation:phDraw 3s ease-in-out infinite}
@@ -742,6 +756,11 @@ pre{white-space:pre-wrap;word-break:break-word;background:var(--soft);padding:12
         <p class="muted small" style="margin:6px 0 12px">Workspace admins add people from the workspace page.</p>
         <button type="button" class="ghost" id="inviteNext">Go to people</button>
       </div>
+      <div class="card" style="margin-top:0" id="deeperCardNext">
+        <h3 style="margin-top:0">Deeper assessment</h3>
+        <p class="muted small" id="deeperNoteNext" style="margin:6px 0 12px"></p>
+        <button type="button" class="ghost" id="deeperOpen">Open the deeper assessment</button>
+      </div>
       <div class="card" style="margin-top:0">
         <h3 style="margin-top:0">Continue to planning</h3>
         <p class="muted small" style="margin:6px 0 12px">Plan the risks and fallbacks for this cutover. Proposals are drafted from the findings, then edited by platform engineers.</p>
@@ -874,6 +893,34 @@ pre{white-space:pre-wrap;word-break:break-word;background:var(--soft);padding:12
     <p id="filesMsg" class="err small hint" role="status"></p>
     <div class="row wzNav">
       <button type="button" class="ghost" id="filesBackReviewBottom">Back to findings</button>
+    </div>
+  </section>
+
+  <!-- Deeper assessment: plain-language documents built from the findings -->
+  <section id="s-deeper" class="screen" hidden>
+    <p class="eyebrow">Next stage</p>
+    <h2 style="margin:8px 0 6px">Deeper assessment</h2>
+    <p class="muted small" id="deeperMeta"></p>
+    <div class="row wzNav" style="margin:14px 0 4px">
+      <button type="button" class="ghost" id="deeperBack">Back to next steps</button>
+    </div>
+    <div class="card fr-intro">
+      <svg class="fr-art" viewBox="0 0 96 80" aria-hidden="true">
+        <rect class="dp-layer l1" x="10" y="8" width="76" height="14" rx="5"/>
+        <rect class="dp-layer l2" x="10" y="28" width="76" height="14" rx="5"/>
+        <rect class="dp-layer l3" x="10" y="48" width="76" height="14" rx="5"/>
+        <rect class="fr-scan" x="6" y="6" width="84" height="3" rx="1.5"/>
+      </svg>
+      <div>
+        <h3 style="margin:0 0 6px">What is this?</h3>
+        <p class="muted small" style="margin:0">A plain-language description of the application, built from what the code shows: what it does, the technology and delivery, the data it stores, and the screens and actions. Each point names the finding it came from, so it can be checked.</p>
+      </div>
+    </div>
+    <div class="card" id="deeperArch"></div>
+    <div id="deeperSections"></div>
+    <div class="card" id="deeperLimits"></div>
+    <div class="row wzNav">
+      <button type="button" class="ghost" id="deeperBackBottom">Back to next steps</button>
     </div>
   </section>
 
@@ -3054,7 +3101,91 @@ a{color:#6d28d9;font-weight:600}`;
     $("inviteCardNext").hidden = !(ws && ws.is_admin);
     $("deleteCardNext").hidden = !cur.can_delete;
     renderScope();
+    const deeperReady = cur.deeper_done === true;
+    $("deeperNoteNext").textContent = deeperReady
+      ? "Ready. It covers the business, systems, data and workflows, with an architecture overview."
+      : "Not ready yet. It is built with the analysis and becomes available when the run finishes it.";
+    $("deeperOpen").disabled = !deeperReady;
   }
+
+  const LAYER_COLOR = { Users: "var(--accent)", Screens: "var(--accent2)", Services: "var(--accent3)", Data: "var(--ok)", Hosting: "var(--warn)" };
+
+  function showDeeper() {
+    show("s-deeper");
+    renderDeeper();
+  }
+
+  // Draws the architecture overview and the sections. The findings have already been filtered for this role.
+  function renderDeeper() {
+    const deeper = cur.findings && cur.findings.deeper;
+    $("deeperMeta").textContent = `${cur.app_name || cur.repo} · ${cur.repo}`;
+    const arch = $("deeperArch");
+    const sections = $("deeperSections");
+    const limits = $("deeperLimits");
+    arch.replaceChildren();
+    sections.replaceChildren();
+    limits.replaceChildren();
+    if (!deeper) {
+      sections.appendChild(el("p", "The deeper assessment is not in this analysis. Run a new analysis to create it.", "card muted"));
+      return;
+    }
+    arch.appendChild(el("h3", "Architecture overview", null));
+    arch.firstChild.style.marginTop = "0";
+    const layers = (deeper.architecture && deeper.architecture.layers) || [];
+    if (!layers.length) arch.appendChild(el("p", "Not enough in the code to draw the architecture for your role.", "muted small"));
+    layers.forEach((layer, i) => {
+      const row = el("div", null, "arch-layer");
+      row.style.setProperty("--i", i);
+      row.style.setProperty("--c", LAYER_COLOR[layer.layer] || "var(--accent)");
+      row.append(el("b", layer.layer), el("span", layer.detail, "small muted"));
+      arch.appendChild(row);
+      if (i < layers.length - 1) arch.appendChild(el("div", "▼", "arch-arrow"));
+    });
+    for (const section of deeper.sections || []) {
+      const card = el("div", null, "card deeper-sec");
+      card.appendChild(el("h3", section.title, null));
+      card.firstChild.style.marginTop = "0";
+      if (!section.points || !section.points.length) {
+        card.appendChild(el("p", "Nothing to show here for your role, or the code did not show enough.", "muted small"));
+      } else {
+        const list = el("ul", null, null);
+        list.style.paddingLeft = "18px";
+        for (const p of section.points) {
+          const li = el("li", p.text, "small");
+          if (p.basis) li.appendChild(el("span", `Based on ${p.basis}`, "src"));
+          list.appendChild(li);
+        }
+        card.appendChild(list);
+      }
+      sections.appendChild(card);
+    }
+    limits.appendChild(el("h3", "How to read this", null));
+    limits.firstChild.style.marginTop = "0";
+    const ul = el("ul", null, null);
+    ul.style.paddingLeft = "18px";
+    for (const item of deeper.limits || []) ul.appendChild(el("li", item, "small muted"));
+    limits.appendChild(ul);
+  }
+
+  // The same content for the PDF report, as a plain section.
+  function deeperForExport() {
+    const deeper = cur.findings && cur.findings.deeper;
+    const wrap = el("div", null, "report-deeper");
+    if (!deeper) return wrap;
+    wrap.appendChild(el("h2", "Deeper assessment", null));
+    for (const section of deeper.sections || []) {
+      if (!section.points || !section.points.length) continue;
+      wrap.appendChild(el("p", section.title, "report-sum"));
+      const ul = el("ul", null, null);
+      for (const p of section.points) ul.appendChild(el("li", p.text, "small"));
+      wrap.appendChild(ul);
+    }
+    return wrap;
+  }
+
+  $("deeperOpen").addEventListener("click", showDeeper);
+  $("deeperBack").addEventListener("click", () => showNext());
+  $("deeperBackBottom").addEventListener("click", () => showNext());
 
   const SCOPE_OPTIONS = [
     { key: "deeper", title: "Deeper assessment", body: "A purpose and suggestions for every file, plus business, systems and data documents, workflows and an architecture diagram.", needsDeeper: false },
@@ -3233,6 +3364,7 @@ a{color:#6d28d9;font-weight:600}`;
     box.appendChild(el("h1", $("reviewTitle").textContent));
     box.appendChild(el("p", $("reviewMeta").textContent, "print-meta"));
     box.appendChild(reviewForExport());
+    if (cur.findings && cur.findings.deeper) box.appendChild(deeperForExport());
     // Print in the light theme, so the cards and charts keep the same colours as the report on screen.
     const root = document.documentElement;
     const hadTheme = root.hasAttribute("data-theme");
