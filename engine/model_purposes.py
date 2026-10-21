@@ -22,6 +22,7 @@ from __future__ import annotations
 import argparse
 import json
 from collections import Counter
+from datetime import datetime, timezone
 import os
 import re
 import sys
@@ -30,6 +31,7 @@ import urllib.request
 from pathlib import Path
 from typing import Callable
 
+from model_origin import ORIGIN_MAX_TOKENS, ORIGIN_SYSTEM, run_origin
 from model_screens import (SCREEN_MAX_TOKENS, SCREEN_PROMPT, ScreenError, StopDrawing, build_screen_text,
                            draw_screens, expand_control_screens, post_screens, screen_context)
 
@@ -327,6 +329,15 @@ def main(argv=None, opener=urllib.request.urlopen) -> int:
         print(f"The provider refused the key or limited requests (HTTP {stats['stopped']}). The rest stay rule-based.")
         del release, api_key
         return 0
+
+    # The AI origin estimate: the same key, after the purposes and before the screens. Its failure never stops the run.
+    origin_message = run_origin(
+        Path(args.records).with_name("findings.json"), records, read_source, datetime.now(timezone.utc).year,
+        lambda text: call_provider(provider, model, api_key, text, opener=opener, system=ORIGIN_SYSTEM,
+                                   max_tokens=ORIGIN_MAX_TOKENS, base_url=base_url, token_field=token_field),
+        provider,
+    )
+    print(origin_message)
 
     # Screens only when the workspace has turned them on. The API sends DRAW_SCREENS with each run; off by default.
     if os.environ.get("DRAW_SCREENS", "").strip().lower() != "true":

@@ -3092,6 +3092,19 @@ pre{white-space:pre-wrap;word-break:break-word;background:var(--soft);padding:12
         c.appendChild(el("p", origin.evidence[0], "muted small"));
       }
       for (const line of (origin.evidence || []).slice(origin.earliest_year ? 0 : 1)) c.appendChild(el("p", line, "muted small"));
+      // The AI estimate sits beside the rule-based one. It uses the same code evidence plus file names and git dates.
+      const ai = origin.model_estimate;
+      if (ai && ai.typical_year) {
+        const kvAi = el("div", null, "kv");
+        kvAi.append(el("span", "AI estimate of the first year"), el("span", String(ai.typical_year)));
+        kvAi.append(el("span", "AI estimate, earliest"), el("span", String(ai.earliest_year)));
+        kvAi.append(el("span", "AI confidence"), el("span", String(ai.confidence)));
+        c.appendChild(kvAi);
+        const tagAi = el("div", null, "tags");
+        tagAi.appendChild(el("span", "AI estimate", "tag"));
+        c.appendChild(tagAi);
+        for (const r of ai.reasons || []) c.appendChild(el("p", r, "muted small"));
+      }
       if (!history.available) c.appendChild(el("p", history.reason || "Repository history not available.", "muted small"));
       else {
         const kv = el("div", null, "kv");
