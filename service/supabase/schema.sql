@@ -261,7 +261,10 @@ revoke update, delete, truncate, references, trigger on public.privacy_signoffs 
 create table if not exists public.model_keys (
   id               uuid primary key default gen_random_uuid(),
   workspace_id     uuid not null references public.workspaces (id) on delete cascade,
-  provider         text not null check (provider in ('anthropic', 'google')),
+  provider         text not null check (length(provider) between 1 and 40),
+  model            text check (model is null or length(model) between 1 and 120),
+  label            text check (label is null or length(label) between 1 and 60),
+  base_url         text check (base_url is null or length(base_url) between 1 and 200),
   ciphertext       text not null check (length(ciphertext) between 1 and 1000),
   iv               text not null check (length(iv) between 1 and 100),
   last4            text not null check (length(last4) = 4),
@@ -274,7 +277,7 @@ create table if not exists public.model_keys (
 
 -- One active key per provider per workspace. Revoked keys do not count.
 create unique index if not exists model_keys_one_active_idx
-  on public.model_keys (workspace_id, provider) where revoked_at is null;
+  on public.model_keys (workspace_id, provider) where revoked_at is null and provider <> 'custom';
 
 create index if not exists model_keys_workspace_idx on public.model_keys (workspace_id, created_at desc);
 
@@ -284,7 +287,7 @@ grant select, insert, update on public.model_keys to service_role;
 
 -- The model an analysis was run with, and the key it used. Recorded when the analysis starts.
 alter table public.analyses add column if not exists model_provider text
-  check (model_provider in ('anthropic', 'google'));
+  check (model_provider is null or length(model_provider) between 1 and 40);
 alter table public.analyses add column if not exists model_key_id uuid references public.model_keys (id) on delete set null;
 alter table public.analyses add column if not exists model_notice_version text check (length(model_notice_version) <= 40);
 alter table public.analyses add column if not exists model_chosen_by_email text check (length(model_chosen_by_email) <= 320);

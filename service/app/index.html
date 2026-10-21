@@ -1980,10 +1980,12 @@ pre{white-space:pre-wrap;word-break:break-word;background:var(--soft);padding:12
     if (!data.keys.length) list.appendChild(el("p", "No language model is set up for this workspace yet.", "muted small"));
     if (data.keys.length) list.appendChild(screensToggle(data));
     for (const k of data.keys) {
-      const provider = (data.providers.find((p) => p.id === k.provider) || {}).label || k.provider;
+      const listed = (data.providers.find((p) => p.id === k.provider) || {}).label || k.provider;
       const item = el("div", null, "item");
       const body = el("div", null, "grow");
-      body.append(el("b", `${provider} · ends in ${k.last4}`), el("div", `added by ${k.added_by_email} · ${new Date(k.added_at).toLocaleString()}`, "muted small"));
+      body.append(el("b", `${k.label || listed} · ${k.model || "default model"} · ends in ${k.last4}`));
+      if (k.host) body.appendChild(el("div", `address ${k.host}`, "muted small"));
+      body.appendChild(el("div", `added by ${k.added_by_email} · ${new Date(k.added_at).toLocaleString()}`, "muted small"));
       item.appendChild(body);
       if (data.can_change) {
         const remove = el("button", "Remove", "ghost small-btn");
@@ -2010,46 +2012,17 @@ pre{white-space:pre-wrap;word-break:break-word;background:var(--soft);padding:12
     } else if (!data.can_change) {
       form.appendChild(el("p", "A workspace admin can add a key here.", "muted small hint"));
     } else {
-      const free = data.providers.filter((p) => !data.keys.some((k) => k.provider === p.id));
+      // A listed provider is saved once. "Your own provider" is always offered, so it can be added again.
+      const free = data.providers.filter((p) => p.custom || !data.keys.some((k) => k.provider === p.id));
       if (free.length) form.appendChild(modelKeyForm(free));
     }
   }
 
-  // The key quest: a short story for each provider that walks through making a key. Progress is kept
-  // in the page only, never stored, and the key itself is never shown here.
-  const QUESTS = {
-    google: {
-      title: "The Gemini Key",
-      prologue: "A key is needed to open the model. Forge one, guard it, and bring it back here.",
-      chapters: [
-        { icon: "\u2691", name: "The gate", text: "Open Google AI Studio and sign in with the Google account that should own the key.",
-          url: "https://aistudio.google.com/apikey", cta: "Open AI Studio" },
-        { icon: "\u2756", name: "The project", text: "New accounts get a project when they accept the terms. If you already use Google Cloud, open Dashboard, choose Projects, then Import projects, and pick the one you want." },
-        { icon: "\u2726", name: "The forging", text: "On the API Keys page, press Create API key.",
-          url: "https://aistudio.google.com/apikey", cta: "Go to the API Keys page" },
-        { icon: "\u25C8", name: "The vault", text: "Copy the key now. Treat it like a password: never share it or paste it into chat or email. Paste it in the box below. Cutover tests it before saving and shows only its last four characters." },
-      ],
-      epilogue: "Quest complete. Paste your key in the box below.",
-    },
-    anthropic: {
-      title: "The Claude Key",
-      prologue: "A key is needed to open the model. Forge one, guard it, and bring it back here.",
-      chapters: [
-        { icon: "\u2691", name: "The gate", text: "Sign in to the Claude Console, or create an account if you don't have one.",
-          url: "https://platform.claude.com/", cta: "Open the Claude Console" },
-        { icon: "\u2756", name: "The ledger", text: "Open the API keys page in the Console.",
-          url: "https://platform.claude.com/settings/keys", cta: "Open the API keys page" },
-        { icon: "\u2726", name: "The forging", text: "Press Create key, give it a name, and choose an expiry. Set Linked account to yourself for your own use, or to a service account for shared use." },
-        { icon: "\u25C8", name: "The vault", text: "The full key starts with sk-ant- and is shown only once. Copy it and paste it in the box below. If you lose it, create a new key. Cutover tests it before saving and shows only its last four characters." },
-      ],
-      epilogue: "Quest complete. Paste your key in the box below.",
-    },
-  };
-
-  function questPanel(providerId, onComplete) {
-    const quest = QUESTS[providerId];
+  // The key quest: a short story for each provider. The story comes from the Worker's provider list, so a new
+  // provider needs no change here. Progress is kept in the page only, never stored, and the key is never shown here.
+  function questPanel(quest, onComplete) {
     const wrap = el("section", null, "quest");
-    if (!quest) return wrap;
+    if (!quest || !quest.chapters) return wrap;
     const n = quest.chapters.length;
     let done = 0;
     let open = 0;
@@ -2140,16 +2113,43 @@ pre{white-space:pre-wrap;word-break:break-word;background:var(--soft);padding:12
 
   function modelKeyForm(providers) {
     const form = el("form", null, "model-key-form");
+    const byId = Object.fromEntries(providers.map((p) => [p.id, p]));
     const provider = document.createElement("select");
+    provider.id = "modelProvider";
     for (const p of providers) {
       const option = document.createElement("option");
       option.value = p.id;
       option.textContent = p.label;
       provider.appendChild(option);
     }
+    const current = () => byId[provider.value] || {};
     const questSlot = el("div", null, null);
-    const showQuest = () => questSlot.replaceChildren(questPanel(provider.value, () => input.classList.add("quest-ready")));
-    provider.addEventListener("change", showQuest);
+
+    // Only for "Your own provider": a name, the https address, and the model the provider gives.
+    const customFields = el("div", null, "custom-provider");
+    const nameLabel = el("label", "Name for this provider", null);
+    const name = document.createElement("input");
+    name.id = "modelProviderName";
+    name.maxLength = 60;
+    name.autocomplete = "off";
+    name.placeholder = "For example: Our gateway";
+    nameLabel.htmlFor = name.id;
+    const addressLabel = el("label", "API address (starts with https://)", null);
+    const address = document.createElement("input");
+    address.id = "modelProviderAddress";
+    address.autocomplete = "off";
+    address.spellcheck = false;
+    address.placeholder = "https://api.example.com/v1";
+    addressLabel.htmlFor = address.id;
+    customFields.append(nameLabel, name, addressLabel, address);
+
+    const modelLabel = el("label", "Model", null);
+    const model = document.createElement("input");
+    model.id = "modelName";
+    model.autocomplete = "off";
+    model.spellcheck = false;
+    modelLabel.htmlFor = model.id;
+
     const label = el("label", "Key", null);
     label.htmlFor = "modelKeyInput";
     const input = document.createElement("input");
@@ -2160,21 +2160,34 @@ pre{white-space:pre-wrap;word-break:break-word;background:var(--soft);padding:12
     input.placeholder = "Paste the whole key";
     const button = el("button", "Test and save");
     button.type = "submit";
-    form.append(el("label", "Provider", null), provider, questSlot, label, input, button);
-    showQuest();
+
+    // Switching provider shows its own story, its own fields, and its default model.
+    const showProvider = () => {
+      const p = current();
+      customFields.hidden = !p.custom;
+      model.value = p.default_model || "";
+      model.placeholder = p.default_model ? "" : "The model name from the provider";
+      questSlot.replaceChildren(questPanel(p.quest, () => input.classList.add("quest-ready")));
+    };
+    provider.addEventListener("change", showProvider);
+    form.append(el("label", "Provider", null), provider, questSlot, customFields, modelLabel, model, label, input, button);
+    showProvider();
+
     form.addEventListener("submit", async (e) => {
       e.preventDefault();
       const apiKey = input.value.trim();
       if (!apiKey) return;
+      const payload = { provider: provider.value, api_key: apiKey, model: model.value.trim() };
+      if (current().custom) {
+        payload.label = name.value.trim();
+        payload.base_url = address.value.trim();
+      }
       button.disabled = true;
       setMsg("modelMsg", "Testing the key with the provider…", false);
       try {
-        await api(`/api/workspaces/${ws.id}/model-keys`, {
-          method: "POST",
-          body: JSON.stringify({ provider: provider.value, api_key: apiKey }),
-        });
+        const saved = await api(`/api/workspaces/${ws.id}/model-keys`, { method: "POST", body: JSON.stringify(payload) });
         input.value = "";
-        setMsg("modelMsg", "Connected and saved. Only the last four characters are shown from now on.", false);
+        setMsg("modelMsg", `${saved.label || current().label} connected and saved. Only the last four characters are shown from now on.`, false);
         loadModelKeys();
       } catch (err) {
         setMsg("modelMsg", err.message, true);
