@@ -75,39 +75,53 @@ def screen_name(path: str) -> str:
     return (words[:1].upper() + words[1:]) or path
 
 
-def clean_reply(reply: str) -> str | None:
-    """Takes the HTML out of a reply, dropping any fences or chatter around it. None if no usable page is there."""
+def inspect_reply(reply: str) -> tuple[str | None, str | None]:
+    """Returns (the page, None) when the reply holds a usable page, or (None, the reason it was refused)."""
     text = reply.strip()
     fence = re.match(r"^```[a-zA-Z]*\s*\n(.*?)\n?```\s*$", text, re.S)
     if fence:
         text = fence.group(1).strip()
     start = re.search(r"<!doctype|<html|<body", text, re.I)
     if not start:
-        return None
+        return None, "reply had no HTML page"
     html = text[start.start():].strip()
-    return html if screen_problem(html) is None else None
+    problem = screen_problem(html)
+    return (html, None) if problem is None else (None, problem)
 
 
-def draw_screens(records: list[dict], read_source: Callable[[str], str | None], ask: Callable[[dict, str], str]) -> tuple[list[dict], dict]:
-    """Draws one screen per chosen template file. Returns the screens and counts only."""
+def clean_reply(reply: str) -> str | None:
+    """Takes the HTML out of a reply, dropping any fences or chatter around it. None if no usable page is there."""
+    return inspect_reply(reply)[0]
+
+
+def draw_screens(records: list[dict], read_source: Callable[[str], str | None], ask: Callable[[dict, str], str],
+                 reasons: list[str] | None = None) -> tuple[list[dict], dict]:
+    """Draws one screen per chosen template file. Returns the screens and counts only.
+    When a list is given, the reason each screen was refused is added to it (no file names, no code)."""
     screens: list[dict] = []
     stats = {"drawn": 0, "refused": 0, "stopped": None}
     for record in choose_screen_files(records):
         code = read_source(record["path"])
         if code is None:
             stats["refused"] += 1
+            if reasons is not None:
+                reasons.append("source file could not be read")
             continue
         try:
             reply = ask(record, code)
         except StopDrawing as err:
             stats["stopped"] = err.status
             break
-        except ScreenError:
+        except ScreenError as err:
             stats["refused"] += 1
+            if reasons is not None:
+                reasons.append(str(err) or "request failed")
             continue
-        html = clean_reply(reply)
+        html, problem = inspect_reply(reply)
         if html is None:
             stats["refused"] += 1
+            if reasons is not None:
+                reasons.append(problem or "reply not usable")
             continue
         screens.append({"path": record["path"], "name": screen_name(record["path"]), "html": html})
         stats["drawn"] += 1

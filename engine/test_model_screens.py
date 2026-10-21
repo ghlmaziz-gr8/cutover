@@ -87,6 +87,22 @@ class DrawTests(unittest.TestCase):
         self.assertEqual(screens[0]["name"], "A")
         self.assertEqual(stats, {"drawn": 2, "refused": 1, "stopped": None})
 
+    def test_each_refused_screen_says_why(self):
+        recs = records(("ui/a.html", "template"), ("ui/b.html", "template"), ("ui/c.html", "template"))
+        sources = {"ui/a.html": "<h1>A</h1>", "ui/b.html": "<h1>B</h1>", "ui/c.html": "<h1>C</h1>"}
+        replies = {"ui/a.html": "Sorry, no page.", "ui/b.html": "<!doctype html><html><body><h1>Visits</h1><p>Sample visit at 10:30, Room 4.</p><script>x()</script></body></html>", "ui/c.html": PAGE}
+
+        def ask(rec, code):
+            if rec["path"] == "ui/c.html":
+                raise ms.ScreenError("reply cut off")
+            return replies[rec["path"]]
+        reasons = []
+        screens, stats = ms.draw_screens(recs, sources.get, ask, reasons=reasons)
+        self.assertEqual(stats["refused"], 3)
+        self.assertEqual(reasons[0], "reply had no HTML page")
+        self.assertIn("scripts", reasons[1])
+        self.assertEqual(reasons[2], "reply cut off")
+
     def test_a_refusal_from_the_provider_stops_drawing(self):
         recs = records(("ui/a.html", "template"), ("ui/b.html", "template"))
 

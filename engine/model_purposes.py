@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import argparse
 import json
+from collections import Counter
 import os
 import re
 import sys
@@ -35,6 +36,9 @@ MODEL_CATEGORIES = {"source", "template", "database", "integration"}
 MAX_MODEL_FILES = 200
 MAX_FILE_CHARS = 20_000
 MAX_PURPOSE_CHARS = 400
+# Gemini's internal reasoning uses part of the output budget before the visible reply starts,
+# so a small budget can end the reply mid-sentence. Google requests get at least this much room.
+GOOGLE_MIN_OUTPUT_TOKENS = 1024
 MIN_COPIED_LINE = 25
 COPY_WINDOW = 30
 PROVIDERS = {"anthropic", "google"}
@@ -91,7 +95,7 @@ def build_request(provider: str, model: str, api_key: str, user_text: str,
         headers = {"content-type": "application/json", "x-goog-api-key": api_key}
         body = {"systemInstruction": {"parts": [{"text": system}]},
                 "contents": [{"role": "user", "parts": [{"text": user_text}]}],
-                "generationConfig": {"maxOutputTokens": max_tokens}}
+                "generationConfig": {"maxOutputTokens": max(max_tokens, GOOGLE_MIN_OUTPUT_TOKENS)}}
     else:
         raise ProviderError(f"unknown provider {provider}")
     return url, {**headers, "user-agent": "cutover-runner"}, json.dumps(body).encode("utf-8")
@@ -106,6 +110,14 @@ def reply_text(provider: str, payload: dict) -> str:
         return ""
     parts = (candidates[0].get("content") or {}).get("parts") or []
     return "".join(p.get("text", "") for p in parts if isinstance(p, dict))
+
+
+def reply_cut_off(provider: str, payload: dict) -> bool:
+    """True when the provider stopped because it ran out of output room, so the reply may end mid-sentence."""
+    if provider == "anthropic":
+        return payload.get("stop_reason") == "max_tokens"
+    candidates = payload.get("candidates") or []
+    return bool(candidates) and isinstance(candidates[0], dict) and candidates[0].get("finishReason") == "MAX_TOKENS"
 
 
 def copies_code(text: str, code: str) -> bool:
@@ -148,7 +160,10 @@ def call_provider(provider: str, model: str, api_key: str, user_text: str, opene
         raise ProviderError(f"HTTP {err.code}")
     except (urllib.error.URLError, OSError, ValueError):
         raise ProviderError("request failed")
-    return reply_text(provider, payload if isinstance(payload, dict) else {})
+    payload = payload if isinstance(payload, dict) else {}
+    if reply_cut_off(provider, payload):
+        raise ProviderError("reply cut off")
+    return reply_text(provider, payload)
 
 
 def exchange_token(callback: str, analysis_id: str, secret: str, token: str, opener=urllib.request.urlopen) -> dict:
@@ -176,8 +191,10 @@ def exchange_token(callback: str, analysis_id: str, secret: str, token: str, ope
     return body
 
 
-def apply_purposes(records: list[dict], read_source: Callable[[str], str | None], ask: Callable[[dict, str], str]) -> dict:
-    """Replaces the purpose of each eligible file the model answers well for. Returns counts only."""
+def apply_purposes(records: list[dict], read_source: Callable[[str], str | None], ask: Callable[[dict, str], str],
+                   reasons: list[str] | None = None) -> dict:
+    """Replaces the purpose of each eligible file the model answers well for. Returns counts only.
+    When a list is given, the reason each file kept its rule-based purpose is added to it (no file names, no code)."""
     stats = {"model": 0, "rules": 0, "stopped": None}
     eligible = {r["path"] for r in choose_files(records)}
     for record in records:
@@ -186,19 +203,27 @@ def apply_purposes(records: list[dict], read_source: Callable[[str], str | None]
         code = read_source(record["path"])
         if code is None:
             stats["rules"] += 1
+            if reasons is not None:
+                reasons.append("source file could not be read")
             continue
         try:
             reply = ask(record, code)
         except ProviderStopped as err:
             stats["stopped"] = err.status
             stats["rules"] += 1
+            if reasons is not None:
+                reasons.append(f"provider stopped (HTTP {err.status})")
             break
-        except ProviderError:
+        except ProviderError as err:
             stats["rules"] += 1
+            if reasons is not None:
+                reasons.append(str(err) or "request failed")
             continue
         purpose = accept_purpose(reply, code)
         if purpose is None:
             stats["rules"] += 1
+            if reasons is not None:
+                reasons.append("reply not usable as a purpose")
             continue
         record["purpose"] = purpose
         record["purpose_source"] = "model"
@@ -254,15 +279,19 @@ def main(argv=None, opener=urllib.request.urlopen) -> int:
 
     provider, model, api_key = release["provider"], release["model"], release["api_key"]
     read_source = make_source_reader(Path(args.source))
+    purpose_reasons: list[str] = []
     stats = apply_purposes(
         records,
         read_source,
         lambda record, code: call_provider(provider, model, api_key, build_user_text(record["path"], code), opener=opener),
+        reasons=purpose_reasons,
     )
     if stats["model"]:
         with open(args.records, "w", encoding="utf-8") as fh:
             json.dump(records, fh, separators=(",", ":"))
     print(f"{provider}: {stats['model']} file purposes written by the model, {stats['rules']} kept rule-based.")
+    if purpose_reasons:
+        print("Kept rule-based because: " + "; ".join(f"{n} x {r}" for r, n in Counter(purpose_reasons).most_common()))
     if stats["stopped"]:
         print(f"The provider refused the key or limited requests (HTTP {stats['stopped']}). The rest stay rule-based.")
         del release, api_key
@@ -275,13 +304,16 @@ def main(argv=None, opener=urllib.request.urlopen) -> int:
                                  system=SCREEN_PROMPT, max_tokens=SCREEN_MAX_TOKENS)
         except ProviderStopped as err:
             raise StopDrawing(err.status)
-        except ProviderError:
-            raise ScreenError("request failed")
+        except ProviderError as err:
+            raise ScreenError(str(err) or "request failed")
 
-    screens, screen_stats = draw_screens(records, read_source, draw)
+    screen_reasons: list[str] = []
+    screens, screen_stats = draw_screens(records, read_source, draw, reasons=screen_reasons)
     del release, api_key
     if screen_stats["stopped"]:
         print(f"The provider refused the key or limited requests while drawing screens (HTTP {screen_stats['stopped']}).")
+    if screen_reasons:
+        print("Screens refused because: " + "; ".join(f"{n} x {r}" for r, n in Counter(screen_reasons).most_common()))
     if screens:
         status = post_screens(args.callback, args.analysis_id, secret, screens, opener=opener)
         if status == 201:
