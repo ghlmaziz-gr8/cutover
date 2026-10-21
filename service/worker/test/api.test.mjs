@@ -1702,3 +1702,33 @@ test("intake: the region must be one the chosen cloud accepts", async () => {
   assert.equal(good.status, 200);
   assert.equal(state.analyses.find((a) => a.id === AN_ACME).intake.region, "westeurope");
 });
+
+test("Modernize estimate: only platform engineers set the user count, after the deeper assessment, and it is validated", async () => {
+  const analysis = state.analyses.find((a) => a.id === AN_ACME);
+  analysis.deeper_done = false;
+  const early = await call(`/api/analyses/${AN_ACME}/cost-users`, { as: "eng_a", method: "PUT", body: { users: 100 } });
+  assert.equal(early.status, 409, "the deeper assessment must be complete first");
+  analysis.deeper_done = true;
+  assert.equal((await call(`/api/analyses/${AN_ACME}/cost-users`, { as: "aud_a", method: "PUT", body: { users: 100 } })).status, 403);
+  for (const users of [0, 1.5, "many", 10000001]) {
+    assert.equal((await call(`/api/analyses/${AN_ACME}/cost-users`, { as: "eng_a", method: "PUT", body: { users } })).status, 400, String(users));
+  }
+  const saved = await call(`/api/analyses/${AN_ACME}/cost-users`, { as: "eng_a", method: "PUT", body: { users: 10000 } });
+  assert.equal(saved.status, 200);
+  assert.equal(state.analyses.find((a) => a.id === AN_ACME).cost_users, 10000);
+  assert.equal(state.analyses.find((a) => a.id === AN_ACME).cost_users_set_by_email, PEOPLE.eng_a.email);
+  assert.ok(state.notifications.some((n) => n.kind === "cost_users_set" && n.user_id !== PEOPLE.eng_a.id));
+
+  const view = await call(`/api/analyses/${AN_ACME}`, { as: "aud_a" });
+  assert.equal(view.status, 200);
+  assert.equal(view.body.cost_lines.length, 3);
+  assert.equal(view.body.cost_lines[0], "Estimated Google Cloud cost for 10,000 users: about $10 to $76 a month for the application containers on Cloud Run (compute and requests only).");
+  assert.equal(view.body.cost_lines[1], "Estimated Google Cloud cost for 10,000 users: about $247 to $312 a month for Cloud SQL for PostgreSQL (4 vCPU, 16 GiB memory, 200 GiB storage, about $236) plus the application on Cloud Run.");
+});
+
+test("Modernize estimate: the Worker's rates match the engine's cost_rates.json, so the two cannot drift", async () => {
+  const { readFileSync } = await import("node:fs");
+  const { COST_RATES } = await import("../src/cost-rates.mjs");
+  const engine = JSON.parse(readFileSync(new URL("../../../engine/cost_rates.json", import.meta.url), "utf8"));
+  assert.deepEqual(COST_RATES, engine);
+});

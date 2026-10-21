@@ -38,6 +38,9 @@ create table if not exists public.analyses (
   intake_saved_at timestamptz,
   intake_confirmed_by_email text,
   intake_confirmed_at timestamptz,
+  cost_users    integer check (cost_users is null or (cost_users between 1 and 10000000)),
+  cost_users_set_by_email text,
+  cost_users_set_at timestamptz,
   created_at    timestamptz not null default now(),
   finished_at   timestamptz,
   expires_at    timestamptz not null default (now() + interval '30 days')
@@ -165,7 +168,7 @@ create table if not exists public.notifications (
                   'model_key_added', 'model_key_removed',
                   'comment_added', 'action_added', 'action_done',
                   'scope_chosen', 'deeper_ready', 'plan_accepted', 'plan_rejected', 'purposes_approved',
-                  'cloud_chosen', 'intake_confirmed', 'terraform_drafted')),
+                  'cloud_chosen', 'intake_confirmed', 'terraform_drafted', 'cost_users_set')),
   tone          text not null check (tone in ('info', 'success', 'warning', 'danger', 'ai')),
   title         text not null check (length(title) between 1 and 160),
   body          text not null default '' check (length(body) <= 400),
