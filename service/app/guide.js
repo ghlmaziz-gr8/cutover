@@ -11,7 +11,8 @@
 window.CUTOVER_GUIDE = {
   updated: "2026-10-21",
   whatsNew: [
-    "2026-10-21: The deeper assessment page has three Modernize proposals to review. They are not decisions and are not costed yet. Migrate is not built yet; choosing it records the decision only.",
+    "2026-10-21: Migrate asks for the target cloud (Google Cloud, AWS, Azure, or not decided yet), then an intake form. A platform engineer saves and confirms the intake before anything is generated.",
+    "2026-10-21: The deeper assessment page has three Modernize proposals to review. They are not decisions and are not costed yet.",
     "2026-10-21: A bell at the top right lists what changed for you: analysis progress, the next stage, the deeper assessment, plans, file purposes, privacy sign-offs, model keys, comments and action items.",
     "2026-10-21: Next steps has a scope choice. Choose the deeper assessment now. Modernize and Migrate unlock once it is complete.",
     "2026-10-21: A deeper assessment page describes the business, systems, data and workflows, with an architecture overview. It is also in the PDF report.",
@@ -140,6 +141,18 @@ window.CUTOVER_GUIDE = {
       refs: ["scopeCard", "scopeOpts"],
     },
     {
+      id: "migrate",
+      title: "Choose the cloud and fill in the intake",
+      who: "engineers",
+      body: [
+        "After Migrate is chosen as the next stage, choose the target cloud: Google Cloud, AWS, Azure, or Not decided yet. The choice is saved with who made it and when.",
+        "Then fill in the intake form: region, network, sign-in provider, compliance requirements, expected users and data residency. Describe settings only, with no patient data or personal email addresses.",
+        "Save the intake, then Confirm intake. Changing the cloud clears the confirmation, so confirm again afterwards. The Terraform draft comes after confirmation.",
+      ],
+      actions: [],
+      refs: ["migrateBox", "cloudOpts", "intakeForm", "intakeConfirm"],
+    },
+    {
       id: "deeper",
       title: "Read the deeper assessment",
       who: "everyone",
@@ -214,8 +227,12 @@ window.CUTOVER_GUIDE = {
       a: "Open What next and press Open the deeper assessment. It appears once the analysis has finished with its documents. An analysis started before this update does not have it, so start a new analysis." },
     { q: "What are the Modernize proposals?", step: "deeper",
       a: "Three options for the application, from keep and tighten to managed cloud services. Each lists its effort, trade-offs and the findings it is based on. They are for review and are not costed yet." },
-    { q: "Can I choose Migrate yet?", step: "scope",
-      a: "You can record the choice, but the cloud choice and intake form are not built yet, so nothing follows it for now." },
+    { q: "What does Migrate ask me?", step: "migrate",
+      a: "First the target cloud, then an intake form: region, network, sign-in provider, compliance requirements, expected users and data residency. Save it, then confirm it." },
+    { q: "Why can't I confirm the intake?", step: "migrate",
+      a: "Every field must be saved first, and the cloud must be chosen (not Not decided yet). Personal email addresses are not accepted in the text fields." },
+    { q: "I changed the cloud. Do I need to confirm again?", step: "migrate",
+      a: "Yes. A different cloud clears the confirmation, so save and confirm the intake again." },
     { q: "How do I export the risk plan?", step: "plan",
       a: "The accepted plans are in the PDF report. Press Back to findings, then Export PDF, then choose Save as PDF in the print window. Rejected plans are left out." },
     { q: "What do the stages on planning mean?", step: "plan",

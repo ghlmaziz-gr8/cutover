@@ -1596,3 +1596,36 @@ test("a modernize proposal is shown only to roles that may see every category it
   const security = await call(`/api/analyses/${uid(266)}`, { as: "sec_a" });
   assert.deepEqual(security.body.findings.deeper.modernize.map((p) => p.id), ["keep"], "security does not see data-based proposals");
 });
+
+test("Migrate: the cloud is chosen only after Migrate, the intake is checked, and a change of cloud clears the confirmation", async () => {
+  const analysis = state.analyses.find((a) => a.id === AN_ACME);
+  analysis.deeper_done = true;
+  const early = await call(`/api/analyses/${AN_ACME}/cloud`, { as: "eng_a", method: "PATCH", body: { cloud: "aws" } });
+  assert.equal(early.status, 409, "cloud waits for Migrate");
+  assert.equal((await call(`/api/analyses/${AN_ACME}/scope`, { as: "eng_a", method: "PATCH", body: { scope: "migrate" } })).status, 200);
+  assert.equal((await call(`/api/analyses/${AN_ACME}/cloud`, { as: "aud_a", method: "PATCH", body: { cloud: "aws" } })).status, 403);
+  assert.equal((await call(`/api/analyses/${AN_ACME}/cloud`, { as: "eng_a", method: "PATCH", body: { cloud: "mars" } })).status, 400);
+  assert.equal((await call(`/api/analyses/${AN_ACME}/cloud`, { as: "eng_a", method: "PATCH", body: { cloud: "aws" } })).status, 200);
+  assert.equal(state.analyses.find((a) => a.id === AN_ACME).cloud, "aws");
+
+  const intake = {
+    region: "us-east-1", network: "new", sign_in: "google",
+    compliance: "HIPAA, customer agreement", expected_users: 400, residency: "United States",
+  };
+  const noIntake = await call(`/api/analyses/${AN_ACME}/intake/confirm`, { as: "eng_a", method: "POST" });
+  assert.equal(noIntake.status, 409, "nothing to confirm yet");
+  assert.equal((await call(`/api/analyses/${AN_ACME}/intake`, { as: "eng_a", method: "PUT", body: { ...intake, region: "" } })).status, 400);
+  const withEmail = await call(`/api/analyses/${AN_ACME}/intake`, { as: "eng_a", method: "PUT", body: { ...intake, residency: "ask jo@example.test" } });
+  assert.equal(withEmail.status, 400);
+  assert.match(withEmail.body.error, /personal email/);
+  assert.equal((await call(`/api/analyses/${AN_ACME}/intake`, { as: "eng_a", method: "PUT", body: { ...intake, expected_users: 0 } })).status, 400);
+  assert.equal((await call(`/api/analyses/${AN_ACME}/intake`, { as: "eng_a", method: "PUT", body: intake })).status, 200);
+
+  const confirm = await call(`/api/analyses/${AN_ACME}/intake/confirm`, { as: "eng_a", method: "POST" });
+  assert.equal(confirm.status, 200);
+  assert.equal(state.analyses.find((a) => a.id === AN_ACME).intake_confirmed_by_email, PEOPLE.eng_a.email);
+  assert.ok(state.notifications.some((n) => n.kind === "intake_confirmed" && n.user_id !== PEOPLE.eng_a.id));
+
+  await call(`/api/analyses/${AN_ACME}/cloud`, { as: "eng_a", method: "PATCH", body: { cloud: "azure" } });
+  assert.equal(state.analyses.find((a) => a.id === AN_ACME).intake_confirmed_at, null, "a new cloud clears the confirmation");
+});
