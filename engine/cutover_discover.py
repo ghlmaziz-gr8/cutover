@@ -39,6 +39,7 @@ from collections import defaultdict
 from html.parser import HTMLParser
 from pathlib import Path
 
+import deeper_docs
 import file_inventory
 
 SCHEMA_VERSION = "0.1"
@@ -1017,6 +1018,8 @@ def analyze_and_write(root: Path, label: str, out_dir: str, now: dt.datetime, so
         except RuntimeError:
             commit = None
     report = analyze(repo, root, now, {**source, "commit": commit})
+    # The deeper assessment is built from the findings just produced, so it adds no extra reads of the code.
+    report["deeper"] = deeper_docs.build(report)
     if shots:
         add_screenshots(report, root)
     safe_label = re.sub(r"[^\w.-]", "_", label)
