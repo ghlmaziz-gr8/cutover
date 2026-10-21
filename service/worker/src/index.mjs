@@ -46,6 +46,7 @@ import { validateDbMetadata } from "./db-metadata.mjs";
 //   POST   /api/runner/:id/result                         runner callback with findings (shared secret)
 //   POST   /api/runner/:id/model-key                      one-time exchange of a model token for the key (shared secret + token)
 //   POST   /api/runner/:id/screens                        screens drawn from the code by the model (shared secret)
+//   POST   /api/analyses/:id/rerun                        run a finished analysis again with the same settings (platform engineers)
 //   GET    /api/analyses/:id/db-metadata                  whether a database structure is saved, and its counts (members)
 //   PUT    /api/analyses/:id/db-metadata                  save a database structure file from access_metadata.py (platform engineers)
 //   DELETE /api/analyses/:id/db-metadata                  remove it (platform engineers)
@@ -1189,29 +1190,13 @@ async function startAnalysis(request, env) {
   }
 
   // Start the runner. If this fails, mark the row failed so it is not stuck in "queued".
-  const dispatch = await fetch(
-    `https://api.github.com/repos/${env.RUNNER_REPO}/actions/workflows/analyze.yml/dispatches`,
-    {
-      method: "POST",
-      headers: {
-        authorization: `Bearer ${env.GITHUB_DISPATCH_TOKEN}`,
-        accept: "application/vnd.github+json",
-        "x-github-api-version": "2022-11-28",
-        "content-type": "application/json",
-        "user-agent": "cutover-api",
-      },
-      body: JSON.stringify({
-        ref: "main",
-        inputs: {
-          analysis_id: row.id,
-          repo,
-          ref: ref || "",
-          model_token: modelToken,
-          draw_screens: model ? await workspaceDrawsScreens(env, access.workspace_id) : false,
-        },
-      }),
-    },
-  );
+  const dispatch = await dispatchRunner(env, {
+    analysis_id: row.id,
+    repo,
+    ref: ref || "",
+    model_token: modelToken,
+    draw_screens: model ? await workspaceDrawsScreens(env, access.workspace_id) : false,
+  });
   if (!dispatch.ok) {
     await serviceRest(env, `analyses?id=eq.${row.id}`, {
       method: "PATCH",
@@ -1295,6 +1280,74 @@ async function runnerDbMetadata(request, env, id) {
   const [row] = await res.json();
   if (!row) return json({ error: "No database structure saved." }, 404);
   return json(row.doc);
+}
+
+// Starts the analysis workflow with the given inputs. Returns the GitHub response.
+function dispatchRunner(env, inputs) {
+  return fetch(`https://api.github.com/repos/${env.RUNNER_REPO}/actions/workflows/analyze.yml/dispatches`, {
+    method: "POST",
+    headers: {
+      authorization: `Bearer ${env.GITHUB_DISPATCH_TOKEN}`,
+      accept: "application/vnd.github+json",
+      "x-github-api-version": "2022-11-28",
+      "content-type": "application/json",
+      "user-agent": "cutover-api",
+    },
+    body: JSON.stringify({ ref: "main", inputs }),
+  });
+}
+
+// ---- Run a finished analysis again: the same repository, reading the database structure saved since ----
+
+// Only a finished run (complete or failed) can be run again. The earlier file results and drawn screens are cleared.
+// The database structure, comments, actions, contingencies, cloud and intake stay as they are.
+async function rerunAnalysis(request, env, id) {
+  const access = await analysisAccess(env, request, id);
+  if (access.response) return access.response;
+  if (!canStart(access.member)) return json({ error: "Only platform engineers can run an analysis again." }, 403);
+  const row = access.row;
+  if (row.status !== "complete" && row.status !== "failed") {
+    return json({ error: "This analysis is still running." }, 409);
+  }
+
+  // The same model as the first run, if it had one. The key must still be active and the privacy notice still signed off.
+  let modelToken = "";
+  let drawScreens = false;
+  if (row.model_key_id) {
+    const chosen = await chooseAnalysisModel(env, row.workspace_id, row.model_key_id);
+    if (chosen.response) return chosen.response;
+    modelToken = (await issueModelToken(env, row.id, chosen.key.id)) || "";
+    if (!modelToken) return json({ error: "Could not prepare the model for the run. Try again in a minute." }, 502);
+    drawScreens = await workspaceDrawsScreens(env, row.workspace_id);
+  }
+
+  for (const table of ["file_findings", "analysis_screens"]) {
+    const cleared = await serviceRest(env, `${table}?analysis_id=eq.${id}`, { method: "DELETE", headers: { prefer: "return=minimal" } });
+    if (!cleared.ok) return json({ error: "Could not clear the earlier results. Try again in a minute." }, 502);
+  }
+  const reset = await serviceRest(env, `analyses?id=eq.${id}`, {
+    method: "PATCH",
+    headers: { prefer: "return=minimal" },
+    body: JSON.stringify({ status: "queued", findings: null, error: null, commit_sha: null, finished_at: null, deeper_done: false, file_bytes: 0 }),
+  });
+  if (!reset.ok) return json({ error: "Could not start the run again. Try again in a minute." }, 502);
+
+  const dispatch = await dispatchRunner(env, { analysis_id: id, repo: row.repo, ref: row.ref || "", model_token: modelToken, draw_screens: drawScreens });
+  if (!dispatch.ok) {
+    await serviceRest(env, `analyses?id=eq.${id}`, {
+      method: "PATCH",
+      body: JSON.stringify({ status: "failed", error: "Could not start the analysis runner.", finished_at: new Date().toISOString() }),
+    });
+    return json({ error: "Could not start the analysis runner." }, 502);
+  }
+  await notifyPeople(env, row.workspace_id, [access.user.id], {
+    kind: "analysis_started",
+    tone: row.model_key_id ? "ai" : "info",
+    title: `Analysis started again: ${row.app_name}`,
+    body: "Reading the code again, with the database structure saved so far.",
+    analysis_id: id,
+  });
+  return json({ id, status: "queued" }, 202);
 }
 
 async function getAnalysis(request, env, id) {
@@ -2469,6 +2522,8 @@ async function route(request, env) {
     if (analysisIntake && UUID_PATTERN.test(analysisIntake[1]) && method === "PUT") return saveIntake(request, env, analysisIntake[1]);
     const analysisIntakeConfirm = path.match(/^\/api\/analyses\/([^/]+)\/intake\/confirm$/);
     if (analysisIntakeConfirm && UUID_PATTERN.test(analysisIntakeConfirm[1]) && method === "POST") return confirmIntake(request, env, analysisIntakeConfirm[1]);
+    const analysisRerun = path.match(/^\/api\/analyses\/([^/]+)\/rerun$/);
+    if (analysisRerun && UUID_PATTERN.test(analysisRerun[1]) && method === "POST") return rerunAnalysis(request, env, analysisRerun[1]);
     const analysisDbMetadata = path.match(/^\/api\/analyses\/([^/]+)\/db-metadata$/);
     if (analysisDbMetadata && UUID_PATTERN.test(analysisDbMetadata[1])) {
       if (method === "GET") return getDbMetadataSummary(request, env, analysisDbMetadata[1]);
