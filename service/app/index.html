@@ -139,6 +139,31 @@ button.danger{background:transparent;color:var(--bad);box-shadow:none;border:1.5
 .ex-cell b{display:block;font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--accent);margin-bottom:4px}
 .ex-row .ex-label{font-weight:700;font-size:14px}
 .ex-arrow{color:var(--accent2);font-size:18px;text-align:center;animation:exNudge 1.6s ease-in-out infinite}
+
+/* Wizard refinement: sharper cards, a segmented switch, status dots and aligned columns. */
+.wiz .card{border-radius:16px;box-shadow:0 1px 0 rgba(255,255,255,.5) inset,0 18px 40px -28px rgba(30,27,75,.35)}
+.wiz input{border-radius:12px;padding:13px 14px}
+.wiz input:focus{outline:none;border-color:var(--accent);box-shadow:0 0 0 4px color-mix(in srgb,var(--accent) 18%,transparent)}
+.wiz .ex-tabs{display:inline-flex;gap:4px;padding:4px;border:1px solid var(--line);border-radius:14px;background:var(--soft)}
+.wiz .ex-tabs button{background:transparent;color:var(--muted);box-shadow:none;border:0;border-radius:10px;padding:8px 14px;font-size:14px;transform:none}
+.wiz .ex-tabs button:hover:not(:disabled){transform:none;color:var(--fg)}
+.wiz .ex-tabs button[aria-pressed="true"]{background:var(--card);color:var(--fg);box-shadow:0 1px 2px rgba(30,27,75,.12),0 0 0 1px var(--line)}
+.wiz .ex-flow{align-items:start}
+.wiz #exCode{grid-template-columns:repeat(2,minmax(0,1fr));align-content:start}
+.wiz #exData{align-content:start}
+.wiz .ex-hub{align-self:center;justify-self:center}
+.wiz .ex-lane{align-self:center}
+.wiz .ex-tile{position:relative;padding:9px 12px 9px 26px;white-space:normal;line-height:1.3;border-radius:12px}
+.wiz .ex-tile::before{content:"";position:absolute;left:11px;top:50%;width:7px;height:7px;margin-top:-3.5px;border-radius:50%;background:var(--ok)}
+.wiz .ex-tile.seen::before{background:var(--accent3)}
+.wiz .ex-tile.planned::before{background:transparent;box-shadow:inset 0 0 0 1.5px var(--warn)}
+.wiz .ex-tile small{margin-top:2px}
+.wiz .ex-note{padding-top:12px;border-top:1px solid var(--line)}
+.wiz .card{padding:22px}
+.wiz .card label{display:block;margin-bottom:8px}
+.wiz input[type="checkbox"]{width:20px;height:20px;min-width:20px;margin:0;padding:0;accent-color:var(--accent);flex:none}
+.wiz select{appearance:none;-webkit-appearance:none;border-radius:12px;padding:13px 44px 13px 14px;background:var(--card) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%236d28d9' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E") no-repeat right 16px center/16px;cursor:pointer}
+.wiz select:focus{outline:none;border-color:var(--accent);box-shadow:0 0 0 4px color-mix(in srgb,var(--accent) 18%,transparent)}
 @keyframes exIn{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
 @keyframes exRun{from{left:0}to{left:calc(100% - 8px)}}
 @keyframes exRunBack{from{left:calc(100% - 8px)}to{left:0}}
@@ -185,6 +210,9 @@ button.danger{background:transparent;color:var(--bad);box-shadow:none;border:1.5
 
 @media (max-width:640px){
   .ex-flow{grid-template-columns:1fr;justify-items:center}
+  .wiz #exCode{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .wiz .ex-tabs{display:flex;width:100%}
+  .wiz .ex-tabs button{flex:1;padding:8px 6px;font-size:13px}
   .ex-lane{display:none}
   .ex-tile{white-space:normal}
   .ex-row{grid-template-columns:1fr}
@@ -738,7 +766,7 @@ pre{white-space:pre-wrap;word-break:break-word;background:var(--soft);padding:12
   </section>
 
   <!-- 3. Name the application -->
-  <section id="s-name" class="screen" hidden>
+  <section id="s-name" class="screen wiz" hidden>
     <p class="eyebrow">Step 3</p>
     <h2 style="margin:8px 0 6px">Name the application</h2>
     <p class="muted">Use a name your team will recognise. It appears on the analysis list.</p>
@@ -783,7 +811,7 @@ pre{white-space:pre-wrap;word-break:break-word;background:var(--soft);padding:12
   </section>
 
   <!-- 4. Connect the code -->
-  <section id="s-connect" class="screen" hidden>
+  <section id="s-connect" class="screen wiz" hidden>
     <p class="eyebrow">Step 4</p>
     <h2 style="margin:8px 0 6px">Connect the code</h2>
     <p class="muted">Paste the GitHub location of the code. Cutover checks that it can read it before going on.</p>
@@ -801,7 +829,7 @@ pre{white-space:pre-wrap;word-break:break-word;background:var(--soft);padding:12
   </section>
 
   <!-- 5. Confirm the data rules -->
-  <section id="s-rules" class="screen" hidden>
+  <section id="s-rules" class="screen wiz" hidden>
     <p class="eyebrow">Step 5</p>
     <h2 style="margin:8px 0 6px">Confirm the data rules</h2>
     <p class="muted" id="repoSummary"></p>
@@ -821,7 +849,7 @@ pre{white-space:pre-wrap;word-break:break-word;background:var(--soft);padding:12
   </section>
 
   <!-- 6. Run the analysis -->
-  <section id="s-run" class="screen" hidden>
+  <section id="s-run" class="screen wiz" hidden>
     <p class="eyebrow">Step 6</p>
     <h2 style="margin:8px 0 6px" id="runTitle">Analyzing</h2>
     <p class="muted" id="runStatus"></p>
@@ -4809,7 +4837,13 @@ const REGION_OPTS = {
   }
 
   const exCode = $("exCode");
-  EX_CODE.forEach((name, i) => exCode.appendChild(exTile(name, i)));
+  EX_CODE.forEach((name, i) => {
+    const node = exTile(name, i, "seen");
+    const tag = document.createElement("small");
+    tag.textContent = "reads today";
+    node.appendChild(tag);
+    exCode.appendChild(node);
+  });
   const exData = $("exData");
   EX_DATA.forEach((d, i) => {
     const node = exTile(d.name, i + 3, d.cls);
