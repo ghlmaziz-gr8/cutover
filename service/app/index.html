@@ -2884,7 +2884,7 @@ pre{white-space:pre-wrap;word-break:break-word;background:var(--soft);padding:12
       return c;
     }
     // These entities are long. They are listed only under "Show findings", not as rows in the card.
-    const EXPAND_ONLY = ["data.tables_in_code", "data.routines_in_code", "data.database_metadata"];
+    const EXPAND_ONLY = ["legacy.views", "data.tables_in_code", "data.routines_in_code", "data.database_metadata"];
     const kv = el("div", null, "kv");
     for (const item of found.filter((i) => !EXPAND_ONLY.includes(i.id))) kv.append(el("span", item.title), el("span", fmtValue(item.value)));
     if (kv.childElementCount) c.appendChild(kv);
