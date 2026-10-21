@@ -11,6 +11,9 @@
 window.CUTOVER_GUIDE = {
   updated: "2026-10-21",
   whatsNew: [
+    "2026-10-21: No GitHub? Choose Upload a zip on the Connect the code step and send a .zip of the code, up to 50 MB. The zip is stored privately for that one analysis and deleted when it finishes. Uploaded analyses cannot be run again without uploading the code again.",
+    "2026-10-21: Each analysis shows an AI estimate of when the application was first written, beside the estimate from the years in the code. It uses the same evidence, plus file names and git dates, and says how confident it is and why. It appears only when the analysis uses a language model you chose.",
+    "2026-10-21: Modernized templates: three options are shown on each review, chosen by rules from its findings. Run as is in containers, a modern web front end over an API, or services over a modern database. Each has its own preview page, and the reasons for the choice are listed.",
     "2026-10-21: Every file in the repository is listed with its kind and, where known, its language. Twelve more legacy languages are read as source: COBOL, Visual Basic 6, Delphi, PL/SQL, T-SQL, Perl, PHP (older), PowerBuilder, Natural, Progress, RPG and FoxPro. Each file gets an age range, from git history and from years written in the file, with the evidence named. Files that cannot be identified are named, not guessed at.",
     "2026-10-21: The assessment now reads classic ASP and VBScript pages, counts each screen the code switches on (ControlName views), and lists the tables the code uses in SQL. It identifies Microsoft Access and SQLite files by their file signature. Access table and field names come from a read-only metadata file that the platform engineer runs inside their own environment. Files that are listed but not read are named, with the reason.",
     "2026-10-21: You can connect as many language models as you like. Pick a provider from the list (ChatGPT, Claude, Gemini, Mistral, Grok, DeepSeek, Groq, OpenRouter, Together AI and more) and follow its key quest. If yours is not listed, choose Your own provider, give it a name, its https address and its model name.",
@@ -39,7 +42,7 @@ window.CUTOVER_GUIDE = {
       who: "everyone",
       body: [
         "Cutover reads an application's code and reports what it is built on, where its data lives, and what needs a person's review.",
-        "Cutover does not store source code. Only findings and status are kept, and results are deleted after 30 days.",
+        "Cutover does not keep the source code from GitHub. A zip you upload is stored privately only until its analysis finishes, then it is deleted. Only findings and status are kept, and results are deleted after 30 days.",
         "Sign in at https://app.cutover.site with your Google account.",
       ],
       actions: [],
@@ -87,11 +90,11 @@ window.CUTOVER_GUIDE = {
       title: "Start an analysis",
       who: "engineers",
       body: [
-        "Choose Start a new assessment, name the application, enter its repository, and confirm the data rule: sample or public code only, with no patient data.",
+        "Choose Start a new assessment, name the application, then either enter its GitHub repository or choose Upload a zip of the code. Confirm the data rule: sample or public code only, with no patient data.",
         "The analysis takes a few minutes. The page updates by itself, and you can leave and come back.",
       ],
       actions: [{ type: "go", label: "Go to Analyses", tab: "analyses" }],
-      refs: ["startNew"],
+      refs: ["startNew", "srcUpload"],
     },
     {
       id: "findings",
@@ -236,7 +239,13 @@ window.CUTOVER_GUIDE = {
     { q: "How long are results kept?", step: "next",
       a: "Results are deleted after 30 days. You can delete them sooner from the next steps screen." },
     { q: "Is my source code stored?", step: "what",
-      a: "No. Cutover reads the code and keeps only the findings and status." },
+      a: "Code from GitHub is not kept. A zip you upload is stored privately only until its analysis finishes, then deleted. Only findings and status are kept." },
+    { q: "Can I analyse code without GitHub?", step: "start",
+      a: "Yes. On the Connect the code step, choose Upload a zip and send a .zip of the code, up to 50 MB. Leave out builds, images and backups. The zip is deleted when the analysis finishes." },
+    { q: "What is the AI origin estimate?", step: "findings",
+      a: "When an analysis uses a language model you chose, Cutover also estimates when the application was first written, from the years in the code, file names and git dates. It shows its confidence and its reasons. The estimate from the years alone is always shown too." },
+    { q: "Where are the modernized templates?", step: "findings",
+      a: "They appear at the bottom of the review under Modernized templates. Cutover recommends one by rules from the findings: run as is in containers, a modern web front end over an API, or services over a modern database. Each has its own preview page." },
     { q: "How do I add action items or comments?", step: "discuss",
       a: "Open an analysis and use Add action item or Post comment at the bottom of the review. Auditors can comment, but cannot add or close action items." },
     { q: "What is the bell at the top right?", step: "bell",
