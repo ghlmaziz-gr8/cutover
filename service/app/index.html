@@ -218,6 +218,8 @@ form input + button{margin-top:16px}
 .intake-form input,.intake-form select{width:100%;margin-top:4px}
 @media (max-width:720px){.cloud-opts{grid-template-columns:repeat(2,minmax(0,1fr))}}
 @media (prefers-reduced-motion:reduce){.cloud-opt.selected{animation:none}.cloud-opt{transition:none}.intake-fill{transition:none}}
+.tf-item{border:1px solid var(--line);border-radius:14px;padding:12px;margin-top:10px;background:var(--card);animation:archIn .4s both}
+.tf-code{white-space:pre;overflow:auto;max-height:340px;font:12.5px/1.5 ui-monospace,SFMono-Regular,Menlo,monospace;background:color-mix(in srgb,var(--accent) 6%,var(--card));border:1px solid var(--line);border-radius:12px;padding:12px;margin:8px 0 0}
 .prop{border:1px solid var(--line);border-radius:16px;padding:14px;margin-top:12px;background:var(--card)}
 .prop .tag{margin-left:8px}
 .deeper-sec .src{display:block;font-size:12px;color:var(--muted)}
@@ -782,6 +784,15 @@ pre{white-space:pre-wrap;word-break:break-word;background:var(--soft);padding:12
             </div>
             <p class="small hint" id="intakeMsg" role="status"></p>
           </form>
+        </div>
+        <div id="tfWrap" hidden>
+          <h3 style="margin:18px 0 4px">Terraform draft</h3>
+          <p class="muted small" id="tfNote" style="margin:0"></p>
+          <div class="row" style="justify-content:flex-end;margin-top:10px">
+            <button type="button" id="tfMake" disabled>Make the Terraform draft</button>
+          </div>
+          <ul id="tfList" style="list-style:none;padding:0;margin:8px 0 0"></ul>
+          <p class="small hint" id="tfMsg" role="status"></p>
         </div>
       </div>
     </div>
@@ -3344,6 +3355,7 @@ a{color:#6d28d9;font-weight:600}`;
     { key: "azure", label: "Azure", color: "#0078d4" },
     { key: "undecided", label: "Not decided yet", color: "var(--muted)" },
   ];
+  const TF_CLOUDS = ["google", "aws", "azure"];
   const INTAKE_KEYS = ["inRegion", "inNetwork", "inSignIn", "inCompliance", "inUsers", "inResidency"];
 
   // Migrate: the cloud is chosen first, then the intake form. Only platform engineers change either.
@@ -3351,6 +3363,7 @@ a{color:#6d28d9;font-weight:600}`;
     const box = $("migrateBox");
     box.hidden = cur.scope !== "migrate";
     if (box.hidden) return;
+    renderTerraform();
     const canEdit = !!cur.can_plan;
     const cloudLabel = (key) => (CLOUD_OPTS.find((c) => c.key === key) || {}).label;
     $("migrateNote").textContent = cur.cloud
@@ -3394,6 +3407,73 @@ a{color:#6d28d9;font-weight:600}`;
     $("intakeConfirm").disabled = !canEdit || confirmed || !cur.intake;
     $("intakeConfirm").textContent = confirmed ? `Confirmed by ${cur.intake_confirmed_by_email}` : "Confirm intake";
   }
+
+  // The Terraform drafts. Each one is kept as a numbered version. Only infrastructure roles see them.
+  let tfVersions = null;
+  async function renderTerraform() {
+    const wrap = $("tfWrap");
+    wrap.hidden = cur.scope !== "migrate";
+    if (wrap.hidden) return;
+    const canEdit = !!cur.can_plan;
+    const readyToDraft = TF_CLOUDS.includes(cur.cloud) && !!cur.intake_confirmed_at;
+    $("tfNote").textContent = !TF_CLOUDS.includes(cur.cloud)
+      ? "Choose Google Cloud, AWS or Azure first."
+      : !cur.intake_confirmed_at
+        ? "Confirm the intake first. The draft is made only from a confirmed intake."
+        : "Each draft is a DRAFT for review. It lists the inputs it used, and earlier drafts are kept.";
+    $("tfMake").disabled = !canEdit || !readyToDraft;
+    try {
+      const data = await api(`/api/analyses/${cur.id}/terraform`);
+      tfVersions = data.versions || [];
+    } catch {
+      tfVersions = null;
+    }
+    const list = $("tfList");
+    list.replaceChildren();
+    if (tfVersions === null) {
+      $("tfNote").textContent += " The drafts are not shown for your role.";
+      return;
+    }
+    if (!tfVersions.length) list.appendChild(el("li", "No draft yet.", "muted small"));
+    for (const v of tfVersions) {
+      const item = el("li", null, "tf-item");
+      const head = el("div", null, "row");
+      head.style.justifyContent = "space-between";
+      head.style.alignItems = "center";
+      head.append(el("b", `Draft ${v.version} · ${CLOUD_OPTS.find((c) => c.key === v.cloud).label}`), el("span", "DRAFT", "tag ai"));
+      item.appendChild(head);
+      item.appendChild(el("div", `Made by ${v.created_by_email} · ${new Date(v.created_at).toLocaleString()}`, "small muted"));
+      const details = document.createElement("details");
+      const summary = el("summary", "Show the code", "small");
+      details.append(summary);
+      details.appendChild(el("pre", v.content, "tf-code"));
+      item.appendChild(details);
+      const download = el("button", "Download .tf", "ghost small-btn");
+      download.type = "button";
+      download.addEventListener("click", () => {
+        const url = URL.createObjectURL(new Blob([v.content], { type: "text/plain" }));
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = `terraform-draft-${v.version}.tf`;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        URL.revokeObjectURL(url);
+      });
+      item.appendChild(download);
+      list.appendChild(item);
+    }
+  }
+
+  $("tfMake").addEventListener("click", async () => {
+    try {
+      const res = await api(`/api/analyses/${cur.id}/terraform`, { method: "POST" });
+      setMsg("tfMsg", `Draft ${res.version} made. Review it before anyone uses it.`);
+      await renderTerraform();
+    } catch (err) {
+      setMsg("tfMsg", err.message, true);
+    }
+  });
 
   async function refreshAnalysis() {
     cur = await api(`/api/analyses/${cur.id}`);
