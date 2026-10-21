@@ -165,7 +165,7 @@ create table if not exists public.notifications (
                   'model_key_added', 'model_key_removed',
                   'comment_added', 'action_added', 'action_done',
                   'scope_chosen', 'deeper_ready', 'plan_accepted', 'plan_rejected', 'purposes_approved',
-                  'cloud_chosen', 'intake_confirmed')),
+                  'cloud_chosen', 'intake_confirmed', 'terraform_drafted')),
   tone          text not null check (tone in ('info', 'success', 'warning', 'danger', 'ai')),
   title         text not null check (length(title) between 1 and 160),
   body          text not null default '' check (length(body) <= 400),
@@ -321,3 +321,18 @@ grant select, insert, delete on public.analysis_screens to service_role;
 --   insert into public.workspaces (name) values ('Customer name') returning id;
 --   insert into public.invitations (workspace_id, email, role, is_admin)
 --   values ('<id from the line above>', 'admin@example.org', 'platform_engineer', true);
+
+-- Terraform drafts for Migrate: numbered versions, never overwritten (see add-terraform.sql).
+create table if not exists public.terraform_versions (
+  id               uuid primary key default gen_random_uuid(),
+  analysis_id      uuid not null references public.analyses (id) on delete cascade,
+  version          integer not null check (version >= 1),
+  cloud            text not null check (cloud in ('google', 'aws', 'azure')),
+  content          text not null check (length(content) <= 60000),
+  inputs           jsonb not null,
+  created_by_email text not null,
+  created_at       timestamptz not null default now(),
+  unique (analysis_id, version)
+);
+alter table public.terraform_versions enable row level security;
+revoke all on public.terraform_versions from anon, authenticated;

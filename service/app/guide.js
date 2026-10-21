@@ -11,6 +11,7 @@
 window.CUTOVER_GUIDE = {
   updated: "2026-10-21",
   whatsNew: [
+    "2026-10-21: After the intake is confirmed, a platform engineer can make a Terraform draft for Google Cloud, AWS or Azure. Each draft is marked DRAFT, lists the inputs it used, and is kept as a numbered version.",
     "2026-10-21: Migrate asks for the target cloud (Google Cloud, AWS, Azure, or not decided yet), then an intake form. A platform engineer saves and confirms the intake before anything is generated.",
     "2026-10-21: The deeper assessment page has three Modernize proposals to review. They are not decisions and are not costed yet.",
     "2026-10-21: A bell at the top right lists what changed for you: analysis progress, the next stage, the deeper assessment, plans, file purposes, privacy sign-offs, model keys, comments and action items.",
@@ -147,10 +148,11 @@ window.CUTOVER_GUIDE = {
       body: [
         "After Migrate is chosen as the next stage, choose the target cloud: Google Cloud, AWS, Azure, or Not decided yet. The choice is saved with who made it and when.",
         "Then fill in the intake form: region, network, sign-in provider, compliance requirements, expected users and data residency. Describe settings only, with no patient data or personal email addresses.",
-        "Save the intake, then Confirm intake. Changing the cloud clears the confirmation, so confirm again afterwards. The Terraform draft comes after confirmation.",
+        "Save the intake, then Confirm intake. Changing the cloud clears the confirmation, so confirm again afterwards.",
+        "After confirmation, Make the Terraform draft. Each draft is marked DRAFT, lists the inputs it used, and is kept as a numbered version. Earlier drafts are never overwritten. Infrastructure is visible to platform engineers and CIO/CTO.",
       ],
       actions: [],
-      refs: ["migrateBox", "cloudOpts", "intakeForm", "intakeConfirm"],
+      refs: ["migrateBox", "cloudOpts", "intakeForm", "intakeConfirm", "tfWrap", "tfMake"],
     },
     {
       id: "deeper",
@@ -227,6 +229,8 @@ window.CUTOVER_GUIDE = {
       a: "Open What next and press Open the deeper assessment. It appears once the analysis has finished with its documents. An analysis started before this update does not have it, so start a new analysis." },
     { q: "What are the Modernize proposals?", step: "deeper",
       a: "Three options for the application, from keep and tighten to managed cloud services. Each lists its effort, trade-offs and the findings it is based on. They are for review and are not costed yet." },
+    { q: "Where is the Terraform draft?", step: "migrate",
+      a: "Under the intake form on What next, once the intake is confirmed. Press Make the Terraform draft. Open Show the code to read it, or Download .tf to save it. Each draft is a DRAFT for review, with sample values to replace." },
     { q: "What does Migrate ask me?", step: "migrate",
       a: "First the target cloud, then an intake form: region, network, sign-in provider, compliance requirements, expected users and data residency. Save it, then confirm it." },
     { q: "Why can't I confirm the intake?", step: "migrate",
