@@ -1454,6 +1454,26 @@ async function addContingency(request, env, id) {
 // ---- Migrate: the target cloud, then the intake form that the Terraform draft will use ----
 const CLOUDS = { google: "Google Cloud", aws: "AWS", azure: "Azure", undecided: "Not decided yet" };
 const NETWORKS = ["new", "existing"];
+// Region names each provider uses. Checked when the intake is saved, confirmed and drafted, so a region that
+// the cloud would refuse never reaches a Terraform draft. The app's region list is generated from this same
+// text; service/app/test/regions.test.mjs fails if they differ. Last updated 2026-10-21.
+export const REGIONS = {
+  aws: ["us-east-1", "us-east-2", "us-west-1", "us-west-2", "ca-central-1", "ca-west-1", "eu-west-1", "eu-west-2", "eu-west-3",
+    "eu-central-1", "eu-central-2", "eu-north-1", "eu-south-1", "eu-south-2", "ap-south-1", "ap-south-2", "ap-southeast-1",
+    "ap-southeast-2", "ap-southeast-3", "ap-northeast-1", "ap-northeast-2", "ap-northeast-3", "ap-east-1", "sa-east-1",
+    "me-south-1", "me-central-1", "af-south-1", "il-central-1"],
+  google: ["us-central1", "us-east1", "us-east4", "us-east5", "us-south1", "us-west1", "us-west2", "us-west3", "us-west4",
+    "northamerica-northeast1", "northamerica-northeast2", "southamerica-east1", "europe-west1", "europe-west2", "europe-west3",
+    "europe-west4", "europe-west6", "europe-west8", "europe-west9", "europe-west10", "europe-west12", "europe-north1",
+    "europe-central2", "europe-southwest1", "asia-east1", "asia-east2", "asia-northeast1", "asia-northeast2", "asia-northeast3",
+    "asia-south1", "asia-south2", "asia-southeast1", "asia-southeast2", "australia-southeast1", "australia-southeast2",
+    "me-central1", "me-west1", "africa-south1"],
+  azure: ["eastus", "eastus2", "westus", "westus2", "westus3", "centralus", "northcentralus", "southcentralus", "westcentralus",
+    "canadacentral", "canadaeast", "brazilsouth", "northeurope", "westeurope", "uksouth", "ukwest", "francecentral",
+    "germanywestcentral", "swedencentral", "norwayeast", "switzerlandnorth", "polandcentral", "italynorth", "australiaeast",
+    "australiasoutheast", "japaneast", "japanwest", "koreacentral", "southeastasia", "eastasia", "centralindia", "southindia",
+    "uaenorth", "southafricanorth", "qatarcentral"],
+};
 const TERRAFORM_CLOUDS = ["google", "aws", "azure"];
 const SIGN_INS = ["google", "microsoft", "other"];
 
@@ -1463,7 +1483,7 @@ function describesNoPerson(text) {
 }
 
 // Checks the intake form. Every field is required.
-function intakeFields(value) {
+function intakeFields(value, cloud) {
   if (!value || typeof value !== "object" || Array.isArray(value)) return { error: "Send the intake form as an object." };
   const text = (key, max) => (typeof value[key] === "string" ? value[key].trim() : "");
   const region = text("region", 60);
@@ -1473,6 +1493,9 @@ function intakeFields(value) {
   const signIn = value.sign_in;
   const users = Number(value.expected_users);
   if (!region) return { error: "Region is required." };
+  if (REGIONS[cloud] && !REGIONS[cloud].includes(region)) {
+    return { error: `Choose a region from the list for ${CLOUDS[cloud]}.` };
+  }
   if (!NETWORKS.includes(network)) return { error: "Network must be new or existing." };
   if (!SIGN_INS.includes(signIn)) return { error: "Sign-in provider must be google, microsoft or other." };
   if (!compliance) return { error: "Compliance requirements are required. Write None if there are none." };
@@ -1519,7 +1542,7 @@ async function saveIntake(request, env, id) {
   if (!access.row.cloud || access.row.cloud === "undecided") return json({ error: "Choose a cloud before the intake form." }, 409);
   const parsed = await readJson(request);
   if (parsed.error) return json({ error: parsed.error }, 400);
-  const checked = intakeFields(parsed.value);
+  const checked = intakeFields(parsed.value, access.row.cloud);
   if (checked.error) return json({ error: checked.error }, 400);
   const res = await serviceRest(env, `analyses?id=eq.${id}`, {
     method: "PATCH", headers: { prefer: "return=minimal" },
@@ -1533,7 +1556,7 @@ async function confirmIntake(request, env, id) {
   const access = await analysisAccess(env, request, id);
   if (access.response) return access.response;
   if (!canStart(access.member)) return json({ error: "Only platform engineers can confirm the intake." }, 403);
-  if (!access.row.intake || intakeFields(access.row.intake).error) {
+  if (!access.row.intake || intakeFields(access.row.intake, access.row.cloud).error) {
     return json({ error: "Save every field of the intake before confirming it." }, 409);
   }
   const res = await serviceRest(env, `analyses?id=eq.${id}`, {
@@ -1657,7 +1680,7 @@ async function draftTerraform(request, env, id) {
   if (!row.cloud || row.cloud === "undecided" || !TERRAFORM_CLOUDS.includes(row.cloud)) {
     return json({ error: "Choose Google Cloud, AWS or Azure before making the draft." }, 409);
   }
-  if (!row.intake_confirmed_at || !row.intake || intakeFields(row.intake).error) {
+  if (!row.intake_confirmed_at || !row.intake || intakeFields(row.intake, row.cloud).error) {
     return json({ error: "Confirm the intake before making the Terraform draft." }, 409);
   }
   const existing = await serviceRest(env, `terraform_versions?analysis_id=eq.${id}&select=version`);

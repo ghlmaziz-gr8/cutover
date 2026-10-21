@@ -11,6 +11,7 @@
 window.CUTOVER_GUIDE = {
   updated: "2026-10-21",
   whatsNew: [
+    "2026-10-21: The intake region is chosen from a list for the cloud you picked. The server also refuses a region that cloud does not have, so a Terraform draft never uses an invalid one.",
     "2026-10-21: After the intake is confirmed, a platform engineer can make a Terraform draft for Google Cloud, AWS or Azure. Each draft is marked DRAFT, lists the inputs it used, and is kept as a numbered version.",
     "2026-10-21: Migrate asks for the target cloud (Google Cloud, AWS, Azure, or not decided yet), then an intake form. A platform engineer saves and confirms the intake before anything is generated.",
     "2026-10-21: The deeper assessment page has three Modernize proposals to review. They are not decisions and are not costed yet.",
@@ -232,7 +233,7 @@ window.CUTOVER_GUIDE = {
     { q: "Where is the Terraform draft?", step: "migrate",
       a: "Under the intake form on What next, once the intake is confirmed. Press Make the Terraform draft. Open Show the code to read it, or Download .tf to save it. Each draft is a DRAFT for review, with sample values to replace." },
     { q: "What does Migrate ask me?", step: "migrate",
-      a: "First the target cloud, then an intake form: region, network, sign-in provider, compliance requirements, expected users and data residency. Save it, then confirm it." },
+      a: "First the target cloud, then an intake form: region, network, sign-in provider, compliance requirements, expected users and data residency. The region is chosen from a list for that cloud, so a region the cloud does not have cannot be saved. Save it, then confirm it." },
     { q: "Why can't I confirm the intake?", step: "migrate",
       a: "Every field must be saved first, and the cloud must be chosen (not Not decided yet). Personal email addresses are not accepted in the text fields." },
     { q: "I changed the cloud. Do I need to confirm again?", step: "migrate",
