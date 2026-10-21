@@ -639,6 +639,29 @@ async function activeModelKeys(env, workspaceId) {
   return { keys: rows };
 }
 
+// Whether the workspace lets its own model draw screens. Off unless a workspace admin turns it on.
+async function workspaceDrawsScreens(env, workspaceId) {
+  const res = await serviceRest(env, `workspaces?id=eq.${workspaceId}&select=ai_screens`);
+  if (!res.ok) return false;
+  const [row] = await res.json();
+  return row?.ai_screens === true;
+}
+
+async function setModelScreens(request, env, workspaceId) {
+  const access = await workspaceAdmin(env, request, workspaceId);
+  if (access.response) return access.response;
+  const body = await readJson(request, 2_000);
+  if (body.error) return json({ error: body.error }, 400);
+  const enabled = (body.value || {}).enabled;
+  if (typeof enabled !== "boolean") return json({ error: "enabled must be true or false." }, 400);
+  const res = await serviceRest(env, `workspaces?id=eq.${workspaceId}`, {
+    method: "PATCH",
+    body: JSON.stringify({ ai_screens: enabled }),
+  });
+  if (!res.ok) return json({ error: "Could not save the setting. Try again in a minute." }, 502);
+  return json({ draw_screens: enabled });
+}
+
 async function listModelKeys(request, env, workspaceId) {
   const access = await workspaceAccess(env, request, workspaceId);
   if (access.response) return access.response;
@@ -647,6 +670,7 @@ async function listModelKeys(request, env, workspaceId) {
   return json({
     providers: Object.entries(MODEL_PROVIDERS).map(([id, p]) => ({ id, label: p.label })),
     can_change: access.member.is_admin === true,
+    draw_screens: await workspaceDrawsScreens(env, workspaceId),
     keys: found.keys.map((k) => ({
       id: k.id, provider: k.provider, last4: k.last4, added_by_email: k.created_by_email, added_at: k.created_at,
     })),
@@ -967,7 +991,13 @@ async function startAnalysis(request, env) {
       },
       body: JSON.stringify({
         ref: "main",
-        inputs: { analysis_id: row.id, repo, ref: ref || "", model_token: modelToken },
+        inputs: {
+          analysis_id: row.id,
+          repo,
+          ref: ref || "",
+          model_token: modelToken,
+          draw_screens: model ? await workspaceDrawsScreens(env, access.workspace_id) : false,
+        },
       }),
     },
   );
@@ -1731,6 +1761,9 @@ async function route(request, env) {
       if (step === "signoff" && method === "POST") return privacySignOff(request, env, workspaceId);
       if (step === "withdraw" && method === "POST") return privacyWithdraw(request, env, workspaceId);
     }
+
+    const modelScreens = path.match(/^\/api\/workspaces\/([^/]+)\/model-screens$/);
+    if (modelScreens && UUID_PATTERN.test(modelScreens[1]) && method === "PUT") return setModelScreens(request, env, modelScreens[1]);
 
     const modelKeys = path.match(/^\/api\/workspaces\/([^/]+)\/model-keys(?:\/([^/]+))?$/);
     if (modelKeys && UUID_PATTERN.test(modelKeys[1])) {

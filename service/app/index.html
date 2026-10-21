@@ -1616,12 +1616,41 @@ pre{white-space:pre-wrap;word-break:break-word;background:var(--soft);padding:12
     }
   }
 
+  // Whether the workspace's own model may draw screens. Off by default; only a workspace admin can change it.
+  function screensToggle(data) {
+    const wrap = el("div", null, "screens-toggle");
+    const box = document.createElement("input");
+    box.type = "checkbox";
+    box.checked = data.draw_screens === true;
+    box.disabled = !data.can_change;
+    const label = el("label", null, "check");
+    label.append(box, document.createTextNode(" Draw screens from the code with the model (sample data only)"));
+    const hint = el("p", "Off by default. When on, each analysis that uses a model also draws the screens it finds in the code.", "muted small");
+    box.addEventListener("change", async () => {
+      const wanted = box.checked;
+      box.disabled = true;
+      try {
+        const res = await api(`/api/workspaces/${ws.id}/model-screens`, { method: "PUT", body: JSON.stringify({ enabled: wanted }) });
+        box.checked = res.draw_screens === true;
+        setMsg("modelMsg", box.checked ? "Screens from the model are on for this workspace." : "Screens from the model are off for this workspace.", false);
+      } catch (err) {
+        box.checked = !wanted;
+        setMsg("modelMsg", err.message, true);
+      } finally {
+        box.disabled = !data.can_change;
+      }
+    });
+    wrap.append(label, hint);
+    return wrap;
+  }
+
   function renderModelKeys(data) {
     const list = $("modelKeyList");
     const form = $("modelKeyForm");
     list.innerHTML = "";
     form.innerHTML = "";
     if (!data.keys.length) list.appendChild(el("p", "No language model is set up for this workspace yet.", "muted small"));
+    if (data.keys.length) list.appendChild(screensToggle(data));
     for (const k of data.keys) {
       const provider = (data.providers.find((p) => p.id === k.provider) || {}).label || k.provider;
       const item = el("div", null, "item");
@@ -2385,8 +2414,8 @@ pre{white-space:pre-wrap;word-break:break-word;background:var(--soft);padding:12
         const c = shell("Deep AI assessment results", "No screens drawn");
         c.style.gridColumn = "1 / -1";
         const note = cur.model_provider
-          ? "A model was chosen for this analysis, but it drew no screens. The provider may have stopped it, for example after a rate limit. The workflow log for this run shows the reason."
-          : "No model was chosen for this analysis, so no screens were drawn. Start an analysis with a workspace model to draw them.";
+          ? "No screens were drawn. Screens from the model are drawn only when the workspace has turned them on (Privacy tab, Language model). If they are on, the provider may have stopped the model; the workflow log for this run shows the reason."
+          : "No screens were drawn, because no model was chosen for this analysis. Turn on screens from the model in the Privacy tab, under Language model, then start an analysis with a model.";
         c.appendChild(el("p", note, "muted small"));
         out.push(c);
       }

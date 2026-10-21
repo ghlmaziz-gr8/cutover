@@ -200,13 +200,37 @@ class RunTests(unittest.TestCase):
             {"path": "Orders.java", "category": "source", "purpose": "Rule-based.", "suggestions": [], "sample_only": True},
             {"path": "ui/appointments.html", "category": "template", "purpose": "Rule-based.", "suggestions": [], "sample_only": True},
         ]
-        code, out = self.run_main({"MODEL_TOKEN": TOKEN, "RUNNER_SECRET": "s"}, opener, recs)
+        code, out = self.run_main({"MODEL_TOKEN": TOKEN, "RUNNER_SECRET": "s", "DRAW_SCREENS": "true"}, opener, recs)
         self.assertEqual(code, 0)
         self.assertIn("1 screens drawn from the code and saved", out)
         self.assertEqual(posted[0]["screens"][0]["path"], "ui/appointments.html")
         self.assertEqual(posted[0]["screens"][0]["name"], "Appointments")
         self.assertNotIn(KEY, out)
         self.assertNotIn(KEY, json.dumps(posted))
+
+    def test_screens_are_off_unless_the_workspace_turned_them_on(self):
+        calls = []
+
+        def opener(req, timeout):
+            calls.append(req.full_url)
+            url = req.full_url
+            if "/model-key" in url:
+                return FakeResponse(json.dumps({"provider": "google", "model": "gemini-3.5-flash", "api_key": KEY}).encode())
+            body = json.loads(req.data.decode())
+            text = "Lists the orders." if "draw one screen" not in body["systemInstruction"]["parts"][0]["text"] else PAGE
+            return FakeResponse(json.dumps({"candidates": [{"content": {"parts": [{"text": text}]}}]}).encode())
+
+        recs = [
+            {"path": "Orders.java", "category": "source", "purpose": "Rule-based.", "suggestions": [], "sample_only": True},
+            {"path": "ui/appointments.html", "category": "template", "purpose": "Rule-based.", "suggestions": [], "sample_only": True},
+        ]
+        for env in ({"MODEL_TOKEN": TOKEN, "RUNNER_SECRET": "s"}, {"MODEL_TOKEN": TOKEN, "RUNNER_SECRET": "s", "DRAW_SCREENS": "false"}):
+            with self.subTest(env=env):
+                calls.clear()
+                code, out = self.run_main(env, opener, recs)
+                self.assertEqual(code, 0)
+                self.assertIn("Screens are off for this workspace", out)
+                self.assertTrue(all("/screens" not in u for u in calls), "no screens are sent")
 
 
 if __name__ == "__main__":

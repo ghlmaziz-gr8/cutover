@@ -297,6 +297,12 @@ def main(argv=None, opener=urllib.request.urlopen) -> int:
         del release, api_key
         return 0
 
+    # Screens only when the workspace has turned them on. The API sends DRAW_SCREENS with each run; off by default.
+    if os.environ.get("DRAW_SCREENS", "").strip().lower() != "true":
+        print("Screens are off for this workspace. Only the file purposes are written.")
+        del release, api_key
+        return 0
+
     # Screens: the same key, the same run. Only when the provider has not refused the key.
     def draw(record, code):
         try:
