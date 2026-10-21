@@ -717,6 +717,15 @@ def detect_ui(repo: Repo, out: dict) -> None:
         roles[re.sub(r"^ROLE_", "", name).upper()].add(path)
 
     for p, t in repo.files.items():
+        if p.lower().endswith((".asp", ".inc", ".asa")):
+            # Classic ASP keeps its roles in session values and login rows. The values are taken as written in the code.
+            # A comparison with a literal value (not an assignment from a recordset) is a check.
+            for m in re.finditer(r"session\(\s*[\"']AdminFlag[\"']\s*\)\s*=\s*(?:[\"'](\w+)[\"']|(\d+))", t, re.I):
+                roles[f"AdminFlag = {m.group(1) or m.group(2)} (session)"].add(p)
+            for m in re.finditer(r"Adminflag\)?\s*(=|<>)\s*(\d+)", t, re.I):
+                roles[f"AdminFlag {m.group(1)} {m.group(2)} (login table)"].add(p)
+            for m in re.finditer(r"LoginID[\"')]*\s*=\s*[\"']superuser[\"']", t, re.I):
+                roles["superuser (login ID)"].add(p)
         if not p.endswith((".java", ".kt", ".xml", ".yml", ".yaml", ".properties", ".ts", ".tsx", ".js", ".jsx", ".py", ".cs")):
             continue
         for m in re.finditer(r"hasRole\(\s*['\"]([A-Za-z0-9_]+)['\"]", t):
@@ -731,7 +740,7 @@ def detect_ui(repo: Repo, out: dict) -> None:
     ev = set().union(*roles.values()) if roles else set()
     out["security.roles"] = F(
         "security.roles", "security", "Roles found in code", sorted(roles), "verified", ev,
-        note="Taken from authorization annotations and role constants. Roles defined only in the identity provider or database are not visible.",
+        note="Taken from authorization annotations, role constants and classic ASP session and login checks. Role names stored in a database table are not visible unless the structure file holds their values.",
     )
 
 
