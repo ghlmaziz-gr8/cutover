@@ -1216,11 +1216,12 @@ const MAX_DB_METADATA_BYTES = 2_000_000;
 async function getDbMetadataSummary(request, env, id) {
   const access = await analysisAccess(env, request, id);
   if (access.response) return access.response;
-  const res = await serviceRest(env, `analysis_db_metadata?analysis_id=eq.${id}&select=table_count,field_count,uploaded_by,uploaded_at`);
+  const res = await serviceRest(env, `analysis_db_metadata?analysis_id=eq.${id}&select=table_count,field_count,uploaded_by,uploaded_at,database:doc->>database`);
   if (!res.ok) return json({ error: "Could not load the database structure." }, 502);
   const [row] = await res.json();
   return json({
     present: Boolean(row),
+    database: row ? row.database : null,
     tables: row ? row.table_count : null,
     fields: row ? row.field_count : null,
     uploaded_by: row ? row.uploaded_by : null,

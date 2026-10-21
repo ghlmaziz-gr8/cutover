@@ -146,6 +146,27 @@ button.danger{background:transparent;color:var(--bad);box-shadow:none;border:1.5
 @keyframes exRing{from{transform:scale(.9);opacity:.7}to{transform:scale(1.35);opacity:0}}
 @keyframes exStep{0%,100%{opacity:.35;transform:none}4%{opacity:1;transform:translateX(4px)}17%{opacity:.35;transform:none}}
 @keyframes exNudge{0%,100%{transform:translateX(0)}50%{transform:translateX(4px)}}
+
+/* ---- Database structure card: file picker, saved file, and the progress panel shown while a run is going ---- */
+.db-pick{display:inline-flex;align-items:center;gap:12px;padding:12px 18px 12px 12px;border-radius:16px;border:1px dashed var(--accent);background:color-mix(in srgb,var(--accent) 8%,var(--card));color:var(--accent);font-weight:700;cursor:pointer;transition:transform .15s ease,box-shadow .15s ease;max-width:100%}
+.db-pick:hover{transform:translateY(-1px);box-shadow:0 8px 20px color-mix(in srgb,var(--accent) 25%,transparent)}
+.db-pick:focus-within{outline:3px solid var(--accent3);outline-offset:3px}
+.db-pick.off{opacity:.5;pointer-events:none}
+.db-pick-icon{display:grid;place-items:center;width:34px;height:34px;border-radius:50%;background:linear-gradient(135deg,var(--accent),var(--accent2));color:#fff;font-size:17px;animation:exNudgeUp 2s ease-in-out infinite}
+.db-pick-text{display:grid;gap:2px}
+.db-file-name{font-weight:400;font-size:13px;color:var(--muted,#64748b);overflow-wrap:anywhere}
+.db-file-input{position:absolute;width:1px;height:1px;opacity:0;pointer-events:none}
+.db-saved{margin:14px 0 0;padding:10px 14px;border-radius:14px;background:color-mix(in srgb,var(--ok) 10%,var(--card));border:1px solid color-mix(in srgb,var(--ok) 40%,var(--line))}
+.run-banner{display:grid;grid-template-columns:auto 1fr;gap:10px 14px;align-items:center;margin:0 0 16px;padding:14px 16px;border-radius:16px;border:1px solid var(--accent);background:color-mix(in srgb,var(--accent) 8%,var(--card));position:relative;overflow:hidden}
+.run-banner .pulse{width:14px;height:14px;border-radius:50%;background:var(--accent2);animation:exPing 1.6s ease-out infinite}
+.run-banner b{display:block;font-size:14px}
+.run-banner .stage{display:block;font-size:13px;color:var(--muted,#64748b)}
+.run-banner .run-bar{grid-column:1/-1;height:6px;border-radius:6px;background:var(--line);overflow:hidden;position:relative}
+.run-banner .run-bar i{position:absolute;top:0;bottom:0;width:40%;border-radius:6px;background:linear-gradient(90deg,transparent,var(--accent2),var(--accent),transparent);animation:exSweep 1.6s ease-in-out infinite}
+@keyframes exPing{0%{box-shadow:0 0 0 0 color-mix(in srgb,var(--accent2) 60%,transparent)}100%{box-shadow:0 0 0 14px transparent}}
+@keyframes exSweep{from{left:-40%}to{left:100%}}
+@keyframes exNudgeUp{0%,100%{transform:translateY(0)}50%{transform:translateY(-3px)}}
+@media (prefers-reduced-motion:reduce){.run-banner *,.db-pick-icon{animation:none!important}}
 @media (max-width:640px){
   .ex-flow{grid-template-columns:1fr;justify-items:center}
   .ex-lane{display:none}
@@ -859,6 +880,11 @@ pre{white-space:pre-wrap;word-break:break-word;background:var(--soft);padding:12
 
   <!-- 8. Next steps -->
   <section id="s-next" class="screen" hidden>
+    <div class="run-banner" id="runBanner" role="status" aria-live="polite" hidden>
+      <span class="pulse" aria-hidden="true"></span>
+      <div><b id="runBannerTitle">Analysis running</b><span class="stage" id="runBannerStage"></span></div>
+      <div class="run-bar" aria-hidden="true"><i></i></div>
+    </div>
     <p class="eyebrow">Step 8</p>
     <h2 style="margin:8px 0 6px">What next?</h2>
     <p class="muted">Choose one. You can come back to the findings at any time.</p>
@@ -914,7 +940,11 @@ pre{white-space:pre-wrap;word-break:break-word;background:var(--soft);padding:12
       </p>
       <p class="small" id="dbStatus" style="margin:10px 0 0"></p>
       <div class="row" style="margin-top:12px">
-        <input type="file" id="dbFile" accept=".json,application/json">
+        <label class="db-pick" for="dbFile">
+          <span class="db-pick-icon" aria-hidden="true">⤒</span>
+          <span class="db-pick-text">Choose structure file<span class="db-file-name" id="dbFileName">No file chosen yet</span></span>
+        </label>
+        <input type="file" id="dbFile" class="db-file-input" accept=".json,application/json">
         <button type="button" id="dbUpload">Upload structure</button>
         <button type="button" class="ghost" id="dbRemove" hidden>Remove</button>
         <button type="button" id="dbRerun" hidden>Run again with this structure</button>
@@ -3422,6 +3452,8 @@ a{color:#6d28d9;font-weight:600}`;
     renderScope();
     renderMigrate();
     renderDbCard();
+    updateRunBanner();
+    startRunBanner();
     const deeperReady = cur.deeper_done === true;
     $("deeperNoteNext").textContent = deeperReady
       ? "Ready. It covers the business, systems, data and workflows, with an architecture overview."
@@ -3873,9 +3905,11 @@ const REGION_OPTS = {
     try {
       const s = await api(`/api/analyses/${cur.id}/db-metadata`);
       const canChange = !!s.can_change && !busy;
+      $("dbStatus").className = s.present ? "small db-saved" : "small";
       $("dbStatus").textContent = s.present
-        ? `Saved: ${s.tables} tables and ${s.fields} fields, uploaded by ${s.uploaded_by} on ${new Date(s.uploaded_at).toLocaleDateString()}.`
+        ? `Structure of ${s.database || "the database"}: ${s.tables} tables and ${s.fields} fields, uploaded by ${s.uploaded_by} on ${new Date(s.uploaded_at).toLocaleDateString()}.`
         : "None saved. Databases are identified by their file type only.";
+      document.querySelector(".db-pick").classList.toggle("off", !canChange);
       $("dbFile").disabled = !canChange;
       $("dbUpload").disabled = !canChange;
       $("dbRemove").hidden = !(s.present && canChange);
@@ -3901,13 +3935,52 @@ const REGION_OPTS = {
     }
     try {
       const saved = await api(`/api/analyses/${cur.id}/db-metadata`, { method: "PUT", body: JSON.stringify(doc) });
-      $("dbFile").value = "";
       setMsg("dbMsg", `Saved: ${saved.tables} tables and ${saved.fields} fields. Run the analysis again to read them.`);
       await renderDbCard();
     } catch (err) {
       setMsg("dbMsg", err.message, true);
     }
   });
+
+  $("dbFile").addEventListener("change", () => {
+    const picked = $("dbFile").files[0];
+    $("dbFileName").textContent = picked ? `Selected: ${picked.name}` : "No file chosen yet";
+  });
+
+  // Progress panel for a run that is going. It stays on this screen, updates its stage, and refreshes the analysis.
+  let runBannerTimer = null;
+  let runStageIndex = 0;
+
+  function updateRunBanner() {
+    const busy = cur && (cur.status === "queued" || cur.status === "running");
+    const visible = !$("s-next").hidden;
+    $("runBanner").hidden = !(busy && visible);
+    if (!busy || !visible) return;
+    const stages = runStageNames(cur);
+    $("runBannerTitle").textContent = cur.status === "queued" ? "Queued: the run starts shortly" : "Analysis running";
+    $("runBannerStage").textContent = `${stages[runStageIndex % stages.length]}. Stay on this page to follow along; it updates when the run finishes.`;
+  }
+
+  function startRunBanner() {
+    clearInterval(runBannerTimer);
+    runBannerTimer = setInterval(async () => {
+      if ($("s-next").hidden) return clearInterval(runBannerTimer);
+      runStageIndex += 1;
+      const wasBusy = cur && (cur.status === "queued" || cur.status === "running");
+      if (wasBusy && runStageIndex % 3 === 0) {
+        try {
+          cur = await api(`/api/analyses/${cur.id}`);
+          if (cur.status !== "queued" && cur.status !== "running") {
+            await renderDbCard();
+            renderScope();
+          }
+        } catch {
+          // A failed refresh keeps the last known state; the next tick tries again.
+        }
+      }
+      updateRunBanner();
+    }, 2500);
+  }
 
   $("dbRerun").addEventListener("click", async () => {
     try {
