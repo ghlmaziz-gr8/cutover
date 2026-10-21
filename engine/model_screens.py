@@ -6,7 +6,7 @@ it again. Stdlib only.
 
 Rules this file keeps:
 - A drawing may not run code, load anything from another site, or send a form. Those drawings are refused.
-- At most SCREEN_MAX drawings per analysis, for template files only.
+- At most SCREEN_MAX drawings of template files, and SCREEN_CONTROL_MAX drawings of classic ASP screen branches, per analysis.
 - The model is asked for sample data only. Its drawings are never written to a file in the workspace.
 """
 from __future__ import annotations
@@ -19,6 +19,11 @@ from pathlib import PurePosixPath
 from typing import Callable
 
 SCREEN_MAX = 8
+# A classic ASP page with a ControlName switch is one screen per branch. These are capped separately, and the
+# whole analysis never draws more than SCREEN_TOTAL_MAX (the Worker accepts the same total in one upload).
+SCREEN_CONTROL_MAX = 70
+SCREEN_TOTAL_MAX = 80
+CONTROL_CODE_MAX = 12_000
 SCREEN_CATEGORIES = {"template"}
 SCREEN_MIN_CHARS = 50
 SCREEN_MAX_CHARS = 40_000
@@ -70,7 +75,85 @@ def is_screen_file(record: dict) -> bool:
 
 
 def choose_screen_files(records: list[dict], limit: int = SCREEN_MAX) -> list[dict]:
-    return [r for r in records if is_screen_file(r)][:limit]
+    files = [r for r in records if is_screen_file(r) and "control" not in r][:limit]
+    controls = [r for r in records if "control" in r][:SCREEN_CONTROL_MAX]
+    return files + controls
+
+
+# A branch of the dispatch: an If or ElseIf that compares ControlName, or a Case of a Select Case on it.
+BRANCH_IF = re.compile(r"(?im)^[ \t]*(?:if|elseif|else\s+if)\b[^\n]*?controlname\s*=\s*\"[^\"]+\"[^\n]*$")
+BRANCH_CASE = re.compile(r"(?im)^[ \t]*case\s+\"[^\"]+\"(?:\s*,\s*\"[^\"]+\")*[ \t]*$")
+NAME_IN_IF = re.compile(r"controlname\s*=\s*\"([^\"]+)\"", re.I)
+NAME_IN_CASE = re.compile(r"\"([^\"]+)\"")
+ROUTINE = re.compile(r"(?ims)^[ \t]*((?:public\s+|private\s+)?(?:function|sub)\s+(\w+)\b.*?^[ \t]*end\s+(?:function|sub)\b)")
+ROUTINE_START = re.compile(r"(?im)^[ \t]*(?:public\s+|private\s+)?(?:function|sub)\s+\w+")
+CALL = re.compile(r"\b(?:call\s+)?([A-Za-z_]\w*)\s*\(", re.I)
+
+
+def split_control_screens(code: str) -> list[tuple[str, str]]:
+    """One (screen name, code) for each ControlName branch that writes output. The code is the branch, plus the
+    functions it calls, cut to CONTROL_CODE_MAX characters. A name that appears twice keeps its first branch."""
+    starts = sorted([(m.start(), m.group(0)) for m in BRANCH_IF.finditer(code)] +
+                    [(m.start(), m.group(0)) for m in BRANCH_CASE.finditer(code)])
+    routines = {m.group(2).lower(): m.group(1) for m in ROUTINE.finditer(code)}
+    # A branch ends at the next branch or the next function, whichever comes first.
+    boundaries = sorted([pos for pos, _ in starts] + [m.start() for m in ROUTINE_START.finditer(code)])
+    found: list[tuple[str, str]] = []
+    seen: set[str] = set()
+    for pos, line in starts:
+        later = [b for b in boundaries if b > pos]
+        end = later[0] if later else len(code)
+        body = code[pos:end]
+        names = NAME_IN_IF.findall(line) if BRANCH_IF.match(line.strip()) or re.match(r"\s*(?:if|elseif)", line, re.I) else NAME_IN_CASE.findall(line)
+        if not names:
+            continue
+        helpers: list[str] = []
+        for call in CALL.findall(body):
+            text = routines.get(call.lower())
+            if text and text not in helpers:
+                helpers.append(text)
+            if len(helpers) >= 3:
+                break
+        writes = re.search(r"response\.write", body, re.I) or any(re.search(r"response\.write", h, re.I) for h in helpers)
+        if not writes:
+            continue
+        text = body + ("\n\n' Functions this branch calls:\n" + "\n\n".join(helpers) if helpers else "")
+        for name in names:
+            if name not in seen:
+                seen.add(name)
+                found.append((name, text[:CONTROL_CODE_MAX]))
+    return found
+
+
+def expand_control_screens(records: list[dict], read_source: Callable[[str], str | None]):
+    """Replaces each classic ASP page that switches on ControlName with one record per branch. Returns the new
+    records and a reader that gives each branch its own code."""
+    bodies: dict[str, dict[str, str]] = {}
+    out: list[dict] = []
+    for r in records:
+        if is_screen_file(r) and "control" not in r and r.get("path", "").lower().endswith(".asp"):
+            code = read_source(r["path"])
+            branches = split_control_screens(code) if code else []
+            if branches:
+                bodies[r["path"]] = dict(branches)
+                for name, _ in branches:
+                    out.append({"path": f"{r['path']}?ControlName={name}", "category": "template",
+                                "name": screen_label(name), "control": name, "source": r["path"]})
+                continue
+        out.append(r)
+
+    def read(path: str) -> str | None:
+        if "?ControlName=" in path:
+            source, _, name = path.partition("?ControlName=")
+            return bodies.get(source, {}).get(name)
+        return read_source(path)
+
+    return out, read
+
+
+def screen_label(name: str) -> str:
+    words = re.sub(r"[_]+", " ", name).strip()
+    return words[:1].upper() + words[1:]
 
 
 def screen_problem(html: str) -> str | None:
@@ -178,7 +261,7 @@ def draw_screens(records: list[dict], read_source: Callable[[str], str | None], 
             if reasons is not None:
                 reasons.append(problem or "reply not usable")
             continue
-        screens.append({"path": record["path"], "name": screen_name(record["path"]), "html": html})
+        screens.append({"path": record["path"], "name": record.get("name") or screen_name(record["path"]), "html": html})
         stats["drawn"] += 1
     return screens, stats
 

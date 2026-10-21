@@ -1505,7 +1505,8 @@ test("the screen list is checked: count, paths, names and size", async () => {
   runningAnalysis();
   const send = (screens) => call(`/api/runner/${AN_RUNNING}/screens`, { method: "POST", body: { screens }, secret: env.RUNNER_SECRET });
   assert.equal((await send([])).status, 400);
-  assert.equal((await send(Array.from({ length: 9 }, (_, i) => screen(`p${i}.html`)))).status, 400);
+  assert.equal((await send(Array.from({ length: 81 }, (_, i) => screen(`p${i}.html`)))).status, 400);
+  assert.equal((await send(Array.from({ length: 80 }, (_, i) => screen(`p${i}.html`)))).status, 201);
   assert.equal((await send([screen("a.html"), screen("a.html")])).status, 400);
   assert.equal((await send([screen("a.html", { name: "" })])).status, 400);
   const big = "<!doctype html><html><body>" + "x".repeat(40_001) + "</body></html>";
