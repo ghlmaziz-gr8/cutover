@@ -1360,6 +1360,11 @@ pre{white-space:pre-wrap;word-break:break-word;background:var(--soft);padding:12
     window.scrollTo({ top: 0, behavior: "smooth" });
   }
 
+  // Notification state, declared before any sign-in code can use it.
+  const seenNotifs = new Set();
+  let notifReady = false;
+  let lastUnread = 0;
+
   // ---- Sign in and the role step ----
 
   $("signIn").addEventListener("click", () => {
@@ -1369,6 +1374,7 @@ pre{white-space:pre-wrap;word-break:break-word;background:var(--soft);padding:12
   async function signOut() {
     await sb.auth.signOut();
     token = null; me = null; ws = null; cur = null; started = false;
+    clearNotifications();
     show("s-login");
   }
   document.querySelectorAll("[data-signout]").forEach((b) => b.addEventListener("click", signOut));
@@ -1378,6 +1384,7 @@ pre{white-space:pre-wrap;word-break:break-word;background:var(--soft);padding:12
     if (session) loadNotifs();
     if (!session) {
       started = false;
+      clearNotifications();
       show("s-login");
       return;
     }
@@ -2638,9 +2645,6 @@ pre{white-space:pre-wrap;word-break:break-word;background:var(--soft);padding:12
 
   // ---- Notifications: the bell, its panel, and a toast for each new one ----
   const TONE_LABEL = { success: "Done", info: "Update", warning: "Heads up", danger: "Problem", ai: "AI" };
-  const seenNotifs = new Set();
-  let notifReady = false;
-  let lastUnread = 0;
 
   function timeAgo(iso) {
     const s = Math.max(0, (Date.now() - Date.parse(iso)) / 1000);
@@ -2688,8 +2692,25 @@ pre{white-space:pre-wrap;word-break:break-word;background:var(--soft);padding:12
     setTimeout(close, 5000);
   }
 
+  // Signed out: nothing from the last person who used this browser stays on screen.
+  function clearNotifications() {
+    $("notifList").innerHTML = "";
+    $("notifEmpty").hidden = true;
+    $("notifPanel").hidden = true;
+    $("bellBtn").setAttribute("aria-expanded", "false");
+    $("bellBtn").hidden = true;
+    const badge = $("bellCount");
+    badge.hidden = true;
+    badge.textContent = "";
+    $("toasts").innerHTML = "";
+    seenNotifs.clear();
+    notifReady = false;
+    lastUnread = 0;
+  }
+
   async function loadNotifs() {
-    if (!token) return;
+    if (!token) { clearNotifications(); return; }
+    $("bellBtn").hidden = false;
     let data;
     try { data = await api("/api/notifications"); } catch { return; }
     renderNotifs(data);
