@@ -423,6 +423,19 @@ test("the platform engineer sees every finding and every flag", async () => {
   assert.deepEqual(res.body.findings.counts, { total: 9, shown: 9 });
 });
 
+test("a result that found nothing is kept but is not counted as a point", async () => {
+  const row = state.analyses.find((a) => a.id === AN_ACME);
+  const saved = structuredClone(row.findings);
+  row.findings.findings.stack1.point = false;
+  try {
+    const res = await call(`/api/analyses/${AN_ACME}`, { as: "eng_a" });
+    assert.equal(res.body.findings.findings.stack1.point, false, "the finding is still in the report");
+    assert.deepEqual(res.body.findings.counts, { total: 8, shown: 8 });
+  } finally {
+    row.findings = saved;
+  }
+});
+
 test("the security officer sees security and privacy findings only", async () => {
   const res = await call(`/api/analyses/${AN_ACME}`, { as: "sec_a" });
   assert.deepEqual(visibleIds(res.body.findings.findings), ["priv1", "sec1"]);

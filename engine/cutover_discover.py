@@ -211,6 +211,29 @@ def F(fid, category, title, value, confidence, evidence=(), note=None, severity=
     return item
 
 
+# A result that says nothing was found is still kept in the report, because later steps read it. It is not
+# counted as a point. A finding with a severity (a flag, such as missing infrastructure as code) always counts.
+EMPTY_TEXT = {"", "no", "none found", "not indicated"}
+
+
+def is_empty(value) -> bool:
+    if value is None or value is False:
+        return True
+    if isinstance(value, str):
+        return value.strip().lower() in EMPTY_TEXT
+    if isinstance(value, (int, float)):
+        return value == 0
+    if isinstance(value, list):
+        return all(is_empty(v) for v in value)
+    if isinstance(value, dict):
+        return all(is_empty(v) for v in value.values())
+    return False
+
+
+def is_point(item: dict) -> bool:
+    return bool(item.get("severity")) or not is_empty(item.get("value"))
+
+
 # --------------------------------------------------------------------------
 # Git history
 # --------------------------------------------------------------------------
@@ -1006,6 +1029,8 @@ def analyze(repo: Repo, root: Path, now: dt.datetime, source: dict, metadata: li
     detect_containers(repo, out)
     detect_delivery(repo, out)
     detect_infrastructure(repo, out)
+    for item in out.values():
+        item["point"] = is_point(item)
     return {
         "schema_version": SCHEMA_VERSION,
         "generated_at": now.strftime("%Y-%m-%dT%H:%M:%SZ"),

@@ -241,6 +241,11 @@ function visibleDeeper(deeper, role) {
   };
 }
 
+// Reports written before the point flag existed count every finding.
+function isPoint(item) {
+  return !item || item.point !== false;
+}
+
 // Keeps only the findings the role may see. Flags and counts follow the same rule.
 function visibleReport(report, role) {
   if (!report || typeof report !== "object") return null;
@@ -256,7 +261,11 @@ function visibleReport(report, role) {
     deeper: visibleDeeper(report.deeper, role),
     findings: shown,
     flags,
-    counts: { total: Object.keys(all).length, shown: Object.keys(shown).length },
+    // A result that says nothing was found is kept but is not a point (see point in the engine).
+    counts: {
+      total: Object.values(all).filter(isPoint).length,
+      shown: Object.values(shown).filter(isPoint).length,
+    },
   };
 }
 
