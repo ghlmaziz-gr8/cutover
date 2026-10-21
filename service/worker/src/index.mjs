@@ -26,6 +26,7 @@
 //   DELETE /api/comments/:id                              delete a comment (its author, or a workspace admin)
 //   POST   /api/analyses/:id/actions                      add an action item (not auditors)
 //   PATCH  /api/actions/:id                               open or close an action item (not auditors)
+//   PATCH  /api/analyses/:id/scope                       choose deeper, modernize or migrate (platform engineers)
 //   POST   /api/analyses/:id/contingencies                add a contingency plan (platform engineers)
 //   PATCH  /api/contingencies/:id                         edit or set the status of a contingency (platform engineers)
 //   DELETE /api/contingencies/:id                         remove a contingency (platform engineers)
@@ -1406,6 +1407,31 @@ async function addContingency(request, env, id) {
   return json({ saved: true }, 201);
 }
 
+// Saves the next stage for one analysis. Modernize and Migrate wait for the deeper assessment to finish.
+async function setScope(request, env, id) {
+  const access = await analysisAccess(env, request, id);
+  if (access.response) return access.response;
+  if (!canStart(access.member)) {
+    return json({ error: "Only platform engineers can choose the scope." }, 403);
+  }
+  const parsed = await readJson(request);
+  if (parsed.error) return json({ error: parsed.error }, 400);
+  const scope = parsed.value && parsed.value.scope;
+  if (!["deeper", "modernize", "migrate"].includes(scope)) {
+    return json({ error: "Choose deeper, modernize or migrate." }, 400);
+  }
+  if (scope !== "deeper" && access.row.deeper_done !== true) {
+    return json({ error: "Finish the deeper assessment before choosing Modernize or Migrate." }, 409);
+  }
+  const res = await serviceRest(env, `analyses?id=eq.${id}`, {
+    method: "PATCH",
+    headers: { prefer: "return=minimal" },
+    body: JSON.stringify({ scope, scope_set_by_email: access.user.email, scope_set_at: new Date().toISOString() }),
+  });
+  if (!res.ok) return json({ error: "Could not save the scope." }, 502);
+  return json({ saved: true });
+}
+
 async function updateContingency(request, env, id) {
   const auth = await requireUser(env, request);
   if (auth.response) return auth.response;
@@ -1859,6 +1885,9 @@ async function route(request, env) {
 
     const oneAction = path.match(/^\/api\/actions\/([^/]+)$/);
     if (oneAction && UUID_PATTERN.test(oneAction[1]) && method === "PATCH") return updateAction(request, env, oneAction[1]);
+
+    const analysisScope = path.match(/^\/api\/analyses\/([^/]+)\/scope$/);
+    if (analysisScope && UUID_PATTERN.test(analysisScope[1]) && method === "PATCH") return setScope(request, env, analysisScope[1]);
 
     const contingencyAdd = path.match(/^\/api\/analyses\/([^/]+)\/contingencies$/);
     if (contingencyAdd && UUID_PATTERN.test(contingencyAdd[1]) && method === "POST") return addContingency(request, env, contingencyAdd[1]);
