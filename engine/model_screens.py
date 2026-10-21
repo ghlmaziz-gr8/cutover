@@ -22,7 +22,8 @@ SCREEN_MAX = 8
 SCREEN_CATEGORIES = {"template"}
 SCREEN_MIN_CHARS = 50
 SCREEN_MAX_CHARS = 40_000
-SCREEN_MAX_TOKENS = 8_000
+# A whole page of HTML plus the model's own reasoning can pass 8,000 tokens, so the reply was cut off.
+SCREEN_MAX_TOKENS = 16_000
 
 SCREEN_PROMPT = (
     "You draw one screen of a healthcare software application as a single self-contained HTML page, "
