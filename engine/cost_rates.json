@@ -1,0 +1,36 @@
+{
+  "_about": "Published rates and sizing assumptions for the Modernize cost estimates. To change a price or assumption, edit this file only. Each rate names its source and the date it was checked. Estimates only; verify with the provider before any decision.",
+  "currency": "USD",
+  "checked": "2026-10-21",
+  "cloud_run": {
+    "source": "https://cloud.google.com/run/pricing (request-based billing, Tier 1 regions)",
+    "cpu_per_vcpu_second": 0.000024,
+    "memory_per_gib_second": 0.0000025,
+    "per_million_requests": 0.40,
+    "free_vcpu_seconds": 180000,
+    "free_gib_seconds": 360000,
+    "free_requests": 2000000
+  },
+  "cloud_sql_postgres": {
+    "source": "https://cloud.google.com/sql/pricing?hl=ja (on-demand, us-central1, Enterprise edition: vCPU and memory rates; SSD storage rate is hourly)",
+    "per_vcpu_hour": 0.0413,
+    "per_gib_memory_hour": 0.007,
+    "per_gib_storage_hour": 0.000232877,
+    "hours_per_month": 730
+  },
+  "sizing": {
+    "_about": "Assumptions, not published prices. Change these to match the workload.",
+    "seconds_per_request": 0.2,
+    "vcpu_per_request": 1,
+    "gib_per_request": 0.5,
+    "requests_per_user_per_day_low": 10,
+    "requests_per_user_per_day_high": 50,
+    "days_per_month": 30,
+    "database_tiers": [
+      {"max_users": 100, "vcpu": 1, "memory_gib": 4, "storage_gib": 20},
+      {"max_users": 1000, "vcpu": 2, "memory_gib": 8, "storage_gib": 50},
+      {"max_users": 10000, "vcpu": 4, "memory_gib": 16, "storage_gib": 200}
+    ],
+    "sample_user_counts": [100, 1000, 10000]
+  }
+}
