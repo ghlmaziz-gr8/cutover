@@ -209,6 +209,70 @@ _register(Pack(
 ))
 
 
+# ---- Java, JSP and .NET ----------------------------------------------------------------------------------
+# Each JSP or Razor view file is a screen. Controller routes are endpoints, counted in the API findings,
+# so a route and its view file are not counted twice.
+
+def _java_tables(path, text):
+    """JPA tables: @Table(name=...), or the entity class name when no @Table is given, plus SQL in string literals."""
+    names = set(re.findall(r'@Table\s*\(\s*(?:name\s*=\s*)?"([^"]+)"', text))
+    if re.search(r"@Entity\b", text) and not names:
+        m = re.search(r"\bclass\s+(\w+)", text)
+        if m:
+            names.add(m.group(1))
+    return names | _tables_from_literals(text, '"')
+
+
+def _java_depends(path, text):
+    return {m.group(1) for m in re.finditer(r"^\s*import\s+(?:static\s+)?([\w.]+)", text, re.M)
+            if not m.group(1).startswith(("java.", "javax.", "jakarta."))}
+
+
+def _jsp_depends(path, text):
+    return set(re.findall(r'(?:<jsp:include\s+page\s*=|<%@\s*include\s+file\s*=)\s*"([^"]+)"', text, re.I))
+
+
+def _cs_tables(path, text):
+    """Entity Framework tables: [Table("x")] or DbSet<Entity>, plus SQL in string literals."""
+    names = set(re.findall(r'\[Table\s*\(\s*"([^"]+)"', text))
+    names |= set(re.findall(r"DbSet<\s*(\w+)\s*>", text))
+    return names | _tables_from_literals(text, '"')
+
+
+def _cs_depends(path, text):
+    return {m.group(1) for m in re.finditer(r"^\s*using\s+(?:static\s+)?([\w.]+)\s*;", text, re.M)
+            if not m.group(1).startswith("System")}
+
+
+_register(Pack(
+    name="Java and Spring Boot", tier=1, exts=(".java",), requires=(),
+    hints=(_rx(r"@SpringBootApplication|@RestController|@Controller\b|@Entity\b|import\s+org\.springframework"),),
+    screens=_none, tables=_java_tables, depends=_java_depends,
+))
+
+_register(Pack(
+    name="JSP", tier=1, exts=(".jsp", ".jspx"), requires=(),
+    hints=(_rx(r"<%@\s*page|<%=|<jsp:"),),
+    screens=lambda path, text: {_stem(path)},
+    tables=lambda path, text: _tables_from_literals(text, '"'),
+    depends=_jsp_depends,
+))
+
+_register(Pack(
+    name="C# and ASP.NET", tier=1, exts=(".cs",), requires=(),
+    hints=(_rx(r"\[ApiController\]|\[Route\(|DbContext|:\s*Controller\b|using\s+System"),),
+    screens=_none, tables=_cs_tables, depends=_cs_depends,
+))
+
+_register(Pack(
+    name="ASP.NET Razor and Web Forms", tier=1, exts=(".cshtml", ".razor", ".aspx", ".ascx", ".master"), requires=(),
+    hints=(_rx(r"@model\b|@page\b|<asp:|<%@\s*Page"),),
+    screens=lambda path, text: {_stem(path)},
+    tables=lambda path, text: _tables_from_literals(text, '"'),
+    depends=lambda path, text: set(re.findall(r'(?:CodeFile|CodeBehind)="([^"]+)"', text, re.I)),
+))
+
+
 # ---- identification -------------------------------------------------------------------------------------
 
 def identify(path: str, text: str | None) -> Pack | None:

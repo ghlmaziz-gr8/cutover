@@ -153,3 +153,47 @@ class InventoryTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class JavaDotNetPackTests(unittest.TestCase):
+    """Java and Spring Boot, JSP, C# and ASP.NET: each sample is identified and its screens, tables and dependencies are found."""
+
+    def check(self, rel, pack, screens=(), tables=(), depends=()):
+        text = load(rel)
+        found = languages.identify(rel, text)
+        self.assertIsNotNone(found, rel)
+        self.assertEqual(found.name, pack, rel)
+        result = languages.extract(found, rel, text)
+        for s in screens:
+            self.assertIn(s, result.screens, rel)
+        for t in tables:
+            self.assertIn(t, result.tables, rel)
+        for d in depends:
+            self.assertIn(d, result.depends, rel)
+        return result
+
+    def test_spring_controller_pages_and_jpa_tables(self):
+        result = self.check("java/OrderController.java", "Java and Spring Boot",
+                            tables=["customer_orders"],
+                            depends=["org.springframework.stereotype.Controller", "com.example.orders.OrderService"])
+        self.assertEqual(result.screens, set(), "controller routes are endpoints; their view files are the screens")
+        self.assertNotIn("java.util.List", result.depends, "standard library imports are not dependencies")
+
+    def test_jpa_entity_uses_its_table_name(self):
+        self.check("java/Customer.java", "Java and Spring Boot", tables=["CUSTOMER_MASTER"])
+
+    def test_jsp_page_is_a_screen_with_its_sql_and_includes(self):
+        self.check("jsp/orders.jsp", "JSP", screens=["orders"], tables=["order_header"],
+                   depends=["/WEB-INF/jspf/header.jspf", "footer.jsp"])
+
+    def test_csharp_controller_views_entity_framework_and_usings(self):
+        result = self.check("dotnet/OrdersController.cs", "C# and ASP.NET",
+                            tables=["OrderHeader", "tblCustomer"], depends=["Microsoft.AspNetCore.Mvc"])
+        self.assertEqual(result.screens, set(), "actions are endpoints; their Razor view files are the screens")
+
+    def test_razor_view_is_a_screen(self):
+        self.check("dotnet/Orders.cshtml", "ASP.NET Razor and Web Forms", screens=["Orders"])
+
+    def test_plain_java_is_analysed_without_spring_screens(self):
+        result = self.check("java/Customer.java", "Java and Spring Boot")
+        self.assertEqual(result.screens, set(), "a class with no @Controller has no pages")
