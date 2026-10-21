@@ -9,6 +9,7 @@
 create table if not exists public.workspaces (
   id          uuid primary key default gen_random_uuid(),
   name        text not null check (length(name) between 1 and 200),
+  ai_screens  boolean not null default false,
   created_at  timestamptz not null default now()
 );
 

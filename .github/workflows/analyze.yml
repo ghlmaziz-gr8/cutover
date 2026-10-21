@@ -25,6 +25,11 @@ on:
         required: false
         type: string
         default: ""
+      draw_screens:
+        description: "Whether the workspace's own model may draw screens (set by the API, off by default)"
+        required: false
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -90,6 +95,7 @@ jobs:
         continue-on-error: true
         env:
           MODEL_TOKEN: ${{ inputs.model_token }}
+          DRAW_SCREENS: ${{ inputs.draw_screens }}
           RUNNER_SECRET: ${{ secrets.RUNNER_SECRET }}
           CALLBACK_URL: ${{ secrets.CUTOVER_API_URL }}
         run: |

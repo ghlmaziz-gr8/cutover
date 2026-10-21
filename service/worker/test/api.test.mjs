@@ -1221,6 +1221,31 @@ test("a model needs a current sign-off, a key of this workspace, and a key that 
   assert.equal(github.dispatches.length, 0, "nothing is started when the model is refused");
 });
 
+test("screens from the model are off by default, only an admin can turn them on, and the run is told", async () => {
+  const keyId = await addGoogleKey();
+  const listed = await call(KEYS(W_ACME), { as: "admin_a" });
+  assert.equal(listed.body.draw_screens, false, "off until an admin turns it on");
+
+  await call("/api/analyses", { as: "eng_a", method: "POST", body: { ...START, workspace_id: W_ACME, model_key_id: keyId } });
+  assert.equal(github.dispatches.at(-1).inputs.draw_screens, false, "the run is told screens are off");
+
+  const notAdmin = await call(`/api/workspaces/${W_ACME}/model-screens`, { as: "eng_a", method: "PUT", body: { enabled: true } });
+  assert.equal(notAdmin.status, 403, "only a workspace admin can turn screens on");
+  const bad = await call(`/api/workspaces/${W_ACME}/model-screens`, { as: "admin_a", method: "PUT", body: { enabled: "yes" } });
+  assert.equal(bad.status, 400);
+
+  const on = await call(`/api/workspaces/${W_ACME}/model-screens`, { as: "admin_a", method: "PUT", body: { enabled: true } });
+  assert.equal(on.status, 200);
+  assert.deepEqual(on.body, { draw_screens: true });
+  assert.equal((await call(KEYS(W_ACME), { as: "admin_a" })).body.draw_screens, true);
+
+  await call("/api/analyses", { as: "eng_a", method: "POST", body: { ...START, workspace_id: W_ACME, model_key_id: keyId } });
+  assert.equal(github.dispatches.at(-1).inputs.draw_screens, true, "the run is told screens are on");
+
+  await call("/api/analyses", { as: "eng_a", method: "POST", body: { ...START, workspace_id: W_ACME } });
+  assert.equal(github.dispatches.at(-1).inputs.draw_screens, false, "without a model, no screens are drawn");
+});
+
 test("the runner trades its token once for the key; wrong, reused, or misdirected tokens get nothing", async () => {
   const keyId = await addGoogleKey();
   const started = await call("/api/analyses", { as: "eng_a", method: "POST", body: { ...START, workspace_id: W_ACME, model_key_id: keyId } });
