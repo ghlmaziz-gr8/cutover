@@ -129,6 +129,7 @@ function seed() {
         created_at: NOW, updated_at: NOW },
     ],
     deletion_log: [],
+    notifications: [],
     privacy_signoffs: [],
     model_keys: [],
     analysis_model_tokens: [],
@@ -1244,6 +1245,65 @@ test("screens from the model are off by default, only an admin can turn them on,
 
   await call("/api/analyses", { as: "eng_a", method: "POST", body: { ...START, workspace_id: W_ACME } });
   assert.equal(github.dispatches.at(-1).inputs.draw_screens, false, "without a model, no screens are drawn");
+});
+
+function runningAnalysisWithId(id, owner = PEOPLE.eng_a.id) {
+  state.analyses.push({
+    id, workspace_id: W_ACME, owner_id: owner, repo: "acme/app", ref: null, app_name: "Acme app",
+    status: "running", commit_sha: null, findings: null, error: null, created_at: NOW, finished_at: null, expires_at: FAR_FUTURE, file_bytes: 0,
+  });
+}
+
+test("starting an analysis saves a notification for its starter; the bell lists only their own, and marks read", async () => {
+  await call("/api/analyses", { as: "eng_a", method: "POST", body: { ...START, workspace_id: W_ACME } });
+  const started = state.notifications.filter((n) => n.kind === "analysis_started");
+  assert.equal(started.length, 1);
+  assert.equal(started[0].user_id, PEOPLE.eng_a.id);
+  assert.equal(started[0].tone, "info");
+
+  const mine = await call("/api/notifications", { as: "eng_a" });
+  assert.equal(mine.status, 200);
+  assert.equal(mine.body.unread, 1);
+  assert.equal(mine.body.items[0].kind, "analysis_started");
+  assert.deepEqual((await call("/api/notifications", { as: "aud_a" })).body.items, [], "other people never see it");
+
+  const read = await call("/api/notifications/read", { as: "eng_a", method: "POST", body: { all: true } });
+  assert.equal(read.status, 200);
+  assert.equal((await call("/api/notifications", { as: "eng_a" })).body.unread, 0);
+  assert.equal((await call("/api/notifications/read", { as: "eng_a", method: "POST", body: {} })).status, 400, "say what to mark");
+});
+
+test("the owner hears when an analysis finishes, in green, or fails, in red, with the reason", async () => {
+  runningAnalysisWithId(uid(260));
+  await call(`/api/runner/${uid(260)}/result`, { method: "POST", secret: env.RUNNER_SECRET, body: { status: "complete", findings: {} } });
+  const ok = state.notifications.find((n) => n.kind === "analysis_complete");
+  assert.equal(ok.user_id, PEOPLE.eng_a.id);
+  assert.equal(ok.tone, "success");
+  assert.match(ok.title, /Acme app/);
+
+  runningAnalysisWithId(uid(261));
+  await call(`/api/runner/${uid(261)}/result`, { method: "POST", secret: env.RUNNER_SECRET, body: { status: "failed", error: "Clone failed." } });
+  const bad = state.notifications.find((n) => n.kind === "analysis_failed");
+  assert.equal(bad.tone, "danger");
+  assert.match(bad.body, /Clone failed/);
+});
+
+test("a privacy sign-off tells the other admins, not the person who signed", async () => {
+  state.members.find((m) => m.user_id === PEOPLE.eng_a.id && m.workspace_id === W_ACME).is_admin = true;
+  const res = await call(`/api/workspaces/${W_ACME}/privacy/signoff`, { method: "POST", as: "admin_a", body: SIGN("Ada Admin") });
+  assert.equal(res.status, 201);
+  const told = state.notifications.filter((n) => n.kind === "privacy_signed_off");
+  assert.deepEqual(told.map((n) => n.user_id), [PEOPLE.eng_a.id]);
+  assert.equal(told[0].tone, "success");
+});
+
+test("a new comment tells the analysis owner, but not when the owner writes it", async () => {
+  await call(`/api/analyses/${AN_ACME}/comments`, { as: "aud_a", method: "POST", body: { body: "Please add the retention date." } });
+  const told = state.notifications.filter((n) => n.kind === "comment_added");
+  assert.deepEqual(told.map((n) => n.user_id), [PEOPLE.eng_a.id]);
+  assert.equal(told[0].analysis_id, AN_ACME);
+  await call(`/api/analyses/${AN_ACME}/comments`, { as: "eng_a", method: "POST", body: { body: "Done." } });
+  assert.equal(state.notifications.filter((n) => n.kind === "comment_added").length, 1, "no notice to yourself");
 });
 
 test("the browser may send PUT from the app (the screens setting needs it)", async () => {
