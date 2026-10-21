@@ -90,6 +90,12 @@ button.danger{background:transparent;color:var(--bad);box-shadow:none;border:1.5
 input,select,textarea{font:500 15px var(--body);padding:12px 14px;border-radius:14px;border:1.5px solid var(--line);background:var(--card);color:var(--fg);width:100%;min-width:0}
 label{font-weight:700;display:block;margin-top:14px}
 form input + button{margin-top:16px}
+.ai-pill{display:inline-flex;align-items:center;gap:8px;margin-top:10px;padding:6px 12px;border-radius:999px;font:700 12.5px system-ui;color:#5b21b6;background:linear-gradient(90deg,#ede9fe,#fce7f3,#ffedd5,#ede9fe);background-size:300% 100%;animation:aiShimmer 3.2s linear infinite}
+.ai-pill[hidden]{display:none}
+.ai-pill .dot{width:8px;height:8px;border-radius:50%;background:#7c3aed;animation:aiPulse 1.4s ease-in-out infinite}
+@keyframes aiShimmer{0%{background-position:0% 50%}100%{background-position:300% 50%}}
+@keyframes aiPulse{0%,100%{transform:scale(1);opacity:1}50%{transform:scale(1.7);opacity:.35}}
+@media (prefers-reduced-motion:reduce){.ai-pill,.ai-pill .dot{animation:none}}
 label.check{display:flex;gap:10px;align-items:flex-start;font-weight:400;margin-top:16px}
 label.check input[type="checkbox"]{flex:0 0 auto;width:18px;height:18px;margin:3px 0 0;accent-color:var(--accent)}
 .err{color:var(--bad)}
@@ -1626,21 +1632,26 @@ pre{white-space:pre-wrap;word-break:break-word;background:var(--soft);padding:12
     const label = el("label", null, "check");
     label.append(box, document.createTextNode(" Draw screens from the code with the model (sample data only)"));
     const hint = el("p", "Off by default. When on, each analysis that uses a model also draws the screens it finds in the code.", "muted small");
+    const pill = el("span", null, "ai-pill");
+    pill.append(el("span", null, "dot"), document.createTextNode("AI screen modelling is on"));
+    pill.hidden = !box.checked;
     box.addEventListener("change", async () => {
       const wanted = box.checked;
       box.disabled = true;
       try {
         const res = await api(`/api/workspaces/${ws.id}/model-screens`, { method: "PUT", body: JSON.stringify({ enabled: wanted }) });
         box.checked = res.draw_screens === true;
+        pill.hidden = !box.checked;
         setMsg("modelMsg", box.checked ? "Screens from the model are on for this workspace." : "Screens from the model are off for this workspace.", false);
       } catch (err) {
         box.checked = !wanted;
+        pill.hidden = !box.checked;
         setMsg("modelMsg", err.message, true);
       } finally {
         box.disabled = !data.can_change;
       }
     });
-    wrap.append(label, hint);
+    wrap.append(label, hint, pill);
     return wrap;
   }
 
