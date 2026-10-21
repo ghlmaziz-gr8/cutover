@@ -242,6 +242,21 @@ function handleRest(url, init) {
   return j({ message: "unsupported" }, 405);
 }
 
+// The private zip bucket: stores what is posted, returns it to the runner, and deletes it.
+const storedZips = new Map();
+function handleStorage(url, init) {
+  const name = decodeURIComponent(new URL(url).pathname.split("/analysis-sources/")[1] || "");
+  const method = init.method || "GET";
+  if (method === "POST") {
+    if (storedZips.has(name)) return j({ message: "exists" }, 409);
+    storedZips.set(name, Buffer.from(init.body));
+    return j({ Key: `analysis-sources/${name}` });
+  }
+  if (method === "DELETE") return storedZips.delete(name) ? j({ message: "deleted" }) : j({ message: "not found" }, 404);
+  const bytes = storedZips.get(name);
+  return bytes ? new Response(bytes, { status: 200 }) : j({ message: "not found" }, 404);
+}
+
 function handleGithub(url, init) {
   const path = url.split("?")[0];
   if (path.endsWith("/installation")) {
@@ -277,6 +292,7 @@ beforeEach(() => {
       return person ? j({ id: person.id, email: person.email, user_metadata: { full_name: person.name } }) : j({ message: "bad token" }, 401);
     }
     if (u.startsWith(`${env.SUPABASE_URL}/rest/v1/`)) return handleRest(u, init);
+    if (u.startsWith(`${env.SUPABASE_URL}/storage/v1/object/analysis-sources/`)) return handleStorage(u, init);
     if (u.startsWith("https://api.github.com/")) return handleGithub(u, init);
     if (u.startsWith("https://generativelanguage.googleapis.com/v1beta/models/")) {
       const key = init.headers?.["x-goog-api-key"];
@@ -326,6 +342,68 @@ async function call(path, options = {}) {
 
 const START = { app_name: "Test application", data_rules_confirmed: true, repo: "acme/app" };
 const visibleIds = (findings) => Object.keys(findings || {}).sort();
+
+// ---- Uploading a zip of the code, without GitHub ----
+
+const ZIP_BYTES = Buffer.from([0x50, 0x4b, 0x03, 0x04, 0, 0, 0, 0, 0, 0]);
+
+function uploadRequest(query, { body = ZIP_BYTES, as = "eng_a", contentLength } = {}) {
+  const headers = { "content-type": "application/zip", authorization: `Bearer tok-${PEOPLE[as].email}` };
+  if (contentLength !== undefined) headers["content-length"] = String(contentLength);
+  return new Request(`https://api.test/api/analyses/upload?${new URLSearchParams(query).toString()}`, {
+    method: "POST", headers, body,
+  });
+}
+
+const UPLOAD_QUERY = { workspace_id: W_ACME, app_name: "Zipped app", data_rules_confirmed: "true" };
+
+test("an upload needs the data rules confirmed and a real zip", async () => {
+  const noRules = await worker.fetch(uploadRequest({ ...UPLOAD_QUERY, data_rules_confirmed: "false" }), env);
+  assert.equal(noRules.status, 400);
+  const notZip = await worker.fetch(uploadRequest(UPLOAD_QUERY, { body: Buffer.from("plain text") }), env);
+  assert.equal(notZip.status, 400);
+  assert.equal(storedZips.size, 0, "nothing is stored when the upload is refused");
+});
+
+test("an upload over 50 MB is refused before it is read", async () => {
+  const res = await worker.fetch(uploadRequest(UPLOAD_QUERY, { contentLength: 60 * 1024 * 1024 }), env);
+  assert.equal(res.status, 413);
+  assert.equal(storedZips.size, 0);
+});
+
+test("only a platform engineer can upload code", async () => {
+  const res = await worker.fetch(uploadRequest(UPLOAD_QUERY, { as: "aud_a" }), env);
+  assert.equal(res.status, 403);
+});
+
+test("an upload is stored privately, the run starts without a repository, and the runner reads then deletes the zip", async () => {
+  github.dispatches.length = 0;
+  const started = await worker.fetch(uploadRequest(UPLOAD_QUERY), env);
+  assert.equal(started.status, 202);
+  const { id } = await started.json();
+  assert.equal(storedZips.size, 1, "the zip is stored once");
+  assert.equal(github.dispatches.length, 1);
+  assert.equal(github.dispatches[0].inputs.source_upload, true);
+  assert.equal(github.dispatches[0].inputs.repo, "upload/archive");
+
+  const refused = await call(`/api/runner/${id}/source`, { secret: "wrong" });
+  assert.equal(refused.status, 401);
+  const read = await worker.fetch(request(`/api/runner/${id}/source`, { secret: env.RUNNER_SECRET }), env);
+  assert.equal(read.status, 200);
+  assert.equal(read.headers.get("content-type"), "application/zip");
+  assert.deepEqual(new Uint8Array(await read.arrayBuffer()), new Uint8Array(ZIP_BYTES));
+
+  const deleted = await call(`/api/runner/${id}/source`, { method: "DELETE", secret: env.RUNNER_SECRET });
+  assert.equal(deleted.status, 200);
+  assert.equal(storedZips.size, 0, "the zip is gone once the run has read it");
+  const after = await call(`/api/runner/${id}/source`, { secret: env.RUNNER_SECRET });
+  assert.equal(after.status, 404);
+});
+
+test("a GitHub analysis is not given an upload, and the runner gets no zip for it", async () => {
+  const res = await call(`/api/runner/${AN_ACME}/source`, { secret: env.RUNNER_SECRET });
+  assert.equal(res.status, 404);
+});
 
 // ---- Signing in and access ----
 
