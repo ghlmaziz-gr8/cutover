@@ -33,7 +33,7 @@ jobs:
 
       - name: Run the legacy and document tests (ASP screens, legacy databases, metadata refused when it holds values)
         working-directory: engine
-        run: python -m unittest test_legacy.py test_deeper_docs.py test_file_inventory.py -v
+        run: python -m unittest test_legacy.py test_languages.py test_deeper_docs.py test_file_inventory.py -v
 
   worker-tests:
     runs-on: ubuntu-latest

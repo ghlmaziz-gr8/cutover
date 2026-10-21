@@ -65,7 +65,7 @@ VIEW_QUERY_RX = re.compile(r"""[?&]controlname=([A-Za-z0-9][A-Za-z0-9%+ _.\-]{0,
 SQL_LITERAL_RX = re.compile(r'"([^"\r\n]*)"')
 SQL_START_RX = re.compile(r"^\s*(select|insert\s+into|update|delete)\b", re.I)
 SQL_VERB_RX = re.compile(r"\b(select|insert|update|delete)\b", re.I)
-TABLE_RX = re.compile(r"\b(?:from|into|update|join)\s+\[?([A-Za-z_][A-Za-z0-9_]*)\]?", re.I)
+TABLE_RX = re.compile(r"\b(?:from|into|update|join)\s+(?:\[?[A-Za-z_]\w*\]?\.)?\[?([A-Za-z_][A-Za-z0-9_]*)\]?", re.I)
 # Words that can follow "from" or "join" and are not table names.
 NOT_TABLES = {
     "select", "where", "set", "values", "as", "on", "and", "or", "not", "inner", "left", "right", "outer",

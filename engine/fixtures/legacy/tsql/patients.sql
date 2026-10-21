@@ -1,0 +1,6 @@
+CREATE PROCEDURE [dbo].GetPatients
+AS
+  SELECT Name FROM dbo.Patients;
+GO
+CREATE TABLE dbo.Visits (ID INT IDENTITY(1,1), Note NVARCHAR(200));
+GO

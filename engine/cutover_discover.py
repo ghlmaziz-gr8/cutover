@@ -35,12 +35,16 @@ import shutil
 import subprocess
 import sys
 import tempfile
-from collections import defaultdict
+from collections import Counter, defaultdict
 from html.parser import HTMLParser
 from pathlib import Path
 
 import deeper_docs
 import file_inventory
+import age
+import filetypes
+import inventory
+import languages
 import legacy
 
 SCHEMA_VERSION = "0.1"
@@ -55,7 +59,7 @@ TEXT_EXTS = (
     ".json", ".sql", ".html", ".htm", ".jsp", ".xhtml", ".cshtml", ".py", ".js",
     ".ts", ".tsx", ".jsx", ".vue", ".cs", ".csproj", ".go", ".mod", ".tf",
     ".bicep", ".sh", ".md", ".txt", ".hl7", ".toml", ".cfg", ".ini", ".conf", ".env",
-) + legacy.LEGACY_TEXT_EXTS
+) + legacy.LEGACY_TEXT_EXTS + languages.ALL_EXTS
 LIMITATIONS = [
     "Static analysis only. Nothing is built, run, or connected to.",
     "Database files are identified by their signature. Their contents are not opened. Tables and fields come only from metadata files written by the read-only script.",
@@ -857,24 +861,46 @@ def detect_legacy(repo: Repo, root: Path, out: dict, metadata: list[dict]) -> No
     from the read-only script. Tier 3 files are counted, not read."""
     langs: dict[str, dict] = {}
     lang_files: dict[str, set[str]] = defaultdict(set)
+    pack_screens: set[str] = set()
+    pack_tables: dict[str, set[str]] = defaultdict(set)
+    depends: dict[str, set[str]] = defaultdict(set)
     for p in repo.paths:
-        lang = legacy.language_of(p, repo.files.get(p))
+        text = repo.files.get(p)
+        lang = inventory.language_for(p, text)
         if not lang:
             continue
-        row = langs.setdefault(lang[0], {"tier": lang[1], "files": 0})
-        row["tier"] = min(row["tier"], lang[1])
+        row = langs.setdefault(lang["name"], {"tier": lang["tier"], "files": 0, "status": lang["status"]})
         row["files"] += 1
-        lang_files[lang[0]].add(p)
+        lang_files[lang["name"]].add(p)
+        pack = lang["pack"]
+        if pack is None or text is None or pack.name in ("Classic ASP", "Classic ASP include"):
+            continue  # classic ASP is read by the ASP functions below
+        result = languages.extract(pack, p, text)
+        pack_screens |= {f"{name} ({p})" for name in result.screens}
+        for t in result.tables:
+            pack_tables[t].add(p)
+        for d in result.depends:
+            depends[d].add(p)
     if langs:
-        rows = [f"{name} (tier {v['tier']}): {v['files']} files, {'read as source' if v['tier'] < 3 else 'not read'}"
+        rows = [f"{name} (tier {v['tier']}): {v['files']} files, {v['status']}"
                 for name, v in sorted(langs.items(), key=lambda kv: (kv[1]["tier"], kv[0]))]
         out["legacy.languages"] = F("legacy.languages", "stack", "Legacy languages detected", rows, "verified",
                                     set().union(*lang_files.values()),
                                     note="Tier 1 and 2 are read as source. Tier 3 is counted by file extension only.")
+    if depends:
+        out["legacy.dependencies"] = F("legacy.dependencies", "stack", "Programs and modules the legacy code calls or uses",
+                                       {"count": len(depends), "names": sorted(depends, key=str.lower)[:200]}, "inferred",
+                                       set().union(*depends.values()),
+                                       note="Names as the code writes them, taken from calls, uses and includes. Not checked against the systems they name.")
 
     views = legacy.asp_views(repo.files)
     pages = legacy.asp_pages(repo.paths)
     pages_without_views = [p for p in pages if p in repo.files and not legacy.views_in(repo.files[p])]
+    if pack_screens and not (views or pages):
+        prior = out.get("ui.screens", {}).get("value") or 0
+        out["ui.screens"] = F("ui.screens", "ui_portal", "Screens (templates, page components and legacy forms)",
+                              (prior if isinstance(prior, int) else 0) + len(pack_screens), "inferred", set(),
+                              note="Each template, page component, form, map or window counts as one screen. Confirm the count with the team.")
     if views or pages:
         out["legacy.views"] = F("legacy.views", "ui_portal", "Screens switched in classic ASP code",
                                 {"count": len(views), "names": sorted(views, key=str.lower)[:200]}, "verified",
@@ -884,17 +910,26 @@ def detect_legacy(repo: Repo, root: Path, out: dict, metadata: list[dict]) -> No
         prior = out.get("ui.screens", {}).get("value") or 0
         if not isinstance(prior, int):
             prior = 0
-        total = prior + len(views) + len(pages_without_views)
-        out["ui.screens"] = F("ui.screens", "ui_portal", "Screens (templates, page components and ASP views)", total,
+        total = prior + len(views) + len(pages_without_views) + len(pack_screens)
+        out["ui.screens"] = F("ui.screens", "ui_portal", "Screens (templates, page components, ASP views and legacy forms)", total,
                               "inferred", set(views.values()) | set(pages_without_views),
                               note="Each template or page component counts as one screen, and each classic ASP view counts as one. Fragments and email templates are included, so confirm the count with the team.")
 
-    code_tables = legacy.sql_tables(repo.files)
+    code_tables: dict[str, set[str]] = defaultdict(set)
+    spelled: dict[str, Counter] = defaultdict(Counter)
+    for key, files_using in legacy.sql_tables(repo.files).items():
+        spelled[key.lower()][key] += 1
+        code_tables[key.lower()] |= set(files_using)
+    for key, files_using in pack_tables.items():
+        spelled[key.lower()][key] += 1
+        code_tables[key.lower()] |= files_using
     if code_tables:
+        shown = {k: spelled[k].most_common(1)[0][0] for k in code_tables}
+        names = [shown[k] for k in sorted(code_tables)]
         out["data.tables_in_code"] = F("data.tables_in_code", "data", "Tables used in SQL in legacy code",
-                                       {"count": len(code_tables), "names": list(code_tables)}, "inferred",
-                                       {f for fs in code_tables.values() for f in fs},
-                                       note="Read from SQL strings in classic ASP and other legacy code. The database itself is not opened, so these are the names the code uses, not a schema.")
+                                       {"count": len(names), "names": names}, "inferred",
+                                       set().union(*code_tables.values()),
+                                       note="Read from SQL in legacy code, in string literals and in statements. The database itself is not opened, so these are the names the code uses, not a schema.")
 
     dbs = legacy.database_files(root, repo.paths)
     if dbs:
@@ -929,6 +964,22 @@ def detect_legacy(repo: Repo, root: Path, out: dict, metadata: list[dict]) -> No
                                    note="Each file is listed with the reason it was not read. Confirm these by hand.")
 
 
+def git_dates_for(root: Path) -> dict:
+    """First and last commit date per path. Empty when the folder is not a git repository, and when the history is
+    shallow: a shallow clone holds only the newest commits, so every file would look new."""
+    if not is_repo_root(root):
+        return {}
+    try:
+        if git(root, "rev-parse", "--is-shallow-repository").strip() == "true":
+            return {}
+    except RuntimeError:
+        return {}
+    try:
+        return age.git_dates(git(root, "log", "--name-only", "--format=%ad", "--date=short", "-n", "20000"))
+    except RuntimeError:
+        return {}
+
+
 def analyze(repo: Repo, root: Path, now: dt.datetime, source: dict, metadata: list[dict] | None = None) -> dict:
     out: dict = {}
     detect_stack(repo, out)
@@ -936,6 +987,10 @@ def analyze(repo: Repo, root: Path, now: dt.datetime, source: dict, metadata: li
     detect_ui(repo, out)
     detect_data(repo, out)
     detect_legacy(repo, root, out, metadata or [])
+    records, summary = inventory.build(root, repo.paths, repo.files, git_dates_for(root), now)
+    out["legacy.inventory"] = F("legacy.inventory", "stack", "Every file, by kind and language", summary, "verified",
+                                [r["path"] for r in records if r["identified_by"] == "none"][:EVIDENCE_LIMIT],
+                                note="Each file is listed in inventory.json with its kind, language, age range and encoding. Unidentified files are named, never guessed at.")
     detect_epic(repo, out)
     detect_containers(repo, out)
     detect_delivery(repo, out)
@@ -948,6 +1003,7 @@ def analyze(repo: Repo, root: Path, now: dt.datetime, source: dict, metadata: li
         "findings": out,
         "flags": sorted(k for k, v in out.items() if v.get("severity")),
         "limitations": LIMITATIONS,
+        "inventory": records,
     }
 
 
@@ -1115,6 +1171,7 @@ def analyze_and_write(root: Path, label: str, out_dir: str, now: dt.datetime, so
     report = analyze(repo, root, now, {**source, "commit": commit}, load_metadata(metadata_paths or []))
     # The deeper assessment is built from the findings just produced, so it adds no extra reads of the code.
     report["deeper"] = deeper_docs.build(report)
+    file_records_all = report.pop("inventory", [])
     if shots:
         add_screenshots(report, root)
     safe_label = re.sub(r"[^\w.-]", "_", label)
@@ -1125,6 +1182,7 @@ def analyze_and_write(root: Path, label: str, out_dir: str, now: dt.datetime, so
     # One record per file, sent to the API in chunks by post_files.py.
     records = file_inventory.file_records(repo.paths, repo.files)
     (dest / "files.json").write_text(json.dumps(records, separators=(",", ":")), encoding="utf-8")
+    (dest / "inventory.json").write_text(json.dumps(file_records_all, separators=(",", ":")), encoding="utf-8")
     print(f"Analyzed {label}: {len(report['findings'])} findings, {len(report['flags'])} flags, {len(records)} files")
     print(f"Wrote {dest / 'findings.json'} and {dest / 'report.md'}")
     return 0
