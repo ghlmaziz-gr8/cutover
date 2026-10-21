@@ -150,14 +150,37 @@ form input + button{margin-top:16px}
 .fr-scan{fill:var(--accent3);animation:frScan 2.6s ease-in-out infinite}
 @keyframes frScan{0%{transform:translateY(0);opacity:0}15%,85%{opacity:1}100%{transform:translateY(50px);opacity:0}}
 @keyframes frBlink{0%,100%{opacity:.25}50%{opacity:.9}}
-.fr-steps{list-style:none;display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:8px;padding:0;margin:16px 0 0}
-.fr-steps li{display:flex;align-items:center;gap:10px;padding:10px 12px;border:1px solid var(--line);border-radius:14px;font-size:13.5px;color:var(--muted);background:var(--card);transition:border-color .3s,background .3s,color .3s}
-.fr-dot{width:22px;height:22px;border-radius:50%;flex:0 0 auto;border:2px solid var(--line);display:grid;place-items:center;font-size:11px;font-weight:700;transition:background .3s,border-color .3s}
-.fr-steps li.done{color:var(--fg)}
-.fr-steps li.done .fr-dot{background:var(--ok);border-color:var(--ok);color:#fff}
-.fr-steps li.now{color:var(--fg);border-color:var(--accent2);background:color-mix(in srgb,var(--accent2) 8%,var(--card))}
-.fr-steps li.now .fr-dot{border-color:var(--accent2);background:var(--accent2);color:#fff;animation:aiPulse 1.6s ease-in-out infinite}
-@media (prefers-reduced-motion:reduce){.fr-scan,.fr-line rect,.fr-steps li.now .fr-dot{animation:none}.fr-scan{opacity:.8}}
+/* Quest-style status panel: a level bar, stage nodes, and a stage-cleared burst */
+.fr-hud{position:relative;overflow:hidden;margin-top:14px;background:radial-gradient(120% 140% at 0% 0%,color-mix(in srgb,var(--accent) 12%,var(--card)),var(--card) 55%)}
+.fr-hud::before{content:"";position:absolute;inset:0;pointer-events:none;background:repeating-linear-gradient(0deg,transparent 0 3px,color-mix(in srgb,var(--accent) 5%,transparent) 3px 4px)}
+.fr-hud>*{position:relative}
+.fr-top{display:flex;justify-content:space-between;align-items:baseline;gap:12px}
+.fr-kicker{font:800 11px/1 ui-monospace,SFMono-Regular,Menlo,monospace;letter-spacing:.22em;color:var(--accent2)}
+.fr-pct{font-family:var(--display);font-size:24px;font-weight:800;color:var(--accent);font-variant-numeric:tabular-nums}
+.fr-title{font-size:20px;font-weight:800;margin:6px 0 12px;color:var(--fg)}
+.fr-bar{position:relative;height:18px;border-radius:999px;background:color-mix(in srgb,var(--accent) 12%,var(--card));border:1px solid var(--line);overflow:hidden}
+.fr-fill{height:100%;width:0;border-radius:999px;background:linear-gradient(90deg,var(--accent),var(--accent2),var(--accent3),var(--accent));background-size:200% 100%;transition:width .9s cubic-bezier(.2,.8,.2,1);animation:frFlow 2.4s linear infinite;box-shadow:0 0 14px color-mix(in srgb,var(--accent2) 55%,transparent)}
+.fr-shine{position:absolute;inset:0;background:linear-gradient(100deg,transparent 30%,rgba(255,255,255,.55) 50%,transparent 70%);transform:translateX(-100%);animation:frShine 2.8s ease-in-out infinite;pointer-events:none}
+@keyframes frFlow{to{background-position:200% 0}}
+@keyframes frShine{0%{transform:translateX(-100%)}60%,100%{transform:translateX(100%)}}
+.fr-nodes{list-style:none;display:grid;grid-template-columns:repeat(4,1fr);margin:20px 0 0;padding:0}
+.fr-nodes li{display:flex;flex-direction:column;align-items:center;gap:8px;text-align:center;font-size:12.5px;font-weight:600;color:var(--muted);transition:color .3s}
+.fr-node{width:34px;height:34px;border-radius:10px;transform:rotate(45deg);border:2px solid var(--line);background:var(--card);display:grid;place-items:center;transition:background .4s,border-color .4s,box-shadow .4s}
+.fr-node span{transform:rotate(-45deg);font-weight:800;font-size:13px;color:var(--muted)}
+.fr-nodes li.done{color:var(--fg)}
+.fr-nodes li.done .fr-node{background:var(--ok);border-color:var(--ok);box-shadow:0 0 14px color-mix(in srgb,var(--ok) 55%,transparent)}
+.fr-nodes li.done .fr-node span{color:#fff}
+.fr-nodes li.now{color:var(--fg)}
+.fr-nodes li.now .fr-node{border-color:var(--accent2);background:color-mix(in srgb,var(--accent2) 16%,var(--card));animation:frPulse 1.4s ease-in-out infinite}
+.fr-nodes li.now .fr-node span{color:var(--accent2)}
+.fr-nodes li.pop .fr-node{animation:frPop .7s cubic-bezier(.2,.8,.2,1)}
+@keyframes frPulse{0%,100%{box-shadow:0 0 0 0 color-mix(in srgb,var(--accent2) 55%,transparent)}50%{box-shadow:0 0 0 9px transparent}}
+@keyframes frPop{0%{transform:rotate(45deg) scale(.5)}55%{transform:rotate(45deg) scale(1.3)}100%{transform:rotate(45deg) scale(1)}}
+.fr-burst{position:absolute;left:50%;top:46%;transform:translate(-50%,-50%);font-family:var(--display);font-weight:900;font-size:20px;letter-spacing:.16em;color:var(--ok);text-shadow:0 0 18px var(--ok);opacity:0;pointer-events:none;white-space:nowrap}
+.fr-burst.go{animation:frBurst 1.7s ease-out forwards}
+@keyframes frBurst{0%{opacity:0;transform:translate(-50%,-50%) scale(.4)}15%{opacity:1;transform:translate(-50%,-50%) scale(1.15)}30%{transform:translate(-50%,-50%) scale(1)}75%{opacity:1}100%{opacity:0;transform:translate(-50%,-150%) scale(1)}}
+.fr-hud .small{margin:14px 2px 0}
+@media (prefers-reduced-motion:reduce){.fr-scan,.fr-line rect,.fr-fill,.fr-shine,.fr-nodes li.now .fr-node,.fr-nodes li.pop .fr-node,.fr-burst.go{animation:none}.fr-scan{opacity:.8}.fr-burst.go{opacity:1}}
 @media (max-width:560px){.fr-intro{flex-direction:column;align-items:flex-start}}
 label.check{display:flex;gap:10px;align-items:flex-start;font-weight:400;margin-top:16px}
 label.check input[type="checkbox"]{flex:0 0 auto;width:18px;height:18px;margin:3px 0 0;accent-color:var(--accent)}
@@ -770,13 +793,22 @@ pre{white-space:pre-wrap;word-break:break-word;background:var(--soft);padding:12
         <p class="muted small" style="margin:0">Cutover reads every file in the repository and writes a short, plain-English purpose for each one, with suggestions for the move. A platform engineer checks each entry. Only approved entries go into the final report.</p>
       </div>
     </div>
-    <ol class="fr-steps" id="frSteps" aria-label="Workflow stage">
-      <li><span class="fr-dot"></span>Scan the repository</li>
-      <li><span class="fr-dot"></span>Write a purpose per file</li>
-      <li><span class="fr-dot"></span>Engineer review</li>
-      <li><span class="fr-dot"></span>Final in the report</li>
-    </ol>
-    <p class="small" id="frNow" style="margin:10px 2px 0" role="status"></p>
+    <div class="card fr-hud" id="frHud" role="status" aria-live="polite">
+      <div class="fr-top">
+        <span class="fr-kicker" id="frKicker">STAGE 1 OF 4</span>
+        <span class="fr-pct" id="frPct">0%</span>
+      </div>
+      <div class="fr-title" id="frTitle">Scan the repository</div>
+      <div class="fr-bar"><div class="fr-fill" id="frFill"></div><div class="fr-shine"></div></div>
+      <ol class="fr-nodes" id="frSteps" aria-label="Workflow stage">
+        <li><span class="fr-node"><span>1</span></span>Scan</li>
+        <li><span class="fr-node"><span>2</span></span>Write</li>
+        <li><span class="fr-node"><span>3</span></span>Review</li>
+        <li><span class="fr-node"><span>4</span></span>Report</li>
+      </ol>
+      <p class="small muted" id="frNow"></p>
+      <div class="fr-burst" id="frBurst" aria-hidden="true">STAGE CLEARED</div>
+    </div>
     <div class="row wzNav" style="margin:14px 0 4px">
       <button type="button" class="ghost" id="filesBackReview">Back to findings</button>
       <button type="button" id="filesApproveAll">Approve all drafts</button>
@@ -3375,23 +3407,48 @@ a{color:#6d28d9;font-weight:600}`;
   }
 
   // Shows where the file review sits in the workflow: scanning, writing, engineer review, or final.
+  const FLOW_STAGES = ["Scan the repository", "Write a purpose per file", "Engineer review", "Final in the report"];
+  let flowLast = -1;
+
+  // Shows where the file review sits in the workflow, as a level bar with stage nodes.
+  // Moving to a later stage in the same visit plays the "stage cleared" burst.
   function updateFlow(counts) {
+    const total = fileRows.length;
+    const approved = (counts.approved || 0) + (counts.edited || 0);
     let now = 0;
+    let pct = 5;
     let note = "Cutover is scanning the repository. Files appear here as the analysis sends them.";
-    if (fileRows.length && counts.draft) {
+    if (total && counts.draft) {
       now = 2;
-      note = `Engineer review: ${counts.draft} file${counts.draft === 1 ? "" : "s"} still waiting for approval. Approve or edit each one.`;
-    } else if (fileRows.length) {
+      pct = 25 + Math.round((50 * approved) / total);
+      note = `${counts.draft} file${counts.draft === 1 ? "" : "s"} still need${counts.draft === 1 ? "s" : ""} approval. Approve or edit each one to move on.`;
+    } else if (total) {
       now = 4;
+      pct = 100;
       note = "Every file is approved. These purposes now go into the final report.";
     }
+    $("frKicker").textContent = now < 4 ? `STAGE ${now + 1} OF 4` : "ALL STAGES CLEARED";
+    $("frTitle").textContent = now < 4 ? FLOW_STAGES[now] : "Ready for the final report";
+    $("frPct").textContent = `${pct}%`;
+    $("frFill").style.width = `${pct}%`;
+    $("frNow").textContent = note;
     [...$("frSteps").children].forEach((li, i) => {
       const done = i < now;
       li.classList.toggle("done", done);
       li.classList.toggle("now", !done && i === now && now < 4);
-      li.querySelector(".fr-dot").textContent = done ? "✓" : String(i + 1);
+      li.querySelector(".fr-node span").textContent = done ? "✓" : String(i + 1);
     });
-    $("frNow").textContent = note;
+    if (flowLast !== -1 && now > flowLast) {
+      const node = $("frSteps").children[now - 1];
+      node.classList.remove("pop");
+      void node.offsetWidth;
+      node.classList.add("pop");
+      const burst = $("frBurst");
+      burst.classList.remove("go");
+      void burst.offsetWidth;
+      burst.classList.add("go");
+    }
+    flowLast = now;
   }
 
   function fileItem(f) {
