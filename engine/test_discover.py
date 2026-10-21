@@ -78,6 +78,19 @@ class PurposeTests(unittest.TestCase):
 
 
 class HelperTests(unittest.TestCase):
+    def test_an_empty_result_is_not_a_point(self):
+        from cutover_discover import is_point
+        self.assertFalse(is_point({"value": ["none found"]}))
+        self.assertFalse(is_point({"value": {"count": 0, "names": []}}))
+        self.assertFalse(is_point({"value": "not indicated"}))
+        self.assertFalse(is_point({"value": []}))
+        self.assertTrue(is_point({"value": ["Java/JVM"]}))
+        self.assertTrue(is_point({"value": {"count": 1, "names": []}}))
+
+    def test_a_flagged_finding_is_a_point_even_when_empty(self):
+        from cutover_discover import is_point
+        self.assertTrue(is_point({"value": {"terraform_files": 0}, "severity": "medium"}))
+
     def test_resolve_url_accepts_owner_name(self):
         self.assertEqual(cd.resolve_url("acme/app"), "https://github.com/acme/app.git")
 
