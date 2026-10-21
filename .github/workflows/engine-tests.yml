@@ -27,6 +27,10 @@ jobs:
         working-directory: engine
         run: python -m unittest test_model_purposes.py test_model_screens.py -v
 
+      - name: Run the cost estimate tests (rates and sizing come from cost_rates.json)
+        working-directory: engine
+        run: python -m unittest test_cost_model.py -v
+
   worker-tests:
     runs-on: ubuntu-latest
     steps:

@@ -9,6 +9,8 @@ hide points a role may not see, the same way it hides findings.
 """
 from __future__ import annotations
 
+import cost_model
+
 MAX_NAMES = 12
 MAX_SCREENS = 12
 
@@ -184,7 +186,8 @@ def _proposal(pid: str, title: str, effort: str, summary: str, tradeoffs: list[s
 
 def modernize(report: dict) -> list[dict]:
     """Three future-state proposals for the application, built from the findings. Each is for review,
-    not a decision, and none is costed. Each lists the findings it relies on and the categories they come from."""
+    not a decision. Costs are estimates from the published rates in cost_rates.json (Google Cloud only).
+    Each lists the findings it relies on and the categories they come from."""
     containers = _finding(report, "containers.images")
     ci = _finding(report, "delivery.ci")
     iac = _finding(report, "infrastructure.as_code")
@@ -245,6 +248,9 @@ def modernize(report: dict) -> list[dict]:
          "Needs the cloud choice and intake first, and a planned data migration."],
         managed_points, managed_basis, [f["category"] for f in (tables, iac) if f] or [],
     )
+    rates = cost_model.load_rates()
+    containerize["points"] += cost_model.cost_points(rates, "containerize")
+    managed["points"] += cost_model.cost_points(rates, "managed")
     return [keep, containerize, managed]
 
 
