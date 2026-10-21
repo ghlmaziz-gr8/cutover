@@ -78,6 +78,21 @@ class PurposeTests(unittest.TestCase):
 
 
 class HelperTests(unittest.TestCase):
+    def test_classic_asp_role_checks_are_read_but_assignments_are_not(self):
+        import tempfile
+        from cutover_discover import Repo, detect_ui
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            (root / "admin.asp").write_text(
+                'If session("AdminFlag") = "1" then\n'
+                'If session("LoginID") = "superuser" then\n'
+                'Session("AdminFlag") = rsLogin("AdminFlag")\n'
+                'sql = "SELECT * FROM Login WHERE (Login.Adminflag) <> 3"\n', encoding="utf-8")
+            out = {}
+            detect_ui(Repo(root), out)
+        self.assertEqual(out["security.roles"]["value"], [
+            "AdminFlag <> 3 (login table)", "AdminFlag = 1 (session)", "superuser (login ID)"])
+
     def test_source_files_add_languages_that_build_files_miss(self):
         from cutover_discover import add_source_languages
         out = {"stack.languages": {"value": ["none found"]}}
