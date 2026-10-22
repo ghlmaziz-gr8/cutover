@@ -2340,6 +2340,106 @@ async function setProgress(request, env, id) {
   return json({ saved: true, stages: stageStates(updated, access.user.id) });
 }
 
+// ---- Stage 3: convert one file to the chosen approach, with the workspace's language model ----
+// A platform engineer picks one file. The conversion runs in the analysis runner (convert.yml), with a one-time model
+// token, and the result comes back as a proposal. Nothing is merged here.
+const CONVERT_PATH = /^[A-Za-z0-9_./-]{1,300}$/;
+const CONVERT_STATUSES = ["ok", "blocked", "unusable", "failed", "refused"];
+
+function dispatchConvert(env, inputs) {
+  return fetch(`https://api.github.com/repos/${env.RUNNER_REPO}/actions/workflows/convert.yml/dispatches`, {
+    method: "POST",
+    headers: {
+      authorization: `Bearer ${env.GITHUB_DISPATCH_TOKEN}`,
+      accept: "application/vnd.github+json",
+      "x-github-api-version": "2022-11-28",
+      "content-type": "application/json",
+      "user-agent": "cutover-api",
+    },
+    body: JSON.stringify({ ref: "main", inputs }),
+  });
+}
+
+async function startConversion(request, env, id) {
+  const access = await analysisAccess(env, request, id);
+  if (access.response) return access.response;
+  if (!canStart(access.member)) return json({ error: "Only platform engineers can convert a file." }, 403);
+  const row = access.row;
+  const parsed = await readJson(request);
+  if (parsed.error) return json({ error: parsed.error }, 400);
+  const path = typeof parsed.value?.path === "string" ? parsed.value.path.trim() : "";
+  if (!CONVERT_PATH.test(path) || path.split("/").includes("..")) {
+    return json({ error: "Choose a file from this analysis." }, 400);
+  }
+  const state = stageStates(row, access.user.id).find((s) => s.id === "convert");
+  if (state && state.state !== "available") return json({ error: state.lock_reason || "This stage is not open yet." }, 409);
+  if (!row.modern_template) return json({ error: "Choose the approach before converting a file." }, 409);
+  if (row.scope !== "modernize") return json({ error: "Choose Modernize as the next stage first." }, 409);
+  if (row.source_upload === true) {
+    return json({ error: "The uploaded zip is deleted when its run ends. Upload the code again to convert a file." }, 409);
+  }
+  if (!row.model_key_id) return json({ error: "Choose a language model for this analysis first." }, 409);
+  const known = await serviceRest(env, `file_findings?analysis_id=eq.${id}&path=eq.${encodeURIComponent(path)}&select=id&limit=1`);
+  if (!known.ok) return json({ error: "Could not check the file." }, 502);
+  if (!(await known.json()).length) return json({ error: "That file is not in this analysis." }, 400);
+
+  const modelToken = (await issueModelToken(env, id, row.model_key_id)) || "";
+  if (!modelToken) return json({ error: "Could not prepare the model. Try again in a minute." }, 502);
+  await serviceRest(env, `analysis_conversions?analysis_id=eq.${id}&path=eq.${encodeURIComponent(path)}`, { method: "DELETE", headers: { prefer: "return=minimal" } });
+  const made = await serviceRest(env, "analysis_conversions", {
+    method: "POST",
+    headers: { prefer: "return=minimal" },
+    body: JSON.stringify({ analysis_id: id, path, template: row.modern_template, status: "queued", requested_by_email: normalizeEmail(access.user.email) }),
+  });
+  if (!made.ok) return json({ error: "Could not start the conversion." }, 502);
+  const dispatch = await dispatchConvert(env, {
+    analysis_id: id, repo: row.repo, ref: row.ref || "", path, template: row.modern_template, model_token: modelToken,
+  });
+  if (!dispatch.ok) {
+    await serviceRest(env, `analysis_conversions?analysis_id=eq.${id}&path=eq.${encodeURIComponent(path)}`, {
+      method: "PATCH", headers: { prefer: "return=minimal" }, body: JSON.stringify({ status: "failed", reason: "The runner could not be started." }),
+    });
+    return json({ error: "The runner could not be started. Try again in a minute." }, 502);
+  }
+  return json({ queued: true, path }, 202);
+}
+
+// The runner posts one result per file. Shared secret only; the result is kept as a proposal for review.
+async function runnerConversion(request, env, id) {
+  if (!timingSafeEqual(request.headers.get("x-runner-secret") || "", env.RUNNER_SECRET || "")) {
+    return json({ error: "Unauthorized." }, 401);
+  }
+  const found = await serviceRest(env, `analyses?id=eq.${id}&select=id`);
+  if (!found.ok) return json({ error: "Could not load the analysis." }, 502);
+  const [analysis] = await found.json();
+  if (!analysis) return json({ error: "Not found." }, 404);
+  const parsed = await readJson(request, 100_000);
+  if (parsed.error) return json({ error: parsed.error }, 400);
+  const body = parsed.value || {};
+  const path = typeof body.path === "string" ? body.path : "";
+  if (!CONVERT_PATH.test(path)) return json({ error: "Bad path." }, 400);
+  if (!CONVERT_STATUSES.includes(body.status)) return json({ error: "Bad status." }, 400);
+  if (body.proposed != null && (typeof body.proposed !== "string" || body.proposed.length > 60000)) {
+    return json({ error: "The proposal is too large." }, 400);
+  }
+  if (body.status === "ok" && typeof body.proposed !== "string") return json({ error: "An ok result needs a proposal." }, 400);
+  const kinds = Array.isArray(body.kinds) ? body.kinds.filter((k) => typeof k === "string").slice(0, 5).map((k) => k.slice(0, 40)) : [];
+  const reason = typeof body.reason === "string" ? body.reason.slice(0, 300) : null;
+  const stage = body.stage === "request" || body.stage === "reply" ? body.stage : null;
+  await serviceRest(env, `analysis_conversions?analysis_id=eq.${id}&path=eq.${encodeURIComponent(path)}`, { method: "DELETE", headers: { prefer: "return=minimal" } });
+  const made = await serviceRest(env, "analysis_conversions", {
+    method: "POST",
+    headers: { prefer: "return=minimal" },
+    body: JSON.stringify({
+      analysis_id: id, path, template: body.template, status: body.status,
+      proposed: body.status === "ok" ? body.proposed : null, reason, kinds, stage,
+      updated_at: new Date().toISOString(),
+    }),
+  });
+  if (!made.ok) return json({ error: "Could not save the result." }, 502);
+  return json({ saved: true }, 201);
+}
+
 async function updateContingency(request, env, id) {
   const auth = await requireUser(env, request);
   if (auth.response) return auth.response;
@@ -2839,6 +2939,10 @@ async function route(request, env) {
     if (analysisScope && UUID_PATTERN.test(analysisScope[1]) && method === "PATCH") return setScope(request, env, analysisScope[1]);
     const analysisTemplate = path.match(/^\/api\/analyses\/([^/]+)\/template$/);
     if (analysisTemplate && UUID_PATTERN.test(analysisTemplate[1]) && method === "PUT") return setTemplate(request, env, analysisTemplate[1]);
+    const analysisConversions = path.match(/^\/api\/analyses\/([^/]+)\/conversions$/);
+    if (analysisConversions && UUID_PATTERN.test(analysisConversions[1]) && method === "POST") return startConversion(request, env, analysisConversions[1]);
+    const runnerConversionRoute = path.match(/^\/api\/runner\/([^/]+)\/conversion$/);
+    if (runnerConversionRoute && UUID_PATTERN.test(runnerConversionRoute[1]) && method === "POST") return runnerConversion(request, env, runnerConversionRoute[1]);
     const analysisProgress = path.match(/^\/api\/analyses\/([^/]+)\/progress$/);
     if (analysisProgress && UUID_PATTERN.test(analysisProgress[1]) && method === "PUT") return setProgress(request, env, analysisProgress[1]);
 
