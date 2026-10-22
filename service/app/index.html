@@ -713,6 +713,15 @@ pre{white-space:pre-wrap;word-break:break-word;background:var(--soft);padding:12
 .tl-trade-col ul{margin:0;padding-left:18px;font:500 13px/1.45 var(--body);color:var(--fg)}
 .tl-trade-col li{margin:4px 0}
 @media (max-width:640px){.tl-trade-cols{grid-template-columns:1fr}}
+.eff-stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin:12px 0}
+.eff-stat{background:var(--soft,#f5f3ff);border-radius:14px;padding:10px 12px;display:flex;flex-direction:column;gap:2px}
+.eff-stat b{font:700 15px var(--body)}
+.eff-table{width:100%;border-collapse:collapse;font:500 13px/1.4 var(--body);margin:6px 0 12px}
+.eff-table th,.eff-table td{text-align:left;padding:7px 8px;border-bottom:1px solid var(--line,#e5e7eb);vertical-align:top}
+.eff-table th{font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:var(--accent,#6d28d9)}
+.eff-plan{margin-top:14px;padding:14px;border-radius:14px;border:1px solid var(--line,#e5e7eb)}
+.eff-phase{padding:8px 0;border-top:1px dashed var(--line,#e5e7eb)}
+.eff-phase:first-of-type{border-top:0}
 .tl-owner{width:100%;max-width:420px;margin:6px 0 10px}
 .tl-status{margin-top:12px}
 .rad-links{display:flex;flex-wrap:wrap;justify-content:center;gap:8px;margin-top:12px}
@@ -1186,6 +1195,7 @@ pre{white-space:pre-wrap;word-break:break-word;background:var(--soft);padding:12
       <p class="small hint" id="approachMsg" role="status"></p>
     </div>
     <div class="card" id="targetCard" hidden style="margin-top:18px"><div id="targetBody"></div></div>
+    <div class="card" id="effortCard" hidden style="margin-top:18px"><div id="effortBody"></div></div>
     <div class="card" id="conversionCard" hidden style="margin-top:18px"><div id="conversionBody"></div></div>
     <div class="card" id="nextPathCard" hidden style="margin-top:18px"><div id="nextPath"></div></div>
     <div class="cards2" style="margin-top:20px">
@@ -1435,6 +1445,7 @@ pre{white-space:pre-wrap;word-break:break-word;background:var(--soft);padding:12
 <script src="radial.js"></script>
 <script src="architecture.js"></script>
 <script src="plan.js"></script>
+<script src="effort.js"></script>
 <script src="starter.js"></script>
 <script>
 (() => {
@@ -4391,6 +4402,140 @@ a{color:#6d28d9;font-weight:600}`;
     "cs-aspnet": /c#|c sharp|csharp|asp\.net|\.net/i,
     "java-spring": /\bjava\b|spring|\bjsp\b/i,
   };
+  // The facts the effort estimate reads from the findings of this analysis.
+  function effortFactsOf(row) {
+    const fact = (id) => (row.findings && row.findings.findings && row.findings.findings[id] ? row.findings.findings[id].value : undefined) || {};
+    const num = (v) => (typeof v === "number" ? v : 0);
+    const endpoints = fact("ui.endpoints");
+    const routines = fact("data.routines_in_code");
+    const tables = fact("data.tables");
+    const screens = fact("ui.screen_names");
+    const deps = fact("legacy.dependencies");
+    const legacy = legacyLanguagesOf(row).map((l) => l.name);
+    const target = (row.target_options || []).find((o) => o.id === row.target_language) || null;
+    const matches = target ? (target.id === "current" ? row.modern_template === "lift-contain" : !!LEGACY_LANGUAGE_MATCH[target.id] && legacy.some((n) => LEGACY_LANGUAGE_MATCH[target.id].test(n))) : undefined;
+    return {
+      template: row.modern_template,
+      screens: num(screens.count),
+      endpoints: num(endpoints.endpoint_annotations),
+      routines: { procedures: num(routines.procedures), functions: num(routines.functions), views: num(routines.views) },
+      tables: num(tables.count),
+      dependencies: num(deps.count),
+      targetLanguage: target ? target.id : null,
+      targetLabel: target ? target.label : null,
+      targetMatchesLegacy: matches,
+    };
+  }
+
+  // Effort, resources and the project plan, from the Cutover AI assessment (effort.js). Shown with the approach.
+  function renderEffort(row) {
+    const card = $("effortCard");
+    const box = $("effortBody");
+    box.replaceChildren();
+    const show = !!row && row.scope === "modernize" && !!row.modern_template && !!window.Effort;
+    card.hidden = !show;
+    if (!show) return;
+    const E = window.Effort;
+    const est = E.build(effortFactsOf(row));
+    const fmt = (v) => (Math.round(v * 10) / 10).toLocaleString("en-US");
+    box.appendChild(el("p", E.LABEL, "eyebrow-sm"));
+    box.appendChild(el("h3", "Effort, resources and project plan"));
+    box.appendChild(el("p", "Cutover AI assessment, generated from the findings of this analysis by Cutover's assessment rules. It is a planning range for review, not a quote.", "muted small"));
+    if (!est.ready) {
+      box.appendChild(el("p", est.message, "muted"));
+      return;
+    }
+    const stats = el("div", null, "eff-stats");
+    const stat = (label, value) => {
+      const item = el("div", null, "eff-stat");
+      item.append(el("span", label, "muted small"), el("b", value));
+      stats.appendChild(item);
+    };
+    stat("Coding", `${fmt(est.coding.low)}–${fmt(est.coding.high)} person-days`);
+    stat("Database", `${fmt(est.database.low)}–${fmt(est.database.high)} person-days`);
+    stat("Total", `${fmt(est.total.low)}–${fmt(est.total.high)} person-days`);
+    stat("Team", `${est.team} people`);
+    stat("Duration", `About ${est.weeks} weeks`);
+    box.appendChild(stats);
+
+    // Effort breakdown
+    box.appendChild(el("p", "Effort by part", "eyebrow-sm"));
+    const table = document.createElement("table");
+    table.className = "eff-table";
+    const thead = document.createElement("tr");
+    for (const h of ["Area", "Part", "Found", "Person-days"]) thead.appendChild(el("th", h));
+    table.appendChild(el("thead")).appendChild(thead);
+    const body = el("tbody");
+    const line = (area, label, count, days) => {
+      const tr = document.createElement("tr");
+      tr.append(el("td", area), el("td", label), el("td", count === "" ? "—" : count ? String(count) : "none"), el("td", `${fmt(days[0])}–${fmt(days[1])}`));
+      body.appendChild(tr);
+    };
+    for (const i of est.coding.items) line("Coding", i.label, i.count, i.days);
+    line("Coding", "Testing and fixes", "", est.coding.testing);
+    for (const i of est.database.items) line("Database", i.label, i.count, i.days);
+    line("Management", "Planning, reviews and governance", "", est.management);
+    table.appendChild(body);
+    box.appendChild(table);
+
+    // Resources
+    box.appendChild(el("p", "Resources needed", "eyebrow-sm"));
+    const res = document.createElement("table");
+    res.className = "eff-table";
+    const rh = document.createElement("tr");
+    for (const h of ["Role", "People", "What they do"]) rh.appendChild(el("th", h));
+    res.appendChild(el("thead")).appendChild(rh);
+    const rb = el("tbody");
+    for (const r of est.resources) {
+      const tr = document.createElement("tr");
+      tr.append(el("td", r.role), el("td", String(r.fte)), el("td", r.why));
+      rb.appendChild(tr);
+    }
+    res.appendChild(rb);
+    box.appendChild(res);
+
+    if (est.notes.length) {
+      box.appendChild(el("p", "Assumptions and gaps", "eyebrow-sm"));
+      const ul = el("ul", null, "small");
+      for (const n of est.notes) ul.appendChild(el("li", n));
+      box.appendChild(ul);
+    }
+
+    // Project plan: hidden until asked for, and included in the exports.
+    const plan = el("div", null, "eff-plan show-in-export");
+    plan.hidden = true;
+    plan.appendChild(el("p", "Project plan", "eyebrow-sm"));
+    plan.appendChild(el("p", `${est.weeks} weeks in ${est.phases.length} phases, with a team of ${est.team}. Phases run one after another.`, "muted small"));
+    for (const ph of est.phases) {
+      const item = el("div", null, "eff-phase");
+      const weeks = ph.startWeek === ph.endWeek ? `Week ${ph.startWeek}` : `Weeks ${ph.startWeek}–${ph.endWeek}`;
+      item.appendChild(el("b", `${weeks} · ${ph.name}`));
+      const ul = el("ul", null, "small");
+      for (const t of ph.tasks) ul.appendChild(el("li", t));
+      item.appendChild(ul);
+      plan.appendChild(item);
+    }
+
+    const actions = el("div", null, "row export-row");
+    actions.style.cssText = "gap:8px;margin-top:14px;flex-wrap:wrap";
+    const toggle = el("button", "View the project plan", "ghost small-btn");
+    toggle.type = "button";
+    toggle.setAttribute("aria-expanded", "false");
+    toggle.addEventListener("click", () => {
+      plan.hidden = !plan.hidden;
+      toggle.textContent = plan.hidden ? "View the project plan" : "Hide the project plan";
+      toggle.setAttribute("aria-expanded", String(!plan.hidden));
+    });
+    const pdf = el("button", "Export PDF", "ghost small-btn");
+    pdf.type = "button";
+    pdf.addEventListener("click", () => exportCardPdf("effortCard", effortTitle()));
+    const html = el("button", "Export HTML", "ghost small-btn");
+    html.type = "button";
+    html.addEventListener("click", () => exportCardHtml("effortCard", effortTitle(), "effort-and-plan"));
+    actions.append(toggle, pdf, html);
+    box.append(actions, plan);
+  }
+
   // The legacy languages the review found, one per row: "Name (tier N): N files, status".
   function legacyLanguagesOf(row) {
     const shown = (row.findings && row.findings.findings) || {};
@@ -5042,6 +5187,7 @@ a{color:#6d28d9;font-weight:600}`;
     renderDbCard();
     renderApproach(cur);
     renderTarget(cur);
+    renderEffort(cur);
     renderConversionApproval(cur);
     const pathBox = $("nextPath");
     pathBox.replaceChildren();
@@ -5766,42 +5912,47 @@ const REGION_OPTS = {
     const title = `Cutover report: ${cur.app_name || cur.repo || ""}`;
     return `<!doctype html><html lang="en" data-theme="light"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="color-scheme" content="light"><title>${esc(title)}</title><style>${css}\n${REPORT_OVERRIDES}</style></head><body class="report-export"><main style="max-width:1100px;margin:0 auto;padding:24px"><h1>${esc($("reviewTitle").textContent)}</h1><p class="print-meta">${esc($("reviewMeta").textContent)}</p>${reviewForExport().outerHTML}</main></body></html>`;
   }
-  // Modernize approach: the approach card (mind map and the three options) as a PDF or an HTML file.
-  // Buttons and forms are removed; the map and its text are kept.
-  function approachForExport() {
-    const card = $("approachCard").cloneNode(true);
+  // A card as a PDF or an HTML file. Buttons and forms are removed, and parts marked show-in-export are opened.
+  function cardForExport(cardId) {
+    const card = $(cardId).cloneNode(true);
     card.querySelectorAll(".export-row, button, input, textarea, select, form, script").forEach((n) => n.remove());
+    card.querySelectorAll(".show-in-export[hidden]").forEach((n) => n.removeAttribute("hidden"));
     card.querySelectorAll("[id]").forEach((n) => n.removeAttribute("id"));
     card.removeAttribute("hidden");
     card.style.marginTop = "0";
     card.classList.add("report-export");
     return card;
   }
-  function approachTitle() {
-    return `${cur.app_name || cur.repo || "Application"}: choose the approach`;
-  }
-  $("exportApproachPdf").addEventListener("click", () => {
+  function exportCardPdf(cardId, title) {
     const box = $("printReport");
     box.replaceChildren();
     box.className = "report-export";
-    box.appendChild(el("h1", approachTitle()));
-    box.appendChild(approachForExport());
+    box.appendChild(el("h1", title));
+    box.appendChild(cardForExport(cardId));
     runPrint();
-  });
-  $("exportApproachHtml").addEventListener("click", () => {
+  }
+  function exportCardHtml(cardId, title, suffix) {
     const esc = (v) => String(v ?? "").replace(/[&<>"']/g, (ch) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[ch]));
     const css = [...document.querySelectorAll("style")].map((st) => st.textContent).join("\n");
-    const html = `<!doctype html><html lang="en" data-theme="light"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="color-scheme" content="light"><title>${esc(approachTitle())}</title><style>${css}\n${REPORT_OVERRIDES}</style></head><body class="report-export"><main style="max-width:1100px;margin:0 auto;padding:24px"><h1>${esc(approachTitle())}</h1>${approachForExport().outerHTML}</main></body></html>`;
+    const html = `<!doctype html><html lang="en" data-theme="light"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="color-scheme" content="light"><title>${esc(title)}</title><style>${css}\n${REPORT_OVERRIDES}</style></head><body class="report-export"><main style="max-width:1100px;margin:0 auto;padding:24px"><h1>${esc(title)}</h1>${cardForExport(cardId).outerHTML}</main></body></html>`;
     const blob = new Blob([html], { type: "text/html" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = `${(cur.app_name || cur.repo || "approach").replace(/[^A-Za-z0-9_-]+/g, "-").replace(/^-+|-+$/g, "")}-approach.html`;
+    a.download = `${(cur.app_name || cur.repo || "report").replace(/[^A-Za-z0-9_-]+/g, "-").replace(/^-+|-+$/g, "")}-${suffix}.html`;
     document.body.appendChild(a);
     a.click();
     a.remove();
     setTimeout(() => URL.revokeObjectURL(url), 1000);
-  });
+  }
+  function approachTitle() {
+    return `${cur.app_name || cur.repo || "Application"}: choose the approach`;
+  }
+  function effortTitle() {
+    return `${cur.app_name || cur.repo || "Application"}: effort, resources and project plan (Cutover AI assessment)`;
+  }
+  $("exportApproachPdf").addEventListener("click", () => exportCardPdf("approachCard", approachTitle()));
+  $("exportApproachHtml").addEventListener("click", () => exportCardHtml("approachCard", approachTitle(), "approach"));
 
   $("exportHtmlTop").addEventListener("click", () => {
     const blob = new Blob([buildReportHtml()], { type: "text/html" });
