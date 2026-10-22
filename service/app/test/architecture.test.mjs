@@ -96,3 +96,7 @@ test("links and domains have their own card, shown when found, and the same acce
   assert.ok(html.includes('security_officer: ["security", "privacy", "links"]'));
   assert.ok(html.includes('"links.domains": {') && html.includes('"links.credentials": {'));
 });
+
+test("every SVG element is created with an attribute object, so one bad call cannot stop the review from rendering", () => {
+  assert.ok(!/svgEl\("[a-zA-Z]+"\)/.test(html), "svgEl needs an attribute object, even an empty one");
+});

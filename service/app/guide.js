@@ -11,6 +11,7 @@
 window.CUTOVER_GUIDE = {
   updated: "2026-10-22",
   whatsNew: [
+    "2026-10-22: Fixed: the review shows everything again, including the charts, the findings map, the cards and the architecture diagram.",
     "2026-10-22: A new card, Links and domains, lists the outside domains and web addresses the code calls. It shows plain HTTP connections and any address with a password or token in it. Security officers and CIOs or CTOs can see it.",
     "2026-10-22: How sure we are is an interactive view. The ring draws itself, hover or click a status to see its share, and each row says what the status means.",
     "2026-10-22: What we found is the heading of the findings section and the first thing on it.",

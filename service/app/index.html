@@ -3511,7 +3511,7 @@ button:not(:disabled):active{transform:scale(.965)}
     const gid = `confg${Math.random().toString(36).slice(2, 8)}`;
     const ring = el("div", null, "conf-ring");
     const svg = svgEl("svg", { viewBox: "0 0 180 180", width: "180", height: "180", role: "img", "aria-label": `${verifiedN} of ${total} points verified in code` });
-    const defs = svgEl("defs");
+    const defs = svgEl("defs", {});
     for (const p of parts) {
       const lg = svgEl("linearGradient", { id: `${gid}-${p.key}`, x1: "0", y1: "0", x2: "1", y2: "1" });
       lg.appendChild(svgEl("stop", { offset: "0", "stop-color": p.c1 }));
