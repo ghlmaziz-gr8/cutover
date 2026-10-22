@@ -822,6 +822,8 @@ pre{white-space:pre-wrap;word-break:break-word;background:var(--soft);padding:12
 .eff-role-bar{display:block;height:100%;border-radius:99px;background:var(--grad);animation:effGrow .8s cubic-bezier(.2,.8,.2,1) both}
 .eff-plan-head{display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;margin-top:20px}
 .eff-plan-head .eyebrow-sm{margin:0}
+.eff-plan-spacer{flex:1 1 auto}
+.eff-plan-wrap{margin-top:6px;padding:16px;border-radius:22px;border:1px solid var(--line,#e5e7eb);background:var(--card,#fff)}
 .gantt-wrap{overflow-x:auto;border-radius:20px;border:1px solid var(--line,#e5e7eb);background:var(--card,#fff);padding:12px 12px 6px}
 .gantt{min-width:calc(230px + var(--n) * 30px)}
 .gantt-row{display:grid;grid-template-columns:230px repeat(var(--n),minmax(30px,1fr));align-items:center;min-height:52px;border-top:1px dashed var(--line,#e5e7eb);position:relative}
@@ -4785,6 +4787,9 @@ a{color:#6d28d9;font-weight:600}`;
     box.appendChild(teamGrid);
 
     // Plan
+    // The whole plan sits in one block, so it can be exported on its own.
+    const planWrap = el("div", null, "eff-plan-wrap");
+    planWrap.id = "effortPlan";
     const planHead = el("div", null, "eff-plan-head");
     planHead.appendChild(el("p", "Project plan", "eyebrow-sm"));
     const vseg = el("div", null, "eff-seg eff-seg-small");
@@ -4799,8 +4804,16 @@ a{color:#6d28d9;font-weight:600}`;
       vseg.appendChild(b);
     }
     planHead.appendChild(vseg);
-    box.appendChild(planHead);
-    box.appendChild(el("p", `${est.weeks} weeks in ${est.phases.length} phases, with a team of ${est.headcount}. Select a phase to see its tasks, deliverables and approvals.`, "muted small"));
+    planHead.appendChild(el("span", "", "eff-plan-spacer"));
+    const planPdf = el("button", "Export plan PDF", "ghost small-btn");
+    planPdf.type = "button";
+    planPdf.addEventListener("click", () => exportCardPdf("effortPlan", planTitle()));
+    const planHtml = el("button", "Export plan HTML", "ghost small-btn");
+    planHtml.type = "button";
+    planHtml.addEventListener("click", () => exportCardHtml("effortPlan", planTitle(), "project-plan"));
+    planHead.append(planPdf, planHtml);
+    planWrap.appendChild(planHead);
+    planWrap.appendChild(el("p", `${est.weeks} weeks in ${est.phases.length} phases, with a team of ${est.headcount}, for ${fmt(est.total.value)} person-days (${st.scenario}). Select a phase to see its tasks, deliverables and approvals.`, "muted small"));
 
     if (st.view === "timeline") {
       const N = est.weeks;
@@ -4815,8 +4828,10 @@ a{color:#6d28d9;font-weight:600}`;
         const color = EFFORT_PALETTE[idx % EFFORT_PALETTE.length];
         const rowEl = el("div", null, "gantt-row");
         rowEl.style.setProperty("--c", color);
-        const label = el("button", null, "gantt-label");
-        label.type = "button";
+        // A div with role button, so the phase name stays in the export (exports remove real buttons).
+        const label = el("div", null, "gantt-label");
+        label.setAttribute("role", "button");
+        label.setAttribute("tabindex", "0");
         label.setAttribute("aria-expanded", "false");
         label.append(el("b", ph.name), el("span", ph.owners.slice(0, 2).join(" · ") || "Team", "muted small"));
         const bar = el("div", null, "gantt-bar");
@@ -4855,18 +4870,20 @@ a{color:#6d28d9;font-weight:600}`;
         who.appendChild(wchips);
         cols.append(tasks, deliv, appr, who);
         detail.appendChild(cols);
-        label.addEventListener("click", () => {
+        const toggleRow = () => {
           detail.hidden = !detail.hidden;
           label.setAttribute("aria-expanded", String(!detail.hidden));
           rowEl.classList.toggle("is-open", !detail.hidden);
-        });
+        };
+        label.addEventListener("click", toggleRow);
+        label.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); toggleRow(); } });
         gantt.append(rowEl, detail);
       });
       wrap.appendChild(gantt);
-      box.appendChild(wrap);
+      planWrap.appendChild(wrap);
       const legend = el("div", null, "gantt-legend muted small");
       legend.append(el("span", "Each bar is one phase. Phases run one after another. The diamond marks an approval gate."));
-      box.appendChild(legend);
+      planWrap.appendChild(legend);
     } else {
       const cards = el("div", null, "eff-phase-grid");
       est.phases.forEach((ph, idx) => {
@@ -4884,8 +4901,10 @@ a{color:#6d28d9;font-weight:600}`;
         if (ph.gate) c.appendChild(el("span", "Approval gate", "eff-gate-tag"));
         cards.appendChild(c);
       });
-      box.appendChild(cards);
+      planWrap.appendChild(cards);
     }
+
+    box.appendChild(planWrap);
 
     // Assumptions and gaps
     const more = el("details", null, "eff-more");
@@ -6327,6 +6346,9 @@ const REGION_OPTS = {
   }
   function approachTitle() {
     return `${cur.app_name || cur.repo || "Application"}: choose the approach`;
+  }
+  function planTitle() {
+    return `${cur.app_name || cur.repo || "Application"}: project plan (Cutover AI assessment)`;
   }
   function effortTitle() {
     return `${cur.app_name || cur.repo || "Application"}: effort, resources and project plan (Cutover AI assessment)`;

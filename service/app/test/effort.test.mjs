@@ -125,4 +125,6 @@ test("the portal reads the real findings and shows the plan, the exports and the
   assert.ok(html.includes('"Timeline"') && html.includes('"Cards"'), "the plan has a timeline and a cards view");
   assert.ok(html.includes("gantt-gate"), "approval gates are drawn on the timeline");
   assert.ok(html.includes('exportCardPdf("effortCard"'));
+  assert.ok(html.includes('exportCardPdf("effortPlan"'), "the plan can be exported on its own");
+  assert.ok(html.includes('exportCardHtml("effortPlan"'), "the plan can be exported as HTML on its own");
 });
