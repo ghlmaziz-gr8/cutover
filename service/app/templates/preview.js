@@ -166,37 +166,229 @@
     return flow;
   }
 
-  // One wireframe per screen the code shows. The legacy name is kept under each, so the link to the code is clear.
-  function wireframe(name, index) {
-    const frame = make("div", null, "wire");
-    const bar = make("div", null, "wire-bar");
-    bar.appendChild(make("b", name));
-    frame.appendChild(bar);
-    const body = make("div", null, "wire-body");
-    const search = make("div", null, "wire-row");
-    search.appendChild(make("span", "Search", "wire-input"));
-    search.appendChild(make("span", "Filter", "wire-pill"));
-    body.appendChild(search);
-    for (let i = 0; i < 3; i++) body.appendChild(make("div", null, "wire-line"));
-    const actions = make("div", null, "wire-row");
-    actions.appendChild(make("span", "Save", "wire-btn"));
-    actions.appendChild(make("span", "Cancel", "wire-btn ghost"));
-    body.appendChild(actions);
-    frame.appendChild(body);
-    frame.appendChild(make("p", `Screen ${index + 1}`, "wire-cap"));
+  // A screen's kind comes from its name: a dashboard, a form, a detail page or a list. Each screen gets a layout
+  // for its kind, and the variant changes with its position, so no two screens look the same.
+  function kindOf(name) {
+    const n = String(name).toLowerCase();
+    if (/dashboard|home|overview|summary|welcome/.test(n)) return "dash";
+    if (/detail|view|profile|account|settings|review|case/.test(n)) return "detail";
+    if (/\bnew\b|add|create|edit|form|entry|check|register|intake|update|record|book|submit/.test(n)) return "form";
+    return "list";
+  }
+
+  const SAMPLE = {
+    ids: ["10482", "10477", "10469", "10455", "10449", "10437"],
+    dates: ["24 Oct", "23 Oct", "22 Oct", "21 Oct", "18 Oct", "16 Oct"],
+    statuses: [["Open", "ok"], ["Pending", "warn"], ["Open", "ok"], ["Closed", "muted"], ["Pending", "warn"], ["Open", "ok"]]
+  };
+
+  function el(tag, text, cls) {
+    return make(tag, text, cls);
+  }
+
+  // The app shell every screen sits in: sidebar, top bar with the signed-in role, and the page.
+  function shell(name, index, ctx, tpl) {
+    const app = el("div", null, "hf-app");
+    const side = el("div", null, "hf-side");
+    const brand = el("div", null, "hf-brand");
+    brand.appendChild(el("i"));
+    brand.appendChild(el("b", "Application"));
+    side.appendChild(brand);
+    const items = (ctx.screens.length ? ctx.screens : ["Home", "Work list", "New record", "Details"]).slice(0, 5);
+    items.forEach((n) => side.appendChild(el("span", n, n === name ? "on" : "")));
+    if (tpl === "services-data") side.appendChild(el("span", "Services status", "svc"));
+    const main = el("div", null, "hf-main");
+    const top = el("div", null, "hf-top");
+    const crumb = el("div");
+    crumb.appendChild(el("small", "Home / " + name));
+    crumb.appendChild(el("h4", name));
+    top.appendChild(crumb);
+    const role = ctx.roles.length ? ctx.roles[index % ctx.roles.length] : "Signed in";
+    top.appendChild(el("span", role, "hf-role"));
+    if (tpl === "lift-contain") top.appendChild(el("span", "Running in a container", "hf-badge"));
+    if (tpl === "services-data") top.appendChild(el("span", "Calls services", "hf-badge"));
+    main.appendChild(top);
+    app.append(side, main);
+    return { app, main };
+  }
+
+  function listBody(index, variant) {
+    const wrap = el("div", null, "hf-body");
+    const bar = el("div", null, "hf-toolbar");
+    bar.appendChild(el("span", "Search records", "hf-input"));
+    bar.appendChild(el("span", "Status: Open", "hf-filter"));
+    bar.appendChild(el("span", variant % 2 ? "Owner: Any" : "Last 30 days", "hf-filter"));
+    bar.appendChild(el("span", "New", "hf-btn"));
+    wrap.appendChild(bar);
+    if (variant % 2 === 1) {
+      // Every second list reads as cards, so it does not look like the first.
+      const cards = el("div", null, "hf-cards");
+      for (let i = 0; i < 4; i++) {
+        const [label, tone] = SAMPLE.statuses[(i + index) % SAMPLE.statuses.length];
+        const card = el("div", null, "hf-card-item");
+        card.appendChild(el("i", ["RR", "AR", "FV", "DC"][(i + index) % 4], "hf-avatar"));
+        const text = el("div");
+        text.appendChild(el("b", ["Routine review", "Access request", "Follow-up visit", "Data correction"][(i + index) % 4]));
+        text.appendChild(el("small", `#${SAMPLE.ids[(i + index) % SAMPLE.ids.length]} · updated ${SAMPLE.dates[(i + index) % SAMPLE.dates.length]}`));
+        card.append(text, el("span", label, "hf-chip " + tone));
+        cards.appendChild(card);
+      }
+      wrap.appendChild(cards);
+      const foot = el("div", null, "hf-foot");
+      foot.appendChild(el("span", "4 of 128 shown"));
+      foot.appendChild(el("span", "Load more"));
+      wrap.appendChild(foot);
+      return wrap;
+    }
+    const table = el("div", null, "hf-table");
+    const head = el("div", null, "hf-row head");
+    ["Reference", "Subject", "Updated", "Status"].forEach((h) => head.appendChild(el("span", h)));
+    table.appendChild(head);
+    for (let i = 0; i < 5; i++) {
+      const row = el("div", null, "hf-row");
+      const [label, tone] = SAMPLE.statuses[(i + index) % SAMPLE.statuses.length];
+      row.appendChild(el("span", "#" + SAMPLE.ids[(i + index) % SAMPLE.ids.length]));
+      row.appendChild(el("span", ["Routine review", "Access request", "Follow-up visit", "Data correction", "Monthly check"][(i + index) % 5]));
+      row.appendChild(el("span", SAMPLE.dates[(i + index) % SAMPLE.dates.length]));
+      row.appendChild(el("span", label, "hf-chip " + tone));
+      table.appendChild(row);
+    }
+    wrap.appendChild(table);
+    const foot = el("div", null, "hf-foot");
+    foot.appendChild(el("span", "1 to 5 of 128"));
+    foot.appendChild(el("span", "Previous  ·  Next"));
+    wrap.appendChild(foot);
+    return wrap;
+  }
+
+  function formBody(index) {
+    const wrap = el("div", null, "hf-body hf-form");
+    const fields = el("div", null, "hf-fields");
+    [["Reference", "Generated on save"], ["Requested by", "Name of the person"], ["Date needed", "24 Oct 2026"], ["Priority", "Normal"]]
+      .forEach(([label, value]) => {
+        const f = el("label", null, "hf-field");
+        f.appendChild(el("span", label));
+        f.appendChild(el("i", value));
+        fields.appendChild(f);
+      });
+    const note = el("label", null, "hf-field wide");
+    note.appendChild(el("span", "Notes"));
+    note.appendChild(el("i", "Describe what is needed and any deadline."));
+    fields.appendChild(note);
+    wrap.appendChild(fields);
+    const side = el("div", null, "hf-panel");
+    side.appendChild(el("b", "Checklist"));
+    ["Details complete", "Owner confirmed", "Sent for review"].forEach((t, i) => {
+      const row = el("div", null, "hf-check " + (i < 2 ? "done" : ""));
+      row.appendChild(el("i"));
+      row.appendChild(el("span", t));
+      side.appendChild(row);
+    });
+    const bar = el("div", null, "hf-progress");
+    const fill = el("i");
+    fill.style.width = `${index % 2 ? 66 : 40}%`;
+    bar.appendChild(fill);
+    side.appendChild(bar);
+    wrap.appendChild(side);
+    const actions = el("div", null, "hf-actions wide");
+    actions.appendChild(el("span", "Cancel", "hf-btn ghost"));
+    actions.appendChild(el("span", "Save and continue", "hf-btn"));
+    wrap.appendChild(actions);
+    return wrap;
+  }
+
+  function dashBody(index) {
+    const wrap = el("div", null, "hf-body");
+    const kpis = el("div", null, "hf-kpis");
+    [["Open items", "142", "+8 this week"], ["Waiting on others", "37", "5 overdue"], ["Closed this month", "611", "+12%"]].forEach(([l, v, d], i) => {
+      const k = el("div", null, "hf-kpi");
+      k.appendChild(el("small", l));
+      k.appendChild(el("b", v));
+      k.appendChild(el("span", d, i === 1 ? "warn" : "ok"));
+      kpis.appendChild(k);
+    });
+    wrap.appendChild(kpis);
+    const chart = el("div", null, "hf-chart");
+    const heights = index % 2 ? [40, 58, 46, 72, 64, 80, 55] : [70, 52, 66, 38, 60, 48, 74];
+    heights.forEach((h, i) => {
+      const col = el("i");
+      col.style.height = h + "%";
+      col.title = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"][i];
+      chart.appendChild(col);
+    });
+    const card = el("div", null, "hf-panel");
+    card.appendChild(el("b", "Volume this week"));
+    card.appendChild(chart);
+    wrap.appendChild(card);
+    const recent = el("div", null, "hf-panel");
+    recent.appendChild(el("b", "Recent activity"));
+    ["Record #10482 updated", "Access request approved", "Follow-up scheduled"].forEach((t, i) => {
+      const r = el("div", null, "hf-check");
+      r.appendChild(el("i"));
+      r.appendChild(el("span", t + " · " + ["2 h ago", "Yesterday", "3 days ago"][i]));
+      recent.appendChild(r);
+    });
+    wrap.appendChild(recent);
+    return wrap;
+  }
+
+  function detailBody(index) {
+    const wrap = el("div", null, "hf-body hf-detail");
+    const head = el("div", null, "hf-detail-head");
+    head.appendChild(el("b", "Record #" + SAMPLE.ids[index % SAMPLE.ids.length]));
+    head.appendChild(el("span", index % 2 ? "Pending" : "Open", "hf-chip " + (index % 2 ? "warn" : "ok")));
+    wrap.appendChild(head);
+    const kv = el("div", null, "hf-panel");
+    [["Owner", "Team lead"], ["Created", "16 Oct"], ["Last change", "24 Oct"], ["Priority", "Normal"]].forEach(([k, v]) => {
+      const row = el("div", null, "hf-kv");
+      row.appendChild(el("span", k));
+      row.appendChild(el("i", v));
+      kv.appendChild(row);
+    });
+    wrap.appendChild(kv);
+    const timeline = el("div", null, "hf-panel");
+    timeline.appendChild(el("b", "History"));
+    ["Reviewed by owner", "Updated details", "Created"].forEach((t, i) => {
+      const r = el("div", null, "hf-check done");
+      r.appendChild(el("i"));
+      r.appendChild(el("span", t));
+      timeline.appendChild(r);
+    });
+    wrap.appendChild(timeline);
+    const actions = el("div", null, "hf-actions wide");
+    actions.appendChild(el("span", "Back", "hf-btn ghost"));
+    actions.appendChild(el("span", "Mark complete", "hf-btn"));
+    wrap.appendChild(actions);
+    return wrap;
+  }
+
+  // One full screen, drawn in the app shell, with content for its kind.
+  function highFidelity(name, index, ctx, tpl, variant) {
+    const frame = el("figure", null, "hf");
+    const { app, main } = shell(name, index, ctx, tpl);
+    const kind = kindOf(name);
+    main.appendChild(kind === "dash" ? dashBody(index) : kind === "form" ? formBody(index) : kind === "detail" ? detailBody(index) : listBody(index, variant));
+    frame.appendChild(app);
+    const cap = el("figcaption", `${name}: ${kind === "dash" ? "dashboard" : kind === "form" ? "form" : kind === "detail" ? "detail page" : "list"}, screen ${index + 1}`);
+    frame.appendChild(cap);
     return frame;
   }
 
-  function wireframes(ctx, caption) {
-    const wrap = make("div", null, "wires");
-    const names = ctx.screens.length ? ctx.screens : ["Screen 1", "Screen 2"];
-    names.slice(0, 4).forEach((n, i) => wrap.appendChild(wireframe(n, i)));
-    const note = ctx.screens.length
-      ? `${caption} Drawn from ${ctx.screenCount} screen ${ctx.screenCount === 1 ? "name" : "names"} the code shows.`
-      : `${caption} No screen names were found, so these are placeholders.`;
-    const block = make("div");
-    block.appendChild(make("p", note, "look-note"));
+  function wireframes(ctx, caption, tpl) {
+    const block = el("div");
+    block.appendChild(el("p", caption, "look-note"));
+    const wrap = el("div", null, "hf-grid");
+    const fallback = ["Home dashboard", "Work list", "New record", "Record details"];
+    const names = ctx.screens.length ? ctx.screens : fallback;
+    let lists = 0;
+    names.slice(0, 4).forEach((n, i) => {
+      const variant = kindOf(n) === "list" ? lists++ : i;
+      wrap.appendChild(highFidelity(n, i, ctx, tpl, variant));
+    });
     block.appendChild(wrap);
+    block.appendChild(el("p", ctx.screens.length
+      ? `Drawn from ${ctx.screenCount} screen ${ctx.screenCount === 1 ? "name" : "names"} the code shows. Labels and values are examples, not your data.`
+      : "No screen names were found, so these are examples of the kinds of screen the application is likely to need. Labels and values are examples.", "look-note"));
     return block;
   }
 
@@ -279,7 +471,7 @@
     };
     const frames = make("div", null, "proposal");
     frames.appendChild(make("p", "Screen layouts", "proposal-title"));
-    frames.appendChild(wireframes(ctx, captions[id] || ""));
+    frames.appendChild(wireframes(ctx, captions[id] || "", id));
     wrap.appendChild(frames);
 
     wrap.appendChild(section("When it fits"));
