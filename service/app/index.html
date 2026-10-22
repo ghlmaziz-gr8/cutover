@@ -585,6 +585,15 @@ pre{white-space:pre-wrap;word-break:break-word;background:var(--soft);padding:12
 .src-opt span{font-size:13px;color:var(--muted)}
 .src-opt[aria-checked="true"]{border-color:var(--accent);box-shadow:0 0 0 2px color-mix(in srgb,var(--accent) 25%,transparent)}
 @media (max-width:560px){.src-choice{grid-template-columns:1fr}}
+.mmap{margin-top:14px;overflow-x:auto}
+.mmap ul{list-style:none;margin:0;padding:0 0 0 18px;border-left:2px solid var(--line)}
+.mmap .mm-root{padding:0;border:0}
+.mmap li{position:relative;padding:6px 0 6px 14px}
+.mmap li::before{content:"";position:absolute;left:0;top:18px;width:12px;border-top:2px solid var(--line)}
+.mm-label{margin:0;font-weight:700;color:var(--accent);display:flex;flex-wrap:wrap;gap:6px;align-items:center}
+.mmap li li .mm-label{font-weight:600;color:inherit}
+.mm-tag{font-size:12px}
+@media (max-width:600px){.mmap ul{padding-left:12px}}
 </style>
 </head>
 <body>
@@ -1023,6 +1032,7 @@ pre{white-space:pre-wrap;word-break:break-word;background:var(--soft);padding:12
       <p class="eyebrow-sm">Modernize</p>
       <h3 style="margin:4px 0 6px">Choose the approach</h3>
       <p class="muted small" id="approachNote" style="margin:0"></p>
+      <div id="approachMap" class="mmap" aria-label="Map of the three approaches"></div>
       <div id="approachGrid"></div>
       <p class="small hint" id="approachMsg" role="status"></p>
     </div>
@@ -1269,6 +1279,7 @@ pre{white-space:pre-wrap;word-break:break-word;background:var(--soft);padding:12
 <script src="config.js"></script>
 <script src="guide.js"></script>
 <script src="modernize.js"></script>
+<script src="mindmap.js"></script>
 <script src="plan.js"></script>
 <script src="starter.js"></script>
 <script>
@@ -3746,6 +3757,33 @@ a{color:#6d28d9;font-weight:600}`;
       ? `${chosen}Compare the three options and their previews, then choose one.`
       : `${chosen}A platform engineer chooses the approach.`;
     $("approachGrid").replaceChildren(templateGrid(currentFindings, row, true));
+    renderApproachMap(currentFindings);
+  }
+
+  // Mind map of the approaches: the root, one branch each, with pros, cons, and best-for points.
+  // Built as nested lists, so it reads the same on a phone and with a screen reader.
+  function mapNode(node) {
+    const li = document.createElement("li");
+    const label = el("p", node.label, "mm-label");
+    if (node.tag) label.appendChild(el("span", node.tag, "tag mm-tag"));
+    li.appendChild(label);
+    if (node.children && node.children.length) {
+      const ul = document.createElement("ul");
+      node.children.forEach((c) => ul.appendChild(mapNode(c)));
+      li.appendChild(ul);
+    }
+    return li;
+  }
+
+  function renderApproachMap(findings) {
+    const box = $("approachMap");
+    if (!box || !window.MindMap || !window.Modernize) return;
+    const points = Object.fromEntries(window.Modernize.TEMPLATES.map((t) => [t.id, t.points]));
+    const tree = window.MindMap.approach(window.Modernize.choose(findings || {}), points);
+    const root = document.createElement("ul");
+    root.className = "mm-root";
+    root.appendChild(mapNode(tree));
+    box.replaceChildren(root);
   }
 
   // Written approval for converting files with the language model. A workspace admin gives it, once for the workspace.
