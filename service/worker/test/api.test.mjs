@@ -553,6 +553,29 @@ test("a conversion starts the runner with a one-time token and no key, and its r
   assert.equal(kept.decision, undefined, "decisions are added later, not by the runner");
 });
 
+test("a platform engineer sees the proposals and accepts or rejects a kept one; others see none", async () => {
+  readyForConversion();
+  state.analysis_conversions.push(
+    { id: uid(901), analysis_id: AN_ACME, path: "src/A.java", template: "web-modern", status: "ok", proposed: "class A {}", reason: null, kinds: [], stage: null, decision: "pending" },
+    { id: uid(902), analysis_id: AN_ACME, path: "src/B.java", template: "web-modern", status: "blocked", proposed: null, reason: "personal data", kinds: ["email address"], stage: "request", decision: "pending" },
+  );
+  const engineer = await call(`/api/analyses/${AN_ACME}`, { as: "eng_a" });
+  assert.equal(engineer.body.conversions.length, 2);
+  const auditor = await call(`/api/analyses/${AN_ACME}`, { as: "aud_a" });
+  assert.deepEqual(auditor.body.conversions, [], "only platform engineers see proposals");
+  const blocked = await call(`/api/analyses/${AN_ACME}/conversions/decision`, { as: "eng_a", method: "POST", body: { path: "src/B.java", decision: "accepted" } });
+  assert.equal(blocked.status, 409);
+  const denied = await call(`/api/analyses/${AN_ACME}/conversions/decision`, { as: "aud_a", method: "POST", body: { path: "src/A.java", decision: "accepted" } });
+  assert.equal(denied.status, 403);
+  const accepted = await call(`/api/analyses/${AN_ACME}/conversions/decision`, { as: "eng_a", method: "POST", body: { path: "src/A.java", decision: "accepted" } });
+  assert.equal(accepted.status, 200);
+  const kept = state.analysis_conversions.find((c) => c.path === "src/A.java");
+  assert.equal(kept.decision, "accepted");
+  assert.equal(kept.decided_by_email, PEOPLE.eng_a.email);
+  const bad = await call(`/api/analyses/${AN_ACME}/conversions/decision`, { as: "eng_a", method: "POST", body: { path: "src/A.java", decision: "maybe" } });
+  assert.equal(bad.status, 400);
+});
+
 // ---- Uploading a zip of the code, without GitHub ----
 
 const ZIP_BYTES = Buffer.from([0x50, 0x4b, 0x03, 0x04, 0, 0, 0, 0, 0, 0]);

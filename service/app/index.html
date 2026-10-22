@@ -3777,6 +3777,7 @@ a{color:#6d28d9;font-weight:600}`;
         withdraw.addEventListener("click", () => setConversionApproval(row, false, ""));
         box.appendChild(withdraw);
       }
+      renderConversionWork(row, box);
       return;
     }
     box.appendChild(el("p", "No file is converted until a workspace admin approves this. Each file is sent alone, after a check for personal data.", "muted small"));
@@ -3795,6 +3796,100 @@ a{color:#6d28d9;font-weight:600}`;
     go.type = "button";
     go.addEventListener("click", () => setConversionApproval(row, true, input.value.trim()));
     box.appendChild(go);
+  }
+
+  // Once approved: a platform engineer picks one file to convert, and reviews each proposal.
+  async function startConversion(row, path) {
+    try {
+      await api(`/api/analyses/${row.id}/conversions`, { method: "POST", body: JSON.stringify({ path }) });
+      showToast({ tone: "success", title: "Conversion started", body: "It takes a few minutes. Press Refresh to see the proposal." });
+      cur = await api(`/api/analyses/${row.id}`);
+      showCurrentScreen();
+    } catch (err) {
+      showToast({ tone: "bad", title: "Could not start the conversion", body: err.message });
+    }
+  }
+
+  async function decideConversion(row, path, decision) {
+    try {
+      await api(`/api/analyses/${row.id}/conversions/decision`, { method: "POST", body: JSON.stringify({ path, decision }) });
+      cur = await api(`/api/analyses/${row.id}`);
+      showCurrentScreen();
+    } catch (err) {
+      showToast({ tone: "bad", title: "Could not save the decision", body: err.message });
+    }
+  }
+
+  const CONVERSION_STATUS = {
+    queued: "In progress",
+    ok: "Ready for review",
+    blocked: "Not kept: personal data found",
+    unusable: "Not kept: the model could not convert it",
+    failed: "Not kept: the model did not answer",
+    refused: "Not kept",
+  };
+
+  function renderConversionWork(row, box) {
+    if (!row.can_plan) return;
+    const form = el("div", null, "conv-form");
+    form.style.marginTop = "16px";
+    form.appendChild(el("h3", "Convert a file"));
+    form.appendChild(el("p", "Enter the path of one file from this analysis, as it appears in the repository. Each file is converted alone.", "muted small"));
+    const input = document.createElement("input");
+    input.type = "text";
+    input.placeholder = "for example src/Visits.java";
+    input.setAttribute("aria-label", "The file to convert");
+    input.style.cssText = "width:100%;max-width:520px";
+    form.appendChild(input);
+    const go = el("button", "Convert this file");
+    go.type = "button";
+    go.style.marginLeft = "0";
+    go.addEventListener("click", () => {
+      const path = input.value.trim();
+      if (path) startConversion(row, path);
+    });
+    form.appendChild(go);
+    box.appendChild(form);
+
+    const list = (row.conversions || []);
+    if (!list.length) return;
+    box.appendChild(el("h3", "Proposals"));
+    for (const c of list) {
+      const card = el("div", null, "stage-card");
+      card.style.marginTop = "12px";
+      card.appendChild(el("h4", c.path));
+      card.appendChild(el("p", CONVERSION_STATUS[c.status] || c.status, "small"));
+      if (c.reason) card.appendChild(el("p", c.reason, "muted small"));
+      if (c.kinds && c.kinds.length) card.appendChild(el("p", `Found: ${c.kinds.join(", ")}`, "muted small"));
+      if (c.status === "ok" && c.proposed) {
+        const pre = el("pre", c.proposed, "conv-proposal");
+        pre.style.cssText = "max-height:320px;overflow:auto;background:var(--bg);border:1px solid var(--line);border-radius:12px;padding:12px;font-size:12.5px;white-space:pre-wrap";
+        card.appendChild(pre);
+        if (row.commit_sha && row.repo) {
+          const link = document.createElement("a");
+          link.href = `https://github.com/${row.repo}/blob/${row.commit_sha}/${encodeURI(c.path)}`;
+          link.target = "_blank";
+          link.rel = "noopener";
+          link.textContent = "Open the original on GitHub";
+          link.style.cssText = "display:inline-block;margin-top:10px;font-weight:700;color:var(--accent)";
+          card.appendChild(link);
+        }
+        if (c.decision && c.decision !== "pending") {
+          card.appendChild(el("p", `${c.decision === "accepted" ? "Accepted" : "Rejected"} by ${c.decided_by_email || "a platform engineer"}.`, "small"));
+        } else {
+          const accept = el("button", "Accept");
+          accept.type = "button";
+          accept.addEventListener("click", () => decideConversion(row, c.path, "accepted"));
+          const reject = el("button", "Reject");
+          reject.type = "button";
+          reject.className = "ghost";
+          reject.addEventListener("click", () => decideConversion(row, c.path, "rejected"));
+          card.appendChild(accept);
+          card.appendChild(reject);
+        }
+      }
+      box.appendChild(card);
+    }
   }
 
   // Returns to whichever screen the person was on after a change: the next-steps page or the findings.
