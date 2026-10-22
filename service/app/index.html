@@ -594,6 +594,7 @@ pre{white-space:pre-wrap;word-break:break-word;background:var(--soft);padding:12
 .mm-key{display:inline-flex;align-items:center;gap:6px}
 .mm-sw{width:10px;height:10px;border-radius:50%;background:var(--tc)}
 .mm-key.tone-best{--tc:#15803d}.mm-key.tone-possible{--tc:#b45309}.mm-key.tone-weak{--tc:#6b7280}
+.mm-key.tone-high{--tc:#b91c1c}.mm-key.tone-medium{--tc:#b45309}.mm-key.tone-low{--tc:#0369a1}.mm-key.tone-clear{--tc:#15803d}
 .mm-ico-key{display:inline-grid;place-items:center;width:18px;height:18px;border-radius:50%;background:var(--line);font-size:11px;color:var(--accent,#6d28d9)}
 .mmap ul{list-style:none;margin:0;padding:0 0 0 22px;border-left:2px solid var(--line)}
 .mmap .mm-root{padding:0;border:0}
@@ -604,6 +605,7 @@ pre{white-space:pre-wrap;word-break:break-word;background:var(--soft);padding:12
 .mm-label{margin:0;font-weight:800;color:var(--accent,#6d28d9)}
 .mm-branch{--tc:#6b7280;animation:mmIn .5s cubic-bezier(.2,.8,.2,1) both;animation-delay:calc(var(--i,0) * 90ms)}
 .mm-branch.tone-best{--tc:#15803d}.mm-branch.tone-possible{--tc:#b45309}
+.mm-branch.tone-hidden{--tc:#9ca3af}.mm-branch.tone-high{--tc:#b91c1c}.mm-branch.tone-medium{--tc:#b45309}.mm-branch.tone-low{--tc:#0369a1}.mm-branch.tone-clear{--tc:#15803d}
 .mm-branch > details{background:var(--card,#fff);border:1px solid var(--line);border-left:4px solid var(--tc);border-radius:16px;padding:0 16px 12px;box-shadow:0 2px 10px rgba(0,0,0,.04);transition:transform .2s ease,box-shadow .2s ease}
 .mm-branch > details:hover{transform:translateY(-2px);box-shadow:0 12px 26px rgba(109,40,217,.12)}
 .mm-branch.is-chosen > details{box-shadow:0 0 0 2px var(--accent,#6d28d9),0 12px 26px rgba(109,40,217,.14)}
@@ -1321,6 +1323,7 @@ pre{white-space:pre-wrap;word-break:break-word;background:var(--soft);padding:12
 <script src="guide.js"></script>
 <script src="modernize.js"></script>
 <script src="mindmap.js"></script>
+<script src="findings-map.js"></script>
 <script src="plan.js"></script>
 <script src="starter.js"></script>
 <script>
@@ -3831,7 +3834,7 @@ a{color:#6d28d9;font-weight:600}`;
     head.appendChild(chips);
     const meter = el("span", null, "mm-meter");
     meter.setAttribute("role", "img");
-    meter.setAttribute("aria-label", `Match score ${node.score} of ${node.max}`);
+    meter.setAttribute("aria-label", node.meterLabel || `Match score ${node.score} of ${node.max}`);
     for (let k = 1; k <= node.max; k++) {
       const pip = document.createElement("i");
       if (k <= node.score) pip.className = "on";
@@ -3843,10 +3846,12 @@ a{color:#6d28d9;font-weight:600}`;
     kids.className = "mm-kids";
     node.children.forEach((g) => kids.appendChild(drawNode(g)));
     det.appendChild(kids);
-    const go = el("button", "See this design →", "mm-go");
-    go.type = "button";
-    go.addEventListener("click", () => goToOption(node.id));
-    det.appendChild(go);
+    if (node.link !== false) {
+      const go = el("button", "See this design →", "mm-go");
+      go.type = "button";
+      go.addEventListener("click", () => goToOption(node.id));
+      det.appendChild(go);
+    }
     li.appendChild(det);
     return li;
   }
@@ -3876,7 +3881,13 @@ a{color:#6d28d9;font-weight:600}`;
     return li;
   }
 
-  // Draws a map into a box. Options: toolbar adds Expand all, Collapse all and a legend.
+  // The keys for the approach map. The findings map passes its own.
+  const APPROACH_LEGEND = {
+    tones: [["best", "Best fit"], ["possible", "Possible"], ["weak", "Weaker"]],
+    icons: [["●", "Why it matches"], ["✓", "Pros"], ["!", "Cons"], ["◎", "Best for"]],
+  };
+
+  // Draws a map into a box. Options: toolbar adds Expand all, Collapse all and a legend (opts.legend sets the keys).
   function drawMap(tree, box, opts) {
     box.replaceChildren();
     if (opts && opts.toolbar) {
@@ -3891,13 +3902,14 @@ a{color:#6d28d9;font-weight:600}`;
       buttons.append(open, shut);
       bar.appendChild(buttons);
       const legend = el("div", null, "mm-legend");
-      [["best", "Best fit"], ["possible", "Possible"], ["weak", "Weaker"]].forEach(([tone, text]) => {
+      const keys = (opts && opts.legend) || APPROACH_LEGEND;
+      keys.tones.forEach(([tone, text]) => {
         const item = el("span", null, `mm-key tone-${tone}`);
         item.appendChild(el("i", null, "mm-sw"));
         item.appendChild(document.createTextNode(text));
         legend.appendChild(item);
       });
-      [["●", "Why it matches"], ["✓", "Pros"], ["!", "Cons"], ["◎", "Best for"]].forEach(([icon, text]) => {
+      keys.icons.forEach(([icon, text]) => {
         const item = el("span", null, "mm-key");
         item.appendChild(el("b", icon, "mm-ico-key"));
         item.appendChild(document.createTextNode(text));
@@ -3927,6 +3939,37 @@ a{color:#6d28d9;font-weight:600}`;
     if (!box || !window.MindMap || !window.Modernize) return;
     const points = Object.fromEntries(window.Modernize.TEMPLATES.map((t) => [t.id, t.points]));
     drawMap(window.MindMap.approach(window.Modernize.choose(findings || {}), points, chosenId), box, { toolbar: true });
+  }
+
+  // Findings map: under the review cards, one branch per card, with its findings. Only what this viewer may see.
+  function findingsMapSection(all, role) {
+    const wrap = el("div", null, "findings-map-wrap");
+    const head = el("h2", "Findings map");
+    head.style.marginTop = "28px";
+    wrap.appendChild(head);
+    wrap.appendChild(el("p", "Each branch is one of the review cards above. Open a branch to see its findings, split by how sure we are.", "muted small"));
+    const cards = REVIEW_CARDS.map((card, i) => {
+      const visible = card.cats.some((cat) => sees(role, cat));
+      const items = (all || [])
+        .filter((x) => card.cats.includes(x.category))
+        .map((x) => {
+          const raw = fmtValue(x.value);
+          const detail = raw && raw.length > 80 ? `${raw.slice(0, 79)}…` : raw;
+          return { title: x.title, severity: x.severity, confidence: x.confidence, detail: x.point === false ? "" : detail };
+        });
+      return { id: `review-${i}`, title: card.title, visible, items, onlyWhenFound: !!card.onlyWhenFound };
+    }).filter((c) => !(c.onlyWhenFound && !c.items.length));
+    const box = el("div", null, "mmap findings-map");
+    box.setAttribute("aria-label", "Map of the findings");
+    drawMap(window.FindingsMap.tree({ label: "What we found", cards }), box, {
+      toolbar: true,
+      legend: {
+        tones: [["high", "High"], ["medium", "Medium"], ["low", "Low"], ["clear", "Nothing found"]],
+        icons: [["✓", "Verified in code"], ["?", "Inferred, needs review"]],
+      },
+    });
+    wrap.appendChild(box);
+    return wrap;
   }
 
   // The plan's inputs, read from the analysis and the findings this viewer can see. Used by the download and the map.
@@ -4187,6 +4230,7 @@ a{color:#6d28d9;font-weight:600}`;
     }
     for (const node of componentCards(shown, history, cur.viewer_role)) grid.appendChild(node);
     box.appendChild(grid);
+    box.appendChild(findingsMapSection(all, cur.viewer_role));
     // Entrance order: cards and panels appear one after another.
     box.querySelectorAll(".rcard, .panel, .stat").forEach((n, i) => n.style.setProperty("--i", String(i)));
 
