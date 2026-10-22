@@ -417,12 +417,15 @@
     return ul;
   }
 
-  function render(id, fit, rec, ctx) {
+  function render(id, fit, rec, ctx, analysis) {
     const t = T[id];
     const app = document.getElementById("app");
     app.textContent = "";
     const wrap = make("div", null, "wrap");
     wrap.appendChild(backLink("← Back to the assessment", "back"));
+    const actionsTop = make("div", null, "choose-row");
+    if (analysis) actionsTop.appendChild(chooseButton(id, analysis));
+    if (analysis) wrap.appendChild(actionsTop);
 
     const hero = make("section", null, "hero");
     hero.appendChild(make("p", t.eyebrow, "eyebrow"));
@@ -498,6 +501,7 @@
     wrap.appendChild(make("p", "This is a template, not a plan for one application. Cutover shows where each finding is in the code, and the team decides the order.", "note"));
     const footer = make("div", null, "preview-foot");
     footer.appendChild(backLink("← Back to the assessment", "back-btn"));
+    if (analysis) footer.appendChild(chooseButton(id, analysis));
     wrap.appendChild(footer);
 
     // The other two options, behind the proposal, for comparison.
@@ -523,18 +527,34 @@
 
   // Returns to the screen the reader came from, which is the assessment's review. If the page was opened
   // directly, the link goes to the portal instead.
+  function cameFromPortal() {
+    try { return Boolean(document.referrer) && new URL(document.referrer).origin === window.location.origin && window.history.length > 1; } catch (err) { return false; }
+  }
+
   function backLink(text, cls) {
     const link = make("a", text, cls);
     link.href = "../index.html";
     link.addEventListener("click", (e) => {
-      let fromSameSite = false;
-      try { fromSameSite = Boolean(document.referrer) && new URL(document.referrer).origin === window.location.origin; } catch (err) { fromSameSite = false; }
-      if (fromSameSite && window.history.length > 1) {
+      if (cameFromPortal()) {
         e.preventDefault();
         window.history.back();
       }
     });
     return link;
+  }
+
+  // Chooses this template for the analysis. The review saves it when it opens again, so the choice is made there.
+  function chooseButton(id, analysis) {
+    const btn = make("button", "Choose this approach", "choose-btn");
+    btn.type = "button";
+    btn.addEventListener("click", () => {
+      try {
+        sessionStorage.setItem("cutover.pendingTemplate", JSON.stringify({ template: id, analysis: analysis, at: Date.now() }));
+      } catch (err) { /* storage may be blocked; the choice then has to be made on the review */ }
+      if (cameFromPortal()) window.history.back();
+      else window.location.href = "../index.html";
+    });
+    return btn;
   }
 
   function tagRow(tags) {
@@ -566,5 +586,6 @@
   const fit = ["recommended", "possible", "weak"].includes(params.get("fit")) ? params.get("fit") : "";
   const rec = ORDER.includes(params.get("rec")) ? params.get("rec") : "";
   const ctx = readContext(params.get("ctx") || "");
-  render(id, fit, rec, ctx);
+  const analysis = /^[0-9a-f-]{36}$/i.test(params.get("analysis") || "") ? params.get("analysis") : "";
+  render(id, fit, rec, ctx, analysis);
 })();

@@ -25,6 +25,7 @@ test("the three templates each have a preview page in templates/", () => {
   const renderer = readFileSync(new URL("../templates/preview.js", import.meta.url), "utf8");
   assert.ok(renderer.includes("../index.html"), "previews link back to Cutover");
   assert.ok(renderer.includes("Back to the assessment"), "previews can go back to the assessment");
+  assert.ok(renderer.includes("cutover.pendingTemplate"), "a choice on a preview is handed to the review");
   const css = readFileSync(new URL("../templates/preview.css", import.meta.url), "utf8");
   assert.ok(css.includes("--accent:#6d28d9"), "previews use the portal's colours");
 });
