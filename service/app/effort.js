@@ -17,16 +17,19 @@
       screenBuild: [0.5, 1], screenUx: [0, 0], endpoint: [0, 0], pageLogic: [0, 0], routine: [0, 0.1],
       table: [0, 0.1], migrationBase: [0, 1], dependency: [0.25, 0.5], container: [5, 10], weeks: 6,
       security: [1, 2], pentest: [1, 2], uat: [3, 5], training: [1, 2], cutover: [2, 4], codeReview: [0.01, 0.02],
+      aiGain: [0.05, 0.1],
     },
     "web-modern": {
       screenBuild: [3, 5], screenUx: [0.5, 1], endpoint: [1, 2], pageLogic: [0.5, 1], routine: [1, 2],
       table: [0.25, 0.5], migrationBase: [5, 10], dependency: [0.5, 1], container: [0, 0], weeks: 12,
       security: [3, 5], pentest: [3, 5], uat: [5, 10], training: [2, 3], cutover: [3, 6], codeReview: [0.02, 0.04],
+      aiGain: [0.15, 0.3],
     },
     "services-data": {
       screenBuild: [2, 3], screenUx: [0.25, 0.5], endpoint: [1, 2], pageLogic: [0.5, 1], routine: [1.5, 3],
       table: [0.5, 1], migrationBase: [8, 15], dependency: [0.5, 1], container: [0, 0], weeks: 14,
       security: [3, 5], pentest: [3, 5], uat: [5, 10], training: [2, 3], cutover: [3, 6], codeReview: [0.02, 0.04],
+      aiGain: [0.15, 0.3],
     },
   };
 
@@ -97,7 +100,9 @@
     const stories = Math.max(screens, 1) * S.storiesPerScreen;
     const languageFactor = lift || f.targetMatchesLegacy === true ? 1 : NEW_LANGUAGE;
     const cutoverWeeks = lift ? 1 : 2;
-    const notes = [];
+    const notes = [
+      "AI-assisted delivery is part of every estimate. Its saving is shown as a negative line, and the review it needs is counted.",
+    ];
 
     // What the findings say, and what they could not say.
     if (!f.targetLanguage) notes.push("No target language is chosen yet. The build assumes a language the team does not use today.");
@@ -127,7 +132,7 @@
       return { key, title, items, low: range[0], high: range[1], value: r1(inc.reduce((a, i) => a + i.value, 0)) };
     };
     const group = (key, title, items) => {
-      groups.push(makeGroup(key, title, items.filter((i) => i.days[1] > 0).map((i) => mark(key, i))));
+      groups.push(makeGroup(key, title, items.filter((i) => i.days[1] > 0 || i.days[0] < 0).map((i) => mark(key, i))));
     };
     // Adds or replaces an item in a group by its label, at the top of the group.
     const upsert = (key, item) => {
@@ -185,8 +190,22 @@
       { label: "Data reconciliation checks", count: tables + accessDbs, unit: "check", days: scale([0.1, 0.3], tables + accessDbs) },
     ]);
 
+    // AI-assisted delivery is part of every estimate: assessment, coding, testing, automation and documents.
+    const buildR = [groups.find((g) => g.key === "build").low, groups.find((g) => g.key === "build").high];
+    const testR = [groups.find((g) => g.key === "testing").low, groups.find((g) => g.key === "testing").high];
+    // Lean pairs the low effort with the highest saving; cautious pairs the high effort with the lowest saving.
+    const aiSaving = [r1(-(buildR[0] + testR[0]) * R.aiGain[1]), r1(-(buildR[1] + testR[1]) * R.aiGain[0])];
+    group("ai", "AI-assisted delivery and automation", [
+      { label: "AI tools set-up, guardrails and approved models", count: 1, unit: "set", days: fixed([1, 2]) },
+      { label: "Automated regression and API tests, generated with AI and reviewed", count: screens + endpoints, unit: "item", days: scale([0.1, 0.2], screens + endpoints) },
+      { label: "Automation routines: migration, reconciliation and deployment scripts", count: tables + accessDbs, unit: "routine", days: add(fixed([3, 5]), scale([0.2, 0.5], tables + accessDbs)) },
+      { label: "Human review of AI-written code and tests", count: 1, unit: "review", days: [r1(buildR[0] * 0.1), r1(buildR[1] * 0.15)] },
+      { label: "AI drafts of stories and documents, checked by their owners", count: stories, unit: "story", days: scale([0.02, 0.04], stories) },
+      { label: "AI saving on build and testing", count: 0, unit: "", days: aiSaving },
+    ]);
     group("security", "Security, privacy and integration", [
       { label: "Security review", count: 1, unit: "review", days: fixed(R.security) },
+      { label: "Approve how AI tools may use code and data", count: 1, unit: "approval", days: fixed([0.5, 1]) },
       { label: f.personalData ? "Privacy review (personal data found)" : "Privacy check (none found)", count: 1, unit: "review", days: fixed(f.personalData ? S.personalData : S.noPersonalData) },
       { label: "Integrations and programs called, tested end to end", count: deps, unit: "module", days: scale([0.25, 0.5], deps) },
     ]);
@@ -222,6 +241,7 @@
       { role: "Database engineer", fte: tables || routineCount || accessDbs ? 1 : 0.5, side: "delivery", why: "Schema, routines, migration and reconciliation" },
       { role: "QA engineers", fte: Math.max(1, Math.ceil(devs * 0.25)), side: "delivery", why: "Test each part against the legacy behaviour and the stories" },
       { role: "Platform and delivery engineer", fte: lift ? 0.5 : 1, side: "delivery", why: "Environments, pipeline, infrastructure and cutover" },
+      { role: "Automation engineer", fte: lift ? 0.5 : 1, side: "delivery", why: "Builds the automated tests, the routines and the AI-assisted workflows" },
       { role: "Security engineer", fte: 0.5, side: "delivery", why: "Access design, security review and penetration test" },
       { role: "Change and training lead", fte: 0.5, side: "delivery", why: "Training, documentation and communication to users" },
       { role: "Application owner (client side)", fte: 0.2, side: "client", why: "Approves the gates and tests the result" },
@@ -246,29 +266,29 @@
     const accessWeeks = Math.max(1, Math.ceil((5 + accessDbs) / 4)) + (S.accessCalendarDays > 5 ? 1 : 0);
     const phaseDefs = [
       { name: "Mobilise and grant access", weeks: accessWeeks,
-        tasks: [`Onboard ${headcount} people and set up their accounts`, `Request access to ${5 + accessDbs} systems and confirm each one works`, "Agree the working rhythm, the stakeholders and the meeting plan"],
+        tasks: [`Onboard ${headcount} people and set up their accounts`, `Request access to ${5 + accessDbs} systems and confirm each one works`, "Agree the working rhythm, the stakeholders and the meeting plan", "Set up the AI-assisted tools with approved models and guardrails"],
         deliverables: ["Team charter", "Access register"], approvals: ["Application owner confirms the team and the access"] },
       { name: "Discover and confirm findings", weeks: weeksFor(sumOf("discovery")),
         tasks: [`Confirm ${needsReview} findings that need a person`, `Read ${notRead} files by hand`, "Interview the people who know the legacy system", "Review the source before any change"],
         deliverables: ["Confirmed findings", "Code review notes"], approvals: ["Application owner confirms the scope"] },
       { name: "Requirements and user stories", weeks: weeksFor(sumOf("requirements")),
-        tasks: [`Run ${roles} workshops, one per role`, `Write and refine ${stories} user stories`, "Agree the acceptance criteria for each story", "Target design written and reviewed"],
+        tasks: [`Run ${roles} workshops, one per role`, `Write and refine ${stories} user stories`, "AI drafts the user stories, which the business analyst checks", "Agree the acceptance criteria for each story", "Target design written and reviewed"],
         deliverables: ["User stories", "Design document", "Steering presentation: scope and design"], approvals: ["Gate 1 (scope) and gate 2 (design) approved by the owner or a CIO or CTO"] },
       { name: "Platform and pipeline", weeks: weeksFor(sumOf("build") * 0.3),
         tasks: [f.hasIac ? "Extend the existing infrastructure as code" : "Build the infrastructure as code", f.hasCi ? "Extend the existing pipeline" : "Build the build and deploy pipeline", "Set up the environments: test, staging and the cutover target"],
         deliverables: ["Environments", "Pipeline", "Infrastructure code"], approvals: ["Platform owner signs off the environments"] },
       { name: "Database build and migration", weeks: weeksFor(sumOf("database")),
-        tasks: [tables ? `Move the schema of ${tables} tables` : "Read the database files and confirm the tables", routineCount ? `Convert ${routineCount} stored procedures, functions and views` : "No stored routines to convert", accessDbs ? `Move ${accessDbs} database file${accessDbs === 1 ? "" : "s"} into the target store` : "Plan the data migration and its checks", "Reconcile the data between old and new"],
+        tasks: [tables ? `Move the schema of ${tables} tables` : "Read the database files and confirm the tables", routineCount ? `Convert ${routineCount} stored procedures, functions and views` : "No stored routines to convert", accessDbs ? `Move ${accessDbs} database file${accessDbs === 1 ? "" : "s"} into the target store` : "Plan the data migration and its checks", "Reconcile the data between old and new", "Automated migration and reconciliation routines, run from the pipeline"],
         deliverables: ["Schema", "Migration scripts", "Reconciliation report"], approvals: ["Database owner approves the schema"] },
       { name: "Application build", weeks: weeksFor(sumOf("build")),
-        tasks: lift ? ["Package the application in containers", "Configure each environment"] : [`Rebuild ${screens} screens`, endpoints ? `Build ${endpoints} endpoints` : "Move the server logic out of the pages", `Check ${deps} programs and modules called`, "Map the roles and access into the new system"],
+        tasks: lift ? ["Package the application in containers", "Configure each environment", "AI-assisted changes, with a person reviewing each one"] : [`Rebuild ${screens} screens`, endpoints ? `Build ${endpoints} endpoints` : "Move the server logic out of the pages", `Check ${deps} programs and modules called`, "Map the roles and access into the new system", "AI-assisted coding, with a person reviewing each change"],
         deliverables: ["Working build in test", "Build notes"], approvals: ["Gate 3 (build ready) approved by the owner"] },
       { name: "Security, privacy and integration review", weeks: weeksFor(sumOf("security")),
-        tasks: ["Security review of the build and the access design", f.personalData ? "Privacy review of the personal data" : "Confirm that no personal data is held", "Test each integration end to end"],
+        tasks: ["Approve how AI tools may use code and data", "Security review of the build and the access design", f.personalData ? "Privacy review of the personal data" : "Confirm that no personal data is held", "Test each integration end to end"],
         deliverables: ["Security review", "Privacy note"], approvals: ["Security and privacy owners sign off"] },
       { name: "Testing and acceptance", weeks: weeksFor(sumOf("testing")),
-        tasks: ["Test each part against the legacy behaviour and the stories", "Fix the defects found and retest", "Run the performance and penetration tests", "User acceptance testing with the stakeholders"],
-        deliverables: ["Test results", "Acceptance sign-off"], approvals: ["Stakeholders accept the test results"] },
+        tasks: ["Test each part against the legacy behaviour and the stories", "Automated regression suite runs on every build", "Fix the defects found and retest", "Run the performance and penetration tests", "User acceptance testing with the stakeholders"],
+        deliverables: ["Test results", "Automated test suite", "Acceptance sign-off"], approvals: ["Stakeholders accept the test results"] },
       { name: "Approvals and go/no-go", weeks: 1,
         tasks: ["Gate 4 (go-live) steering presentation", "Go/no-go checklist reviewed", "Approval recorded in Cutover"],
         deliverables: ["Go-live pack", "Approval record"], approvals: ["Gate 4 (go-live) approved by the owner or a CIO or CTO"] },
@@ -325,7 +345,9 @@
       "The team starts together, and the people who know the legacy system give time for interviews and reviews.",
       `There are ${S.gates} approval gates: scope, design, build ready and go-live. Each is approved by the application owner, or a CIO or CTO, as set in Cutover.`,
       "Stakeholders give two hours a week to workshops and reviews.",
-      "Hosting, licences, cloud costs and contractor rates are not included.",
+      `AI assistance saves ${Math.round(R.aiGain[0] * 100)}–${Math.round(R.aiGain[1] * 100)}% of the build and testing effort. The team reviews every AI-written change, and that review is counted.`,
+      "Automation is built as the project goes: regression tests, migration and reconciliation routines, and the deployment scripts.",
+      "Hosting, AI tool licences, model usage costs and contractor rates are not included.",
       "The rates are planning figures from the approach. They are not calibrated against past projects of this kind yet.",
     ];
 

@@ -4711,6 +4711,7 @@ a{color:#6d28d9;font-weight:600}`;
       chip("Team", `${est.headcount} people`, st.teamSize ? `set by you, auto was ${est.autoHeadcount}` : "sized from the build"),
       chip("Duration", `${est.weeks} weeks`, `${est.phases.length} phases`),
       chip("Approval gates", `${gates}`, "owner or CIO or CTO"),
+      chip("AI saving", `${fmt(Math.abs((est.groups.find((g) => g.key === "ai").items.find((i) => /AI saving/.test(i.label)) || { value: 0 }).value))} person-days`, "on build and testing, after AI review"),
     );
     hero.append(big, stats);
     box.appendChild(hero);
