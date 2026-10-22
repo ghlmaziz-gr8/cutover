@@ -6184,6 +6184,21 @@ a{color:#6d28d9;font-weight:600}`;
       ? ` ${flagged.length === 1 ? "One item needs" : `${flagged.length} items need`} review before any decisions.`
       : " Nothing needs review right now.";
     box.appendChild(el("p", summary));
+    // Whether an AI model was part of this assessment, and what past complete assessments in this workspace did.
+    const modelName = row.model_provider ? (MODEL_LABELS[row.model_provider] || row.model_provider) : null;
+    box.appendChild(el("p", modelName ? `An AI model was used for this assessment: ${modelName}.` : "No AI model was used for this assessment. The findings come from the rules only.", "ai-line"));
+    const past = (listRows || []).filter((r) => r.id !== row.id && r.status === "complete");
+    if (past.length) {
+      const withAI = past.filter((r) => r.model_provider);
+      const providers = [...new Set(withAI.map((r) => r.model_provider))];
+      const n = past.length;
+      let rec;
+      if (!withAI.length) rec = `Recommendation: rules only, as ${n === 1 ? "the one past assessment in this workspace did" : `all ${n} past assessments in this workspace did`}.`;
+      else if (withAI.length === n && providers.length === 1) rec = `Recommendation: ${MODEL_LABELS[providers[0]] || providers[0]}, as all ${n} past assessment${n === 1 ? "" : "s"} in this workspace used it.`;
+      else if (withAI.length === n) rec = `Recommendation: an AI model, as all ${n} past assessments in this workspace used one.`;
+      else rec = `Recommendation: decide per assessment. ${withAI.length} of ${n} past assessments in this workspace used an AI model.`;
+      box.appendChild(el("p", rec, "muted small ai-rec"));
+    }
     if (counts.shown < counts.total) {
       box.appendChild(el("p", `You can see ${counts.shown} of them. The rest belong to other roles in this workspace.`, "muted small"));
     }

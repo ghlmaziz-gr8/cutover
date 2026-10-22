@@ -105,3 +105,9 @@ test("results show an animated AI badge only when an AI model was part of the as
   assert.ok(html.includes("if (row.model_provider) findingsHead.appendChild(aiBadge(row.model_provider));"));
   assert.ok(html.includes('"ai-badge"') && html.includes("@keyframes aiTwinkle"));
 });
+
+test("results always say whether an AI model was used, and recommend based on past assessments in the workspace", () => {
+  assert.ok(html.includes("No AI model was used for this assessment. The findings come from the rules only."));
+  assert.ok(html.includes("An AI model was used for this assessment: ${modelName}."));
+  assert.ok(html.includes("Recommendation: decide per assessment."));
+});

@@ -1022,7 +1022,7 @@ async function listAnalyses(request, env) {
   const access = await workspaceAccess(env, request, url.searchParams.get("workspace") || "");
   if (access.response) return access.response;
   const res = await serviceRest(env,
-    `analyses?workspace_id=eq.${access.workspace_id}&select=id,owner_id,repo,ref,app_name,status,commit_sha,created_at,finished_at,expires_at&order=created_at.desc&limit=100`);
+    `analyses?workspace_id=eq.${access.workspace_id}&select=id,owner_id,repo,ref,app_name,status,commit_sha,created_at,finished_at,expires_at,model_provider&order=created_at.desc&limit=100`);
   if (!res.ok) return json({ error: "Could not load analyses." }, 502);
   const rows = await res.json();
   // The owner id is not sent. is_mine says whether the analysis is yours.
