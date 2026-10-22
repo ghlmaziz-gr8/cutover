@@ -678,11 +678,14 @@ pre{white-space:pre-wrap;word-break:break-word;background:var(--soft);padding:12
 .rad .rad-branch text{pointer-events:none}
 .rad .rad-point text{pointer-events:none}
 .tl-grid{display:grid;gap:10px;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));margin:14px 0}
-.tl-option{text-align:left;padding:12px 14px;border-radius:14px;border:2px solid var(--line,#e5e7eb);background:var(--card,#fff);font-weight:700;cursor:pointer;transition:transform .15s ease,border-color .15s ease,box-shadow .15s ease}
+.tl-option{display:flex;flex-direction:column;align-items:flex-start;gap:4px;text-align:left;padding:12px 14px;border-radius:14px;border:2px solid var(--line,#e5e7eb);background:var(--card,#fff);color:var(--fg);box-shadow:none;font-weight:700;cursor:pointer;transition:transform .15s ease,border-color .15s ease,box-shadow .15s ease}
 .tl-option:hover:not(:disabled){transform:translateY(-1px);box-shadow:0 8px 18px rgba(109,40,217,.12)}
 .tl-option.is-picked{border-color:var(--accent,#6d28d9);box-shadow:0 0 0 3px color-mix(in srgb,var(--accent,#6d28d9) 22%,transparent)}
 .tl-option:focus-visible{outline:3px solid var(--accent,#6d28d9);outline-offset:2px}
 .tl-option:disabled{opacity:.6;cursor:default}
+.tl-name{font:700 15px var(--body);color:var(--fg)}
+.tl-note{font:500 13px var(--body);color:var(--muted,#64748b);line-height:1.4}
+.tl-tag{margin-top:2px}
 .tl-owner{width:100%;max-width:420px;margin:6px 0 10px}
 .tl-status{margin-top:12px}
 .rad-links{display:flex;flex-wrap:wrap;justify-content:center;gap:8px;margin-top:12px}
@@ -4348,6 +4351,26 @@ a{color:#6d28d9;font-weight:600}`;
   // Target language: chosen by a platform engineer after the approach, approved by the named owner or a CIO or CTO.
   // The options come from the server, already fitted to the approach. Only what the server returns is shown.
   let targetPick = { analysis: null, language: null };
+  // Which target languages match the language the legacy code is written in today.
+  const LEGACY_LANGUAGE_MATCH = {
+    "ts-react": /typescript|javascript|node/i,
+    "py-fastapi": /python/i,
+    "cs-aspnet": /c#|c sharp|csharp|asp\.net|\.net/i,
+    "java-spring": /\bjava\b|spring|\bjsp\b/i,
+  };
+  function legacyLanguagesOf(row) {
+    const shown = (row.findings && row.findings.findings) || {};
+    const names = [];
+    for (const id of ["legacy.languages", "stack.languages"]) {
+      const v = shown[id] ? shown[id].value : null;
+      for (const x of Array.isArray(v) ? v : []) {
+        const n = typeof x === "string" ? x : x && (x.name || x.language || x.title);
+        if (n && !names.includes(n)) names.push(String(n));
+      }
+    }
+    return names;
+  }
+
   function renderTarget(row) {
     const card = $("targetCard");
     const box = $("targetBody");
@@ -4358,15 +4381,26 @@ a{color:#6d28d9;font-weight:600}`;
     const name = (id) => (options.find((o) => o.id === id) || (row.target_options || []).find((o) => o.id === id) || {}).label || id;
     box.appendChild(el("p", "Target language", "eyebrow-sm"));
     box.appendChild(el("h3", "Which language should the modernized application use?"));
-    box.appendChild(el("p", "A platform engineer chooses the language. The named application owner, or a CIO or CTO, approves it before any file is converted.", "muted small"));
+    const legacy = legacyLanguagesOf(row);
+    const isLegacy = (o) => (o.id === "current" ? row.modern_template === "lift-contain" : !!LEGACY_LANGUAGE_MATCH[o.id] && legacy.some((n) => LEGACY_LANGUAGE_MATCH[o.id].test(n)));
+    box.appendChild(el("p", legacy.length
+      ? `Your legacy code is written in ${legacy.join(", ")}.`
+      : "We could not read the language of the legacy code from the files reviewed.", "small"));
+    box.appendChild(el("p", "Choose the language the modernized application should use. The option that matches your legacy language keeps that language. Each other option is the alternate for the future state, the modern version of the application. A platform engineer chooses, and the named application owner or a CIO or CTO approves before any file is converted.", "muted small"));
 
     if (targetPick.analysis !== row.id) targetPick = { analysis: row.id, language: row.target_language || null };
     const grid = el("div", null, "tl-grid");
     grid.setAttribute("role", "radiogroup");
     grid.setAttribute("aria-label", "Target language");
     for (const o of options) {
-      const btn = el("button", o.label, "tl-option");
+      const legacyOne = isLegacy(o);
+      const btn = el("button", null, "tl-option");
       btn.type = "button";
+      btn.append(el("span", o.label, "tl-name"));
+      btn.append(el("span", legacyOne
+        ? "Your legacy language. Choose this to keep the same language."
+        : "Alternate for the future state, the modern version.", "tl-note"));
+      if (legacyOne) btn.append(el("span", "Your legacy language", "tag t-cy tl-tag"));
       btn.setAttribute("role", "radio");
       const picked = targetPick.language === o.id;
       btn.setAttribute("aria-checked", String(picked));
