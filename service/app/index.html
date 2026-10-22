@@ -823,6 +823,40 @@ pre{white-space:pre-wrap;word-break:break-word;background:var(--soft);padding:12
 .eff-plan-head{display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;margin-top:20px}
 .eff-plan-head .eyebrow-sm{margin:0}
 .eff-plan-spacer{flex:1 1 auto}
+
+/* What next: a progress rail and numbered groups, so the page reads in workflow order. */
+.next-rail{position:sticky;top:0;z-index:5;margin:12px 0 4px;padding:8px;border-radius:999px;background:color-mix(in srgb,var(--card,#fff) 88%,transparent);backdrop-filter:blur(8px);border:1px solid var(--line,#e5e7eb);box-shadow:0 10px 24px -18px rgba(0,0,0,.4)}
+.next-rail[hidden]{display:none}
+.next-rail ol{list-style:none;margin:0;padding:0;display:flex;gap:4px;overflow-x:auto;scrollbar-width:none}
+.next-rail li{flex:0 0 auto}
+.next-step{display:inline-flex;align-items:center;gap:8px;padding:6px 12px 6px 6px;border-radius:999px;text-decoration:none;font:700 12px var(--body);color:var(--muted,#64748b);white-space:nowrap;transition:background .2s,color .2s}
+.next-step:hover{background:color-mix(in srgb,var(--accent,#6d28d9) 8%,transparent);color:var(--fg)}
+.next-step:focus-visible{outline:3px solid var(--accent,#6d28d9);outline-offset:2px}
+.next-dot{display:grid;place-items:center;width:22px;height:22px;border-radius:50%;font:800 11px var(--body);background:var(--soft,#f5f3ff);color:var(--muted,#64748b);border:1px solid var(--line,#e5e7eb)}
+.next-step.is-done .next-dot{background:#10b981;border-color:#10b981;color:#fff}
+.next-step.is-done{color:var(--fg)}
+.next-step.is-now{color:var(--fg);background:color-mix(in srgb,var(--accent,#6d28d9) 10%,transparent)}
+.next-step.is-now .next-dot{background:var(--grad);border-color:transparent;color:#fff;box-shadow:0 6px 14px -6px var(--accent,#6d28d9)}
+.next-group{display:flex;align-items:center;gap:10px;margin:34px 0 0;font:800 15px var(--body);color:var(--fg)}
+.next-group span{display:grid;place-items:center;width:26px;height:26px;border-radius:9px;background:var(--grad);color:#fff;font:800 12px var(--body);flex:0 0 auto}
+.next-group em{font:500 12px var(--body);color:var(--muted,#64748b);font-style:normal;margin-left:4px}
+.next-group::after{content:"";flex:1 1 auto;height:1px;background:var(--line,#e5e7eb);margin-left:6px}
+.next-group[hidden]{display:none}
+.fold{margin-top:12px;border-radius:16px;border:1px solid var(--line,#e5e7eb);background:var(--soft,#faf9ff);padding:0 14px}
+.fold > summary{cursor:pointer;list-style:none;padding:12px 0;font:700 13px var(--body);color:var(--accent,#6d28d9);display:flex;align-items:center;gap:8px}
+.fold > summary::-webkit-details-marker{display:none}
+.fold > summary::before{content:"▸";transition:transform .2s}
+.fold[open] > summary::before{transform:rotate(90deg)}
+.fold > .mmap{padding-bottom:14px}
+.fold-card{padding:0 18px}
+.fold-card > summary.fold-sum{cursor:pointer;list-style:none;padding:16px 0;font:800 16px var(--body);color:var(--fg);display:flex;align-items:center;gap:10px}
+.fold-card > summary.fold-sum::-webkit-details-marker{display:none}
+.fold-card > summary.fold-sum::before{content:"▸";color:var(--accent,#6d28d9);transition:transform .2s}
+.fold-card[open] > summary.fold-sum::before{transform:rotate(90deg)}
+.fold-card[open] > summary.fold-sum{border-bottom:1px solid var(--line,#e5e7eb);margin-bottom:6px}
+.fold-card[hidden]{display:none}
+@media (max-width:640px){.next-step .next-label{display:none}.next-step{padding:6px}}
+
 .eff-plan-wrap{margin-top:6px;padding:16px;border-radius:22px;border:1px solid var(--line,#e5e7eb);background:var(--card,#fff)}
 .gantt-wrap{overflow-x:auto;border-radius:20px;border:1px solid var(--line,#e5e7eb);background:var(--card,#fff);padding:12px 12px 6px}
 .gantt{min-width:calc(230px + var(--n) * 30px)}
@@ -1283,6 +1317,7 @@ pre{white-space:pre-wrap;word-break:break-word;background:var(--soft);padding:12
       <button type="button" class="ghost" id="nextBackReviewTop">Back to findings</button>
       <button type="button" class="ghost" id="nextBackHomeTop">Back to analyses</button>
     </div>
+    <nav class="next-rail" id="nextRail" aria-label="Your path through this analysis" hidden></nav>
     <div class="card scope-card" id="scopeCard">
       <p class="eyebrow-sm">Next stage</p>
       <h3 style="margin:4px 0 6px">Choose the scope</h3>
@@ -1323,6 +1358,7 @@ pre{white-space:pre-wrap;word-break:break-word;background:var(--soft);padding:12
         </div>
       </div>
     </div>
+    <div class="next-group" id="groupModernize" hidden><span>2</span>Modernize path<em>Approach, language and plan</em></div>
     <div class="card" id="approachCard" hidden style="margin-top:18px">
       <p class="eyebrow-sm">Modernize</p>
       <h3 style="margin:4px 0 6px">Choose the approach</h3>
@@ -1331,15 +1367,28 @@ pre{white-space:pre-wrap;word-break:break-word;background:var(--soft);padding:12
         <button type="button" class="ghost small-btn" id="exportApproachPdf">Export PDF</button>
         <button type="button" class="ghost small-btn" id="exportApproachHtml">Export HTML</button>
       </div>
-      <div id="approachMap" class="mmap" aria-label="Map of the three approaches"></div>
+      <details class="fold" id="approachFold">
+        <summary>Show the mind map of the three approaches</summary>
+        <div id="approachMap" class="mmap" aria-label="Map of the three approaches"></div>
+      </details>
       <div id="approachGrid"></div>
       <p class="small hint" id="approachMsg" role="status"></p>
     </div>
     <div class="card" id="targetCard" hidden style="margin-top:18px"><div id="targetBody"></div></div>
-    <div class="card" id="effortCard" hidden style="margin-top:18px"><div id="effortBody"></div></div>
+    <details class="card fold-card" id="effortCard" hidden style="margin-top:18px">
+      <summary class="fold-sum"><span id="effortSum">Effort, resources and project plan</span></summary>
+      <div id="effortBody"></div>
+    </details>
+    <div class="next-group" id="groupNext"><span>3</span>Next steps<em>Conversion and the path ahead</em></div>
     <div class="card" id="conversionCard" hidden style="margin-top:18px"><div id="conversionBody"></div></div>
     <div class="card" id="nextPathCard" hidden style="margin-top:18px"><div id="nextPath"></div></div>
-    <div class="cards2" style="margin-top:20px">
+    <div class="card" id="planCardNext" style="margin-top:18px">
+      <h3 style="margin-top:0">Continue to planning</h3>
+      <p class="muted small" style="margin:6px 0 12px">Plan the risks and fallbacks for this cutover. Proposals are drafted from the findings, then edited by platform engineers.</p>
+      <button type="button" class="ghost" id="planBtn">Continue to planning</button>
+    </div>
+    <div class="next-group" id="groupHousekeeping"><span>4</span>Team, reports and housekeeping<em>Share, review and tidy up</em></div>
+    <div class="cards2" style="margin-top:12px">
       <div class="card" style="margin-top:0">
         <h3 style="margin-top:0">Download the report</h3>
         <p class="muted small" style="margin:6px 0 12px">The report contains only what your role may see.</p>
@@ -1356,11 +1405,6 @@ pre{white-space:pre-wrap;word-break:break-word;background:var(--soft);padding:12
         <h3 style="margin-top:0">Deeper assessment</h3>
         <p class="muted small" id="deeperNoteNext" style="margin:6px 0 12px"></p>
         <button type="button" class="ghost" id="deeperOpen">Open the deeper assessment</button>
-      </div>
-      <div class="card" style="margin-top:0">
-        <h3 style="margin-top:0">Continue to planning</h3>
-        <p class="muted small" style="margin:6px 0 12px">Plan the risks and fallbacks for this cutover. Proposals are drafted from the findings, then edited by platform engineers.</p>
-        <button type="button" class="ghost" id="planBtn">Continue to planning</button>
       </div>
       <div class="card" style="margin-top:0" id="deleteCardNext">
         <h3 style="margin-top:0">Delete these results</h3>
@@ -4125,8 +4169,47 @@ a{color:#6d28d9;font-weight:600}`;
   }
 
   // Next-steps page: when Modernize is the chosen stage, the three options can be chosen here.
+  // The path through this analysis: each step shows whether it is done, now, or still to come.
+  function renderNextRail(row) {
+    const rail = $("nextRail");
+    rail.replaceChildren();
+    const modern = row.scope === "modernize";
+    const steps = [
+      { id: "scopeCard", label: "Scope", done: !!row.scope, show: true },
+      { id: "approachCard", label: "Approach", done: !!row.modern_template, show: modern },
+      { id: "targetCard", label: "Language", done: !!row.target_language, show: modern },
+      { id: "targetCard", label: "Owner approval", done: !!row.target_approval, show: modern },
+      { id: "effortCard", label: "Effort and plan", done: !!row.target_approval, show: modern },
+      { id: "conversionCard", label: "Conversion", done: false, show: modern },
+    ].filter((x) => x.show);
+    const firstOpen = steps.findIndex((x) => !x.done);
+    const list = document.createElement("ol");
+    steps.forEach((step, i) => {
+      const status = step.done ? "done" : i === firstOpen ? "now" : "todo";
+      const li = document.createElement("li");
+      const a = el("a", null, `next-step is-${status}`);
+      a.href = `#${step.id}`;
+      a.setAttribute("aria-current", status === "now" ? "step" : "false");
+      a.append(el("span", status === "done" ? "✓" : String(i + 1), "next-dot"), el("span", step.label, "next-label"));
+      a.addEventListener("click", (e) => {
+        e.preventDefault();
+        const target = document.getElementById(step.id);
+        if (!target || target.hidden) return;
+        if (target.tagName === "DETAILS") target.open = true;
+        target.scrollIntoView({ behavior: "smooth", block: "start" });
+      });
+      li.appendChild(a);
+      list.appendChild(li);
+    });
+    rail.appendChild(list);
+    rail.hidden = false;
+    $("groupModernize").hidden = !modern;
+    $("groupNext").hidden = !modern;
+  }
+
   function renderApproach(row) {
     const card = $("approachCard");
+    $("approachFold").open = !row || !row.modern_template;
     const visible = !!row && row.scope === "modernize";
     card.hidden = !visible;
     if (!visible) return;
@@ -4637,6 +4720,9 @@ a{color:#6d28d9;font-weight:600}`;
     const est = E.build(effortFactsOf(row), { scenario: st.scenario, shares: st.shares, excluded: st.excluded, teamSize: st.teamSize });
     const fmt = (v) => (Math.round(v * 10) / 10).toLocaleString("en-US");
     const pct = (t) => `${Math.round(t * 100)}%`;
+    $("effortSum").textContent = est.ready
+      ? `Effort, resources and project plan · ${fmt(est.total.value)} person-days · ${est.weeks} weeks · ${est.headcount} people`
+      : "Effort, resources and project plan";
     const again = () => renderEffort(row);
 
     const head = el("div", null, "arch-top");
@@ -5587,6 +5673,7 @@ a{color:#6d28d9;font-weight:600}`;
     renderApproach(cur);
     renderTarget(cur);
     renderEffort(cur);
+    renderNextRail(cur);
     renderConversionApproval(cur);
     const pathBox = $("nextPath");
     pathBox.replaceChildren();
@@ -6316,8 +6403,10 @@ const REGION_OPTS = {
     const card = $(cardId).cloneNode(true);
     card.querySelectorAll(".export-row, button, input, textarea, select, form, script").forEach((n) => n.remove());
     card.querySelectorAll(".show-in-export[hidden]").forEach((n) => n.removeAttribute("hidden"));
+    card.querySelectorAll("details").forEach((d) => { d.open = true; });
     card.querySelectorAll("[id]").forEach((n) => n.removeAttribute("id"));
     card.removeAttribute("hidden");
+    if (card.tagName === "DETAILS") card.open = true;
     card.style.marginTop = "0";
     card.classList.add("report-export");
     return card;

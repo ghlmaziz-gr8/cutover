@@ -11,6 +11,7 @@
 window.CUTOVER_GUIDE = {
   updated: "2026-10-22",
   whatsNew: [
+    "2026-10-22: What next? reads in order: scope, then the modernize path (approach, language and owner approval, effort and plan), then next steps, then team and reports. A path bar shows which step is done and which is next, and the mind map and the effort card open on request.",
     "2026-10-22: The project plan can be exported on its own as a PDF or an HTML file, with every phase's tasks, deliverables, approvals and owners.",
     "2026-10-22: The Cutover AI assessment always includes AI-assisted delivery: AI for assessment, coding, documents and tests, automated regression tests and automation routines, with the human review they need and the saving they give shown as their own line.",
     "2026-10-22: The effort estimate is adjustable: choose a lean, expected or cautious scenario, slide each part of the work within its range, switch items off, and set the team size. The project plan opens as a timeline with approval gates, and each phase shows its tasks, deliverables, approvals and who works on it.",
