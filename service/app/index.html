@@ -3028,14 +3028,16 @@ pre{white-space:pre-wrap;word-break:break-word;background:var(--soft);padding:12
   }
 
   // One card per topic: the facts as label and value, the confidence mix, and the details.
-  function reviewCard(card, all, role, every) {
+  function reviewCard(card, all, role, every, extra = {}) {
     const found = all.filter((item) => card.cats.includes(item.category));
+    const extraRows = extra.rows || [];
+    const extraTags = extra.tags || [];
     // Optional cards show only when there is something to show, so a generic app never sees healthcare wording.
-    if (card.onlyWhenFound && !found.length) return null;
+    if (card.onlyWhenFound && !found.length && !extraRows.length) return null;
     const c = el("div", null, "rcard");
     c.appendChild(el("p", EYEBROW[card.title] || card.title, "eyebrow-sm"));
     c.appendChild(el("h3", card.title));
-    if (!found.length) {
+    if (!found.length && !extraRows.length) {
       const visible = card.cats.some((cat) => sees(role, cat));
       // Findings in these categories may be shown in a summary card instead.
       const elsewhere = (every || []).some((i) => card.cats.includes(i.category));
@@ -3061,18 +3063,22 @@ pre{white-space:pre-wrap;word-break:break-word;background:var(--soft);padding:12
     const EXPAND_ONLY = ["legacy.views", "data.tables_in_code", "data.routines_in_code", "data.database_metadata"];
     const kv = el("div", null, "kv");
     for (const item of found.filter((i) => !EXPAND_ONLY.includes(i.id))) kv.append(el("span", item.title), el("span", fmtValue(item.value)));
+    for (const [k, v] of extraRows) kv.append(el("span", k), el("span", v));
     if (kv.childElementCount) c.appendChild(kv);
-    c.appendChild(findingBars(found));
+    if (found.length) c.appendChild(findingBars(found));
     const verified = found.filter((i) => i.confidence === "verified").length;
     const inferred = found.length - verified;
     const tags = el("div", null, "tags");
     if (verified) tags.appendChild(el("span", `${verified} verified in code`, "tag t-ok"));
     if (inferred) tags.appendChild(el("span", `${inferred} inferred, needs review`, "tag t-inf"));
-    c.appendChild(tags);
-    const details = document.createElement("details");
-    details.appendChild(el("summary", found.length === 1 ? "Show 1 finding" : `Show ${found.length} findings`));
-    found.forEach((item) => details.appendChild(renderFindingItem(item)));
-    c.appendChild(details);
+    for (const [text, tone] of extraTags) tags.appendChild(el("span", text, `tag ${tone}`));
+    if (tags.childElementCount) c.appendChild(tags);
+    if (found.length) {
+      const details = document.createElement("details");
+      details.appendChild(el("summary", found.length === 1 ? "Show 1 finding" : `Show ${found.length} findings`));
+      found.forEach((item) => details.appendChild(renderFindingItem(item)));
+      c.appendChild(details);
+    }
     return c;
   }
 
@@ -3129,7 +3135,55 @@ pre{white-space:pre-wrap;word-break:break-word;background:var(--soft);padding:12
     return wrap;
   }
 
-  // Three summary cards from the demo: what it does, age and history, data structure.
+  // Facts that used to sit in a separate "What it does" card. They now sit on the review cards they belong to:
+  // application facts on "What it is", hosting facts on "How it is hosted", and database counts on "Its data".
+  // Built only from findings this viewer may see.
+  function summaryRows(shown, role) {
+    const val = (id) => (shown[id] ? shown[id].value : undefined);
+    const out = { app: [], appTags: [], hosting: [], data: [] };
+
+    if (["stack", "ui_portal", "infrastructure"].some((k) => sees(role, k))) {
+      const purpose = val("app.purpose");
+      if (purpose && purpose.name) out.app.push(["Name", purpose.name]);
+      if (purpose && purpose.summary) out.app.push(["Purpose", purpose.summary]);
+      if (purpose && purpose.features && purpose.features.length) out.app.push(["Sections in its README", purpose.features.join(", ")]);
+      const java = val("runtime.java");
+      const boot = val("runtime.spring_boot");
+      if (java || boot) out.app.push(["Runtime", [java && `Java ${java}`, boot && `Spring Boot ${boot}`].filter(Boolean).join(", ")]);
+      const ep = val("ui.endpoints");
+      if (ep && typeof ep.endpoint_annotations === "number") out.app.push(["Entry points", `${ep.endpoint_annotations} REST routes in ${ep.controllers} controllers`]);
+      const client = val("ui.client_facing");
+      if (client) out.app.push(["Client-facing", client === "yes" ? "Yes, a client portal is likely" : "Not indicated"]);
+      if (shown["runtime.java"]) out.appTags.push(["Verified", "t-ok"]);
+      if (shown["ui.client_facing"] && shown["ui.client_facing"].confidence !== "verified") out.appTags.push(["Inferred: client-facing", "t-inf"]);
+    }
+
+    if (["containers", "infrastructure"].some((k) => sees(role, k))) {
+      const iac = val("infrastructure.as_code");
+      if (iac) {
+        const files = Object.values(iac).filter((n) => typeof n === "number").reduce((a, b) => a + b, 0);
+        out.hosting.push(["Infrastructure as code", files ? `${files} files` : "Not defined as code"]);
+      }
+    }
+
+    if (sees(role, "data")) {
+      // Each database file is one database. Types are the distinct engines, leaving out unidentified .db files.
+      const dbs = val("legacy.databases");
+      if (Array.isArray(dbs) && dbs.length) {
+        const count = dbs.length;
+        const engines = [...new Set(dbs.filter((d) => !/\(tier 3\)/.test(String(d))).map((d) => String(d).split(" (tier")[0]))];
+        if (engines.length > 1) {
+          out.data.push(["Databases found", String(count)]);
+          out.data.push(["Database types", `${engines.length} types: ${engines.join(", ")}`]);
+        } else {
+          out.data.push(["Databases found", String(count)]);
+        }
+      }
+    }
+    return out;
+  }
+
+  // Three summary cards from the demo: age and history, data structure.
   // Built only from findings this viewer may see, and from the history (shown to every role).
   function componentCards(shown, history, role) {
     const val = (id) => (shown[id] ? shown[id].value : undefined);
@@ -3140,46 +3194,6 @@ pre{white-space:pre-wrap;word-break:break-word;background:var(--soft);padding:12
       return c;
     };
     const hidden = (c) => { c.appendChild(el("p", "Not shown for your role.", "muted small")); return c; };
-
-    // What it does: runtime, entry points, client-facing, hosting.
-    {
-      const cats = ["stack", "ui_portal", "infrastructure"];
-      const visible = cats.some((k) => sees(role, k));
-      const c = shell("Application", "What it does");
-      if (!visible) out.push(hidden(c));
-      else {
-        const rows = [];
-        const purpose = val("app.purpose");
-        if (purpose && purpose.name) rows.push(["Name", purpose.name]);
-        if (purpose && purpose.summary) rows.push(["Purpose", purpose.summary]);
-        if (purpose && purpose.features && purpose.features.length) rows.push(["Sections in its README", purpose.features.join(", ")]);
-        const java = val("runtime.java");
-        const boot = val("runtime.spring_boot");
-        if (java || boot) rows.push(["Runtime", [java && `Java ${java}`, boot && `Spring Boot ${boot}`].filter(Boolean).join(", ")]);
-        const ep = val("ui.endpoints");
-        if (ep && typeof ep.endpoint_annotations === "number") rows.push(["Entry points", `${ep.endpoint_annotations} REST routes in ${ep.controllers} controllers`]);
-        const client = val("ui.client_facing");
-        if (client) rows.push(["Client-facing", client === "yes" ? "Yes, a client portal is likely" : "Not indicated"]);
-        const iac = val("infrastructure.as_code");
-        if (iac) {
-          const files = Object.values(iac).filter((n) => typeof n === "number").reduce((a, b) => a + b, 0);
-          rows.push(["Hosting", files ? `${files} infrastructure-as-code files` : "Not defined as code"]);
-        }
-        if (!rows.length) c.appendChild(el("p", "Nothing detected in the code reviewed.", "muted small"));
-        else {
-          const kv = el("div", null, "kv");
-          for (const [k, v] of rows) kv.append(el("span", k), el("span", v));
-          c.appendChild(kv);
-        }
-        const own = Object.values(shown).filter((i) => cats.includes(i.category));
-        c.appendChild(findingBars(own));
-        const tags = el("div", null, "tags");
-        if (shown["runtime.java"]) tags.appendChild(el("span", "Verified", "tag t-ok"));
-        if (shown["ui.client_facing"] && shown["ui.client_facing"].confidence !== "verified") tags.appendChild(el("span", "Inferred: client-facing", "tag t-inf"));
-        c.appendChild(tags);
-        out.push(c);
-      }
-    }
 
     // Age and history: the origin comes from the years the code gives about itself; git shows this copy. No finding categories apply.
     {
@@ -4161,8 +4175,14 @@ a{color:#6d28d9;font-weight:600}`;
     // The findings the summary cards show are left out of the topic cards, so each appears once.
     const SUMMARY_IDS = ["runtime.java", "runtime.spring_boot", "ui.endpoints", "ui.client_facing", "ui.screen_names", "ui.roles", "ui.page_preview", "app.purpose", "data.tables", "data.migrations", "infrastructure.as_code"];
     const topic = all.filter((i) => !SUMMARY_IDS.includes(i.id));
+    const extras = summaryRows(shown, cur.viewer_role);
+    const EXTRA_BY_CARD = {
+      "What it is": { rows: extras.app, tags: extras.appTags },
+      "How it is hosted": { rows: extras.hosting },
+      "Its data": { rows: extras.data },
+    };
     for (const card of REVIEW_CARDS) {
-      const node = reviewCard(card, topic, cur.viewer_role, all);
+      const node = reviewCard(card, topic, cur.viewer_role, all, EXTRA_BY_CARD[card.title] || {});
       if (node) grid.appendChild(node);
     }
     for (const node of componentCards(shown, history, cur.viewer_role)) grid.appendChild(node);
