@@ -3411,6 +3411,7 @@ pre{white-space:pre-wrap;word-break:break-word;background:var(--soft);padding:12
       const c = shell("History", origin.earliest_year
         ? `Likely built around ${origin.typical_year}`
         : (history.available ? `${history.release_tag_count} releases in this repository` : "Age and history"));
+      c.style.gridColumn = "1 / -1";
       if (origin.earliest_year) {
         const kv0 = el("div", null, "kv");
         kv0.append(el("span", "Earliest year in the code"), el("span", String(origin.earliest_year)));
