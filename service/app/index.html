@@ -973,6 +973,14 @@ button:not(:disabled):active{transform:scale(.965)}
   .gantt-row:hover .gantt-bar{scale:none;filter:none}
   .eff-role:hover{transform:none}
 }
+/* Spacing: actions sit on their own line with room around them, never flush against an input or a link. */
+.tl-owner{display:block}
+.tl-owner + button{display:inline-flex;margin:14px 0 0}
+.conv-form{display:flex;flex-direction:column;align-items:flex-start;gap:12px}
+.conv-form input{width:100%}
+.conv-form > button{margin:4px 0 0}
+.conv-actions{display:flex;flex-wrap:wrap;gap:12px;align-items:center;margin-top:16px}
+.stage-card a[target]{display:inline-block;margin-top:14px}
 </style>
 </head>
 <body>
@@ -5751,8 +5759,9 @@ a{color:#6d28d9;font-weight:600}`;
           reject.type = "button";
           reject.className = "ghost";
           reject.addEventListener("click", () => decideConversion(row, c.path, "rejected"));
-          card.appendChild(accept);
-          card.appendChild(reject);
+          const acts = el("div", null, "conv-actions");
+          acts.append(accept, reject);
+          card.appendChild(acts);
         }
       }
       box.appendChild(card);
