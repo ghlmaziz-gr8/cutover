@@ -65,11 +65,23 @@ test("stored procedures and tables recommend the services template", () => {
   assert.equal(picks[0].id, "services-data");
 });
 
-test("with no findings the containers template is the recommendation, and the rest are weaker", () => {
+test("with no findings nothing is recommended, because absences are not evidence", () => {
   const picks = choose({});
+  assert.ok(picks.every((p) => p.score === 0));
+  assert.ok(picks.every((p) => p.fit !== "recommended"));
+});
+
+test("a missing infrastructure-as-code file is not scored or shown as evidence", () => {
+  const picks = choose({});
+  const lift = picks.find((p) => p.id === "lift-contain");
+  assert.equal(lift.score, 0);
+  assert.equal(lift.evidence.length, 0);
+});
+
+test("dependencies to upgrade recommend the containers template", () => {
+  const picks = choose({ "legacy.dependencies": point(["jquery 1.x", "log4j 1.x"]) });
   assert.equal(picks[0].id, "lift-contain");
   assert.equal(picks[0].fit, "recommended");
-  assert.notEqual(picks[1].fit, "recommended");
 });
 
 test("a finding that found nothing does not count as a point", () => {
