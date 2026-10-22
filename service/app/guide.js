@@ -11,6 +11,7 @@
 window.CUTOVER_GUIDE = {
   updated: "2026-10-22",
   whatsNew: [
+    "2026-10-22: The architecture diagram comes alive: a packet travels along each connector, cards show a sheen and a bouncing icon on hover, and the not-found boxes breathe. The findings map centre pulses.",
     "2026-10-22: Spacing fixed on the action rows. Save the choice, Convert this file and Accept or Reject now sit on their own line, with room around them.",
     "2026-10-22: The mind maps draw themselves: edges trace out from the centre, branches pop in and leaves fly out of them. The project timeline and people cards animate in sequence, the FTE figures count up, and labels on short phases no longer overlap.",
     "2026-10-22: Motion throughout the portal. Cards arrive in turn, buttons respond to a press, option tiles lift under the pointer, and folds open smoothly. Motion is turned off if your system asks for reduced motion.",
