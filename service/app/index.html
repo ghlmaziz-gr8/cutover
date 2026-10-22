@@ -323,6 +323,23 @@ form input + button{margin-top:16px}
 @keyframes scopeShake{0%,100%{transform:translateX(0)}20%{transform:translateX(-6px)}40%{transform:translateX(6px)}60%{transform:translateX(-4px)}80%{transform:translateX(3px)}}
 @media (max-width:720px){.scope-opts{grid-template-columns:1fr}}
 
+/* Architecture diagram on the findings page */
+.arch-card{position:relative}
+.arch-flow{display:flex;flex-direction:column;align-items:center;gap:0;margin:14px auto 0;max-width:560px}
+.arch-box{width:100%;background:var(--card,#fff);border:1px solid var(--line,#e5e7eb);border-left:5px solid var(--c);border-radius:16px;padding:12px 16px;box-shadow:0 2px 10px rgba(0,0,0,.04);animation:archIn .5s cubic-bezier(.2,.8,.2,1) both;animation-delay:calc(var(--i,0) * 110ms)}
+.arch-head{display:flex;flex-wrap:wrap;gap:6px 10px;align-items:center;justify-content:space-between}
+.arch-name{color:var(--c);font-size:15px;font-weight:800}
+.arch-detail{margin:6px 0 2px;font-size:14px;line-height:1.5;overflow-wrap:anywhere}
+.arch-src{margin:0;font-size:12px;color:var(--muted,#64748b);overflow-wrap:anywhere}
+.arch-arrow{width:24px;height:30px;display:block}
+.arch-bands{margin:10px auto 0;max-width:560px}
+.arch-band{display:flex;flex-direction:column;gap:4px;border:2px dashed var(--c);border-radius:16px;padding:12px 16px;background:color-mix(in srgb,var(--c) 6%,transparent)}
+.arch-band .arch-name{font-size:15px}
+.arch-band .arch-detail{margin:0}
+.arch-key{margin:12px 0 0;text-align:center}
+@keyframes archIn{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
+@media (prefers-reduced-motion: reduce){.arch-box{animation:none}}
+
 /* Deeper assessment: architecture overview and sections */
 .arch-layer{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;padding:12px 14px;border-radius:14px;border:1px solid var(--line);border-left:4px solid var(--c,var(--accent));background:var(--card);animation:archIn .5s both;animation-delay:calc(var(--i,0) * 120ms)}
 .arch-layer b{font-size:14px}
@@ -1366,6 +1383,7 @@ pre{white-space:pre-wrap;word-break:break-word;background:var(--soft);padding:12
 <script src="findings-map.js"></script>
 <script src="file-map.js"></script>
 <script src="radial.js"></script>
+<script src="architecture.js"></script>
 <script src="plan.js"></script>
 <script src="starter.js"></script>
 <script>
@@ -4196,6 +4214,58 @@ a{color:#6d28d9;font-weight:600}`;
     drawMap(tree, box, { toolbar: true, radial: true, radialLinks: tree.children.map((c) => ({ id: c.id, label: c.label })) });
   }
 
+  // Architecture diagram, drawn after What we found. Each layer is a box with its source finding and a confidence tag.
+  // Hosting is a band across the bottom. Built from the deeper assessment's layers, which the server has already filtered by role.
+  function architectureSection(deeper, findings) {
+    const wrap = el("div", null, "card arch-card");
+    wrap.style.marginTop = "18px";
+    wrap.appendChild(el("p", "Architecture", "eyebrow-sm"));
+    wrap.appendChild(el("h3", "How the application fits together"));
+    wrap.appendChild(el("p", "Drawn from the repository findings and the deeper assessment. Each box names the finding it came from, and a tag says whether it is verified in code.", "muted small"));
+    const boxes = window.Architecture ? window.Architecture.build(deeper && deeper.architecture && deeper.architecture.layers, findings) : [];
+    if (!boxes.length) {
+      wrap.appendChild(el("p", "Not enough in the code to draw the architecture for your role.", "muted small"));
+      return wrap;
+    }
+    const CONF = { verified: ["Verified in code", "t-ok"], inferred: ["Inferred, needs review", "t-inf"], unknown: ["Source not listed", ""] };
+    const flow = el("div", null, "arch-flow");
+    const bands = el("div", null, "arch-bands");
+    const flowBoxes = boxes.filter((b) => !b.band);
+    flowBoxes.forEach((b, i) => {
+      const box = el("div", null, "arch-box");
+      box.style.setProperty("--c", b.tone);
+      box.style.setProperty("--i", String(i));
+      const head = el("div", null, "arch-head");
+      head.appendChild(el("b", b.layer, "arch-name"));
+      const [text, tone] = CONF[b.confidence] || CONF.unknown;
+      head.appendChild(el("span", text, `tag ${tone}`));
+      box.appendChild(head);
+      box.appendChild(el("p", b.detail, "arch-detail"));
+      box.appendChild(el("p", b.source ? `From: ${b.source}` : "Source not listed on this page", "arch-src"));
+      flow.appendChild(box);
+      if (i < flowBoxes.length - 1) {
+        const arrow = svgNode("svg", { viewBox: "0 0 24 30", class: "arch-arrow", "aria-hidden": "true" });
+        arrow.appendChild(svgNode("path", { d: "M12 0 L12 22", stroke: b.tone, "stroke-width": 2.5, fill: "none", "stroke-linecap": "round" }));
+        arrow.appendChild(svgNode("path", { d: "M5 17 L12 25 L19 17", stroke: b.tone, "stroke-width": 2.5, fill: "none", "stroke-linejoin": "round", "stroke-linecap": "round" }));
+        flow.appendChild(arrow);
+      }
+    });
+    boxes.filter((b) => b.band).forEach((b) => {
+      const band = el("div", null, "arch-band");
+      band.style.setProperty("--c", b.tone);
+      band.appendChild(el("b", b.layer, "arch-name"));
+      band.appendChild(el("span", b.detail, "arch-detail"));
+      band.appendChild(el("span", b.source ? `From: ${b.source}` : "Source not listed on this page", "arch-src"));
+      bands.appendChild(band);
+    });
+    wrap.appendChild(flow);
+    wrap.appendChild(bands);
+    const key = el("div", null, "arch-key muted small");
+    key.textContent = "Each box works with the one below it. The dashed band is where the whole application runs.";
+    wrap.appendChild(key);
+    return wrap;
+  }
+
   // Findings map: under the review cards, one branch per card, with its findings. Only what this viewer may see.
   function findingsMapSection(all, role) {
     const wrap = el("div", null, "findings-map-wrap");
@@ -4511,6 +4581,7 @@ a{color:#6d28d9;font-weight:600}`;
     }
     for (const node of componentCards(shown, history, cur.viewer_role)) grid.appendChild(node);
     box.appendChild(grid);
+    box.appendChild(architectureSection(report.deeper, Object.fromEntries(all.filter(Boolean).map((i) => [i.id, i]))));
     box.appendChild(findingsMapSection(all, cur.viewer_role));
     // Entrance order: cards and panels appear one after another.
     box.querySelectorAll(".rcard, .panel, .stat").forEach((n, i) => n.style.setProperty("--i", String(i)));
