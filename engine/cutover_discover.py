@@ -627,9 +627,11 @@ def detect_ui(repo: Repo, out: dict) -> None:
     code = {p: t for p, t in repo.files.items() if p.endswith((".java", ".kt"))}
     controllers = [p for p, t in code.items() if re.search(r"@(?:Rest)?Controller\b", t)]
     endpoints = sum(len(re.findall(MAPPING_RX, code[p])) for p in controllers)
+    # Each controller's class name is the service's name. Names only; no code is copied.
+    service_names = sorted({m.group(1) for p in controllers for m in [re.search(r"\bclass\s+(\w+)", code[p])] if m}, key=str.lower)
     out["ui.endpoints"] = F(
         "ui.endpoints", "ui_portal", "Endpoints declared in controllers",
-        {"controllers": len(controllers), "endpoint_annotations": endpoints},
+        {"controllers": len(controllers), "endpoint_annotations": endpoints, "names": service_names[:200]},
         "verified", controllers,
         note="Counts mapping annotations. Class-level prefixes are not joined, so this is not a list of full URLs.",
     )

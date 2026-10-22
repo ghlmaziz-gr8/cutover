@@ -192,9 +192,17 @@ def _architecture(report: dict) -> dict:
     screens = _value(report, "ui.screens").get("count")
     if isinstance(screens, int) and _finding(report, "ui.screens"):
         layers.append({"layer": "Screens", "detail": f"{screens} screens", "category": "ui_portal", "basis": "ui.screens"})
-    endpoints = _count(_value(report, "ui.endpoints"), "count")
+    # The endpoint finding carries its annotation count and controller count; it does not carry a "count" key.
+    endpoint_value = _value(report, "ui.endpoints")
+    endpoints = _count(endpoint_value, "endpoint_annotations")
+    controllers = _count(endpoint_value, "controllers")
     if endpoints is not None and _finding(report, "ui.endpoints"):
-        layers.append({"layer": "Services", "detail": f"{endpoints} endpoints", "category": "ui_portal", "basis": "ui.endpoints"})
+        detail = f"{endpoints} endpoints"
+        if controllers is not None:
+            detail += f" in {controllers} controllers"
+        services = [str(n) for n in (endpoint_value.get("names") or []) if str(n).strip()]
+        layers.append({"layer": "Services", "detail": detail, "category": "ui_portal", "basis": "ui.endpoints",
+                       "items": services[:MAX_NAMES] + ([f"and {len(services) - MAX_NAMES} more"] if len(services) > MAX_NAMES else [])})
     tables, table_basis = _tables(report)
     if tables is not None and table_basis:
         layers.append({"layer": "Data", "detail": f"{tables} tables", "category": "data", "basis": table_basis})
