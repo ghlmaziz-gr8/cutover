@@ -96,3 +96,18 @@ test("a list value gets the full width of its card, with its label above it", ()
   assert.ok(html.includes('kv.append(el("span", item.title, "kv-label kv-wide"));'));
   assert.ok(html.includes(".kv-wide{grid-column:1 / -1}"));
 });
+
+test("on the findings page, Data structure comes before the History card", () => {
+  const html = readFileSync(new URL("../index.html", import.meta.url), "utf8");
+  assert.ok(html.indexOf("// Data structure: counts of tables") < html.indexOf("// Age and history: the origin comes from"));
+});
+
+test("the target language card is drawn under the approach, with the options from the server", () => {
+  const html = readFileSync(new URL("../index.html", import.meta.url), "utf8");
+  assert.ok(html.includes('<div class="card" id="targetCard" hidden'));
+  assert.ok(html.includes("function renderTarget(row)"));
+  assert.ok(html.includes("renderTarget(cur);"));
+  assert.ok(html.includes("row.target_options || []).filter((o) => o.approaches.includes(row.modern_template))"));
+  assert.ok(html.includes("/target/approve`"));
+  assert.ok(html.includes("`/api/analyses/${row.id}/target`"));
+});

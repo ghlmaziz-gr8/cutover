@@ -676,6 +676,14 @@ pre{white-space:pre-wrap;word-break:break-word;background:var(--soft);padding:12
 .rad .rad-branch:focus-visible .rad-pill{stroke:#111827;stroke-width:3}
 .rad .rad-branch text{pointer-events:none}
 .rad .rad-point text{pointer-events:none}
+.tl-grid{display:grid;gap:10px;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));margin:14px 0}
+.tl-option{text-align:left;padding:12px 14px;border-radius:14px;border:2px solid var(--line,#e5e7eb);background:var(--card,#fff);font-weight:700;cursor:pointer;transition:transform .15s ease,border-color .15s ease,box-shadow .15s ease}
+.tl-option:hover:not(:disabled){transform:translateY(-1px);box-shadow:0 8px 18px rgba(109,40,217,.12)}
+.tl-option.is-picked{border-color:var(--accent,#6d28d9);box-shadow:0 0 0 3px color-mix(in srgb,var(--accent,#6d28d9) 22%,transparent)}
+.tl-option:focus-visible{outline:3px solid var(--accent,#6d28d9);outline-offset:2px}
+.tl-option:disabled{opacity:.6;cursor:default}
+.tl-owner{width:100%;max-width:420px;margin:6px 0 10px}
+.tl-status{margin-top:12px}
 .rad-links{display:flex;flex-wrap:wrap;justify-content:center;gap:8px;margin-top:12px}
 .rad-link{font-size:13px;padding:6px 12px}
 @media (min-width:760px){.radial-wide{display:block}.list-narrow{display:none}}
@@ -1140,6 +1148,7 @@ pre{white-space:pre-wrap;word-break:break-word;background:var(--soft);padding:12
       <div id="approachGrid"></div>
       <p class="small hint" id="approachMsg" role="status"></p>
     </div>
+    <div class="card" id="targetCard" hidden style="margin-top:18px"><div id="targetBody"></div></div>
     <div class="card" id="conversionCard" hidden style="margin-top:18px"><div id="conversionBody"></div></div>
     <div class="card" id="nextPathCard" hidden style="margin-top:18px"><div id="nextPath"></div></div>
     <div class="cards2" style="margin-top:20px">
@@ -3312,67 +3321,6 @@ pre{white-space:pre-wrap;word-break:break-word;background:var(--soft);padding:12
     };
     const hidden = (c) => { c.appendChild(el("p", "Not shown for your role.", "muted small")); return c; };
 
-    // Age and history: the origin comes from the years the code gives about itself; git shows this copy. No finding categories apply.
-    {
-      const origin = history.origin || {};
-      const c = shell("History", origin.earliest_year
-        ? `Likely built around ${origin.typical_year}`
-        : (history.available ? `${history.release_tag_count} releases in this repository` : "Age and history"));
-      if (origin.earliest_year) {
-        const kv0 = el("div", null, "kv");
-        kv0.append(el("span", "Earliest year in the code"), el("span", String(origin.earliest_year)));
-        kv0.append(el("span", "Typical year in the code"), el("span", String(origin.typical_year)));
-        kv0.append(el("span", "Latest year in the code"), el("span", String(origin.latest_year)));
-        kv0.append(el("span", "Files with a year"), el("span", `${origin.files_with_years} of ${origin.files_scanned} text files`));
-        c.appendChild(kv0);
-        const tags0 = el("div", null, "tags");
-        tags0.appendChild(el("span", `Estimate, ${origin.confidence} confidence`, "tag"));
-        c.appendChild(tags0);
-      } else if (origin.evidence && origin.evidence.length) {
-        c.appendChild(el("p", origin.evidence[0], "muted small"));
-      }
-      for (const line of (origin.evidence || []).slice(origin.earliest_year ? 0 : 1)) c.appendChild(el("p", line, "muted small"));
-      // The AI estimate sits beside the rule-based one. It uses the same code evidence plus file names and git dates.
-      const ai = origin.model_estimate;
-      if (ai && ai.typical_year) {
-        const kvAi = el("div", null, "kv");
-        kvAi.append(el("span", "AI estimate of the first year"), el("span", String(ai.typical_year)));
-        kvAi.append(el("span", "AI estimate, earliest"), el("span", String(ai.earliest_year)));
-        kvAi.append(el("span", "AI confidence"), el("span", String(ai.confidence)));
-        c.appendChild(kvAi);
-        const tagAi = el("div", null, "tags");
-        tagAi.appendChild(el("span", "AI estimate", "tag"));
-        c.appendChild(tagAi);
-        for (const r of ai.reasons || []) c.appendChild(el("p", r, "muted small"));
-      }
-      if (!history.available) c.appendChild(el("p", history.reason || "Repository history not available.", "muted small"));
-      else {
-        const kv = el("div", null, "kv");
-        const day = (t) => (t ? String(t).slice(0, 10) : "not known");
-        kv.append(el("span", "First commit here"), el("span", day(history.first_commit)));
-        kv.append(el("span", "Tagged versions"), el("span", `${history.release_tag_count}${history.latest_release_tag ? ` (latest ${history.latest_release_tag})` : ""}`));
-        kv.append(el("span", "Last code change"), el("span", `${day(history.last_commit)} (${history.days_since_last_commit} days ago)`));
-        kv.append(el("span", "Commits, last 12 months"), el("span", String(history.commits_last_12_months)));
-        c.appendChild(kv);
-        // Releases per year when the repository has tags; otherwise commits per year.
-        const releases = Object.entries(history.release_tags_per_year || {});
-        const commits = Object.entries(history.commits_per_year || {});
-        if (releases.length) {
-          c.appendChild(el("p", "Tagged releases per year", "muted small"));
-          c.appendChild(columns(releases.map(([y, v]) => ({ label: y.slice(-2), value: v }))));
-        } else if (commits.length) {
-          c.appendChild(el("p", "No release tags in this repository. Commits per year:", "muted small"));
-          c.appendChild(columns(commits.map(([y, v]) => ({ label: y.slice(-2), value: v }))));
-        } else {
-          c.appendChild(el("p", "No yearly history for this analysis. Run a new analysis to see it.", "muted small"));
-        }
-        const tags = el("div", null, "tags");
-        tags.appendChild(el("span", "Commit dates: this copy in git", "tag t-ok"));
-        c.appendChild(tags);
-      }
-      out.push(c);
-    }
-
     // Data structure: counts of tables, views, stored procedures and functions. Names and fields are behind "Show".
     {
       const c = shell("Data", "Data structure");
@@ -3445,6 +3393,67 @@ pre{white-space:pre-wrap;word-break:break-word;background:var(--soft);padding:12
       }
       out.push(c);
     }
+    // Age and history: the origin comes from the years the code gives about itself; git shows this copy. No finding categories apply.
+    {
+      const origin = history.origin || {};
+      const c = shell("History", origin.earliest_year
+        ? `Likely built around ${origin.typical_year}`
+        : (history.available ? `${history.release_tag_count} releases in this repository` : "Age and history"));
+      if (origin.earliest_year) {
+        const kv0 = el("div", null, "kv");
+        kv0.append(el("span", "Earliest year in the code"), el("span", String(origin.earliest_year)));
+        kv0.append(el("span", "Typical year in the code"), el("span", String(origin.typical_year)));
+        kv0.append(el("span", "Latest year in the code"), el("span", String(origin.latest_year)));
+        kv0.append(el("span", "Files with a year"), el("span", `${origin.files_with_years} of ${origin.files_scanned} text files`));
+        c.appendChild(kv0);
+        const tags0 = el("div", null, "tags");
+        tags0.appendChild(el("span", `Estimate, ${origin.confidence} confidence`, "tag"));
+        c.appendChild(tags0);
+      } else if (origin.evidence && origin.evidence.length) {
+        c.appendChild(el("p", origin.evidence[0], "muted small"));
+      }
+      for (const line of (origin.evidence || []).slice(origin.earliest_year ? 0 : 1)) c.appendChild(el("p", line, "muted small"));
+      // The AI estimate sits beside the rule-based one. It uses the same code evidence plus file names and git dates.
+      const ai = origin.model_estimate;
+      if (ai && ai.typical_year) {
+        const kvAi = el("div", null, "kv");
+        kvAi.append(el("span", "AI estimate of the first year"), el("span", String(ai.typical_year)));
+        kvAi.append(el("span", "AI estimate, earliest"), el("span", String(ai.earliest_year)));
+        kvAi.append(el("span", "AI confidence"), el("span", String(ai.confidence)));
+        c.appendChild(kvAi);
+        const tagAi = el("div", null, "tags");
+        tagAi.appendChild(el("span", "AI estimate", "tag"));
+        c.appendChild(tagAi);
+        for (const r of ai.reasons || []) c.appendChild(el("p", r, "muted small"));
+      }
+      if (!history.available) c.appendChild(el("p", history.reason || "Repository history not available.", "muted small"));
+      else {
+        const kv = el("div", null, "kv");
+        const day = (t) => (t ? String(t).slice(0, 10) : "not known");
+        kv.append(el("span", "First commit here"), el("span", day(history.first_commit)));
+        kv.append(el("span", "Tagged versions"), el("span", `${history.release_tag_count}${history.latest_release_tag ? ` (latest ${history.latest_release_tag})` : ""}`));
+        kv.append(el("span", "Last code change"), el("span", `${day(history.last_commit)} (${history.days_since_last_commit} days ago)`));
+        kv.append(el("span", "Commits, last 12 months"), el("span", String(history.commits_last_12_months)));
+        c.appendChild(kv);
+        // Releases per year when the repository has tags; otherwise commits per year.
+        const releases = Object.entries(history.release_tags_per_year || {});
+        const commits = Object.entries(history.commits_per_year || {});
+        if (releases.length) {
+          c.appendChild(el("p", "Tagged releases per year", "muted small"));
+          c.appendChild(columns(releases.map(([y, v]) => ({ label: y.slice(-2), value: v }))));
+        } else if (commits.length) {
+          c.appendChild(el("p", "No release tags in this repository. Commits per year:", "muted small"));
+          c.appendChild(columns(commits.map(([y, v]) => ({ label: y.slice(-2), value: v }))));
+        } else {
+          c.appendChild(el("p", "No yearly history for this analysis. Run a new analysis to see it.", "muted small"));
+        }
+        const tags = el("div", null, "tags");
+        tags.appendChild(el("span", "Commit dates: this copy in git", "tag t-ok"));
+        c.appendChild(tags);
+      }
+      out.push(c);
+    }
+
     // Client-facing portal: screen previews drawn from file names, and the roles named in access rules.
     {
       const raw = val("ui.screen_names");
@@ -4323,6 +4332,98 @@ a{color:#6d28d9;font-weight:600}`;
     };
   }
 
+  // Target language: chosen by a platform engineer after the approach, approved by the named owner or a CIO or CTO.
+  // The options come from the server, already fitted to the approach. Only what the server returns is shown.
+  let targetPick = { analysis: null, language: null };
+  function renderTarget(row) {
+    const card = $("targetCard");
+    const box = $("targetBody");
+    box.replaceChildren();
+    card.hidden = !(row && row.scope === "modernize" && row.modern_template);
+    if (card.hidden) return;
+    const options = (row.target_options || []).filter((o) => o.approaches.includes(row.modern_template));
+    const name = (id) => (options.find((o) => o.id === id) || (row.target_options || []).find((o) => o.id === id) || {}).label || id;
+    box.appendChild(el("p", "Target language", "eyebrow-sm"));
+    box.appendChild(el("h3", "Which language should the modernized application use?"));
+    box.appendChild(el("p", "A platform engineer chooses the language. The named application owner, or a CIO or CTO, approves it before any file is converted.", "muted small"));
+
+    if (targetPick.analysis !== row.id) targetPick = { analysis: row.id, language: row.target_language || null };
+    const grid = el("div", null, "tl-grid");
+    grid.setAttribute("role", "radiogroup");
+    grid.setAttribute("aria-label", "Target language");
+    for (const o of options) {
+      const btn = el("button", o.label, "tl-option");
+      btn.type = "button";
+      btn.setAttribute("role", "radio");
+      const picked = targetPick.language === o.id;
+      btn.setAttribute("aria-checked", String(picked));
+      btn.className = `tl-option${picked ? " is-picked" : ""}`;
+      btn.disabled = !row.can_plan;
+      btn.addEventListener("click", () => { targetPick.language = o.id; renderTarget(row); });
+      grid.appendChild(btn);
+    }
+    box.appendChild(grid);
+
+    const owner = document.createElement("input");
+    owner.type = "email";
+    owner.value = row.target_owner_email || "";
+    owner.placeholder = "owner@example.com";
+    owner.setAttribute("aria-label", "Email of the application owner who approves the language");
+    owner.disabled = !row.can_plan;
+    owner.className = "tl-owner";
+    const ownerLabel = el("p", "Application owner (approves the language)", "small");
+    box.appendChild(ownerLabel);
+    box.appendChild(owner);
+
+    if (row.can_plan) {
+      const save = el("button", "Save the choice");
+      save.type = "button";
+      save.addEventListener("click", async () => {
+        if (!targetPick.language) return showToast({ tone: "bad", title: "Choose a language first", body: "Pick one of the options above." });
+        try {
+          await api(`/api/analyses/${row.id}/target`, { method: "PUT", body: JSON.stringify({ language: targetPick.language, owner_email: owner.value.trim() }) });
+          cur = await api(`/api/analyses/${row.id}`);
+          showToast({ tone: "success", title: "Language saved", body: `${name(targetPick.language)}. The owner now needs to approve it.` });
+          showCurrentScreen();
+        } catch (err) {
+          showToast({ tone: "bad", title: "Could not save the language", body: err.message });
+        }
+      });
+      box.appendChild(save);
+    }
+
+    const status = el("div", null, "tl-status");
+    if (row.target_language) {
+      const by = row.target_language_set_by_email ? ` by ${row.target_language_set_by_email}` : "";
+      status.appendChild(el("p", `Chosen: ${name(row.target_language)}${by}.`, "small"));
+      if (row.target_approval) {
+        const when = new Date(row.target_approval.at).toLocaleDateString();
+        status.appendChild(el("p", `Approved by ${row.target_approval.by} on ${when}.`, "small"));
+      } else if (row.target_can_approve) {
+        status.appendChild(el("p", `I approve ${name(row.target_language)} as the target language for this application.`, "small"));
+        const approve = el("button", "Approve this language");
+        approve.type = "button";
+        approve.className = "ghost";
+        approve.addEventListener("click", async () => {
+          try {
+            await api(`/api/analyses/${row.id}/target/approve`, { method: "POST" });
+            cur = await api(`/api/analyses/${row.id}`);
+            showToast({ tone: "success", title: "Language approved", body: name(row.target_language) });
+            showCurrentScreen();
+          } catch (err) {
+            showToast({ tone: "bad", title: "Could not save the approval", body: err.message });
+          }
+        });
+        status.appendChild(approve);
+      } else {
+        status.appendChild(el("p", "Waiting for the named application owner, or a CIO or CTO, to approve.", "muted small"));
+      }
+    } else {
+      status.appendChild(el("p", "No language chosen yet.", "muted small"));
+    }
+    box.appendChild(status);
+  }
+
   // Written approval for converting files with the language model. A workspace admin gives it, once for the workspace.
   async function setConversionApproval(row, approve, wording) {
     try {
@@ -4702,6 +4803,7 @@ a{color:#6d28d9;font-weight:600}`;
     renderMigrate();
     renderDbCard();
     renderApproach(cur);
+    renderTarget(cur);
     renderConversionApproval(cur);
     const pathBox = $("nextPath");
     pathBox.replaceChildren();
