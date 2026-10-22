@@ -1557,7 +1557,16 @@ async function getAnalysis(request, env, id) {
     screens = await screensRes.json();
   }
   const approval = await conversionApproval(env, analysis.workspace_id);
+  // Proposals are code, so only platform engineers see them.
+  let conversions = [];
+  if (canStart(member)) {
+    const convRes = await serviceRest(env, `analysis_conversions?analysis_id=eq.${id}&select=id,path,template,status,proposed,reason,kinds,stage,decision,decided_by_email,decided_at,created_at&order=path.asc`);
+    if (!convRes.ok) return json({ error: "Could not load the conversions." }, 502);
+    conversions = await convRes.json();
+  }
   return json({
+    ...analysis,
+    conversions,
     ...analysis,
     conversion_approval: approval.approved ? { by: approval.by, at: approval.at } : null,
     conversion_admin: member.is_admin === true,
@@ -2452,6 +2461,31 @@ async function startConversion(request, env, id) {
   return json({ queued: true, path }, 202);
 }
 
+// A platform engineer accepts or rejects a proposal. Only a proposal that was kept (status ok) can be decided.
+async function decideConversion(request, env, id) {
+  const access = await analysisAccess(env, request, id);
+  if (access.response) return access.response;
+  if (!canStart(access.member)) return json({ error: "Only platform engineers can accept or reject a proposal." }, 403);
+  const parsed = await readJson(request);
+  if (parsed.error) return json({ error: parsed.error }, 400);
+  const path = typeof parsed.value?.path === "string" ? parsed.value.path : "";
+  const decision = parsed.value?.decision;
+  if (!CONVERT_PATH.test(path)) return json({ error: "Choose a file." }, 400);
+  if (decision !== "accepted" && decision !== "rejected") return json({ error: "Choose accepted or rejected." }, 400);
+  const found = await serviceRest(env, `analysis_conversions?analysis_id=eq.${id}&path=eq.${encodeURIComponent(path)}&select=id,status`);
+  if (!found.ok) return json({ error: "Could not load the proposal." }, 502);
+  const [item] = await found.json();
+  if (!item) return json({ error: "Not found." }, 404);
+  if (item.status !== "ok") return json({ error: "Only a kept proposal can be accepted or rejected." }, 409);
+  const res = await serviceRest(env, `analysis_conversions?id=eq.${item.id}`, {
+    method: "PATCH",
+    headers: { prefer: "return=minimal" },
+    body: JSON.stringify({ decision, decided_by_email: normalizeEmail(access.user.email), decided_at: new Date().toISOString() }),
+  });
+  if (!res.ok) return json({ error: "Could not save the decision." }, 502);
+  return json({ saved: true, decision });
+}
+
 // The runner posts one result per file. Shared secret only; the result is kept as a proposal for review.
 async function runnerConversion(request, env, id) {
   if (!timingSafeEqual(request.headers.get("x-runner-secret") || "", env.RUNNER_SECRET || "")) {
@@ -2991,6 +3025,8 @@ async function route(request, env) {
     if (workspaceApproval && UUID_PATTERN.test(workspaceApproval[1]) && method === "PUT") return setConversionApproval(request, env, workspaceApproval[1]);
     const analysisConversions = path.match(/^\/api\/analyses\/([^/]+)\/conversions$/);
     if (analysisConversions && UUID_PATTERN.test(analysisConversions[1]) && method === "POST") return startConversion(request, env, analysisConversions[1]);
+    const analysisDecision = path.match(/^\/api\/analyses\/([^/]+)\/conversions\/decision$/);
+    if (analysisDecision && UUID_PATTERN.test(analysisDecision[1]) && method === "POST") return decideConversion(request, env, analysisDecision[1]);
     const runnerConversionRoute = path.match(/^\/api\/runner\/([^/]+)\/conversion$/);
     if (runnerConversionRoute && UUID_PATTERN.test(runnerConversionRoute[1]) && method === "POST") return runnerConversion(request, env, runnerConversionRoute[1]);
     const analysisProgress = path.match(/^\/api\/analyses\/([^/]+)\/progress$/);
