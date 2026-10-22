@@ -61,3 +61,28 @@ test("the rough size follows the number of screens and tables", () => {
   assert.equal(Plan.sizeOf(30, 20), "Medium");
   assert.equal(Plan.sizeOf(100, 40), "Large");
 });
+
+test("the plan map has the same sections as the plan, with the order of work in order", () => {
+  const map = Plan.tree({
+    appName: "Portal",
+    repo: "org/portal",
+    template: "web-modern",
+    chosenBy: "eng@example.com",
+    chosenAt: "2026-10-20",
+    findings: {
+      "ui.screens": { point: true, value: ["Home", "Login"] },
+      "data.tables": { point: true, value: ["orders"] },
+      "legacy.dependencies": { point: true, title: "Old dependencies", value: 3, severity: "high" },
+      "ui.endpoints": { point: true, title: "Endpoints exposed to users", value: ["/x"], severity: "medium" },
+    },
+  });
+  assert.equal(map.label, "Modernization plan: Portal");
+  const labels = map.children.map((c) => c.label);
+  assert.equal(JSON.stringify(labels), JSON.stringify(["Approach", "What we found", "Rough size", "Order of work", "Risks to settle first", "Gaps to check"]));
+  const order = map.children.find((c) => c.label === "Order of work").children;
+  assert.equal(order.length, Plan.PHASES["web-modern"].length);
+  assert.ok(order[0].label.startsWith("1. "));
+  assert.ok(order[1].label.startsWith("2. "));
+  assert.equal(map.children[5].children[0].label, "Endpoints exposed to users");
+  assert.equal(map.children[4].children[0].label, "Old dependencies");
+});
