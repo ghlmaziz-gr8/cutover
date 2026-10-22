@@ -1422,17 +1422,18 @@ pre{white-space:pre-wrap;word-break:break-word;background:var(--soft);padding:12
   };
   const roleName = (key) => (ROLES[key] ? ROLES[key].name : key);
 
-  // The eight steps shown in the header. Weights add up to 100.
+  // The steps shown in the header, from starting an analysis to the next steps. Sign in and the role are
+  // one-time steps before the work begins, so they are not counted. Weights add up to 100, so the bar matches the step.
+  // "min" is the rough minutes the step takes; the estimate is shown only from "Run the analysis" onwards.
   const STAGES = [
-    { id: "s-login", name: "Sign in", w: 5, min: 0.5 },
-    { id: "s-role", name: "Choose your role", w: 5, min: 0.5 },
     { id: "s-name", name: "Name the application", w: 10, min: 1 },
     { id: "s-connect", name: "Connect the code", w: 15, min: 1 },
     { id: "s-rules", name: "Confirm the data rules", w: 5, min: 0.5 },
-    { id: "s-run", name: "Run the analysis", w: 35, min: 4 },
-    { id: "s-review", name: "Review findings", w: 15, min: 2 },
+    { id: "s-run", name: "Run the analysis", w: 40, min: 4 },
+    { id: "s-review", name: "Review findings", w: 20, min: 2 },
     { id: "s-next", name: "Next steps", w: 10, min: 0.5 },
   ];
+  const ETA_FROM = "s-run";
   const SCREENS = ["s-login", "s-denied", "s-role", "s-home", "s-name", "s-connect", "s-rules", "s-run", "s-review", "s-next", "s-plan", "s-files", "s-deeper"];
   const MODEL_LABELS = { anthropic: "Anthropic (Claude)", google: "Google (Gemini)" };
   // The AI stage says whether the workspace's own model was added to this analysis, or opted out.
@@ -1501,6 +1502,7 @@ pre{white-space:pre-wrap;word-break:break-word;background:var(--soft);padding:12
     node.className = bad ? "err small hint" : "muted small hint";
   }
 
+  // The estimate covers the steps still to come. It is shown only once the analysis is running.
   function etaFrom(idx) {
     let m = 0;
     for (let i = idx; i < STAGES.length; i++) m += STAGES[i].min;
@@ -1531,7 +1533,8 @@ pre{white-space:pre-wrap;word-break:break-word;background:var(--soft);padding:12
     $("stepCount").textContent = `Step ${idx + 1} of ${STAGES.length}`;
     $("pct").textContent = `${p}%`;
     $("barFill").style.width = `${p}%`;
-    $("eta").textContent = etaFrom(idx);
+    const etaStart = STAGES.findIndex((s) => s.id === ETA_FROM);
+    $("eta").textContent = idx >= etaStart ? etaFrom(idx) : "";
   }
 
   function show(id) {

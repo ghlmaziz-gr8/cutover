@@ -111,3 +111,14 @@ test("the target language card is drawn under the approach, with the options fro
   assert.ok(html.includes("/target/approve`"));
   assert.ok(html.includes("`/api/analyses/${row.id}/target`"));
 });
+
+test("the header counts the analysis steps only, and shows the estimate once the analysis runs", () => {
+  const html = readFileSync(new URL("../index.html", import.meta.url), "utf8");
+  const start = html.indexOf("  const STAGES = [");
+  const block = html.slice(start, html.indexOf("];", start) + 2);
+  assert.ok(!block.includes("s-login") && !block.includes("s-role"), "sign in and the role are not counted");
+  const weights = [...block.matchAll(/w: (\d+)/g)].map((m) => Number(m[1]));
+  assert.equal(weights.reduce((a, b) => a + b, 0), 100, "the weights add up to 100");
+  assert.ok(html.includes('const ETA_FROM = "s-run";'));
+  assert.ok(html.includes("idx >= etaStart ? etaFrom(idx) : \"\""));
+});
