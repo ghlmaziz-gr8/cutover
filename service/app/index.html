@@ -1084,6 +1084,17 @@ button:not(:disabled):active{transform:scale(.965)}
 .conf-sum{margin:2px 2px 0}
 @media (max-width:560px){.conf{grid-template-columns:1fr;justify-items:center}.conf-list{width:100%}}
 @media (prefers-reduced-motion:reduce){.conf-seg,.conf-fill,.conf-row{transition:none!important}}
+/* The AI badge on results: a sparkle that twinkles, a glow and a moving gradient. Shown only when AI was part of the assessment. */
+.findings-head{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+.ai-badge{position:relative;isolation:isolate;display:inline-flex;align-items:center;gap:9px;padding:6px 14px 6px 6px;border-radius:999px;font:800 11px var(--body);letter-spacing:.07em;text-transform:uppercase;color:#fff;background:linear-gradient(120deg,#7c3aed,#db2777 55%,#f59e0b,#7c3aed);background-size:250% 100%;animation:aiFlow 7s linear infinite;box-shadow:0 10px 24px -12px #7c3aed}
+.ai-badge::before{content:"";position:absolute;inset:-5px;border-radius:999px;background:inherit;filter:blur(10px);opacity:.45;z-index:-1;animation:aiGlow 2.6s ease-in-out infinite}
+.ai-spark{display:grid;place-items:center;width:24px;height:24px;border-radius:50%;background:rgba(255,255,255,.22)}
+.ai-spark svg{width:15px;height:15px;transform-origin:center;animation:aiTwinkle 2.4s ease-in-out infinite}
+.ai-badge small{font:600 10.5px var(--body);text-transform:none;letter-spacing:0;opacity:.92}
+@keyframes aiFlow{to{background-position:250% 0}}
+@keyframes aiGlow{0%,100%{opacity:.3;transform:scale(1)}50%{opacity:.75;transform:scale(1.06)}}
+@keyframes aiTwinkle{0%,100%{transform:rotate(0) scale(1)}50%{transform:rotate(20deg) scale(1.18)}}
+@media (prefers-reduced-motion:reduce){.ai-badge,.ai-badge::before,.ai-spark svg{animation:none}}
 </style>
 </head>
 <body>
@@ -6128,6 +6139,19 @@ a{color:#6d28d9;font-weight:600}`;
     else showReview();
   }
 
+  // A badge for results where an AI model was part of the assessment. It is shown only then.
+  function aiBadge(provider) {
+    const badge = el("span", null, "ai-badge");
+    badge.setAttribute("role", "img");
+    const name = MODEL_LABELS[provider] || provider;
+    badge.setAttribute("aria-label", `AI was part of this assessment: ${name}`);
+    badge.title = `AI was part of this assessment. Model: ${name}.`;
+    const spark = el("span", null, "ai-spark");
+    spark.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M12 2l1.8 5.2L19 9l-5.2 1.8L12 16l-1.8-5.2L5 9l5.2-1.8z"/><path fill="currentColor" d="M19 14.5l.9 2.1 2.1.9-2.1.9-.9 2.1-.9-2.1-2.1-.9 2.1-.9z"/></svg>';
+    badge.append(spark, el("span", "AI assessed"), el("small", name));
+    return badge;
+  }
+
   function renderReview(row) {
     const box = $("reviewBody");
     box.innerHTML = "";
@@ -6141,7 +6165,10 @@ a{color:#6d28d9;font-weight:600}`;
       return;
     }
     // "What we found" is the heading of this section and the first thing on it.
-    box.appendChild(el("h2", "What we found", "findings-top"));
+    const findingsHead = el("div", null, "findings-head");
+    findingsHead.appendChild(el("h2", "What we found", "findings-top"));
+    if (row.model_provider) findingsHead.appendChild(aiBadge(row.model_provider));
+    box.appendChild(findingsHead);
     const shown = report.findings || {};
     // A result that says nothing was found is kept in the report but is not a point, so it is left out of the counts and bars.
     const all = Object.values(shown).filter((i) => !i || i.point !== false);
