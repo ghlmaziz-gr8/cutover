@@ -11,6 +11,7 @@
 window.CUTOVER_GUIDE = {
   updated: "2026-10-22",
   whatsNew: [
+    "2026-10-22: Your path to a modernized application is the first card on What next. The Datorian footer has been removed.",
     "2026-10-22: The project plan exports as its own document: a landscape page with a full timeline, a card for each phase, the approval gates, the people and the assumptions. PDF opens the print dialog, and HTML downloads a file.",
     "2026-10-22: What next? reads in order: scope, then the modernize path (approach, language and owner approval, effort and plan), then next steps, then team and reports. A path bar shows which step is done and which is next, and the mind map and the effort card open on request.",
     "2026-10-22: The project plan can be exported on its own as a PDF or an HTML file, with every phase's tasks, deliverables, approvals and owners.",
@@ -32,7 +33,6 @@ window.CUTOVER_GUIDE = {
     "2026-10-21: Findings are shorter to read. Long lists sit under Show findings or Show details, and each card shows its count. The summary and bars count only results that found something, and the bars say 'findings'.",
     "2026-10-21: Languages are read from source files as well as build files, so Classic ASP and JavaScript appear even in projects without a build file. The wizard lists the supported packs for Java, Spring Boot, JSP and .NET.",
     "2026-10-21: The deeper assessment starts with its own button. The data structure card lists table names once you expand it, and entities appear only when you choose to expand them.",
-    "2026-10-21: Cutover is powered by Datorian, shown at the foot of the portal and on the marketing site.",
     "2026-10-21: No GitHub? Choose Upload a zip on the Connect the code step and send a .zip of the code, up to 50 MB. The zip is stored privately for that one analysis and deleted when it finishes. Uploaded analyses cannot be run again without uploading the code again.",
     "2026-10-21: Each analysis shows an AI estimate of when the application was first written, beside the estimate from the years in the code. It uses the same evidence, plus file names and git dates, and says how confident it is and why. It appears only when the analysis uses a language model you chose.",
     "2026-10-21: Modernized templates: three options are shown on each review, chosen by rules from its findings. Run as is in containers, a modern web front end over an API, or services over a modern database. Each shows the proposed design, and the reasons for the choice are listed.",
@@ -310,8 +310,6 @@ window.CUTOVER_GUIDE = {
       a: "The summary counts only results that found something. A check that found nothing is kept in the report but is not counted as a point." },
     { q: "Where does the database structure come from?", step: "database",
       a: "A platform engineer makes it with the read-only access_metadata script in their own environment, and uploads the .json file on the deeper assessment page. It has names and counts only, with no row values." },
-    { q: "Who builds Cutover?", step: "what",
-      a: "Cutover is powered by Datorian." },
     { q: "Where are the modernized templates?", step: "findings",
       a: "They appear at the bottom of the review under Modernized templates. Cutover recommends one by rules from the findings: run as is in containers, a modern web front end over an API, or services over a modern database. Each shows the proposed design." },
     { q: "How do I add action items or comments?", step: "discuss",

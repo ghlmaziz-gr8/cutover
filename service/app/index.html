@@ -215,8 +215,6 @@ button.danger{background:transparent;color:var(--bad);box-shadow:none;border:1.5
 .kv-block{padding:0 0 4px}
 .kv-block .vlist{padding-left:20px}
 .fvalue{font-size:14px}
-.app-foot{display:flex;justify-content:center;align-items:center;gap:10px;padding:24px 16px;font-size:13px;color:var(--muted)}
-.app-foot img{height:26px;width:auto;background:#ffffff;border-radius:8px;padding:4px 8px;box-sizing:content-box}
 .ds-fields{margin:6px 0 4px;padding-left:18px;font-size:13px;color:var(--muted,#64748b)}
 
 @media (max-width:640px){
@@ -1318,6 +1316,7 @@ pre{white-space:pre-wrap;word-break:break-word;background:var(--soft);padding:12
       <button type="button" class="ghost" id="nextBackHomeTop">Back to analyses</button>
     </div>
     <nav class="next-rail" id="nextRail" aria-label="Your path through this analysis" hidden></nav>
+    <div class="card" id="nextPathCard" hidden style="margin-top:14px"><div id="nextPath"></div></div>
     <div class="card scope-card" id="scopeCard">
       <p class="eyebrow-sm">Next stage</p>
       <h3 style="margin:4px 0 6px">Choose the scope</h3>
@@ -1381,7 +1380,6 @@ pre{white-space:pre-wrap;word-break:break-word;background:var(--soft);padding:12
     </details>
     <div class="next-group" id="groupNext"><span>3</span>Next steps<em>Conversion and the path ahead</em></div>
     <div class="card" id="conversionCard" hidden style="margin-top:18px"><div id="conversionBody"></div></div>
-    <div class="card" id="nextPathCard" hidden style="margin-top:18px"><div id="nextPath"></div></div>
     <div class="card" id="planCardNext" style="margin-top:18px">
       <h3 style="margin-top:0">Continue to planning</h3>
       <p class="muted small" style="margin:6px 0 12px">Plan the risks and fallbacks for this cutover. Proposals are drafted from the findings, then edited by platform engineers.</p>
@@ -7376,6 +7374,5 @@ const REGION_OPTS = {
   });
 })();
 </script>
-<footer class="app-foot"><span>Powered by</span><img src="assets/datorian-logo.png" alt="Datorian" width="200" height="40"></footer>
 </body>
 </html>
