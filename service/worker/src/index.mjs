@@ -2361,6 +2361,12 @@ async function conversionApproval(env, workspaceId) {
   return { approved: true, by: ws.conversion_approved_by_email, at: ws.conversion_approved_at };
 }
 
+// Spaces at the ends and runs of spaces, and curly apostrophes, are ignored when the wording is compared.
+function sameWording(text) {
+  const clean = (v) => String(v || "").replace(/[\u2018\u2019]/g, "'").replace(/\s+/g, " ").trim();
+  return clean(text) === clean(CONVERSION_APPROVAL_TEXT);
+}
+
 // An admin gives or withdraws the workspace's approval. Approving needs the exact wording.
 async function setConversionApproval(request, env, workspaceId) {
   const access = await workspaceAdmin(env, request, workspaceId);
@@ -2369,7 +2375,7 @@ async function setConversionApproval(request, env, workspaceId) {
   if (parsed.error) return json({ error: parsed.error }, 400);
   const approve = parsed.value && parsed.value.approve;
   if (typeof approve !== "boolean") return json({ error: "Say whether you approve or withdraw." }, 400);
-  if (approve && parsed.value.wording !== CONVERSION_APPROVAL_TEXT) {
+  if (approve && !sameWording(parsed.value.wording)) {
     return json({ error: "Type the approval exactly as it is written." }, 400);
   }
   const body = approve

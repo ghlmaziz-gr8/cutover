@@ -511,6 +511,9 @@ test("the workspace admin approves converting files, with the exact wording, and
   const ws = state.workspaces.find((w) => w.id === W_ACME);
   assert.equal(ws.conversion_approved_by_email, PEOPLE.admin_a.email);
   assert.equal(ws.conversion_approval_version, 1);
+  const curly = CONVERSION_TEXT.replace("I've", "I\u2019ve");
+  const spaced = await call(`/api/workspaces/${W_ACME}/conversion-approval`, { as: "admin_a", method: "PUT", body: { approve: true, wording: `  ${curly}\n` } });
+  assert.equal(spaced.status, 200, "spaces at the ends and a curly apostrophe are accepted");
   const withdrawn = await call(`/api/workspaces/${W_ACME}/conversion-approval`, { as: "admin_a", method: "PUT", body: { approve: false } });
   assert.equal(withdrawn.status, 200);
   assert.equal(state.workspaces.find((w) => w.id === W_ACME).conversion_approved_at, null);
