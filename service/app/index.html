@@ -427,6 +427,28 @@ pre{white-space:pre-wrap;word-break:break-word;background:var(--soft);padding:12
 .kv{display:grid;grid-template-columns:auto 1fr;gap:6px 14px;margin-top:10px;font-size:14px}
 .kv span:nth-child(odd){color:var(--muted)}
 .tags{margin-top:10px}
+/* The path to a modernized application: stage cards that unlock one after another */
+.stage-path{margin:6px 0 22px}
+.stage-path h3{margin:0 0 4px}
+.stage-head{display:flex;align-items:center;gap:14px;flex-wrap:wrap;margin:10px 0 2px}
+.stage-head .dots{flex:1 1 220px;max-width:420px}
+.stage-grid{display:grid;gap:14px;grid-template-columns:repeat(auto-fit,minmax(min(100%,230px),1fr));margin-top:14px}
+.stage-card{position:relative;background:var(--card);border:1.5px solid var(--line);border-radius:20px;padding:18px;transition:transform .2s ease,box-shadow .2s ease,border-color .3s ease}
+.stage-card:hover{transform:translateY(-2px);box-shadow:0 14px 30px -22px #1e1b4b80}
+.stage-card.cleared{border-color:var(--ok);background:color-mix(in srgb,var(--ok) 6%,var(--card))}
+.stage-card.available{border-color:var(--accent);box-shadow:0 14px 30px -20px color-mix(in srgb,var(--accent) 55%,transparent)}
+.stage-card.locked{opacity:.62}
+.stage-state{display:inline-flex;align-items:center;gap:7px;font:800 11px/1 var(--body);letter-spacing:.08em;text-transform:uppercase;color:var(--muted);margin:0 0 10px}
+.stage-state i{width:10px;height:10px;border-radius:50%;background:var(--line);display:inline-block}
+.stage-card.cleared .stage-state{color:var(--ok)}
+.stage-card.cleared .stage-state i{background:var(--ok)}
+.stage-card.available .stage-state{color:var(--accent)}
+.stage-card.available .stage-state i{background:var(--accent2);animation:exPing 1.6s ease-out infinite}
+.stage-card h4{margin:0 0 6px;font-size:16px}
+.stage-card .stage-lock{margin:10px 0 0;font-size:13px;color:var(--muted)}
+.stage-card button{margin-top:12px}
+@media (prefers-reduced-motion:reduce){.stage-card,.stage-card.available .stage-state i{animation:none;transition:none}}
+
 .tag{display:inline-block;font-size:11.5px;font-weight:700;padding:3px 10px;border-radius:99px;margin:0 4px 4px 0}
 .tag.ai{background:#ede9fe;color:#5b21b6;margin-top:4px}
 .t-ok{background:#d1fae5;color:#065f46}
@@ -2788,6 +2810,7 @@ pre{white-space:pre-wrap;word-break:break-word;background:var(--soft);padding:12
     $("reviewMeta").textContent = `${cur.repo}${cur.ref ? " @ " + cur.ref : ""} · Commit: ${cur.commit_sha || "not known yet"} · Started by: ${cur.is_mine ? "you" : "a teammate"} · ${modelText} · Deleted after: ${new Date(cur.expires_at).toLocaleDateString()}`;
     renderReview(cur);
     renderDiscussion(cur);
+    celebrateStages(cur);
     applyPendingTemplate();
   }
 
@@ -3506,8 +3529,89 @@ a{color:#6d28d9;font-weight:600}`;
 
   const TEMPLATE_NAME = { "web-modern": "Modern web front end over an API", "services-data": "Services over a modern database", "lift-contain": "Run as is, in containers" };
 
+  // The path to a modernized application. Each stage unlocks after the one before it; the server decides every state.
+  async function reviewStage(row, stage) {
+    try {
+      await api(`/api/analyses/${row.id}/progress`, { method: "PUT", body: JSON.stringify({ action: "review", stage }) });
+      cur = await api(`/api/analyses/${row.id}`);
+      showReview();
+    } catch (err) {
+      showToast({ tone: "bad", title: "Could not mark the stage reviewed", body: err.message });
+    }
+  }
+
+  function renderPath(row) {
+    const stages = row.stages || [];
+    const wrap = el("div", null, "stage-path");
+    wrap.appendChild(el("h3", "Your path to a modernized application"));
+    wrap.appendChild(el("p", "Each stage unlocks the next. Clear one to open the next.", "muted small"));
+    const head = el("div", null, "stage-head");
+    const done = stages.filter((s) => s.state === "cleared").length;
+    head.appendChild(el("p", `${done} of ${stages.length} cleared`, "small"));
+    const dots = el("div", null, "dots");
+    stages.forEach((s) => {
+      const i = document.createElement("i");
+      if (s.state === "cleared") i.className = "done";
+      else if (s.state === "available") i.className = "now";
+      dots.appendChild(i);
+    });
+    head.appendChild(dots);
+    wrap.appendChild(head);
+
+    const grid = el("div", null, "stage-grid");
+    const LABEL = { cleared: "Cleared", available: "Unlocked", locked: "Locked" };
+    for (const s of stages) {
+      const card = el("div", null, `stage-card ${s.state}`);
+      card.id = `stage-${s.id}`;
+      const label = el("p", null, "stage-state");
+      label.appendChild(el("i", null));
+      label.appendChild(document.createTextNode(LABEL[s.state] || s.state));
+      card.appendChild(label);
+      card.appendChild(el("h4", s.title));
+      card.appendChild(el("p", s.produces, "muted small"));
+      if (s.state === "cleared") {
+        const by = s.cleared_by ? ` by ${s.cleared_by}` : "";
+        card.appendChild(el("p", `Cleared${by}.`, "small"));
+      } else if (s.state === "locked") {
+        card.appendChild(el("p", s.lock_reason, "stage-lock"));
+        const go = el("button", `Go to ${(stages.find((x) => x.id === s.unlocked_by) || {}).title || "the previous stage"}`);
+        go.type = "button";
+        go.className = "ghost";
+        go.addEventListener("click", () => document.getElementById(`stage-${s.unlocked_by}`)?.scrollIntoView({ behavior: "smooth", block: "center" }));
+        card.appendChild(go);
+      } else if (s.ready && row.can_plan) {
+        const mark = el("button", "Mark as reviewed");
+        mark.type = "button";
+        mark.addEventListener("click", () => reviewStage(row, s.id));
+        card.appendChild(mark);
+      } else if (!s.ready) {
+        card.appendChild(el("p", "Coming soon.", "stage-lock"));
+      }
+      grid.appendChild(card);
+    }
+    wrap.appendChild(grid);
+    return wrap;
+  }
+
+  // A stage that has just cleared is shown once to each viewer, then remembered for them.
+  function celebrateStages(row) {
+    const stages = row.stages || [];
+    for (const s of stages) {
+      if (!s.celebrate) continue;
+      const next = stages.find((n) => n.unlocked_by === s.id);
+      showToast({
+        tone: "success",
+        title: `Stage cleared: ${s.title}`,
+        body: next ? `Next up: ${next.title}. ${next.produces}` : "You have reached the end goal.",
+      });
+      api(`/api/analyses/${row.id}/progress`, { method: "PUT", body: JSON.stringify({ action: "acknowledge", stage: s.id }) }).catch(() => {});
+      s.celebrate = false;
+    }
+  }
+
   function modernizeSection(shown, row) {
     const wrap = el("div", null, "modern");
+    if (row && row.stages) wrap.appendChild(renderPath(row));
     wrap.appendChild(el("h3", "Modernized templates"));
     if (row && row.modern_template) {
       const by = row.modern_template_set_by_email ? ` by ${row.modern_template_set_by_email}` : "";
