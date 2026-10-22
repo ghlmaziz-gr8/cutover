@@ -137,6 +137,7 @@ function seed() {
     model_keys: [],
     analysis_model_tokens: [],
     analysis_screens: [],
+    analysis_conversions: [],
     analysis_db_metadata: [],
   };
 }
@@ -264,7 +265,7 @@ function handleGithub(url, init) {
     return j({ id: 99 });
   }
   if (path.endsWith("/app/installations/99/access_tokens")) return j({ token: "ghs_test" }, 201);
-  if (path.endsWith("/actions/workflows/analyze.yml/dispatches")) {
+  if (path.endsWith("/actions/workflows/analyze.yml/dispatches") || path.endsWith("/actions/workflows/convert.yml/dispatches")) {
     github.dispatches.push(JSON.parse(init.body));
     return github.dispatchOk ? new Response(null, { status: 204 }) : j({ message: "failed" }, 500);
   }
@@ -455,6 +456,71 @@ test("a cleared stage is celebrated once for each viewer, and the acknowledgemen
   assert.equal(other.body.stages.find((s) => s.id === "deeper").celebrate, true, "each viewer is told once");
   const early = await call(`/api/analyses/${AN_ACME}/progress`, { as: "eng_a", method: "PUT", body: { action: "acknowledge", stage: "pr" } });
   assert.equal(early.status, 409);
+});
+
+// ---- Stage 3: converting one file ----
+
+function readyForConversion(overrides = {}) {
+  const analysis = state.analyses.find((a) => a.id === AN_ACME);
+  Object.assign(analysis, {
+    deeper_done: true, scope: "modernize", modern_template: "web-modern", model_key_id: "key-1", source_upload: false,
+    modern_progress: {
+      plan: { reviewed_by: PEOPLE.eng_a.email, reviewed_at: NOW },
+      starter: { reviewed_by: PEOPLE.eng_a.email, reviewed_at: NOW },
+    },
+  }, overrides);
+  return analysis;
+}
+
+test("only a platform engineer can convert a file, from one this analysis holds", async () => {
+  readyForConversion();
+  const auditor = await call(`/api/analyses/${AN_ACME}/conversions`, { as: "aud_a", method: "POST", body: { path: "src/A.java" } });
+  assert.equal(auditor.status, 403);
+  const traversal = await call(`/api/analyses/${AN_ACME}/conversions`, { as: "eng_a", method: "POST", body: { path: "../secret.txt" } });
+  assert.equal(traversal.status, 400);
+  const unknown = await call(`/api/analyses/${AN_ACME}/conversions`, { as: "eng_a", method: "POST", body: { path: "nope/Missing.java" } });
+  assert.equal(unknown.status, 400);
+});
+
+test("a file cannot be converted until the plan and the starter are cleared, or without a model, or from a zip", async () => {
+  readyForConversion({ modern_progress: { plan: { reviewed_by: PEOPLE.eng_a.email, reviewed_at: NOW } } });
+  const locked = await call(`/api/analyses/${AN_ACME}/conversions`, { as: "eng_a", method: "POST", body: { path: "src/A.java" } });
+  assert.equal(locked.status, 409);
+  assert.match(locked.body.error, /Clear/);
+  readyForConversion({ source_upload: true });
+  const zip = await call(`/api/analyses/${AN_ACME}/conversions`, { as: "eng_a", method: "POST", body: { path: "src/A.java" } });
+  assert.equal(zip.status, 409);
+  assert.match(zip.body.error, /zip/);
+  readyForConversion({ model_key_id: null });
+  const nokey = await call(`/api/analyses/${AN_ACME}/conversions`, { as: "eng_a", method: "POST", body: { path: "src/A.java" } });
+  assert.equal(nokey.status, 409);
+  assert.match(nokey.body.error, /language model/);
+});
+
+test("a conversion starts the runner with a one-time token and no key, and its result is kept as a proposal", async () => {
+  readyForConversion();
+  github.dispatches.length = 0;
+  const started = await call(`/api/analyses/${AN_ACME}/conversions`, { as: "eng_a", method: "POST", body: { path: "src/A.java" } });
+  assert.equal(started.status, 202);
+  assert.equal(github.dispatches.length, 1);
+  const inputs = github.dispatches[0].inputs;
+  assert.equal(inputs.path, "src/A.java");
+  assert.equal(inputs.template, "web-modern");
+  assert.ok(inputs.model_token && inputs.model_token.length > 20, "a one-time token is passed");
+  assert.ok(!JSON.stringify(inputs).includes("api_key"), "no key is passed");
+  const queued = state.analysis_conversions.find((c) => c.analysis_id === AN_ACME && c.path === "src/A.java");
+  assert.equal(queued.status, "queued");
+
+  const wrong = await call(`/api/runner/${AN_ACME}/conversion`, { method: "POST", body: { path: "src/A.java", status: "ok", proposed: "x" }, secret: "wrong" });
+  assert.equal(wrong.status, 401);
+  const bad = await call(`/api/runner/${AN_ACME}/conversion`, { method: "POST", body: { path: "src/A.java", status: "ok" }, secret: env.RUNNER_SECRET });
+  assert.equal(bad.status, 400);
+  const saved = await call(`/api/runner/${AN_ACME}/conversion`, { method: "POST", body: { path: "src/A.java", template: "web-modern", status: "ok", proposed: "public class A {}" }, secret: env.RUNNER_SECRET });
+  assert.equal(saved.status, 201);
+  const kept = state.analysis_conversions.find((c) => c.analysis_id === AN_ACME && c.path === "src/A.java");
+  assert.equal(kept.status, "ok");
+  assert.equal(kept.proposed, "public class A {}");
+  assert.equal(kept.decision, undefined, "decisions are added later, not by the runner");
 });
 
 // ---- Uploading a zip of the code, without GitHub ----
