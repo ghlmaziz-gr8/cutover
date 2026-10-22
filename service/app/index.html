@@ -205,6 +205,11 @@ button.danger{background:transparent;color:var(--bad);box-shadow:none;border:1.5
 .ds-names>summary{cursor:pointer;font-size:14px}
 .ds-names-list{list-style:disc;margin:8px 0 0;padding-left:20px;line-height:1.6;overflow-wrap:anywhere;column-width:200px;column-gap:24px;font-size:14px}
 .ds-names-list li{break-inside:avoid;margin:0 0 2px}
+.vlist{list-style:disc;margin:0;padding-left:18px;line-height:1.5}
+.vlist li{margin:0 0 3px}
+.vlist .vlist{margin-top:3px;list-style:circle}
+.kv-value{min-width:0;overflow-wrap:anywhere}
+.fvalue{font-size:14px}
 .app-foot{display:flex;justify-content:center;align-items:center;gap:10px;padding:24px 16px;font-size:13px;color:var(--muted)}
 .app-foot img{height:26px;width:auto;background:#ffffff;border-radius:8px;padding:4px 8px;box-sizing:content-box}
 .ds-fields{margin:6px 0 4px;padding-left:18px;font-size:13px;color:var(--muted,#64748b)}
@@ -2911,6 +2916,33 @@ pre{white-space:pre-wrap;word-break:break-word;background:var(--soft);padding:12
     return String(v);
   }
 
+  // Shows a value as bullets when it is a list, or an object with more than one part. Other values stay as text.
+  // A list of names, or of files, gets one bullet per item. A part that is itself a list or object gets a sub-list.
+  function valueNode(v, depth = 0) {
+    const isList = Array.isArray(v) && v.length > 0;
+    const isParts = !Array.isArray(v) && v && typeof v === "object" && Object.keys(v).length > 1;
+    if (!isList && !isParts) return document.createTextNode(fmtValue(v));
+    const ul = document.createElement("ul");
+    ul.className = "vlist";
+    if (isList) {
+      for (const x of v) {
+        const li = document.createElement("li");
+        if (x && typeof x === "object" && depth < 2) li.appendChild(valueNode(x, depth + 1));
+        else li.appendChild(document.createTextNode(x && typeof x === "object" ? fmtValue(x) : String(x)));
+        ul.appendChild(li);
+      }
+    } else {
+      for (const [k, x] of Object.entries(v)) {
+        const li = document.createElement("li");
+        const nested = x && typeof x === "object" && depth < 2;
+        li.appendChild(document.createTextNode(nested ? `${k}:` : `${k}: ${fmtValue(x)}`));
+        if (nested) li.appendChild(valueNode(x, depth + 1));
+        ul.appendChild(li);
+      }
+    }
+    return ul;
+  }
+
   function renderFindingItem(item) {
     const card = el("div", null, "finding" + (item.severity ? " sev-" + item.severity : ""));
     card.appendChild(el("h4", item.title));
@@ -2921,7 +2953,9 @@ pre{white-space:pre-wrap;word-break:break-word;background:var(--soft);padding:12
       && Array.isArray(item.value.names) && item.value.names.length > 0;
     const hidden = hasDetail ? ["detail"] : hasNames ? ["names"] : [];
     const summary = hidden.length ? Object.fromEntries(Object.entries(item.value).filter(([k]) => !hidden.includes(k))) : item.value;
-    card.appendChild(el("p", fmtValue(summary)));
+    const summaryBox = el("div", null, "fvalue");
+    summaryBox.appendChild(valueNode(summary));
+    card.appendChild(summaryBox);
     if (hasNames) {
       const names = document.createElement("details");
       names.className = "ds-names";
@@ -3089,7 +3123,11 @@ pre{white-space:pre-wrap;word-break:break-word;background:var(--soft);padding:12
     const kv = el("div", null, "kv");
     // The top row shows how many roles were found. The names stay in "Show findings".
     const kvValue = (item) => (item.id === "security.roles" && Array.isArray(item.value) ? `${item.value.length} role${item.value.length === 1 ? "" : "s"}` : fmtValue(item.value));
-    for (const item of found.filter((i) => !EXPAND_ONLY.includes(i.id))) kv.append(el("span", item.title), el("span", kvValue(item)));
+    for (const item of found.filter((i) => !EXPAND_ONLY.includes(i.id))) {
+      const value = el("span", null, "kv-value");
+      value.appendChild(item.id === "security.roles" ? document.createTextNode(kvValue(item)) : valueNode(item.value));
+      kv.append(el("span", item.title), value);
+    }
     for (const [k, v] of extraRows) kv.append(el("span", k), el("span", v));
     if (kv.childElementCount) c.appendChild(kv);
     if (found.length) c.appendChild(findingBars(found));
