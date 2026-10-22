@@ -128,33 +128,23 @@
     const languages = names(f["stack.languages"]) || names(f["legacy.languages"]);
     const risks = Object.values(f).filter((i) => i && i.point !== false && i.severity === "high");
     const gaps = Object.values(f).filter((i) => i && i.point !== false && i.severity === "medium");
-    const leaf = (label) => ({ label });
+    const leaf = (label, tone = "plan") => ({ kind: "leaf", tone, label });
+    const section = (label, children) => ({ kind: "group", tone: "plan", icon: "◆", label, children });
     const chosen = `${input.chosenBy || "not recorded"}${input.chosenAt ? ` on ${input.chosenAt}` : ""}`;
     return {
+      kind: "root",
       label: `Modernization plan: ${input.appName || input.repo || "the application"}`,
       children: [
-        { label: "Approach", children: [leaf(TITLES[template] || template || "not chosen"), leaf(`Chosen by ${chosen}`)] },
-        {
-          label: "What we found",
-          children: [
-            leaf(`Languages: ${languages || "not detected"}`),
-            leaf(`Screens: ${screens}`),
-            leaf(`Tables: ${tables}`),
-          ],
-        },
-        { label: "Rough size", children: [leaf(`${sizeOf(screens, tables)}, from ${screens} screens and ${tables} tables`)] },
-        {
-          label: "Order of work",
-          children: phases.map((p, i) => ({ label: `${i + 1}. ${p.title} (${p.size})` })),
-        },
-        {
-          label: "Risks to settle first",
-          children: risks.length ? risks.map((r) => leaf(r.title)) : [leaf("No high-severity risks were found")],
-        },
-        {
-          label: "Gaps to check",
-          children: gaps.length ? gaps.map((g) => leaf(g.title)) : [leaf("No medium-severity gaps were found")],
-        },
+        section("Approach", [leaf(TITLES[template] || template || "not chosen"), leaf(`Chosen by ${chosen}`)]),
+        section("What we found", [
+          leaf(`Languages: ${languages || "not detected"}`),
+          leaf(`Screens: ${screens}`),
+          leaf(`Tables: ${tables}`),
+        ]),
+        section("Rough size", [leaf(`${sizeOf(screens, tables)}, from ${screens} screens and ${tables} tables`)]),
+        section("Order of work", phases.map((p, i) => leaf(`${i + 1}. ${p.title} (${p.size})`))),
+        section("Risks to settle first", risks.length ? risks.map((r) => leaf(r.title, "con")) : [leaf("No high-severity risks were found", "pro")]),
+        section("Gaps to check", gaps.length ? gaps.map((g) => leaf(g.title, "possible")) : [leaf("No medium-severity gaps were found", "pro")]),
       ],
     };
   }

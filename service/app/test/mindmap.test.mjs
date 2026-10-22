@@ -12,6 +12,7 @@ const load = (file) => {
 const { Modernize } = load("modernize.js");
 const { MindMap } = load("mindmap.js");
 const html = readFileSync(new URL("../index.html", import.meta.url), "utf8");
+const allPoints = () => Object.fromEntries(Modernize.TEMPLATES.map((t) => [t.id, t.points]));
 
 test("each approach has pros, cons and best-for points", () => {
   for (const t of Modernize.TEMPLATES) {
@@ -20,38 +21,68 @@ test("each approach has pros, cons and best-for points", () => {
   }
 });
 
-test("the map has the root and one branch per approach, in the order given", () => {
+test("the root has one branch per approach, in the order given, each with a score and a maximum", () => {
   const picks = Modernize.choose({});
-  const map = MindMap.approach(picks, Object.fromEntries(Modernize.TEMPLATES.map((t) => [t.id, t.points])));
+  const map = MindMap.approach(picks, allPoints());
+  assert.equal(map.kind, "root");
   assert.equal(map.label, "Modernize the application");
-  assert.deepEqual(map.children.map((c) => c.id), picks.map((p) => p.id));
-  for (const branch of map.children) {
-    const groups = branch.children.map((g) => g.label);
-    assert.ok(groups.includes("Pros") && groups.includes("Cons") && groups.includes("Best for"));
+  assert.equal(JSON.stringify(map.children.map((c) => c.id)), JSON.stringify(picks.map((p) => p.id)));
+  for (const b of map.children) {
+    assert.equal(b.kind, "branch");
+    assert.ok(b.max >= b.score && b.max > 0);
   }
 });
 
-test("a branch shows why it matches this application when reasons exist", () => {
-  const picks = [{ id: "web-modern", title: "T", fit: "recommended", reasons: ["Screens were found in the code"] }];
-  const map = MindMap.approach(picks, Modernize.TEMPLATES.reduce((o, t) => ((o[t.id] = t.points), o), {}));
-  assert.equal(map.children[0].tag, "Best fit for this application");
-  assert.equal(map.children[0].children[0].label, "Matches this application");
-  assert.equal(map.children[0].children[0].children[0].label, "Screens were found in the code");
+test("a general reason is never shown as evidence for this application", () => {
+  const picks = Modernize.choose({});
+  const lift = picks.find((p) => p.id === "lift-contain");
+  assert.ok(lift.score > 0, "it still counts toward the score");
+  assert.ok(!lift.evidence.includes("The lowest-risk first step"), "but it is not listed as a match");
+  const map = MindMap.approach(picks, allPoints());
+  const branch = map.children.find((b) => b.id === "lift-contain");
+  const why = branch.children.find((g) => g.label === "Why it matches");
+  assert.ok(!why || !why.children.some((l) => l.label === "The lowest-risk first step"));
+});
+
+test("evidence from real findings is shown as Why it matches", () => {
+  const picks = Modernize.choose({ "ui.screens": { point: true, value: ["Home"] } });
+  const web = picks.find((p) => p.id === "web-modern");
+  assert.ok(web.evidence.includes("Screens were found in the code"));
+  const map = MindMap.approach(picks, allPoints());
+  const branch = map.children.find((b) => b.id === "web-modern");
+  const why = branch.children.find((g) => g.label === "Why it matches");
+  assert.ok(why && why.children.some((l) => l.label === "Screens were found in the code"));
+});
+
+test("the chosen approach is flagged, and only that one", () => {
+  const map = MindMap.approach(Modernize.choose({}), allPoints(), "services-data");
+  const flagged = map.children.filter((b) => b.chosen).map((b) => b.id);
+  assert.equal(JSON.stringify(flagged), JSON.stringify(["services-data"]));
+});
+
+test("each group has a tone and an icon, and each leaf has a tone", () => {
+  const map = MindMap.approach(Modernize.choose({}), allPoints());
+  for (const b of map.children) {
+    for (const g of b.children) {
+      assert.equal(g.kind, "group");
+      assert.ok(g.tone && g.icon, "group has tone and icon");
+      for (const l of g.children) assert.equal(l.kind, "leaf");
+    }
+  }
 });
 
 test("no picks gives an empty map without error", () => {
   assert.equal(MindMap.approach(undefined, {}).children.length, 0);
 });
 
-test("the page loads the map script and draws it in the next-steps card", () => {
+test("the page draws both maps with the rich renderer and the interactions", () => {
   assert.ok(html.includes('<script src="mindmap.js"></script>'));
   assert.ok(html.includes('id="approachMap"'));
-  assert.ok(html.includes("renderApproachMap"));
-});
-
-test("the plan shows its map under the path once the plan stage is open", () => {
+  assert.ok(html.includes("function drawBranch("));
+  assert.ok(html.includes("function goToOption("));
+  assert.ok(html.includes('c.id = `opt-${p.id}`') || html.includes('c.id = "opt-" + p.id'));
   assert.ok(html.includes("The plan at a glance"));
-  assert.ok(html.includes('el("div", null, "mmap plan-map")'));
   assert.ok(html.includes("drawMap(window.Plan.tree(planInput(row)), map)"));
   assert.ok(html.includes("function planInput(row)"));
+  assert.ok(html.includes("prefers-reduced-motion"));
 });
