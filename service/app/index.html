@@ -3564,17 +3564,7 @@ a{color:#6d28d9;font-weight:600}`;
 
   // Stage 1: downloads the plan as Markdown, built from what this viewer can already see.
   function downloadPlan(row) {
-    const deeper = row.findings && row.findings.deeper;
-    const md = window.Plan.build({
-      appName: row.app_name,
-      repo: row.repo,
-      template: row.modern_template,
-      chosenBy: row.modern_template_set_by_email,
-      chosenAt: row.modern_template_set_at ? row.modern_template_set_at.slice(0, 10) : null,
-      findings: currentFindings,
-      deeper,
-      generatedAt: new Date().toISOString().slice(0, 10),
-    });
+    const md = window.Plan.build(planInput(row));
     const blob = new Blob([md], { type: "text/markdown" });
     const a = document.createElement("a");
     a.href = URL.createObjectURL(blob);
@@ -3669,6 +3659,14 @@ a{color:#6d28d9;font-weight:600}`;
       grid.appendChild(card);
     }
     wrap.appendChild(grid);
+    const planStage = stages.find((x) => x.id === "plan");
+    if (planStage && planStage.state !== "locked" && row.modern_template && window.Plan) {
+      wrap.appendChild(el("h4", "The plan at a glance", "eyebrow-sm"));
+      const map = el("div", null, "mmap plan-map");
+      map.setAttribute("aria-label", "Map of the modernization plan");
+      drawMap(window.Plan.tree(planInput(row)), map);
+      wrap.appendChild(map);
+    }
     return wrap;
   }
 
@@ -3760,30 +3758,47 @@ a{color:#6d28d9;font-weight:600}`;
     renderApproachMap(currentFindings);
   }
 
-  // Mind map of the approaches: the root, one branch each, with pros, cons, and best-for points.
-  // Built as nested lists, so it reads the same on a phone and with a screen reader.
-  function mapNode(node) {
+  // Mind maps are nested lists, so they read the same on a phone and with a screen reader.
+  function drawNode(node) {
     const li = document.createElement("li");
     const label = el("p", node.label, "mm-label");
     if (node.tag) label.appendChild(el("span", node.tag, "tag mm-tag"));
     li.appendChild(label);
     if (node.children && node.children.length) {
       const ul = document.createElement("ul");
-      node.children.forEach((c) => ul.appendChild(mapNode(c)));
+      node.children.forEach((c) => ul.appendChild(drawNode(c)));
       li.appendChild(ul);
     }
     return li;
   }
 
+  function drawMap(tree, box) {
+    const root = document.createElement("ul");
+    root.className = "mm-root";
+    root.appendChild(drawNode(tree));
+    box.replaceChildren(root);
+  }
+
+  // The three approaches: the root, one branch each, with pros, cons, and best-for points.
   function renderApproachMap(findings) {
     const box = $("approachMap");
     if (!box || !window.MindMap || !window.Modernize) return;
     const points = Object.fromEntries(window.Modernize.TEMPLATES.map((t) => [t.id, t.points]));
-    const tree = window.MindMap.approach(window.Modernize.choose(findings || {}), points);
-    const root = document.createElement("ul");
-    root.className = "mm-root";
-    root.appendChild(mapNode(tree));
-    box.replaceChildren(root);
+    drawMap(window.MindMap.approach(window.Modernize.choose(findings || {}), points), box);
+  }
+
+  // The plan's inputs, read from the analysis and the findings this viewer can see. Used by the download and the map.
+  function planInput(row) {
+    return {
+      appName: row.app_name,
+      repo: row.repo,
+      template: row.modern_template,
+      chosenBy: row.modern_template_set_by_email,
+      chosenAt: row.modern_template_set_at ? row.modern_template_set_at.slice(0, 10) : null,
+      findings: currentFindings,
+      deeper: row.findings && row.findings.deeper,
+      generatedAt: new Date().toISOString().slice(0, 10),
+    };
   }
 
   // Written approval for converting files with the language model. A workspace admin gives it, once for the workspace.

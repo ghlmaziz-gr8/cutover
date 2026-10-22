@@ -118,5 +118,46 @@
     return out.join("\n");
   }
 
-  root.Plan = { build, PHASES, TITLES, sizeOf };
+  // The plan as a mind map: the same facts as build(), as a tree of labels. Counts and names only.
+  function tree(input) {
+    const f = input.findings || {};
+    const template = input.template;
+    const phases = PHASES[template] || [];
+    const screens = count(f["ui.screens"]) || count(f["ui.screen_names"]);
+    const tables = count(f["data.tables"]);
+    const languages = names(f["stack.languages"]) || names(f["legacy.languages"]);
+    const risks = Object.values(f).filter((i) => i && i.point !== false && i.severity === "high");
+    const gaps = Object.values(f).filter((i) => i && i.point !== false && i.severity === "medium");
+    const leaf = (label) => ({ label });
+    const chosen = `${input.chosenBy || "not recorded"}${input.chosenAt ? ` on ${input.chosenAt}` : ""}`;
+    return {
+      label: `Modernization plan: ${input.appName || input.repo || "the application"}`,
+      children: [
+        { label: "Approach", children: [leaf(TITLES[template] || template || "not chosen"), leaf(`Chosen by ${chosen}`)] },
+        {
+          label: "What we found",
+          children: [
+            leaf(`Languages: ${languages || "not detected"}`),
+            leaf(`Screens: ${screens}`),
+            leaf(`Tables: ${tables}`),
+          ],
+        },
+        { label: "Rough size", children: [leaf(`${sizeOf(screens, tables)}, from ${screens} screens and ${tables} tables`)] },
+        {
+          label: "Order of work",
+          children: phases.map((p, i) => ({ label: `${i + 1}. ${p.title} (${p.size})` })),
+        },
+        {
+          label: "Risks to settle first",
+          children: risks.length ? risks.map((r) => leaf(r.title)) : [leaf("No high-severity risks were found")],
+        },
+        {
+          label: "Gaps to check",
+          children: gaps.length ? gaps.map((g) => leaf(g.title)) : [leaf("No medium-severity gaps were found")],
+        },
+      ],
+    };
+  }
+
+  root.Plan = { build, tree, PHASES, TITLES, sizeOf };
 })(typeof globalThis !== "undefined" ? globalThis : this);

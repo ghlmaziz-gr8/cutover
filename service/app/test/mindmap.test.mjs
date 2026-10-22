@@ -48,3 +48,10 @@ test("the page loads the map script and draws it in the next-steps card", () => 
   assert.ok(html.includes('id="approachMap"'));
   assert.ok(html.includes("renderApproachMap"));
 });
+
+test("the plan shows its map under the path once the plan stage is open", () => {
+  assert.ok(html.includes("The plan at a glance"));
+  assert.ok(html.includes('el("div", null, "mmap plan-map")'));
+  assert.ok(html.includes("drawMap(window.Plan.tree(planInput(row)), map)"));
+  assert.ok(html.includes("function planInput(row)"));
+});
