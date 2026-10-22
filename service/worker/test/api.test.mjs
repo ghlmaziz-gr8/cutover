@@ -460,6 +460,8 @@ test("a cleared stage is celebrated once for each viewer, and the acknowledgemen
 
 // ---- Stage 3: converting one file ----
 
+const CONVERSION_TEXT = "I approve one file at a time being sent to the language model I've chosen, after the personal-data check. I understand the proposed code is reviewed by me, and only I merge it.";
+
 function readyForConversion(overrides = {}) {
   const analysis = state.analyses.find((a) => a.id === AN_ACME);
   Object.assign(analysis, {
@@ -474,6 +476,8 @@ function readyForConversion(overrides = {}) {
 
 test("only a platform engineer can convert a file, from one this analysis holds", async () => {
   readyForConversion();
+  state.workspaces.find((w) => w.id === W_ACME).conversion_approved_at = NOW;
+  state.workspaces.find((w) => w.id === W_ACME).conversion_approval_version = 1;
   const auditor = await call(`/api/analyses/${AN_ACME}/conversions`, { as: "aud_a", method: "POST", body: { path: "src/A.java" } });
   assert.equal(auditor.status, 403);
   const traversal = await call(`/api/analyses/${AN_ACME}/conversions`, { as: "eng_a", method: "POST", body: { path: "../secret.txt" } });
@@ -497,8 +501,31 @@ test("a file cannot be converted until the plan and the starter are cleared, or 
   assert.match(nokey.body.error, /language model/);
 });
 
+test("the workspace admin approves converting files, with the exact wording, and can withdraw it", async () => {
+  const notAdmin = await call(`/api/workspaces/${W_ACME}/conversion-approval`, { as: "aud_a", method: "PUT", body: { approve: true, wording: "x" } });
+  assert.equal(notAdmin.status, 403);
+  const wrongWording = await call(`/api/workspaces/${W_ACME}/conversion-approval`, { as: "admin_a", method: "PUT", body: { approve: true, wording: "yes" } });
+  assert.equal(wrongWording.status, 400);
+  const approved = await call(`/api/workspaces/${W_ACME}/conversion-approval`, { as: "admin_a", method: "PUT", body: { approve: true, wording: CONVERSION_TEXT } });
+  assert.equal(approved.status, 200);
+  const ws = state.workspaces.find((w) => w.id === W_ACME);
+  assert.equal(ws.conversion_approved_by_email, PEOPLE.admin_a.email);
+  assert.equal(ws.conversion_approval_version, 1);
+  const withdrawn = await call(`/api/workspaces/${W_ACME}/conversion-approval`, { as: "admin_a", method: "PUT", body: { approve: false } });
+  assert.equal(withdrawn.status, 200);
+  assert.equal(state.workspaces.find((w) => w.id === W_ACME).conversion_approved_at, null);
+});
+
+test("a file cannot be converted until a workspace admin has approved it", async () => {
+  readyForConversion();
+  const none = await call(`/api/analyses/${AN_ACME}/conversions`, { as: "eng_a", method: "POST", body: { path: "src/A.java" } });
+  assert.equal(none.status, 409);
+  assert.match(none.body.error, /admin must approve/);
+});
+
 test("a conversion starts the runner with a one-time token and no key, and its result is kept as a proposal", async () => {
   readyForConversion();
+  await call(`/api/workspaces/${W_ACME}/conversion-approval`, { as: "admin_a", method: "PUT", body: { approve: true, wording: CONVERSION_TEXT } });
   github.dispatches.length = 0;
   const started = await call(`/api/analyses/${AN_ACME}/conversions`, { as: "eng_a", method: "POST", body: { path: "src/A.java" } });
   assert.equal(started.status, 202);

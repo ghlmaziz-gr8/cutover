@@ -1556,8 +1556,12 @@ async function getAnalysis(request, env, id) {
     if (!screensRes.ok) return json({ error: "Could not load the analysis." }, 502);
     screens = await screensRes.json();
   }
+  const approval = await conversionApproval(env, analysis.workspace_id);
   return json({
     ...analysis,
+    conversion_approval: approval.approved ? { by: approval.by, at: approval.at } : null,
+    conversion_admin: member.is_admin === true,
+    conversion_wording: CONVERSION_APPROVAL_TEXT,
     cost_lines: analysis.cost_users ? costLines(analysis.cost_users, tableCountOf(findings)) : null,
     findings: visibleReport(findings, member.role),
     screens,
@@ -2344,6 +2348,39 @@ async function setProgress(request, env, id) {
 // A platform engineer picks one file. The conversion runs in the analysis runner (convert.yml), with a one-time model
 // token, and the result comes back as a proposal. Nothing is merged here.
 const CONVERT_PATH = /^[A-Za-z0-9_./-]{1,300}$/;
+// The wording an admin must confirm, word for word. A change to the wording needs a new version.
+const CONVERSION_APPROVAL_VERSION = 1;
+const CONVERSION_APPROVAL_TEXT = "I approve one file at a time being sent to the language model I've chosen, after the personal-data check. I understand the proposed code is reviewed by me, and only I merge it.";
+
+// The workspace's written approval, or null when there is none.
+async function conversionApproval(env, workspaceId) {
+  const res = await serviceRest(env, `workspaces?id=eq.${workspaceId}&select=conversion_approved_by_email,conversion_approved_at,conversion_approval_version`);
+  if (!res.ok) return { failed: true };
+  const [ws] = await res.json();
+  if (!ws || !ws.conversion_approved_at || ws.conversion_approval_version !== CONVERSION_APPROVAL_VERSION) return { approved: false };
+  return { approved: true, by: ws.conversion_approved_by_email, at: ws.conversion_approved_at };
+}
+
+// An admin gives or withdraws the workspace's approval. Approving needs the exact wording.
+async function setConversionApproval(request, env, workspaceId) {
+  const access = await workspaceAdmin(env, request, workspaceId);
+  if (access.response) return access.response;
+  const parsed = await readJson(request);
+  if (parsed.error) return json({ error: parsed.error }, 400);
+  const approve = parsed.value && parsed.value.approve;
+  if (typeof approve !== "boolean") return json({ error: "Say whether you approve or withdraw." }, 400);
+  if (approve && parsed.value.wording !== CONVERSION_APPROVAL_TEXT) {
+    return json({ error: "Type the approval exactly as it is written." }, 400);
+  }
+  const body = approve
+    ? { conversion_approved_by_email: normalizeEmail(access.user.email), conversion_approved_at: new Date().toISOString(), conversion_approval_version: CONVERSION_APPROVAL_VERSION }
+    : { conversion_approved_by_email: null, conversion_approved_at: null, conversion_approval_version: null };
+  const res = await serviceRest(env, `workspaces?id=eq.${workspaceId}`, {
+    method: "PATCH", headers: { prefer: "return=minimal" }, body: JSON.stringify(body),
+  });
+  if (!res.ok) return json({ error: "Could not save the approval." }, 502);
+  return json({ saved: true, approved: approve });
+}
 const CONVERT_STATUSES = ["ok", "blocked", "unusable", "failed", "refused"];
 
 function dispatchConvert(env, inputs) {
@@ -2379,6 +2416,11 @@ async function startConversion(request, env, id) {
     return json({ error: "The uploaded zip is deleted when its run ends. Upload the code again to convert a file." }, 409);
   }
   if (!row.model_key_id) return json({ error: "Choose a language model for this analysis first." }, 409);
+  const approval = await conversionApproval(env, row.workspace_id);
+  if (approval.failed) return json({ error: "Could not check the approval. Try again in a minute." }, 502);
+  if (!approval.approved) {
+    return json({ error: "A workspace admin must approve converting files with the language model first." }, 409);
+  }
   const known = await serviceRest(env, `file_findings?analysis_id=eq.${id}&path=eq.${encodeURIComponent(path)}&select=id&limit=1`);
   if (!known.ok) return json({ error: "Could not check the file." }, 502);
   if (!(await known.json()).length) return json({ error: "That file is not in this analysis." }, 400);
@@ -2939,6 +2981,8 @@ async function route(request, env) {
     if (analysisScope && UUID_PATTERN.test(analysisScope[1]) && method === "PATCH") return setScope(request, env, analysisScope[1]);
     const analysisTemplate = path.match(/^\/api\/analyses\/([^/]+)\/template$/);
     if (analysisTemplate && UUID_PATTERN.test(analysisTemplate[1]) && method === "PUT") return setTemplate(request, env, analysisTemplate[1]);
+    const workspaceApproval = path.match(/^\/api\/workspaces\/([^/]+)\/conversion-approval$/);
+    if (workspaceApproval && UUID_PATTERN.test(workspaceApproval[1]) && method === "PUT") return setConversionApproval(request, env, workspaceApproval[1]);
     const analysisConversions = path.match(/^\/api\/analyses\/([^/]+)\/conversions$/);
     if (analysisConversions && UUID_PATTERN.test(analysisConversions[1]) && method === "POST") return startConversion(request, env, analysisConversions[1]);
     const runnerConversionRoute = path.match(/^\/api\/runner\/([^/]+)\/conversion$/);
