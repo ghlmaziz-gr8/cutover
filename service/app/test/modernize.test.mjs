@@ -95,3 +95,17 @@ test("a broken finding does not stop the choice", () => {
   const picks = choose({ "ui.screens": null, "data.routines_in_code": { point: true } });
   assert.equal(picks.length, 3);
 });
+
+test("each option has a fit percentage and a level from its matched weights", () => {
+  const picks = choose({
+    "legacy.languages": { value: [{ language: "Classic ASP", files: 3 }], severity: "high" },
+    "ui.screens": { value: 4, severity: "info" },
+  });
+  for (const p of picks) {
+    assert.ok(Number.isInteger(p.percent) && p.percent >= 0 && p.percent <= 100);
+    assert.equal(p.percent, Math.round((100 * p.score) / p.max));
+    assert.ok(["Strong fit", "Partial fit", "Light evidence"].includes(p.level));
+  }
+  const none = choose({});
+  assert.ok(none.every((p) => p.percent === 0 && p.level === "Light evidence"));
+});
