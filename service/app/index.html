@@ -684,6 +684,24 @@ pre{white-space:pre-wrap;word-break:break-word;background:var(--soft);padding:12
 @keyframes rcFloat{0%,100%{transform:translateY(0)}50%{transform:translateY(-3px)}}
 @keyframes rcPulse{0%{box-shadow:0 0 0 0 color-mix(in srgb,var(--k) 55%,transparent)}100%{box-shadow:0 0 0 14px transparent}}
 @media (prefers-reduced-motion:reduce){.rc-icon,.rc-track b,.rcard.opt::after{animation:none!important;transition:none!important}}
+.zoom-ov{position:fixed;inset:0;z-index:10000;display:flex;flex-direction:column;background:var(--bg);animation:zoomFade .25s ease both}
+.zoom-ov[hidden]{display:none}
+.zoom-bar{display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:12px 18px;background:var(--card);border-bottom:1px solid var(--line);box-shadow:0 8px 24px -16px rgba(0,0,0,.4)}
+.zoom-title{flex:1;min-width:0;font:800 16px var(--display);color:var(--fg)}
+.zoom-level{min-width:44px;text-align:right;font-variant-numeric:tabular-nums}
+.zoom-scroll{flex:1;overflow:auto;padding:20px;cursor:default}
+.zoom-sizer{position:relative;margin:0 auto}
+.zoom-inner{transform-origin:0 0;transition:transform .2s cubic-bezier(.2,.8,.2,1)}
+.zoom-node{margin:0!important;animation:zoomIn .35s cubic-bezier(.2,.8,.2,1) both}
+.zoom-node .zoom-btn,.zoom-node .zoom-row{display:none!important}
+.zoom-holder{width:100%}
+.zoom-row{display:flex;justify-content:flex-end;margin-bottom:6px}
+.zoom-btn{display:inline-flex;align-items:center;gap:6px}
+.zoom-btn svg{width:14px;height:14px}
+body.zoom-open{overflow:hidden}
+@keyframes zoomFade{from{opacity:0}to{opacity:1}}
+@keyframes zoomIn{from{opacity:0;transform:scale(.97)}to{opacity:1;transform:none}}
+@media (prefers-reduced-motion:reduce){.zoom-ov,.zoom-node,.zoom-inner{animation:none!important;transition:none!important}}
 .mmap{margin-top:12px;overflow-x:auto;--line:color-mix(in srgb,var(--accent,#6d28d9) 22%,transparent)}
 .mm-toolbar{display:flex;flex-wrap:wrap;gap:10px 16px;align-items:center;justify-content:space-between;margin:6px 0 14px}
 .mm-buttons{display:flex;gap:8px}
@@ -4403,7 +4421,7 @@ a{color:#6d28d9;font-weight:600}`;
       wrap.appendChild(el("h4", "The plan at a glance", "eyebrow-sm"));
       const map = el("div", null, "mmap plan-map");
       map.setAttribute("aria-label", "Map of the modernization plan");
-      drawMap(window.Plan.tree(planInput(row)), map, { radial: true });
+      drawMap(window.Plan.tree(planInput(row)), map, { radial: true, title: "Project plan" });
       wrap.appendChild(map);
     }
     return wrap;
@@ -4799,8 +4817,112 @@ a{color:#6d28d9;font-weight:600}`;
 
   // Draws a map into a box. Options: toolbar adds Expand all, Collapse all and a legend (opts.legend sets the keys).
   // opts.radial draws the radial map on wide screens and keeps the list for phones.
+  // Enlarged view: any mind map or architecture diagram can open full screen, with zoom controls.
+  // The diagram itself is moved into the view and put back on close, so its click handlers keep working.
+  const ZOOM_W = 1100;
+  let zoomState = null;
+  function ensureZoom() {
+    if (zoomState) return zoomState;
+    const ov = el("div", null, "zoom-ov");
+    ov.hidden = true;
+    ov.setAttribute("role", "dialog");
+    ov.setAttribute("aria-modal", "true");
+    ov.setAttribute("aria-label", "Enlarged view");
+    const bar = el("div", null, "zoom-bar");
+    const title = el("b", "Enlarged view", "zoom-title");
+    const btn = (text, label, fn) => {
+      const b = el("button", text, "ghost small-btn");
+      b.type = "button";
+      b.setAttribute("aria-label", label);
+      b.addEventListener("click", fn);
+      return b;
+    };
+    const level = el("span", "", "zoom-level muted small");
+    const close = btn("Close ×", "Close the enlarged view", () => closeZoom());
+    bar.append(
+      title,
+      level,
+      btn("−", "Zoom out", () => setZoom(zoomState.scale - 0.25)),
+      btn("Fit", "Fit to the screen", () => setZoom(zoomState.fit)),
+      btn("+", "Zoom in", () => setZoom(zoomState.scale + 0.25)),
+      close,
+    );
+    const scroll = el("div", null, "zoom-scroll");
+    const sizer = el("div", null, "zoom-sizer");
+    const inner = el("div", null, "zoom-inner");
+    sizer.appendChild(inner);
+    scroll.appendChild(sizer);
+    ov.append(bar, scroll);
+    ov.addEventListener("click", (e) => { if (e.target === scroll) closeZoom(); });
+    document.body.appendChild(ov);
+    document.addEventListener("keydown", (e) => {
+      if (!zoomState || !zoomState.node) return;
+      if (e.key === "Escape") closeZoom();
+      else if (e.key === "+" || e.key === "=") setZoom(zoomState.scale + 0.25);
+      else if (e.key === "-") setZoom(zoomState.scale - 0.25);
+      else if (e.key === "0") setZoom(zoomState.fit);
+    });
+    zoomState = { ov, title, level, inner, sizer, scroll, close, scale: 1, fit: 1, h: 0, node: null, holder: null, opener: null };
+    return zoomState;
+  }
+  function setZoom(s) {
+    const z = zoomState;
+    if (!z || !z.node) return;
+    z.scale = Math.min(3, Math.max(0.5, Math.round(s * 100) / 100));
+    z.inner.style.transform = `scale(${z.scale})`;
+    z.sizer.style.width = `${ZOOM_W * z.scale}px`;
+    z.sizer.style.height = `${z.h * z.scale}px`;
+    z.level.textContent = `${Math.round(z.scale * 100)}%`;
+  }
+  function magnify(node, label, opener) {
+    const z = ensureZoom();
+    if (z.node || !node) return;
+    const holder = el("div", null, "zoom-holder");
+    holder.style.height = `${node.offsetHeight}px`;
+    node.replaceWith(holder);
+    z.node = node;
+    z.holder = holder;
+    z.opener = opener || null;
+    z.title.textContent = label || "Enlarged view";
+    z.inner.style.width = `${ZOOM_W}px`;
+    z.inner.replaceChildren(node);
+    node.classList.add("zoom-node");
+    z.h = node.offsetHeight;
+    document.body.classList.add("zoom-open");
+    z.ov.hidden = false;
+    z.fit = Math.min(2, Math.max(0.5, (z.scroll.clientWidth - 40) / ZOOM_W));
+    z.scroll.scrollTop = 0;
+    z.scroll.scrollLeft = 0;
+    setZoom(z.fit);
+    z.close.focus();
+  }
+  function closeZoom() {
+    const z = zoomState;
+    if (!z || !z.node) return;
+    if (z.holder.isConnected) z.holder.replaceWith(z.node);
+    z.node.classList.remove("zoom-node");
+    z.node = null;
+    z.holder = null;
+    z.inner.replaceChildren();
+    z.inner.style.transform = "";
+    z.ov.hidden = true;
+    document.body.classList.remove("zoom-open");
+    if (z.opener && z.opener.isConnected) z.opener.focus();
+  }
+  function enlargeButton(target, label) {
+    const b = el("button", null, "ghost small-btn zoom-btn");
+    b.type = "button";
+    b.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/></svg> Enlarge';
+    b.setAttribute("aria-label", `Enlarge: ${label}`);
+    b.addEventListener("click", () => magnify(target, label, b));
+    return b;
+  }
+
   function drawMap(tree, box, opts) {
     box.replaceChildren();
+    const zoomRow = el("div", null, "zoom-row");
+    zoomRow.appendChild(enlargeButton(box, (opts && opts.title) || "Mind map"));
+    box.appendChild(zoomRow);
     mapLeafHandler = (opts && opts.onLeaf) || null;
     if (opts && opts.toolbar) {
       const bar = el("div", null, "mm-toolbar");
@@ -4875,7 +4997,7 @@ a{color:#6d28d9;font-weight:600}`;
     if (!box || !window.MindMap || !window.Modernize) return;
     const points = Object.fromEntries(window.Modernize.TEMPLATES.map((t) => [t.id, t.points]));
     const tree = window.MindMap.approach(window.Modernize.choose(findings || {}), points, chosenId);
-    drawMap(tree, box, { toolbar: true, radial: true, radialLinks: tree.children.map((c) => ({ id: c.id, label: c.label })) });
+    drawMap(tree, box, { title: "The three approaches", toolbar: true, radial: true, radialLinks: tree.children.map((c) => ({ id: c.id, label: c.label })) });
   }
 
   // Architecture diagram, drawn after What we found. Each layer is a box with its source finding and a confidence tag.
@@ -4895,6 +5017,7 @@ a{color:#6d28d9;font-weight:600}`;
     const head = el("div", null, "arch-top");
     head.appendChild(el("span", "Cutover AI assessment", "arch-badge"));
     head.appendChild(el("span", "Current architecture", "arch-tag"));
+    head.appendChild(enlargeButton(wrap, "How the application fits together today"));
     wrap.appendChild(head);
     wrap.appendChild(el("h3", "How the application fits together today"));
     wrap.appendChild(el("p", "Drawn from the findings of this analysis. Each node names the finding it came from, and a status says whether that finding is verified in code.", "muted small"));
@@ -5109,6 +5232,7 @@ a{color:#6d28d9;font-weight:600}`;
     const box = el("div", null, "mmap findings-map");
     box.setAttribute("aria-label", "Map of the findings");
     drawMap(window.FindingsMap.tree({ label: "What we found", cards }), box, {
+      title: "Findings map",
       toolbar: true,
       radial: true,
       legend: {
@@ -6131,6 +6255,7 @@ a{color:#6d28d9;font-weight:600}`;
       .then((files) => {
         const cur2 = row.conversions || [];
         drawMap(window.FileMap.tree({ label: "Files in the repository", files, conversions: cur2 }), fileBox, {
+      title: "Files in the repository",
           toolbar: true,
           legend: {
             tones: [["pro", "Accepted"], ["possible", "Proposed, to review"], ["con", "Rejected"], ["fit", "Needs attention"], ["plain", "Not started"]],
