@@ -1269,6 +1269,7 @@ pre{white-space:pre-wrap;word-break:break-word;background:var(--soft);padding:12
 <script src="guide.js"></script>
 <script src="modernize.js"></script>
 <script src="plan.js"></script>
+<script src="starter.js"></script>
 <script>
 (() => {
   "use strict";
@@ -3572,6 +3573,26 @@ a{color:#6d28d9;font-weight:600}`;
     setTimeout(() => URL.revokeObjectURL(a.href), 1000);
   }
 
+  // Stage 2: downloads the starter project as a zip, built from what this viewer can already see.
+  function downloadStarter(row) {
+    const files = window.Starter.files({
+      appName: row.app_name,
+      repo: row.repo,
+      template: row.modern_template,
+      findings: currentFindings,
+      generatedAt: new Date().toISOString().slice(0, 10),
+    });
+    const bytes = window.Starter.zip(files);
+    const blob = new Blob([bytes], { type: "application/zip" });
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = `starter-project-${(row.app_name || row.repo || "app").replace(/[^a-z0-9]+/gi, "-").toLowerCase()}.zip`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+  }
+
   function renderPath(row) {
     const stages = row.stages || [];
     const wrap = el("div", null, "stage-path");
@@ -3606,6 +3627,13 @@ a{color:#6d28d9;font-weight:600}`;
         download.type = "button";
         download.className = "ghost";
         download.addEventListener("click", () => downloadPlan(row));
+        card.appendChild(download);
+      }
+      if (s.id === "starter" && s.state !== "locked" && row.modern_template) {
+        const download = el("button", "Download the starter project");
+        download.type = "button";
+        download.className = "ghost";
+        download.addEventListener("click", () => downloadStarter(row));
         card.appendChild(download);
       }
       if (s.state === "cleared") {

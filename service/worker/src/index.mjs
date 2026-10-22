@@ -2262,7 +2262,7 @@ const PROGRESS_STAGES = [
 ];
 // Stages a platform engineer can mark reviewed once their output exists. "ready" is false until the stage is built.
 const PROGRESS_REVIEWABLE = ["plan", "starter", "convert"];
-const PROGRESS_READY = { plan: true, starter: false, convert: false, pr: false };
+const PROGRESS_READY = { plan: true, starter: true, convert: false, pr: false };
 
 function progressOf(row) {
   return row.modern_progress && typeof row.modern_progress === "object" && !Array.isArray(row.modern_progress)
