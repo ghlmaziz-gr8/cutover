@@ -209,6 +209,10 @@ button.danger{background:transparent;color:var(--bad);box-shadow:none;border:1.5
 .vlist li{margin:0 0 3px}
 .vlist .vlist{margin-top:3px;list-style:circle}
 .kv-value{min-width:0;overflow-wrap:anywhere}
+.kv-wide{grid-column:1 / -1}
+.kv-label{font-size:13px;color:var(--muted,#64748b);margin-top:4px}
+.kv-block{padding:0 0 4px}
+.kv-block .vlist{padding-left:20px}
 .fvalue{font-size:14px}
 .app-foot{display:flex;justify-content:center;align-items:center;gap:10px;padding:24px 16px;font-size:13px;color:var(--muted)}
 .app-foot img{height:26px;width:auto;background:#ffffff;border-radius:8px;padding:4px 8px;box-sizing:content-box}
@@ -3140,9 +3144,19 @@ pre{white-space:pre-wrap;word-break:break-word;background:var(--soft);padding:12
     // The top row shows how many roles were found. The names stay in "Show findings".
     const kvValue = (item) => (item.id === "security.roles" && Array.isArray(item.value) ? `${item.value.length} role${item.value.length === 1 ? "" : "s"}` : fmtValue(item.value));
     for (const item of found.filter((i) => !EXPAND_ONLY.includes(i.id))) {
-      const value = el("span", null, "kv-value");
-      value.appendChild(item.id === "security.roles" ? document.createTextNode(kvValue(item)) : valueNode(item.value));
-      kv.append(el("span", item.title), value);
+      const v = item.id === "security.roles" ? kvValue(item) : item.value;
+      const isBullets = item.id !== "security.roles" && ((Array.isArray(v) && v.length > 0) || (v && typeof v === "object" && !Array.isArray(v) && Object.keys(v).length > 1));
+      if (isBullets) {
+        // A list gets the full width of the card, with its label above it, so the bullets have room to read.
+        kv.append(el("span", item.title, "kv-label kv-wide"));
+        const block = el("div", null, "kv-value kv-wide kv-block");
+        block.appendChild(valueNode(v));
+        kv.appendChild(block);
+      } else {
+        const value = el("span", null, "kv-value");
+        value.appendChild(item.id === "security.roles" ? document.createTextNode(kvValue(item)) : valueNode(v));
+        kv.append(el("span", item.title), value);
+      }
     }
     for (const [k, v] of extraRows) kv.append(el("span", k), el("span", v));
     if (kv.childElementCount) c.appendChild(kv);
