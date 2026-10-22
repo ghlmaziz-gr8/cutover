@@ -75,9 +75,9 @@ const MAX_TITLE = 200;
 // Summary facts (source, history, limitations, counts) are shown to every member.
 const ROLE_CATEGORIES = {
   platform_engineer: "all",
-  security_officer: ["security", "privacy"],
+  security_officer: ["security", "privacy", "links"],
   informatics_lead: ["data", "epic"],
-  cio_cto: ["stack", "ui_portal", "containers", "delivery", "infrastructure"],
+  cio_cto: ["stack", "ui_portal", "containers", "delivery", "infrastructure", "links"],
   auditor: [],
 };
 

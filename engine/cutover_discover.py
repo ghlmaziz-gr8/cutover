@@ -783,6 +783,83 @@ def detect_data(repo: Repo, out: dict) -> None:
                                      dialects, "verified", sql)
 
 
+# ---- External links and domains --------------------------------------------------------------
+# Web addresses and domain names written in the code: where the application calls out to. Only the scheme,
+# host, port and path are kept. Query strings and fragments are dropped, since they can carry tokens.
+URL_RX = re.compile(r"https?://(?:[^\s/@\"'<>()]{1,200}@)?[A-Za-z0-9._~%\-]+(?::\d{1,5})?(?:/[^\s\"'<>()\[\]{}`\\,;]*)?", re.IGNORECASE)
+QUOTED_HOST_RX = re.compile(r"[\"']((?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+(?:com|net|org|io|gov|edu|health|us|co|uk|eu|ca|app|dev|cloud|info))[\"']", re.IGNORECASE)
+NOISE_HOSTS = {"localhost", "example.com", "example.org", "example.net", "w3.org", "www.w3.org", "purl.org",
+               "xmlns.com", "schemas.microsoft.com", "schemas.xmlsoap.org", "json-schema.org", "tools.ietf.org"}
+NOISE_SUFFIXES = (".example.com", ".example.org", ".example.net", ".local", ".test", ".invalid", ".localhost", ".w3.org")
+REVERSE_DNS_FIRST = {"com", "org", "net", "io", "edu", "gov"}
+LINKS_LIMIT = 60
+
+
+def _public_host(host: str) -> bool:
+    """A host worth listing: a public name with a dot, not a placeholder, a local address or a schema namespace."""
+    if not host or "." not in host or host in NOISE_HOSTS or host.endswith(NOISE_SUFFIXES):
+        return False
+    if re.fullmatch(r"[\d.]+", host):
+        return False  # bare IP addresses are often internal, so they are not listed
+    return True
+
+
+def detect_links(repo: Repo, out: dict) -> None:
+    from urllib.parse import urlsplit
+    hosts: dict[str, set[str]] = defaultdict(set)
+    urls: dict[str, set[str]] = defaultdict(set)
+    insecure: set[str] = set()
+    with_credentials: set[str] = set()
+    for p, t in repo.files.items():
+        for raw in URL_RX.findall(t):
+            raw = raw.rstrip(".,;:")
+            try:
+                u = urlsplit(raw)
+                host = (u.hostname or "").lower()
+                port = u.port
+            except ValueError:
+                continue
+            if u.username or u.password:
+                with_credentials.add(p)  # an address with a password or token in it: reported, never listed
+                continue
+            if not _public_host(host):
+                continue
+            hosts[host].add(p)
+            scheme = u.scheme.lower()
+            display = f"{scheme}://{host}" + (f":{port}" if port else "") + (u.path or "")[:120]
+            urls[display].add(p)
+            if scheme == "http":
+                insecure.add(p)
+        for m in QUOTED_HOST_RX.finditer(t):
+            host = m.group(1).lower()
+            if host.split(".")[0] in REVERSE_DNS_FIRST:
+                continue  # com.acme.app and similar are package names, not hosts
+            if _public_host(host):
+                hosts[host].add(p)
+
+    def plural(n: int, word: str) -> str:
+        return f"{n} {word}" + ("" if n == 1 else "s")
+
+    if hosts:
+        out["links.domains"] = F("links.domains", "links", "Domains the code calls",
+                                 [f"{h} ({plural(len(fs), 'file')})" for h, fs in sorted(hosts.items())[:LINKS_LIMIT]],
+                                 "verified", set().union(*hosts.values()),
+                                 note="Host names only. Query strings are dropped. Check each one: these are the outside systems the application depends on.")
+    if urls:
+        out["links.urls"] = F("links.urls", "links", "Web addresses the code uses",
+                              [f"{u} ({plural(len(fs), 'file')})" for u, fs in sorted(urls.items())[:LINKS_LIMIT]],
+                              "verified", set().union(*urls.values()),
+                              note="Scheme, host and path only. Query strings and fragments are not kept.")
+    if insecure:
+        out["links.insecure"] = F("links.insecure", "links", "Plain HTTP addresses to outside hosts",
+                                  len(insecure), "verified", insecure, severity="medium",
+                                  note="Traffic over plain HTTP can be read or changed on the way. Move these to HTTPS, or confirm the host is internal.")
+    if with_credentials:
+        out["links.credentials"] = F("links.credentials", "links", "Addresses with a password or token in them",
+                                     len(with_credentials), "verified", with_credentials, severity="high",
+                                     note="A password or token written into an address. Remove it and rotate the secret. The address itself is not listed.")
+
+
 def detect_epic(repo: Repo, out: dict) -> None:
     fhir_versions: dict[str, set[str]] = defaultdict(set)
     url_files: dict[str, set[str]] = defaultdict(set)
@@ -1073,6 +1150,7 @@ def analyze(repo: Repo, root: Path, now: dt.datetime, source: dict, metadata: li
                                 note="Each file is listed in inventory.json with its kind, language, age range and encoding. Unidentified files are named, never guessed at.")
     add_source_languages(records, out)
     detect_epic(repo, out)
+    detect_links(repo, out)
     detect_containers(repo, out)
     detect_delivery(repo, out)
     detect_infrastructure(repo, out)
@@ -1094,11 +1172,12 @@ def analyze(repo: Repo, root: Path, now: dt.datetime, source: dict, metadata: li
 # Report rendering
 # --------------------------------------------------------------------------
 
-CATEGORY_ORDER = ["stack", "data", "ui_portal", "security", "epic", "privacy", "containers", "delivery", "infrastructure"]
+CATEGORY_ORDER = ["stack", "data", "ui_portal", "security", "epic", "links", "privacy", "containers", "delivery", "infrastructure"]
 CATEGORY_TITLES = {
     "stack": "Stack", "data": "Data model", "ui_portal": "User interface and portal",
     "security": "Roles and access", "epic": "Epic integration", "privacy": "Privacy",
     "containers": "Images and containers", "delivery": "Delivery", "infrastructure": "Infrastructure",
+    "links": "Links and domains",
 }
 
 
