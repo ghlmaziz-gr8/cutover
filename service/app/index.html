@@ -2788,6 +2788,7 @@ pre{white-space:pre-wrap;word-break:break-word;background:var(--soft);padding:12
     $("reviewMeta").textContent = `${cur.repo}${cur.ref ? " @ " + cur.ref : ""} · Commit: ${cur.commit_sha || "not known yet"} · Started by: ${cur.is_mine ? "you" : "a teammate"} · ${modelText} · Deleted after: ${new Date(cur.expires_at).toLocaleDateString()}`;
     renderReview(cur);
     renderDiscussion(cur);
+    applyPendingTemplate();
   }
 
   // Turn a finding value into readable text, the same way the engine does.
@@ -3483,9 +3484,35 @@ a{color:#6d28d9;font-weight:600}`;
   }
 
   // Modernized templates: rules pick the options from the findings (no model), and each one previews on its own page.
-  function modernizeSection(shown) {
+  // Saves the template chosen for this analysis, then shows the review again with it.
+  async function chooseTemplate(row, template) {
+    try {
+      await api(`/api/analyses/${row.id}/template`, { method: "PUT", body: JSON.stringify({ template }) });
+      cur = await api(`/api/analyses/${row.id}`);
+      showReview();
+    } catch (err) {
+      showToast({ tone: "bad", title: "Could not choose the template", body: err.message });
+    }
+  }
+
+  // A choice made on a preview page is kept for a few minutes, then saved when its review opens.
+  async function applyPendingTemplate() {
+    let pending = null;
+    try { pending = JSON.parse(sessionStorage.getItem("cutover.pendingTemplate") || "null"); } catch (e) { pending = null; }
+    if (!pending || !cur || pending.analysis !== cur.id || Date.now() - pending.at > 10 * 60 * 1000) return;
+    sessionStorage.removeItem("cutover.pendingTemplate");
+    if (cur.can_plan) await chooseTemplate(cur, pending.template);
+  }
+
+  const TEMPLATE_NAME = { "web-modern": "Modern web front end over an API", "services-data": "Services over a modern database", "lift-contain": "Run as is, in containers" };
+
+  function modernizeSection(shown, row) {
     const wrap = el("div", null, "modern");
     wrap.appendChild(el("h3", "Modernized templates"));
+    if (row && row.modern_template) {
+      const by = row.modern_template_set_by_email ? ` by ${row.modern_template_set_by_email}` : "";
+      wrap.appendChild(el("p", `Chosen approach: ${TEMPLATE_NAME[row.modern_template] || row.modern_template}${by}.`, "small"));
+    }
     wrap.appendChild(el("p", "Designs are ready for this application. Each option shows the proposed look, page flow and wireframes, built from the screens and evidence Cutover found.", "muted small"));
     const grid = el("div", null, "rgrid");
     const picks = window.Modernize ? window.Modernize.choose(shown) : [];
@@ -3502,10 +3529,19 @@ a{color:#6d28d9;font-weight:600}`;
         c.appendChild(tags);
       }
       const link = document.createElement("a");
-      link.href = `${p.href}?fit=${p.fit}&rec=${picks[0] ? picks[0].id : ""}&ctx=${ctx}`;
+      link.href = `${p.href}?fit=${p.fit}&rec=${picks[0] ? picks[0].id : ""}&analysis=${row ? row.id : ""}&ctx=${ctx}`;
       link.textContent = "See the proposed design →";
       link.style.cssText = "display:inline-block;margin-top:10px;font-weight:700;color:var(--accent)";
       c.appendChild(link);
+      if (row && row.can_plan) {
+        const pick = el("button", row.modern_template === p.id ? "Chosen approach" : "Choose this approach");
+        pick.type = "button";
+        pick.className = row.modern_template === p.id ? "tag" : "ghost";
+        pick.style.cssText = "display:block;margin-top:10px";
+        pick.disabled = row.modern_template === p.id;
+        pick.addEventListener("click", () => chooseTemplate(row, p.id));
+        c.appendChild(pick);
+      }
       grid.appendChild(c);
     }
     wrap.appendChild(grid);
@@ -3603,7 +3639,7 @@ a{color:#6d28d9;font-weight:600}`;
     // Entrance order: cards and panels appear one after another.
     box.querySelectorAll(".rcard, .panel, .stat").forEach((n, i) => n.style.setProperty("--i", String(i)));
 
-    box.appendChild(modernizeSection(Object.fromEntries(all.filter(Boolean).map((i) => [i.id, i]))));
+    box.appendChild(modernizeSection(Object.fromEntries(all.filter(Boolean).map((i) => [i.id, i])), row));
 
     if (report.limitations && report.limitations.length) {
       box.appendChild(el("h3", "What this review does not cover"));

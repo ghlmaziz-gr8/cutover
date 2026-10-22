@@ -343,6 +343,27 @@ async function call(path, options = {}) {
 const START = { app_name: "Test application", data_rules_confirmed: true, repo: "acme/app" };
 const visibleIds = (findings) => Object.keys(findings || {}).sort();
 
+// ---- Choosing the modernized template ----
+
+test("only a platform engineer can choose the modernized template, from the three there are", async () => {
+  const auditor = await call(`/api/analyses/${AN_ACME}/template`, { as: "aud_a", method: "PUT", body: { template: "web-modern" } });
+  assert.equal(auditor.status, 403);
+  const unknown = await call(`/api/analyses/${AN_ACME}/template`, { as: "eng_a", method: "PUT", body: { template: "anything" } });
+  assert.equal(unknown.status, 400);
+});
+
+test("a platform engineer's choice is saved with who chose it and when, and a later choice replaces it", async () => {
+  const first = await call(`/api/analyses/${AN_ACME}/template`, { as: "eng_a", method: "PUT", body: { template: "web-modern" } });
+  assert.equal(first.status, 200);
+  assert.equal(first.body.template, "web-modern");
+  const second = await call(`/api/analyses/${AN_ACME}/template`, { as: "eng_a", method: "PUT", body: { template: "lift-contain" } });
+  assert.equal(second.status, 200);
+  const read = await call(`/api/analyses/${AN_ACME}`, { as: "eng_a" });
+  assert.equal(read.body.modern_template, "lift-contain");
+  assert.equal(read.body.modern_template_set_by_email, PEOPLE.eng_a.email);
+  assert.ok(read.body.modern_template_set_at);
+});
+
 // ---- Uploading a zip of the code, without GitHub ----
 
 const ZIP_BYTES = Buffer.from([0x50, 0x4b, 0x03, 0x04, 0, 0, 0, 0, 0, 0]);

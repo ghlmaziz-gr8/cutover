@@ -37,6 +37,7 @@ import { validateDbMetadata } from "./db-metadata.mjs";
 //   PUT    /api/analyses/:id/intake                        save the intake form for Migrate (platform engineers)
 //   POST   /api/analyses/:id/intake/confirm                confirm the saved intake (platform engineers)
 //   PATCH  /api/analyses/:id/scope                       choose deeper, modernize or migrate (platform engineers)
+//   PUT    /api/analyses/:id/template                    choose the modernized template (platform engineers)
 //   POST   /api/analyses/:id/contingencies                add a contingency plan (platform engineers)
 //   PATCH  /api/contingencies/:id                         edit or set the status of a contingency (platform engineers)
 //   DELETE /api/contingencies/:id                         remove a contingency (platform engineers)
@@ -2216,6 +2217,34 @@ async function setScope(request, env, id) {
   return json({ saved: true });
 }
 
+// The modernized template the team chooses for this analysis. Platform engineers only. A later choice replaces it.
+const MODERN_TEMPLATES = ["web-modern", "services-data", "lift-contain"];
+
+async function setTemplate(request, env, id) {
+  const access = await analysisAccess(env, request, id);
+  if (access.response) return access.response;
+  if (!canStart(access.member)) {
+    return json({ error: "Only platform engineers can choose the modernized template." }, 403);
+  }
+  const parsed = await readJson(request);
+  if (parsed.error) return json({ error: parsed.error }, 400);
+  const template = parsed.value && parsed.value.template;
+  if (!MODERN_TEMPLATES.includes(template)) {
+    return json({ error: "Choose web-modern, services-data or lift-contain." }, 400);
+  }
+  const res = await serviceRest(env, `analyses?id=eq.${id}`, {
+    method: "PATCH",
+    headers: { prefer: "return=minimal" },
+    body: JSON.stringify({
+      modern_template: template,
+      modern_template_set_by_email: normalizeEmail(access.user.email),
+      modern_template_set_at: new Date().toISOString(),
+    }),
+  });
+  if (!res.ok) return json({ error: "Could not save the template choice." }, 502);
+  return json({ saved: true, template });
+}
+
 async function updateContingency(request, env, id) {
   const auth = await requireUser(env, request);
   if (auth.response) return auth.response;
@@ -2713,6 +2742,8 @@ async function route(request, env) {
     }
     const analysisScope = path.match(/^\/api\/analyses\/([^/]+)\/scope$/);
     if (analysisScope && UUID_PATTERN.test(analysisScope[1]) && method === "PATCH") return setScope(request, env, analysisScope[1]);
+    const analysisTemplate = path.match(/^\/api\/analyses\/([^/]+)\/template$/);
+    if (analysisTemplate && UUID_PATTERN.test(analysisTemplate[1]) && method === "PUT") return setTemplate(request, env, analysisTemplate[1]);
 
     const contingencyAdd = path.match(/^\/api\/analyses\/([^/]+)\/contingencies$/);
     if (contingencyAdd && UUID_PATTERN.test(contingencyAdd[1]) && method === "POST") return addContingency(request, env, contingencyAdd[1]);
