@@ -90,3 +90,9 @@ test("the confidence panel uses the animated view, with the ring, the rows and t
   assert.ok(html.includes("confidenceChart(verified, all.length - verified)"));
   assert.ok(html.includes('"conf-ring"') && html.includes('"conf-row"') && html.includes("conf-center"));
 });
+
+test("links and domains have their own card, shown when found, and the same access as the worker", () => {
+  assert.ok(html.includes('{ title: "Links and domains", cats: ["links"], onlyWhenFound: true }'));
+  assert.ok(html.includes('security_officer: ["security", "privacy", "links"]'));
+  assert.ok(html.includes('"links.domains": {') && html.includes('"links.credentials": {'));
+});

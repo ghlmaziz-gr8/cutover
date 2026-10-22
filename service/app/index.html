@@ -1850,14 +1850,15 @@ button:not(:disabled):active{transform:scale(.965)}
     { title: "Its data", cats: ["data"] },
     { title: "Personal data", cats: ["privacy"], empty: "No personal data detected in the code reviewed." },
     { title: "How it is hosted", cats: ["containers", "infrastructure"] },
+    { title: "Links and domains", cats: ["links"], onlyWhenFound: true },
     { title: "Healthcare standards", cats: ["epic"], onlyWhenFound: true },
   ];
   // Mirrors ROLE_CATEGORIES in the Worker. The server filters; this only decides what to say.
   const ROLE_SEES = {
     platform_engineer: "all",
-    security_officer: ["security", "privacy"],
+    security_officer: ["security", "privacy", "links"],
     informatics_lead: ["data", "epic"],
-    cio_cto: ["stack", "ui_portal", "containers", "delivery", "infrastructure"],
+    cio_cto: ["stack", "ui_portal", "containers", "delivery", "infrastructure", "links"],
     auditor: [],
   };
   const sees = (role, cat) => ROLE_SEES[role] === "all" || (ROLE_SEES[role] || []).includes(cat);
@@ -3454,8 +3455,8 @@ button:not(:disabled):active{transform:scale(.965)}
 
   // ---- Review charts. Drawn only from the findings this viewer may see. ----
   const EYEBROW = { "What it is": "Application", "How it is built": "Build", "Its data": "Data", "Personal data": "Privacy", "How it is hosted": "Hosting", "Healthcare standards": "Standards" };
-  const CAT_TITLE = { stack: "Stack", data: "Data", ui_portal: "Screens", security: "Security", epic: "Epic", privacy: "Privacy", containers: "Containers", delivery: "Delivery", infrastructure: "Infrastructure" };
-  const CAT_COLOR = { stack: "var(--accent)", data: "var(--accent2)", ui_portal: "var(--accent3)", security: "var(--bad)", epic: "var(--warn)", privacy: "#7c3aed", containers: "var(--ok)", delivery: "#64748b", infrastructure: "#0e7490" };
+  const CAT_TITLE = { stack: "Stack", data: "Data", ui_portal: "Screens", security: "Security", epic: "Epic", privacy: "Privacy", containers: "Containers", delivery: "Delivery", infrastructure: "Infrastructure", links: "Links" };
+  const CAT_COLOR = { stack: "var(--accent)", data: "var(--accent2)", ui_portal: "var(--accent3)", security: "var(--bad)", epic: "var(--warn)", privacy: "#7c3aed", containers: "var(--ok)", delivery: "#64748b", infrastructure: "#0e7490", links: "#0891b2" };
 
   function svgEl(tag, attrs) {
     const node = document.createElementNS("http://www.w3.org/2000/svg", tag);
@@ -7143,6 +7144,24 @@ const REGION_OPTS = {
     rejected: "Rejected",
   };
   const PLAN_DRAFTS = {
+    "links.domains": {
+      risk: "The outside systems the code calls are not reachable from the new platform",
+      contingency: "Keep the current outside connections in place until each host is confirmed as reachable from the new platform.",
+      rollback_step: "Point the connection back to the current host name and restart the service that uses it.",
+      trigger_condition: "A call to an outside host fails, or times out, for more than 15 minutes after cutover.",
+    },
+    "links.insecure": {
+      risk: "Traffic sent over plain HTTP can be read or changed on the way to the outside host",
+      contingency: "Move the connection to HTTPS, or confirm with the host owner that the path is private, before cutover.",
+      rollback_step: "Restore the previous address and keep the connection on its current path.",
+      trigger_condition: "A security review finds the connection carries patient or personal data over plain HTTP.",
+    },
+    "links.credentials": {
+      risk: "A password or token written into an address is exposed to anyone who can read the code",
+      contingency: "Remove the secret from the address, rotate it, and load it from secure configuration before cutover.",
+      rollback_step: "Restore the previous secure configuration and the rotated secret.",
+      trigger_condition: "The secret is still in the code or the repository history at cutover.",
+    },
     "epic.fhir_endpoints": {
       risk: "Interfaces to the FHIR endpoints fail when traffic moves to the new platform",
       contingency: "Keep the current endpoint settings in place, and point the interface back to them until the new endpoints pass the interface tests.",

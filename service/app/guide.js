@@ -11,6 +11,7 @@
 window.CUTOVER_GUIDE = {
   updated: "2026-10-22",
   whatsNew: [
+    "2026-10-22: A new card, Links and domains, lists the outside domains and web addresses the code calls. It shows plain HTTP connections and any address with a password or token in it. Security officers and CIOs or CTOs can see it.",
     "2026-10-22: How sure we are is an interactive view. The ring draws itself, hover or click a status to see its share, and each row says what the status means.",
     "2026-10-22: What we found is the heading of the findings section and the first thing on it.",
     "2026-10-22: The current architecture is interactive. Filter the layers by status, select a layer to see what it is built from and what it connects to, and watch its connectors light up. Nothing is cut off, and the layers stack on narrower screens.",
@@ -377,6 +378,8 @@ window.CUTOVER_GUIDE = {
       a: "Long lists are kept under Show findings or Show details so the page stays readable. Each card shows its count, and you can open the list when you need it." },
     { q: "Why does the summary count differ from the number of cards?", step: "findings",
       a: "The summary counts only results that found something. A check that found nothing is kept in the report but is not counted as a point." },
+    { q: "What is the Links and domains card?", step: "maps",
+      a: "It lists the outside domains and web addresses the code calls, with the files that use them. Only the host and path are kept; query strings are dropped. A plain HTTP connection, or an address with a password or token in it, is flagged." },
     { q: "Where does the database structure come from?", step: "database",
       a: "A platform engineer makes it with the read-only access_metadata script in their own environment, and uploads the .json file on the deeper assessment page. It has names and counts only, with no row values." },
     { q: "Where are the modernized templates?", step: "findings",
