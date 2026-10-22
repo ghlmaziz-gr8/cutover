@@ -1557,6 +1557,7 @@ async function getAnalysis(request, env, id) {
     screens = await screensRes.json();
   }
   const approval = await conversionApproval(env, analysis.workspace_id);
+  const targetApprovalNow = await targetApproval(env, analysis);
   // Proposals are code, so only platform engineers see them.
   let conversions = [];
   if (canStart(member)) {
@@ -1569,6 +1570,9 @@ async function getAnalysis(request, env, id) {
     conversions,
     ...analysis,
     conversion_approval: approval.approved ? { by: approval.by, at: approval.at } : null,
+    target_options: TARGET_LANGUAGES,
+    target_approval: targetApprovalNow.approved ? { by: targetApprovalNow.by, at: targetApprovalNow.at } : null,
+    target_can_approve: canApproveTarget(analysis, member, user),
     conversion_admin: member.is_admin === true,
     conversion_wording: CONVERSION_APPROVAL_TEXT,
     cost_lines: analysis.cost_users ? costLines(analysis.cost_users, tableCountOf(findings)) : null,
@@ -2260,6 +2264,92 @@ async function setTemplate(request, env, id) {
   });
   if (!res.ok) return json({ error: "Could not save the template choice." }, 502);
   return json({ saved: true, template });
+}
+
+// ---- Target language: the language the modernized application is written in ----
+// One catalogue. The portal shows what the server returns, so a new language is added here and nowhere else.
+// Each option lists the approaches it fits. The approach decides which languages are offered.
+const TARGET_LANGUAGES = [
+  { id: "ts-react", label: "TypeScript with React", approaches: ["web-modern", "services-data"] },
+  { id: "py-fastapi", label: "Python with FastAPI", approaches: ["web-modern", "services-data"] },
+  { id: "cs-aspnet", label: "C# with ASP.NET Core", approaches: ["web-modern", "services-data"] },
+  { id: "java-spring", label: "Java with Spring Boot", approaches: ["web-modern", "services-data"] },
+  { id: "current", label: "Keep the current language", approaches: ["lift-contain"] },
+];
+const TARGET_IDS = TARGET_LANGUAGES.map((t) => t.id);
+
+function targetOption(id) {
+  return TARGET_LANGUAGES.find((t) => t.id === id) || null;
+}
+
+// Who may approve: the named application owner, or a CIO or CTO in the workspace.
+function canApproveTarget(row, member, user) {
+  const owner = normalizeEmail(row.target_owner_email);
+  const me = normalizeEmail(user.email);
+  return (owner && me && owner === me) || member.role === "cio_cto";
+}
+
+// Sets the target language and the named owner. Platform engineers only, after the approach is chosen.
+// Each approval is kept as a record, so changing the language does not remove an approval that was given earlier.
+async function setTarget(request, env, id) {
+  const access = await analysisAccess(env, request, id);
+  if (access.response) return access.response;
+  if (!canStart(access.member)) return json({ error: "Only platform engineers can choose the target language." }, 403);
+  const parsed = await readJson(request);
+  if (parsed.error) return json({ error: parsed.error }, 400);
+  const language = parsed.value && parsed.value.language;
+  const option = targetOption(language);
+  if (!option) return json({ error: `Choose one of: ${TARGET_IDS.join(", ")}.` }, 400);
+  const owner = normalizeEmail(parsed.value && parsed.value.owner_email);
+  if (!owner) return json({ error: "Enter the email of the application owner who approves the language." }, 400);
+  if (access.row.scope !== "modernize") return json({ error: "Choose Modernize as the next stage first." }, 409);
+  if (!access.row.modern_template) return json({ error: "Choose the approach before the target language." }, 409);
+  if (!option.approaches.includes(access.row.modern_template)) {
+    return json({ error: "That language does not fit the chosen approach. Choose another." }, 400);
+  }
+  const res = await serviceRest(env, `analyses?id=eq.${id}`, {
+    method: "PATCH",
+    headers: { prefer: "return=minimal" },
+    body: JSON.stringify({
+      target_language: language,
+      target_owner_email: owner,
+      target_language_set_by_email: normalizeEmail(access.user.email),
+      target_language_set_at: new Date().toISOString(),
+    }),
+  });
+  if (!res.ok) return json({ error: "Could not save the target language." }, 502);
+  return json({ saved: true, language, owner_email: owner });
+}
+
+// Records an approval of the current target language, by the named owner or a CIO or CTO.
+async function approveTarget(request, env, id) {
+  const access = await analysisAccess(env, request, id);
+  if (access.response) return access.response;
+  const row = access.row;
+  if (!row.target_language) return json({ error: "Choose the target language first." }, 409);
+  if (!canApproveTarget(row, access.member, access.user)) {
+    return json({ error: "Only the named application owner, or a CIO or CTO, can approve the target language." }, 403);
+  }
+  const res = await serviceRest(env, "analysis_target_approvals", {
+    method: "POST",
+    headers: { prefer: "return=minimal" },
+    body: JSON.stringify({
+      analysis_id: id,
+      language: row.target_language,
+      approved_by_email: normalizeEmail(access.user.email),
+    }),
+  });
+  if (!res.ok) return json({ error: "Could not save the approval." }, 502);
+  return json({ approved: true, language: row.target_language });
+}
+
+// The latest approval of the current language, or null. Earlier approvals of other languages stay in the table.
+async function targetApproval(env, row) {
+  if (!row.target_language) return { approved: false };
+  const res = await serviceRest(env, `analysis_target_approvals?analysis_id=eq.${row.id}&language=eq.${encodeURIComponent(row.target_language)}&select=approved_by_email,approved_at&order=approved_at.desc&limit=1`);
+  if (!res.ok) return { approved: false, failed: true };
+  const [latest] = await res.json();
+  return latest ? { approved: true, by: latest.approved_by_email, at: latest.approved_at } : { approved: false };
 }
 
 // ---- The path to a modernized application: stages that unlock one after another ----
@@ -3019,6 +3109,10 @@ async function route(request, env) {
     }
     const analysisScope = path.match(/^\/api\/analyses\/([^/]+)\/scope$/);
     if (analysisScope && UUID_PATTERN.test(analysisScope[1]) && method === "PATCH") return setScope(request, env, analysisScope[1]);
+    const analysisTarget = path.match(/^\/api\/analyses\/([^/]+)\/target$/);
+    if (analysisTarget && UUID_PATTERN.test(analysisTarget[1]) && method === "PUT") return setTarget(request, env, analysisTarget[1]);
+    const analysisTargetApprove = path.match(/^\/api\/analyses\/([^/]+)\/target\/approve$/);
+    if (analysisTargetApprove && UUID_PATTERN.test(analysisTargetApprove[1]) && method === "POST") return approveTarget(request, env, analysisTargetApprove[1]);
     const analysisTemplate = path.match(/^\/api\/analyses\/([^/]+)\/template$/);
     if (analysisTemplate && UUID_PATTERN.test(analysisTemplate[1]) && method === "PUT") return setTemplate(request, env, analysisTemplate[1]);
     const workspaceApproval = path.match(/^\/api\/workspaces\/([^/]+)\/conversion-approval$/);

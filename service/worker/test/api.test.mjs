@@ -138,6 +138,7 @@ function seed() {
     analysis_model_tokens: [],
     analysis_screens: [],
     analysis_conversions: [],
+    analysis_target_approvals: [],
     analysis_db_metadata: [],
   };
 }
@@ -173,6 +174,7 @@ function defaultsFor(table) {
   if (table === "analyses") return { ...base, status: "queued", findings: null, error: null, commit_sha: null, finished_at: null, expires_at: FAR_FUTURE };
   if (table === "action_items") return { ...base, status: "open", done_at: null, done_by_email: null };
   if (table === "analysis_model_tokens") return { ...base, used_at: null };
+  if (table === "analysis_target_approvals") return { ...base, approved_at: NOW };
   if (table === "members" || table === "invitations") return { is_admin: false, ...base };
   return base;
 }
@@ -2283,4 +2285,52 @@ test("only platform engineers can run again, and a running analysis is not start
   runningAnalysis();
   const busy = await call(`/api/analyses/${AN_RUNNING}/rerun`, { as: "eng_a", method: "POST" });
   assert.equal(busy.status, 409);
+});
+
+test("the target language: chosen by an engineer after the approach, fitted to it, approved by the named owner or a CIO/CTO, and the approval is kept when the language changes", async () => {
+  const analysis = state.analyses.find((a) => a.id === AN_ACME);
+  analysis.deeper_done = true;
+  const owner = PEOPLE.stranger.email;
+  const early = await call(`/api/analyses/${AN_ACME}/target`, { as: "eng_a", method: "PUT", body: { language: "ts-react", owner_email: owner } });
+  assert.equal(early.status, 409, "the target waits for Modernize");
+  assert.equal((await call(`/api/analyses/${AN_ACME}/scope`, { as: "eng_a", method: "PATCH", body: { scope: "modernize" } })).status, 200);
+  const noApproach = await call(`/api/analyses/${AN_ACME}/target`, { as: "eng_a", method: "PUT", body: { language: "ts-react", owner_email: owner } });
+  assert.equal(noApproach.status, 409, "the target waits for the approach");
+  await call(`/api/analyses/${AN_ACME}/template`, { as: "eng_a", method: "PUT", body: { template: "web-modern" } });
+
+  assert.equal((await call(`/api/analyses/${AN_ACME}/target`, { as: "aud_a", method: "PUT", body: { language: "ts-react", owner_email: owner } })).status, 403);
+  assert.equal((await call(`/api/analyses/${AN_ACME}/target`, { as: "eng_a", method: "PUT", body: { language: "cobol", owner_email: owner } })).status, 400);
+  assert.equal((await call(`/api/analyses/${AN_ACME}/target`, { as: "eng_a", method: "PUT", body: { language: "ts-react", owner_email: "not-an-email" } })).status, 400);
+  assert.equal((await call(`/api/analyses/${AN_ACME}/target`, { as: "eng_a", method: "PUT", body: { language: "ts-react", owner_email: owner } })).status, 200);
+  assert.equal(state.analyses.find((a) => a.id === AN_ACME).target_owner_email, owner);
+
+  const offered = await call(`/api/analyses/${AN_ACME}`, { as: "eng_a" });
+  assert.equal(offered.body.target_options.length, 5, "the catalogue is returned for the portal");
+  assert.equal(offered.body.target_approval, null);
+
+  assert.equal((await call(`/api/analyses/${AN_ACME}/target/approve`, { as: "eng_a", method: "POST" })).status, 403, "an engineer who is not the owner cannot approve");
+  const ownerSees = await call(`/api/analyses/${AN_ACME}`, { as: "stranger" });
+  assert.equal(ownerSees.status, 404, "the owner must be a member of the workspace to act");
+  assert.equal((await call(`/api/analyses/${AN_ACME}/target/approve`, { as: "cio_a", method: "POST" })).status, 200, "a CIO or CTO can approve");
+  const approved = await call(`/api/analyses/${AN_ACME}`, { as: "eng_a" });
+  assert.equal(approved.body.target_approval.by, PEOPLE.cio_a.email);
+
+  await call(`/api/analyses/${AN_ACME}/target`, { as: "eng_a", method: "PUT", body: { language: "py-fastapi", owner_email: owner } });
+  const changed = await call(`/api/analyses/${AN_ACME}`, { as: "eng_a" });
+  assert.equal(changed.body.target_approval, null, "a new language needs its own approval");
+  assert.equal(state.analysis_target_approvals.length, 1, "the earlier approval stays on record");
+
+  await call(`/api/analyses/${AN_ACME}/target`, { as: "eng_a", method: "PUT", body: { language: "ts-react", owner_email: owner } });
+  assert.equal((await call(`/api/analyses/${AN_ACME}`, { as: "eng_a" })).body.target_approval.by, PEOPLE.cio_a.email, "returning to the approved language keeps its approval");
+});
+
+test("the target language: lift-contain offers only keeping the current language", async () => {
+  const analysis = state.analyses.find((a) => a.id === AN_ACME);
+  analysis.deeper_done = true;
+  analysis.scope = "modernize";
+  analysis.modern_template = "lift-contain";
+  const wrong = await call(`/api/analyses/${AN_ACME}/target`, { as: "eng_a", method: "PUT", body: { language: "java-spring", owner_email: PEOPLE.stranger.email } });
+  assert.equal(wrong.status, 400);
+  const right = await call(`/api/analyses/${AN_ACME}/target`, { as: "eng_a", method: "PUT", body: { language: "current", owner_email: PEOPLE.stranger.email } });
+  assert.equal(right.status, 200);
 });
