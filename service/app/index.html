@@ -487,7 +487,13 @@ pre{white-space:pre-wrap;word-break:break-word;background:var(--soft);padding:12
 .hbar{display:grid;gap:10px;margin-top:12px}
 .hrow{display:grid;grid-template-columns:160px 1fr 34px;gap:8px;align-items:center;font-size:13px}
 .hrow i{height:12px;border-radius:99px;background:var(--soft);overflow:hidden;display:block}
-.hrow i b{display:block;height:100%;width:var(--w);background:var(--c);border-radius:99px;transition:width .8s cubic-bezier(.2,.8,.2,1)}
+.hrow{animation:hrowIn .5s ease both;animation-delay:var(--d,0ms)}
+.hrow i b{display:block;height:100%;width:var(--w);background:var(--c);border-radius:99px;position:relative;overflow:hidden;animation:barGrow 1s cubic-bezier(.2,.8,.2,1) both;animation-delay:calc(var(--d,0ms) + 120ms)}
+.hrow i b::after{content:"";position:absolute;inset:0;background:linear-gradient(90deg,transparent,rgba(255,255,255,.45),transparent);transform:translateX(-100%);animation:barShine 1.6s ease-in-out calc(var(--d,0ms) + 900ms) 1 both}
+@keyframes barGrow{from{width:0}to{width:var(--w)}}
+@keyframes barShine{to{transform:translateX(100%)}}
+@keyframes hrowIn{from{opacity:0;transform:translateX(-8px)}to{opacity:1;transform:none}}
+@media (prefers-reduced-motion:reduce){.hrow,.hrow i b,.hrow i b::after{animation:none}}
 .donut{display:flex;gap:16px;align-items:center;flex-wrap:wrap;margin-top:12px}
 .donut-n{fill:var(--fg);font:800 28px var(--display)}
 .legend{display:grid;gap:6px;font-size:13px}
@@ -3499,7 +3505,11 @@ button:not(:disabled):active{transform:scale(.965)}
       fill.style.setProperty("--w", `${Math.round((100 * r.value) / max)}%`);
       fill.style.setProperty("--c", r.color);
       track.appendChild(fill);
-      line.append(el("span", r.label), track, el("span", String(r.value), "mono"));
+      const idx = box.children.length;
+      line.style.setProperty("--d", `${idx * 90}ms`);
+      const num = el("span", "0", "mono");
+      line.append(el("span", r.label), track, num);
+      countUp(num, r.value, "", idx * 90 + 200);
       box.appendChild(line);
     }
     return box;
