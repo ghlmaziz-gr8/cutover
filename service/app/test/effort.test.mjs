@@ -125,6 +125,25 @@ test("the portal reads the real findings and shows the plan, the exports and the
   assert.ok(html.includes('"Timeline"') && html.includes('"Cards"'), "the plan has a timeline and a cards view");
   assert.ok(html.includes("gantt-gate"), "approval gates are drawn on the timeline");
   assert.ok(html.includes('exportCardPdf("effortCard"'));
-  assert.ok(html.includes('exportCardPdf("effortPlan"'), "the plan can be exported on its own");
-  assert.ok(html.includes('exportCardHtml("effortPlan"'), "the plan can be exported as HTML on its own");
+  assert.ok(html.includes("exportPlan(true)") && html.includes("exportPlan(false)"), "the plan exports as its own document, as PDF and HTML");
+});
+
+test("the plan document is a print-first page with a timeline, phase cards and gates", () => {
+  const start = html.indexOf("function planDocumentHtml(");
+  const end = html.indexOf("// Opens the plan as a document");
+  assert.ok(start > 0 && end > start, "the generator is in the portal");
+  const colors = html.slice(html.indexOf("const PLAN_COLORS"), html.indexOf("];", html.indexOf("const PLAN_COLORS")) + 2);
+  const ctx = {};
+  vm.runInNewContext(`${colors}\n${html.slice(start, end)}\nthis.planDocumentHtml = planDocumentHtml;`, ctx);
+  const est = E.build(facts, { scenario: "expected", teamSize: 4 });
+  assert.equal(est.ready, true);
+  const page = ctx.planDocumentHtml({ est, title: "Demo <app>", app: "Demo", approach: "Run as is", language: "Not chosen yet", owner: "a@b.c", approved: "Awaiting approval", generated: "Oct 22, 2026", scenario: "expected", teamSize: 4 }, true);
+  assert.ok(page.includes("@page{size:A4 landscape"), "the page is landscape A4");
+  assert.ok(page.includes('class="gantt-svg"'), "the timeline is drawn as an SVG");
+  assert.ok(page.includes(est.phases[0].name.replace(/&/g, "&amp;")), "phase names are kept");
+  assert.ok(page.includes("Demo &lt;app&gt;"), "text is escaped");
+  assert.ok(page.includes("window.print()"), "the PDF version opens the print dialog");
+  assert.ok(page.includes("class=\"gate\"") && est.phases.some((ph) => ph.gate), "gates are marked on the timeline");
+  const htmlOnly = ctx.planDocumentHtml({ est, title: "Demo", app: "Demo", approach: "x", language: "y", owner: "z", approved: "w", generated: "g", scenario: "expected", teamSize: 4 }, false);
+  assert.ok(!htmlOnly.includes("window.print()"), "the HTML download has no script");
 });
