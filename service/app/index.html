@@ -686,6 +686,13 @@ pre{white-space:pre-wrap;word-break:break-word;background:var(--soft);padding:12
 .tl-name{font:700 15px var(--body);color:var(--fg)}
 .tl-note{font:500 13px var(--body);color:var(--muted,#64748b);line-height:1.4}
 .tl-tag{margin-top:2px}
+.tl-flow{display:grid;grid-template-columns:1fr auto 1fr;gap:12px;align-items:stretch;margin:12px 0 6px}
+.tl-col{background:var(--soft,#f5f3ff);border:1px solid var(--line,#e5e7eb);border-radius:16px;padding:14px}
+.tl-col .eyebrow-sm{margin:0 0 8px}
+.tl-lang{display:flex;flex-direction:column;gap:2px;padding:8px 0;border-top:1px dashed var(--line,#e5e7eb)}
+.tl-lang:first-of-type{border-top:0}
+.tl-arrow{align-self:center;font:800 26px var(--body);color:var(--accent,#6d28d9)}
+@media (max-width:640px){.tl-flow{grid-template-columns:1fr}.tl-arrow{transform:rotate(90deg);justify-self:center}}
 .tl-owner{width:100%;max-width:420px;margin:6px 0 10px}
 .tl-status{margin-top:12px}
 .rad-links{display:flex;flex-wrap:wrap;justify-content:center;gap:8px;margin-top:12px}
@@ -4362,18 +4369,20 @@ a{color:#6d28d9;font-weight:600}`;
     "cs-aspnet": /c#|c sharp|csharp|asp\.net|\.net/i,
     "java-spring": /\bjava\b|spring|\bjsp\b/i,
   };
+  // The legacy languages the review found, one per row: "Name (tier N): N files, status".
   function legacyLanguagesOf(row) {
     const shown = (row.findings && row.findings.findings) || {};
-    const names = [];
-    for (const id of ["legacy.languages", "stack.languages"]) {
-      const v = shown[id] ? shown[id].value : null;
-      for (const x of Array.isArray(v) ? v : []) {
-        const n = typeof x === "string" ? x : x && (x.name || x.language || x.title);
-        if (n && !names.includes(n)) names.push(String(n));
-      }
+    const raw = shown["legacy.languages"] ? shown["legacy.languages"].value : null;
+    const out = [];
+    for (const x of Array.isArray(raw) ? raw : []) {
+      const text = typeof x === "string" ? x : x && (x.name || x.language || x.title);
+      const m = String(text || "").match(/^(.+?) \(tier (\d+)\):\s*(\d+) files?,?\s*(.*)$/);
+      if (m) out.push({ name: m[1].trim(), tier: Number(m[2]), files: Number(m[3]), status: m[4].trim() });
+      else if (text) out.push({ name: String(text), tier: null, files: null, status: "" });
     }
-    return names;
+    return out;
   }
+  const TIER_TEXT = (t) => (t === 3 ? "Counted by file extension only" : t ? "Read from the source" : "Found in the code");
 
   function renderTarget(row) {
     const card = $("targetCard");
@@ -4386,7 +4395,43 @@ a{color:#6d28d9;font-weight:600}`;
     box.appendChild(el("p", "Target language", "eyebrow-sm"));
     box.appendChild(el("h3", "Which language should the modernized application use?"));
     const legacy = legacyLanguagesOf(row);
-    const isLegacy = (o) => (o.id === "current" ? row.modern_template === "lift-contain" : !!LEGACY_LANGUAGE_MATCH[o.id] && legacy.some((n) => LEGACY_LANGUAGE_MATCH[o.id].test(n)));
+    const legacyNames = legacy.map((l) => l.name);
+    const isLegacyName = (o) => (o.id === "current" ? row.modern_template === "lift-contain" : !!LEGACY_LANGUAGE_MATCH[o.id] && legacyNames.some((n) => LEGACY_LANGUAGE_MATCH[o.id].test(n)));
+    const flow = el("div", null, "tl-flow");
+    const before = el("div", null, "tl-col");
+    before.append(el("p", "Previous state: the legacy code today", "eyebrow-sm"));
+    if (legacy.length) {
+      for (const l of legacy) {
+        const item = el("div", null, "tl-lang");
+        item.append(el("b", l.name));
+        item.append(el("span", [l.files !== null ? `${l.files} ${l.files === 1 ? "file" : "files"}` : null, l.tier ? TIER_TEXT(l.tier) : null].filter(Boolean).join(" · "), "muted small"));
+        before.appendChild(item);
+      }
+    } else {
+      before.append(el("p", "No legacy language was read from the files reviewed.", "muted small"));
+    }
+    const arrow = el("div", "→", "tl-arrow");
+    arrow.setAttribute("aria-hidden", "true");
+    const after = el("div", null, "tl-col");
+    after.append(el("p", "Future state: the modernized application", "eyebrow-sm"));
+    const chosen = row.target_language ? (row.target_options || []).find((o) => o.id === row.target_language) : null;
+    if (chosen) {
+      const item = el("div", null, "tl-lang");
+      item.append(el("b", chosen.label));
+      const approved = row.target_approval
+        ? `Approved${row.target_approval.by ? ` by ${row.target_approval.by}` : ""}`
+        : "Waiting for the owner or a CIO or CTO to approve";
+      item.append(el("span", approved, "muted small"));
+      after.appendChild(item);
+    } else {
+      after.append(el("p", "Not chosen yet. Pick one of the options below.", "muted small"));
+    }
+    flow.append(before, arrow, after);
+    box.appendChild(flow);
+    const hasMatch = options.some((o) => isLegacyName(o));
+    box.appendChild(el("p", legacy.length && !hasMatch
+      ? "None of the options is the language of the legacy code, so each one is a new language for the future state."
+      : "The option that matches the legacy language keeps that language. The other options are new languages for the future state. A platform engineer chooses, and the named application owner or a CIO or CTO approves before any file is converted.", "muted small"));
     box.appendChild(el("p", legacy.length
       ? `Your legacy code is written in ${legacy.join(", ")}.`
       : "We could not read the language of the legacy code from the files reviewed.", "small"));
@@ -4397,14 +4442,14 @@ a{color:#6d28d9;font-weight:600}`;
     grid.setAttribute("role", "radiogroup");
     grid.setAttribute("aria-label", "Target language");
     for (const o of options) {
-      const legacyOne = isLegacy(o);
+      const legacyOne = isLegacyName(o);
       const btn = el("button", null, "tl-option");
       btn.type = "button";
       btn.append(el("span", o.label, "tl-name"));
       btn.append(el("span", legacyOne
-        ? "Your legacy language. Choose this to keep the same language."
-        : "Alternate for the future state, the modern version.", "tl-note"));
-      if (legacyOne) btn.append(el("span", "Your legacy language", "tag t-cy tl-tag"));
+        ? "Same language as the legacy code today. Choose it to keep the language."
+        : "A new language for the future state.", "tl-note"));
+      btn.append(el("span", legacyOne ? "Matches today" : "Future state", `tag ${legacyOne ? "t-cy" : "t-ok"} tl-tag`));
       btn.setAttribute("role", "radio");
       const picked = targetPick.language === o.id;
       btn.setAttribute("aria-checked", String(picked));
