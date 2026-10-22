@@ -11,6 +11,7 @@
 window.CUTOVER_GUIDE = {
   updated: "2026-10-22",
   whatsNew: [
+    "2026-10-22: The Findings by area bars grow in one after another, with a shine and counted numbers.",
     "2026-10-22: The analyses list shows the AI badge on each row that used an AI model, as the results page does.",
     "2026-10-22: Every result states whether an AI model was used and which one, or that no AI model was used. It also recommends the approach that past assessments in the workspace used.",
     "2026-10-22: Results show an animated AI badge when an AI model was part of the assessment. It does not appear for rules-only results.",
