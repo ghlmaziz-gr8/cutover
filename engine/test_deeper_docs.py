@@ -60,6 +60,15 @@ class BuildTests(unittest.TestCase):
         layers = [(layer["layer"], layer["detail"]) for layer in doc["architecture"]["layers"]]
         self.assertEqual(layers, [("Users", "nurse, admin"), ("Screens", "4 screens"), ("Data", "9 tables")])
 
+    def test_the_services_layer_uses_the_endpoint_counts_and_names(self):
+        doc = dd.build(report(
+            finding("ui.endpoints", "ui_portal", {"controllers": 2, "endpoint_annotations": 41, "names": ["AccountController", "VisitController"]}),
+        ))
+        layer = doc["architecture"]["layers"][0]
+        self.assertEqual(layer["layer"], "Services")
+        self.assertEqual(layer["detail"], "41 endpoints in 2 controllers")
+        self.assertEqual(layer["items"], ["AccountController", "VisitController"])
+
     def test_the_history_is_described_without_a_category(self):
         doc = dd.build({"findings": {}, "history": {"available": True, "application_age_years": 3.5, "total_commits": 400, "days_since_last_commit": 10}})
         point = doc["sections"][0]["points"][0]

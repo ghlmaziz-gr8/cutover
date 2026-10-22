@@ -8,7 +8,7 @@
     "data.tables": {"count": 2, "names": ["appointments", "patients"]},
     "data.migrations": {"tool": "Flyway", "scripts": 2},
     "data.entities": {"count": 1, "table_names": ["patients"]},
-    "ui.endpoints": {"controllers": 2, "endpoint_annotations": 4},
+    "ui.endpoints": {"controllers": 2, "endpoint_annotations": 4, "names": ["PortalController", "StaffController"]},
     "ui.screens": 3,
     "ui.client_facing": "yes",
     "security.roles": ["ADMIN", "CLINICIAN", "FRONTDESK", "PATIENT"],

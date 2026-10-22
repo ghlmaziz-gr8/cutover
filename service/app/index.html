@@ -337,6 +337,10 @@ form input + button{margin-top:16px}
 .arch-band .arch-name{font-size:15px}
 .arch-band .arch-detail{margin:0}
 .arch-key{margin:12px 0 0;text-align:center}
+.arch-items{list-style:disc;margin:8px 0 0;padding-left:20px;font-size:13px;line-height:1.5;column-width:180px;column-gap:20px}
+.arch-items li{break-inside:avoid;margin:0 0 2px;overflow-wrap:anywhere}
+.arch-box.arch-missing{border-style:dashed;border-left-style:dashed;background:transparent;box-shadow:none;opacity:.7}
+.arch-box.arch-missing .arch-name{color:var(--muted,#64748b)}
 @keyframes archIn{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
 @media (prefers-reduced-motion: reduce){.arch-box{animation:none}}
 
@@ -4216,18 +4220,19 @@ a{color:#6d28d9;font-weight:600}`;
 
   // Architecture diagram, drawn after What we found. Each layer is a box with its source finding and a confidence tag.
   // Hosting is a band across the bottom. Built from the deeper assessment's layers, which the server has already filtered by role.
-  function architectureSection(deeper, findings) {
+  function architectureSection(deeper, findings, role) {
     const wrap = el("div", null, "card arch-card");
     wrap.style.marginTop = "18px";
     wrap.appendChild(el("p", "Architecture", "eyebrow-sm"));
     wrap.appendChild(el("h3", "How the application fits together"));
     wrap.appendChild(el("p", "Drawn from the repository findings and the deeper assessment. Each box names the finding it came from, and a tag says whether it is verified in code.", "muted small"));
-    const boxes = window.Architecture ? window.Architecture.build(deeper && deeper.architecture && deeper.architecture.layers, findings) : [];
+    const canSee = (category) => sees(role, category);
+    const boxes = window.Architecture ? window.Architecture.build(deeper && deeper.architecture && deeper.architecture.layers, findings, canSee) : [];
     if (!boxes.length) {
       wrap.appendChild(el("p", "Not enough in the code to draw the architecture for your role.", "muted small"));
       return wrap;
     }
-    const CONF = { verified: ["Verified in code", "t-ok"], inferred: ["Inferred, needs review", "t-inf"], unknown: ["Source not listed", ""] };
+    const CONF = { verified: ["Verified in code", "t-ok"], inferred: ["Inferred, needs review", "t-inf"], unknown: ["Source not listed", ""], missing: ["Not found", ""] };
     const flow = el("div", null, "arch-flow");
     const bands = el("div", null, "arch-bands");
     const flowBoxes = boxes.filter((b) => !b.band);
@@ -4235,13 +4240,19 @@ a{color:#6d28d9;font-weight:600}`;
       const box = el("div", null, "arch-box");
       box.style.setProperty("--c", b.tone);
       box.style.setProperty("--i", String(i));
+      if (b.missing) box.classList.add("arch-missing");
       const head = el("div", null, "arch-head");
       head.appendChild(el("b", b.layer, "arch-name"));
       const [text, tone] = CONF[b.confidence] || CONF.unknown;
       head.appendChild(el("span", text, `tag ${tone}`));
       box.appendChild(head);
       box.appendChild(el("p", b.detail, "arch-detail"));
-      box.appendChild(el("p", b.source ? `From: ${b.source}` : "Source not listed on this page", "arch-src"));
+      if (b.items && b.items.length) {
+        const list = el("ul", null, "arch-items");
+        b.items.forEach((x) => list.appendChild(el("li", x)));
+        box.appendChild(list);
+      }
+      if (!b.missing) box.appendChild(el("p", b.source ? `From: ${b.source}` : "Source not listed on this page", "arch-src"));
       flow.appendChild(box);
       if (i < flowBoxes.length - 1) {
         const arrow = svgNode("svg", { viewBox: "0 0 24 30", class: "arch-arrow", "aria-hidden": "true" });
@@ -4255,7 +4266,7 @@ a{color:#6d28d9;font-weight:600}`;
       band.style.setProperty("--c", b.tone);
       band.appendChild(el("b", b.layer, "arch-name"));
       band.appendChild(el("span", b.detail, "arch-detail"));
-      band.appendChild(el("span", b.source ? `From: ${b.source}` : "Source not listed on this page", "arch-src"));
+      if (!b.missing) band.appendChild(el("span", b.source ? `From: ${b.source}` : "Source not listed on this page", "arch-src"));
       bands.appendChild(band);
     });
     wrap.appendChild(flow);
@@ -4581,7 +4592,7 @@ a{color:#6d28d9;font-weight:600}`;
     }
     for (const node of componentCards(shown, history, cur.viewer_role)) grid.appendChild(node);
     box.appendChild(grid);
-    box.appendChild(architectureSection(report.deeper, Object.fromEntries(all.filter(Boolean).map((i) => [i.id, i]))));
+    box.appendChild(architectureSection(report.deeper, Object.fromEntries(all.filter(Boolean).map((i) => [i.id, i])), cur.viewer_role));
     box.appendChild(findingsMapSection(all, cur.viewer_role));
     // Entrance order: cards and panels appear one after another.
     box.querySelectorAll(".rcard, .panel, .stat").forEach((n, i) => n.style.setProperty("--i", String(i)));
