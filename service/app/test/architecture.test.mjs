@@ -85,3 +85,8 @@ test("the architecture diagram is interactive: filters, selection, linked connec
   assert.ok(html.includes('classList.toggle("is-lit"'), "connectors light up around the selected layer");
   assert.ok(!/\.arch-node\{[^}]*overflow:hidden/.test(html), "nodes do not clip their own height");
 });
+
+test("the confidence panel uses the animated view, with the ring, the rows and the count", () => {
+  assert.ok(html.includes("confidenceChart(verified, all.length - verified)"));
+  assert.ok(html.includes('"conf-ring"') && html.includes('"conf-row"') && html.includes("conf-center"));
+});

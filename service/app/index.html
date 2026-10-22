@@ -1057,6 +1057,33 @@ button:not(:disabled):active{transform:scale(.965)}
   .arch-node:hover{background-position:150% 0,0 0}
   .arch-band:hover,.arch-node.is-selected,.arch-band.is-selected{transform:none}
 }
+/* The confidence view: a ring that draws itself, a count in the middle, and rows that light up their part of the ring. */
+.conf{display:grid;grid-template-columns:auto minmax(0,1fr);gap:26px;align-items:center;margin-top:14px}
+.conf-ring{position:relative;width:180px;height:180px;flex:0 0 auto}
+.conf-ring svg{width:180px;height:180px;display:block;overflow:visible}
+.conf-track{stroke:var(--soft,#f1f0fb)}
+.conf-seg{stroke-dasharray:0 100;transition:stroke-dasharray 1.2s cubic-bezier(.2,.8,.2,1),stroke-width .25s ease,opacity .3s ease}
+.conf-seg.is-on{stroke-width:22px}
+.has-focus .conf-seg:not(.is-on){opacity:.3}
+.conf-center{position:absolute;inset:0;display:grid;place-content:center;justify-items:center;text-align:center;pointer-events:none}
+.conf-n{font:800 36px/1 var(--display);color:var(--fg);font-variant-numeric:tabular-nums}
+.conf-l{margin-top:6px;max-width:112px;font:700 10.5px var(--body);letter-spacing:.07em;text-transform:uppercase;color:var(--muted);line-height:1.35}
+.conf-list{display:grid;gap:10px;min-width:0}
+.conf-row{all:unset;box-sizing:border-box;display:grid;gap:9px;padding:13px 15px;border-radius:16px;border:1px solid var(--line);background:var(--card);cursor:pointer;transition:transform .25s cubic-bezier(.2,.8,.2,1),border-color .25s,box-shadow .25s,opacity .3s}
+.conf-row:hover{transform:translateX(3px)}
+.conf-row.is-on{border-color:var(--c1);box-shadow:0 14px 28px -18px var(--c1)}
+.conf-row.dim{opacity:.5}
+.conf-row:focus-visible{outline:3px solid var(--accent,#6d28d9);outline-offset:2px}
+.conf-row-head{display:flex;justify-content:space-between;align-items:baseline;gap:12px}
+.conf-label{display:flex;align-items:center;gap:9px;font:700 14px var(--body);color:var(--fg)}
+.conf-label::before{content:"";width:10px;height:10px;border-radius:4px;background:linear-gradient(135deg,var(--c1),var(--c2));box-shadow:0 0 0 3px color-mix(in srgb,var(--c1) 18%,transparent)}
+.conf-count{font:800 22px var(--display);color:var(--fg);font-variant-numeric:tabular-nums}
+.conf-bar{height:8px;border-radius:99px;background:var(--soft,#f1f0fb);overflow:hidden}
+.conf-fill{display:block;height:100%;width:0;border-radius:99px;background:linear-gradient(90deg,var(--c1),var(--c2));transition:width 1.1s cubic-bezier(.2,.8,.2,1) .15s}
+.conf-note{font:500 12.5px/1.45 var(--body);color:var(--muted)}
+.conf-sum{margin:2px 2px 0}
+@media (max-width:560px){.conf{grid-template-columns:1fr;justify-items:center}.conf-list{width:100%}}
+@media (prefers-reduced-motion:reduce){.conf-seg,.conf-fill,.conf-row{transition:none!important}}
 </style>
 </head>
 <body>
@@ -3467,6 +3494,117 @@ button:not(:disabled):active{transform:scale(.965)}
   }
 
   // Ring chart with a legend. Parts are {label, value, color}.
+  // The confidence view: how many points are verified in code and how many need a reviewer.
+  // A ring draws itself, the count rises in the middle, and each row lights up its part of the ring.
+  function confidenceChart(verifiedN, inferredN) {
+    const total = verifiedN + inferredN;
+    const wrap = el("div", null, "conf");
+    if (!total) {
+      wrap.appendChild(el("p", "No points to rate yet.", "muted small"));
+      return wrap;
+    }
+    const parts = [
+      { key: "verified", label: "Verified in code", n: verifiedN, c1: "#10b981", c2: "#059669", note: "Found directly in a file of this application." },
+      { key: "inferred", label: "Inferred, needs review", n: inferredN, c1: "#f59e0b", c2: "#d97706", note: "Likely from the findings. A person should confirm it." },
+    ].filter((p) => p.n > 0);
+    const gid = `confg${Math.random().toString(36).slice(2, 8)}`;
+    const ring = el("div", null, "conf-ring");
+    const svg = svgEl("svg", { viewBox: "0 0 180 180", width: "180", height: "180", role: "img", "aria-label": `${verifiedN} of ${total} points verified in code` });
+    const defs = svgEl("defs");
+    for (const p of parts) {
+      const lg = svgEl("linearGradient", { id: `${gid}-${p.key}`, x1: "0", y1: "0", x2: "1", y2: "1" });
+      lg.appendChild(svgEl("stop", { offset: "0", "stop-color": p.c1 }));
+      lg.appendChild(svgEl("stop", { offset: "1", "stop-color": p.c2 }));
+      defs.appendChild(lg);
+    }
+    svg.appendChild(defs);
+    svg.appendChild(svgEl("circle", { cx: 90, cy: 90, r: 72, fill: "none", "stroke-width": 16, class: "conf-track" }));
+    let at = 0;
+    for (const p of parts) {
+      p.pct = (p.n / total) * 100;
+      const seg = svgEl("circle", { cx: 90, cy: 90, r: 72, fill: "none", "stroke-width": 16, class: "conf-seg", pathLength: "100", "stroke-dasharray": "0 100", "stroke-dashoffset": String(-at), transform: "rotate(-90 90 90)", stroke: `url(#${gid}-${p.key})` });
+      p.seg = seg;
+      svg.appendChild(seg);
+      at += p.pct;
+    }
+    ring.appendChild(svg);
+    const center = el("div", null, "conf-center");
+    const num = el("b", "0", "conf-n");
+    const sub = el("span", "points", "conf-l");
+    center.append(num, sub);
+    ring.appendChild(center);
+    wrap.appendChild(ring);
+
+    const list = el("div", null, "conf-list");
+    for (const p of parts) {
+      const row = el("button", null, "conf-row");
+      row.type = "button";
+      row.style.setProperty("--c1", p.c1);
+      row.style.setProperty("--c2", p.c2);
+      row.setAttribute("aria-pressed", "false");
+      const head = el("div", null, "conf-row-head");
+      head.append(el("span", p.label, "conf-label"), el("b", String(p.n), "conf-count"));
+      const track = el("div", null, "conf-bar");
+      const fill = el("i", null, "conf-fill");
+      track.appendChild(fill);
+      row.append(head, track, el("span", `${Math.round(p.pct)}% of points. ${p.note}`, "conf-note"));
+      p.row = row;
+      p.fill = fill;
+      list.appendChild(row);
+    }
+    list.appendChild(el("p", `${verifiedN} of ${total} points can be checked directly against the files.`, "conf-sum muted small"));
+    wrap.appendChild(list);
+
+    // Hover previews a status, a click pins it. The ring and the rows agree.
+    let pinned = null;
+    const render = (key) => {
+      const hit = key ? parts.find((p) => p.key === key) : null;
+      svg.classList.toggle("has-focus", !!hit);
+      for (const p of parts) {
+        const on = hit === p;
+        p.seg.classList.toggle("is-on", on);
+        p.row.classList.toggle("is-on", on);
+        p.row.classList.toggle("dim", !!hit && !on);
+        p.row.setAttribute("aria-pressed", String(pinned === p.key));
+      }
+      if (hit) {
+        num.textContent = `${Math.round(hit.pct)}%`;
+        sub.textContent = `${hit.n} of ${total} ${hit.label.toLowerCase()}`;
+      } else {
+        num.textContent = String(total);
+        sub.textContent = "points";
+      }
+    };
+    const pin = (key) => { pinned = pinned === key ? null : key; render(pinned); };
+    for (const p of parts) {
+      p.row.addEventListener("click", () => pin(p.key));
+      p.row.addEventListener("mouseenter", () => render(p.key));
+      p.row.addEventListener("mouseleave", () => render(pinned));
+      p.row.addEventListener("focus", () => render(p.key));
+      p.row.addEventListener("blur", () => render(pinned));
+      p.seg.style.cursor = "pointer";
+      p.seg.addEventListener("click", () => pin(p.key));
+      p.seg.addEventListener("mouseenter", () => render(p.key));
+      p.seg.addEventListener("mouseleave", () => render(pinned));
+    }
+
+    // Entrance: the ring draws, the count rises and the bars fill. Reduced motion shows the final state.
+    const reduce = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    if (reduce) {
+      num.textContent = String(total);
+      for (const p of parts) { p.seg.style.strokeDasharray = `${p.pct} ${100 - p.pct}`; p.fill.style.width = `${p.pct}%`; }
+    } else {
+      countUp(num, total, "", 250);
+      requestAnimationFrame(() => requestAnimationFrame(() => {
+        for (const p of parts) {
+          p.seg.style.strokeDasharray = `${p.pct} ${100 - p.pct}`;
+          p.fill.style.width = `${p.pct}%`;
+        }
+      }));
+    }
+    return wrap;
+  }
+
   function donut(parts) {
     const total = parts.reduce((n, p) => n + p.value, 0);
     const wrap = el("div", null, "donut");
@@ -6057,10 +6195,7 @@ a{color:#6d28d9;font-weight:600}`;
     }
     if (all.length) {
       const p = panel("How sure we are", "Confidence");
-      p.appendChild(donut([
-        { label: "Verified in code", value: verified, color: "var(--ok)" },
-        { label: "Inferred, needs review", value: all.length - verified, color: "var(--warn)" },
-      ]));
+      p.appendChild(confidenceChart(verified, all.length - verified));
       charts.appendChild(p);
     }
     if (charts.childElementCount) box.appendChild(charts);
