@@ -702,6 +702,17 @@ pre{white-space:pre-wrap;word-break:break-word;background:var(--soft);padding:12
   .tl-prev::before{content:"Before: ";font-weight:700;color:var(--fg)}
   .tl-next::before{content:"After: ";font-weight:700;color:var(--accent,#6d28d9)}
 }
+.tl-trade{margin:14px 0 8px;padding:14px;border-radius:16px;background:var(--soft,#f5f3ff);border:1px solid var(--line,#e5e7eb)}
+.tl-trade .eyebrow-sm{margin:0 0 10px}
+.tl-trade-cols{display:grid;grid-template-columns:repeat(3,1fr);gap:12px}
+.tl-trade-col{background:var(--card,#fff);border-radius:12px;padding:12px 14px;border-top:4px solid var(--line,#e5e7eb)}
+.tl-trade-col.tone-good{border-top-color:#10b981}
+.tl-trade-col.tone-risk{border-top-color:#f59e0b}
+.tl-trade-col.tone-limit{border-top-color:#64748b}
+.tl-trade-col b{display:block;font:700 14px var(--body);margin-bottom:6px}
+.tl-trade-col ul{margin:0;padding-left:18px;font:500 13px/1.45 var(--body);color:var(--fg)}
+.tl-trade-col li{margin:4px 0}
+@media (max-width:640px){.tl-trade-cols{grid-template-columns:1fr}}
 .tl-owner{width:100%;max-width:420px;margin:6px 0 10px}
 .tl-status{margin-top:12px}
 .rad-links{display:flex;flex-wrap:wrap;justify-content:center;gap:8px;margin-top:12px}
@@ -4420,6 +4431,34 @@ a{color:#6d28d9;font-weight:600}`;
       build: "Rebuilt for the chosen language, one service at a time.",
     },
   };
+  // What each target language brings, what it puts at risk and what it requires. Shown when a language is selected.
+  const TARGET_TRADEOFFS = {
+    "ts-react": {
+      advantages: ["One language for the screens and the server code (Node) is possible", "Large pool of developers and many ready-made components", "Type checking catches many errors before release"],
+      risks: ["The screens are rebuilt, so the legacy page flow must be re-tested", "The JavaScript ecosystem changes quickly and needs regular upgrades", "Classic ASP business logic must be rewritten, not copied"],
+      constraints: ["Needs a Node runtime and a build step", "Needs an API in front of the existing data", "Team needs TypeScript and React skills"],
+    },
+    "py-fastapi": {
+      advantages: ["Readable code, quick to write APIs and to test", "Strong for data, reporting and integration work", "Generates API documentation automatically"],
+      risks: ["Screens are not included; a front end must be chosen separately", "Dependencies and versions must be managed carefully", "Heavy processing needs tuning compared with compiled languages"],
+      constraints: ["Needs a Python runtime and an ASGI server", "Database access library to be chosen (for example SQLAlchemy)", "Team needs Python skills"],
+    },
+    "cs-aspnet": {
+      advantages: ["Closest in spirit to the Microsoft stack many Classic ASP apps grew from", "Strong typing, mature tooling and long-term support", "Sign-in and identity support is built in"],
+      risks: ["VBScript or Classic ASP logic is a language change, not a copy", "Hosting and licence costs depend on the platform chosen", "Data access approach must be decided early (for example Entity Framework or Dapper)"],
+      constraints: ["Needs the .NET runtime on the hosting platform", "Runs on Windows or Linux hosts", "Team needs C# skills"],
+    },
+    "java-spring": {
+      advantages: ["Mature ecosystem for large, long-lived enterprise systems", "Strong support for database and integration work", "Many modules already used in similar applications"],
+      risks: ["More code to write for the same features", "Higher memory use than lighter runtimes", "Spring Boot upgrades need planning"],
+      constraints: ["Needs a JVM runtime and a build tool (Maven or Gradle)", "Team needs Java and Spring skills", "Front end still needs to be chosen separately"],
+    },
+    "current": {
+      advantages: ["No new language to learn or to support", "Smallest change to the code and the team's work"],
+      risks: ["The legacy language and its platform stay in place and keep ageing", "Modernizing the code later means a second conversion"],
+      constraints: ["Only works with the lift-and-contain approach", "Needs the current runtime kept available in a container"],
+    },
+  };
   const TIER_TEXT = (t) => (t === 3 ? "Counted by file extension only" : t ? "Read from the source" : "Found in the code");
 
   function renderTarget(row) {
@@ -4536,6 +4575,32 @@ a{color:#6d28d9;font-weight:600}`;
       grid.appendChild(btn);
     }
     box.appendChild(grid);
+
+    // Advantages, risks and constraints of the language the viewer has selected.
+    const trade = TARGET_TRADEOFFS[targetPick.language];
+    if (trade) {
+      const picked = (row.target_options || []).find((o) => o.id === targetPick.language);
+      const panel = el("div", null, "tl-trade");
+      panel.setAttribute("aria-live", "polite");
+      panel.appendChild(el("p", `What choosing ${picked ? picked.label : name(targetPick.language)} means`, "eyebrow-sm"));
+      const cols = el("div", null, "tl-trade-cols");
+      const col = (title, items, tone) => {
+        const c = el("div", null, `tl-trade-col tone-${tone}`);
+        c.appendChild(el("b", title));
+        const ul = document.createElement("ul");
+        for (const t of items) ul.appendChild(el("li", t));
+        c.appendChild(ul);
+        return c;
+      };
+      cols.append(col("Advantages", trade.advantages, "good"), col("Risks", trade.risks, "risk"), col("Constraints", trade.constraints, "limit"));
+      panel.appendChild(cols);
+      const legacyNow = legacyLanguagesOf(row).map((l) => l.name);
+      const fitsLegacy = !!LEGACY_LANGUAGE_MATCH[targetPick.language] && legacyNow.some((n) => LEGACY_LANGUAGE_MATCH[targetPick.language].test(n));
+      panel.appendChild(el("p", fitsLegacy
+        ? "This is the language the legacy code uses today, so the team already knows it. The risks above still apply to the code that is rewritten."
+        : "This is a new language for the team. Plan for training and a longer conversion than a same-language move.", "muted small"));
+      box.appendChild(panel);
+    }
 
     const owner = document.createElement("input");
     owner.type = "email";

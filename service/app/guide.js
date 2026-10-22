@@ -11,6 +11,7 @@
 window.CUTOVER_GUIDE = {
   updated: "2026-10-22",
   whatsNew: [
+    "2026-10-22: Selecting a target language lists its advantages, risks and constraints, and says whether the team already knows the language.",
     "2026-10-22: The target language card compares each part of the legacy application with its future state: language, database, screens, business logic, programs called, roles and build. It shows what the code has today and what the chosen approach does with it.",
     "2026-10-22: Expand all and Collapse all work on the approach mind map and the other maps.",
     "2026-10-22: The target language card shows the previous state (the legacy languages with their file counts) and the future state side by side, with the chosen language and its approval.",
