@@ -3461,13 +3461,35 @@ a{color:#6d28d9;font-weight:600}`;
     return w;
   }
 
+  // The evidence the preview draws from: screen names, languages, roles and table count. Names only, kept short.
+  function previewContext(shown) {
+    const val = (id) => (shown[id] && shown[id].value !== undefined ? shown[id].value : null);
+    const short = (t) => String(t || "").replace(/\s+/g, " ").trim().slice(0, 40);
+    const list = (v) => (Array.isArray(v) ? v : []).map((x) => (typeof x === "string" ? x : x && (x.name || x.language || x.title))).filter(Boolean).map(short);
+    const names = val("ui.screen_names");
+    const screens = (names && Array.isArray(names.screens) ? names.screens.map((x) => x && x.name) : []).filter(Boolean).map(short);
+    const tables = val("data.tables");
+    const langs = [...list(val("stack.languages")), ...list(val("legacy.languages"))];
+    return {
+      screens: [...new Set(screens)].slice(0, 8),
+      screenCount: names && names.count ? names.count : screens.length,
+      languages: [...new Set(langs)].slice(0, 6),
+      roles: list(val("security.roles")).slice(0, 6),
+      tables: tables && tables.count ? tables.count : 0,
+    };
+  }
+  function encodeContext(ctx) {
+    return encodeURIComponent(btoa(unescape(encodeURIComponent(JSON.stringify(ctx)))));
+  }
+
   // Modernized templates: rules pick the options from the findings (no model), and each one previews on its own page.
   function modernizeSection(shown) {
     const wrap = el("div", null, "modern");
     wrap.appendChild(el("h3", "Modernized templates"));
-    wrap.appendChild(el("p", "Chosen by rules from these findings. Each one opens its own preview page.", "muted small"));
+    wrap.appendChild(el("p", "Designs are ready for this application. Each option shows the proposed look, page flow and wireframes, built from the screens and evidence Cutover found.", "muted small"));
     const grid = el("div", null, "rgrid");
     const picks = window.Modernize ? window.Modernize.choose(shown) : [];
+    const ctx = encodeContext(previewContext(shown));
     for (const p of picks) {
       const c = el("div", null, "rcard");
       const label = p.fit === "recommended" ? "Recommended" : p.fit === "possible" ? "Possible" : "Weaker fit";
@@ -3480,8 +3502,8 @@ a{color:#6d28d9;font-weight:600}`;
         c.appendChild(tags);
       }
       const link = document.createElement("a");
-      link.href = p.href;
-      link.textContent = "Open the preview →";
+      link.href = `${p.href}?fit=${p.fit}&rec=${picks[0] ? picks[0].id : ""}&ctx=${ctx}`;
+      link.textContent = "See the proposed design →";
       link.style.cssText = "display:inline-block;margin-top:10px;font-weight:700;color:var(--accent)";
       c.appendChild(link);
       grid.appendChild(c);

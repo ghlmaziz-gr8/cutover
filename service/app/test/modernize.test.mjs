@@ -19,15 +19,29 @@ test("the three templates each have a preview page in templates/", () => {
     assert.ok(t.href.startsWith("templates/"), t.href);
     assert.ok(existsSync(new URL(`../${t.href}`, import.meta.url)), `${t.href} exists`);
     const page = readFileSync(new URL(`../${t.href}`, import.meta.url), "utf8");
-    assert.ok(page.includes("../index.html"), "each preview links back to Cutover");
-    assert.ok(page.includes("--accent:#6d28d9"), "each preview uses the portal's colours");
+    assert.ok(page.includes(`data-template="${t.id}"`), "each page renders its own template");
+    assert.ok(page.includes("preview.js"), "each page uses the shared renderer");
   }
+  const renderer = readFileSync(new URL("../templates/preview.js", import.meta.url), "utf8");
+  assert.ok(renderer.includes("../index.html"), "previews link back to Cutover");
+  const css = readFileSync(new URL("../templates/preview.css", import.meta.url), "utf8");
+  assert.ok(css.includes("--accent:#6d28d9"), "previews use the portal's colours");
+});
+
+test("each preview shows the proposal and the two other options, with fit from the review", () => {
+  const renderer = readFileSync(new URL("../templates/preview.js", import.meta.url), "utf8");
+  assert.ok(renderer.includes("What we are proposing"));
+  assert.ok(renderer.includes("Other options, for comparison"));
+  assert.ok(renderer.includes("Recommended for this application"));
+  assert.ok(renderer.includes('params.get("fit")'));
+  assert.ok(renderer.includes('params.get("rec")'));
 });
 
 test("the portal loads the rules and shows a section per template", () => {
   assert.ok(html.includes('<script src="modernize.js"></script>'));
   assert.ok(html.includes("function modernizeSection"));
   assert.ok(html.includes("modernizeSection(Object.fromEntries"));
+  assert.ok(html.includes("?fit=${p.fit}&rec="), "the review passes this template's fit and the recommended one");
 });
 
 test("legacy pages and screens recommend the web template, with the matched reasons", () => {
