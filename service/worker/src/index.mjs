@@ -1567,6 +1567,7 @@ async function getAnalysis(request, env, id) {
     viewer_is_admin: isAdmin,
     can_work_items: canWorkItems(member),
     can_plan: canStart(member),
+    stages: stageStates(row, user.id),
     comments,
     action_items: await actionsRes.json(),
     contingencies: await contingenciesRes.json(),
@@ -2245,6 +2246,92 @@ async function setTemplate(request, env, id) {
   return json({ saved: true, template });
 }
 
+// ---- The path to a modernized application: stages that unlock one after another ----
+// Each stage is locked until the one before it is cleared. A stage is cleared by its own steps, and by a platform
+// engineer's review once its output is ready. Each viewer is told once when a stage clears.
+const PROGRESS_STAGES = [
+  { id: "deeper", title: "Deeper assessment", produces: "The architecture, the sections and the documents for this application." },
+  { id: "plan", title: "Modernization plan", produces: "A plan for the chosen approach: the order of work, the risks and a rough size.", needs: "deeper" },
+  { id: "starter", title: "Starter project", produces: "A zip with the skeleton for the chosen template, with no copied business logic.", needs: "plan" },
+  { id: "convert", title: "Converted code", produces: "Converted screens and routines, on a branch, with test results.", needs: "starter" },
+  { id: "pr", title: "Pull request", produces: "The modernized application as a pull request. This is the end goal.", needs: "convert" },
+];
+// Stages a platform engineer can mark reviewed once their output exists. "ready" is false until the stage is built.
+const PROGRESS_REVIEWABLE = ["plan", "starter", "convert"];
+const PROGRESS_READY = { plan: false, starter: false, convert: false, pr: false };
+
+function progressOf(row) {
+  return row.modern_progress && typeof row.modern_progress === "object" && !Array.isArray(row.modern_progress)
+    ? row.modern_progress
+    : {};
+}
+
+// The state of every stage for one analysis, as the viewer sees it. Computed here so every screen agrees.
+function stageStates(row, viewerId) {
+  const saved = progressOf(row);
+  const done = {};
+  return PROGRESS_STAGES.map((stage) => {
+    const prior = stage.needs ? PROGRESS_STAGES.find((s) => s.id === stage.needs) : null;
+    const record = saved[stage.id] && typeof saved[stage.id] === "object" ? saved[stage.id] : null;
+    const cleared = stage.id === "deeper" ? row.deeper_done === true : Boolean(record && record.reviewed_at);
+    const unlocked = !prior || done[prior.id] === true;
+    done[stage.id] = cleared;
+    const state = cleared ? "cleared" : unlocked ? "available" : "locked";
+    const acked = Array.isArray((saved.acknowledged || {})[viewerId]) && saved.acknowledged[viewerId].includes(stage.id);
+    return {
+      id: stage.id,
+      title: stage.title,
+      produces: stage.produces,
+      state,
+      ready: PROGRESS_READY[stage.id] === true,
+      unlocked_by: prior ? prior.id : null,
+      lock_reason: state === "locked" ? `Clear ${prior.title} to unlock ${stage.title}.` : null,
+      cleared_by: cleared && record ? record.reviewed_by || null : null,
+      cleared_at: cleared && record ? record.reviewed_at || null : null,
+      celebrate: cleared && !acked,
+    };
+  });
+}
+
+// Saves a review or an acknowledgement. A review needs the stage unlocked, its output ready, and a platform engineer.
+// Acknowledging a cleared stage is for every viewer, once for each of them.
+async function setProgress(request, env, id) {
+  const access = await analysisAccess(env, request, id);
+  if (access.response) return access.response;
+  const parsed = await readJson(request);
+  if (parsed.error) return json({ error: parsed.error }, 400);
+  const action = parsed.value && parsed.value.action;
+  const stage = parsed.value && parsed.value.stage;
+  const target = stageStates(access.row, access.user.id).find((s) => s.id === stage);
+  if (!target) return json({ error: "Unknown stage." }, 400);
+  const progress = { ...progressOf(access.row) };
+
+  if (action === "acknowledge") {
+    if (target.state !== "cleared") return json({ error: "Only a cleared stage can be acknowledged." }, 409);
+    const acked = { ...(progress.acknowledged || {}) };
+    acked[access.user.id] = [...new Set([...(acked[access.user.id] || []), stage])];
+    progress.acknowledged = acked;
+  } else if (action === "review") {
+    if (!canStart(access.member)) return json({ error: "Only platform engineers can review a stage." }, 403);
+    if (!PROGRESS_REVIEWABLE.includes(stage)) return json({ error: "This stage is cleared by its own steps." }, 400);
+    if (target.state === "locked") return json({ error: target.lock_reason }, 409);
+    if (target.state === "cleared") return json({ error: "This stage is already cleared." }, 409);
+    if (!target.ready) return json({ error: "This stage's output is not ready yet." }, 409);
+    progress[stage] = { reviewed_by: normalizeEmail(access.user.email), reviewed_at: new Date().toISOString() };
+  } else {
+    return json({ error: "Choose review or acknowledge." }, 400);
+  }
+
+  const res = await serviceRest(env, `analyses?id=eq.${id}`, {
+    method: "PATCH",
+    headers: { prefer: "return=minimal" },
+    body: JSON.stringify({ modern_progress: progress }),
+  });
+  if (!res.ok) return json({ error: "Could not save the progress." }, 502);
+  const updated = { ...access.row, modern_progress: progress };
+  return json({ saved: true, stages: stageStates(updated, access.user.id) });
+}
+
 async function updateContingency(request, env, id) {
   const auth = await requireUser(env, request);
   if (auth.response) return auth.response;
@@ -2744,6 +2831,8 @@ async function route(request, env) {
     if (analysisScope && UUID_PATTERN.test(analysisScope[1]) && method === "PATCH") return setScope(request, env, analysisScope[1]);
     const analysisTemplate = path.match(/^\/api\/analyses\/([^/]+)\/template$/);
     if (analysisTemplate && UUID_PATTERN.test(analysisTemplate[1]) && method === "PUT") return setTemplate(request, env, analysisTemplate[1]);
+    const analysisProgress = path.match(/^\/api\/analyses\/([^/]+)\/progress$/);
+    if (analysisProgress && UUID_PATTERN.test(analysisProgress[1]) && method === "PUT") return setProgress(request, env, analysisProgress[1]);
 
     const contingencyAdd = path.match(/^\/api\/analyses\/([^/]+)\/contingencies$/);
     if (contingencyAdd && UUID_PATTERN.test(contingencyAdd[1]) && method === "POST") return addContingency(request, env, contingencyAdd[1]);

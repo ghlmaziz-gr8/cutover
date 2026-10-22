@@ -364,6 +364,59 @@ test("a platform engineer's choice is saved with who chose it and when, and a la
   assert.ok(read.body.modern_template_set_at);
 });
 
+// ---- The path through the modernize stages ----
+
+test("the stages unlock one after another, and a locked stage says what to clear first", async () => {
+  const before = await call(`/api/analyses/${AN_ACME}`, { as: "eng_a" });
+  const stages = before.body.stages;
+  assert.deepEqual(stages.map((s) => s.id), ["deeper", "plan", "starter", "convert", "pr"]);
+  const plan = stages.find((s) => s.id === "plan");
+  if (before.body.deeper_done !== true) {
+    assert.equal(stages[0].state, "available");
+    assert.equal(plan.state, "locked");
+    assert.match(plan.lock_reason, /Clear Deeper assessment to unlock Modernization plan/);
+  } else {
+    assert.equal(stages[0].state, "cleared");
+    assert.equal(plan.state, "available");
+  }
+});
+
+test("a stage cannot be reviewed while it is locked, or before its output is ready", async () => {
+  const analysis = state.analyses.find((a) => a.id === AN_ACME);
+  analysis.deeper_done = false;
+  const locked = await call(`/api/analyses/${AN_ACME}/progress`, { as: "eng_a", method: "PUT", body: { action: "review", stage: "plan" } });
+  assert.equal(locked.status, 409);
+  assert.match(locked.body.error, /Clear Deeper assessment/);
+  analysis.deeper_done = true;
+  const notReady = await call(`/api/analyses/${AN_ACME}/progress`, { as: "eng_a", method: "PUT", body: { action: "review", stage: "plan" } });
+  assert.equal(notReady.status, 409);
+  assert.match(notReady.body.error, /not ready yet/);
+});
+
+test("only a platform engineer can review, and an unknown stage or action is refused", async () => {
+  const auditor = await call(`/api/analyses/${AN_ACME}/progress`, { as: "aud_a", method: "PUT", body: { action: "review", stage: "plan" } });
+  assert.equal(auditor.status, 403);
+  const unknown = await call(`/api/analyses/${AN_ACME}/progress`, { as: "eng_a", method: "PUT", body: { action: "review", stage: "magic" } });
+  assert.equal(unknown.status, 400);
+  const badAction = await call(`/api/analyses/${AN_ACME}/progress`, { as: "eng_a", method: "PUT", body: { action: "skip", stage: "plan" } });
+  assert.equal(badAction.status, 400);
+});
+
+test("a cleared stage is celebrated once for each viewer, and the acknowledgement is kept", async () => {
+  const analysis = state.analyses.find((a) => a.id === AN_ACME);
+  analysis.deeper_done = true;
+  const first = await call(`/api/analyses/${AN_ACME}`, { as: "eng_a" });
+  assert.equal(first.body.stages.find((s) => s.id === "deeper").celebrate, true);
+  const ack = await call(`/api/analyses/${AN_ACME}/progress`, { as: "eng_a", method: "PUT", body: { action: "acknowledge", stage: "deeper" } });
+  assert.equal(ack.status, 200);
+  const again = await call(`/api/analyses/${AN_ACME}`, { as: "eng_a" });
+  assert.equal(again.body.stages.find((s) => s.id === "deeper").celebrate, false);
+  const other = await call(`/api/analyses/${AN_ACME}`, { as: "aud_a" });
+  assert.equal(other.body.stages.find((s) => s.id === "deeper").celebrate, true, "each viewer is told once");
+  const early = await call(`/api/analyses/${AN_ACME}/progress`, { as: "eng_a", method: "PUT", body: { action: "acknowledge", stage: "pr" } });
+  assert.equal(early.status, 409);
+});
+
 // ---- Uploading a zip of the code, without GitHub ----
 
 const ZIP_BYTES = Buffer.from([0x50, 0x4b, 0x03, 0x04, 0, 0, 0, 0, 0, 0]);
