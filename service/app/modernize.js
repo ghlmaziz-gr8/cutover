@@ -28,6 +28,11 @@
       title: "Modern web front end over an API",
       href: "templates/web-modern.html",
       summary: "Rebuild the screens as a modern web front end, with a clean API in front of the existing data.",
+      points: {
+        pros: ["A modern look and page flow", "The data stays where it is, behind an API"],
+        cons: ["The screens are rebuilt, not copied", "Needs front-end and API work"],
+        best: ["Applications with legacy page code and many screens"],
+      },
       rules: [
         { weight: 3, reason: "Legacy page code was found", test: (f) => LEGACY_PAGES.test(valueText(f, "legacy.languages")) || LEGACY_PAGES.test(valueText(f, "stack.languages")) },
         { weight: 2, reason: "Screens were found in the code", test: (f) => hasPoint(f, "ui.screens") || hasPoint(f, "ui.screen_names") },
@@ -39,6 +44,11 @@
       title: "Services over a modern database",
       href: "templates/services-data.html",
       summary: "Move business rules out of the database and into services, then move the data in steps.",
+      points: {
+        pros: ["Business rules move out of the database", "Data moves in steps"],
+        cons: ["The longest route of the three", "Needs careful data checks at each step"],
+        best: ["Applications whose logic lives in stored procedures or views"],
+      },
       rules: [
         { weight: 3, reason: "Stored procedures or functions hold logic", test: (f) => hasPoint(f, "data.routines_in_code") || hasPoint(f, "legacy.views") },
         { weight: 2, reason: "The code reads and writes database tables", test: (f) => hasPoint(f, "data.tables_in_code") || hasPoint(f, "data.tables") || hasPoint(f, "legacy.databases") },
@@ -50,6 +60,11 @@
       title: "Run as is, in containers",
       href: "templates/lift-contain.html",
       summary: "Run the application as it is, in containers, with its data unchanged. Modernize it later, one part at a time.",
+      points: {
+        pros: ["The lowest-risk first step", "The data is unchanged"],
+        cons: ["The legacy code stays as it is", "Modernizing comes later, one part at a time"],
+        best: ["Teams that need to leave the current host quickly"],
+      },
       rules: [
         { weight: 1, reason: "The lowest-risk first step", test: () => true },
         { weight: 2, reason: "No infrastructure as code was found", test: (f) => !hasPoint(f, "infrastructure.as_code") },
@@ -80,6 +95,6 @@
     return scored;
   }
 
-  const api = { choose, TEMPLATES: TEMPLATES.map(({ id, title, href }) => ({ id, title, href })) };
+  const api = { choose, TEMPLATES: TEMPLATES.map(({ id, title, href, points }) => ({ id, title, href, points })) };
   root.Modernize = api;
 })(typeof globalThis !== "undefined" ? globalThis : this);
