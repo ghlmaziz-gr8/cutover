@@ -11,6 +11,7 @@
 window.CUTOVER_GUIDE = {
   updated: "2026-10-22",
   whatsNew: [
+    "2026-10-22: The architecture diagram is redrawn with icons for users, screens, services, data and hosting, and each item carries its own icon. The current state is labelled as a Cutover AI assessment.",
     "2026-10-22: The next-steps screen shows a Cutover AI assessment of effort, resources and a project plan for the chosen approach. The plan opens on request and can be exported as PDF or HTML.",
     "2026-10-22: Selecting a target language lists its advantages, risks and constraints, and says whether the team already knows the language.",
     "2026-10-22: The target language card compares each part of the legacy application with its future state: language, database, screens, business logic, programs called, roles and build. It shows what the code has today and what the chosen approach does with it.",
