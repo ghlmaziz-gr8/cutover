@@ -981,6 +981,27 @@ button:not(:disabled):active{transform:scale(.965)}
 .conv-form > button{margin:4px 0 0}
 .conv-actions{display:flex;flex-wrap:wrap;gap:12px;align-items:center;margin-top:16px}
 .stage-card a[target]{display:inline-block;margin-top:14px}
+/* Motion for the findings map and the architecture diagram. */
+@keyframes radRing{0%{opacity:.6;transform:scale(1)}100%{opacity:0;transform:scale(1.22)}}
+@keyframes archPacket{0%{opacity:0;transform:translateX(0)}15%{opacity:1}85%{opacity:1}100%{opacity:0;transform:translateX(26px)}}
+@keyframes archSheen{to{transform:translateX(100%)}}
+@keyframes archDrift{to{background-position:18px 18px}}
+@keyframes missingBreath{0%,100%{border-color:var(--line,#e5e7eb)}50%{border-color:color-mix(in srgb,var(--c) 45%,transparent)}}
+.rad .rad-ring{transform-box:fill-box;transform-origin:center;opacity:0;animation:radRing 2.8s ease-out 1.2s infinite;pointer-events:none}
+.arch-link{animation:archIn .5s cubic-bezier(.2,.8,.2,1) both;animation-delay:calc(var(--i,0) * 120ms + 300ms)}
+.arch-packet{fill:var(--accent,#6d28d9);filter:drop-shadow(0 0 4px var(--accent,#6d28d9));animation:archPacket 1.8s ease-in-out infinite;animation-delay:calc(var(--i,0) * 300ms + 900ms);opacity:0}
+.arch-node{overflow:hidden}
+.arch-node::after{content:"";position:absolute;inset:0;background:linear-gradient(100deg,transparent 35%,color-mix(in srgb,var(--c) 14%,transparent) 50%,transparent 65%);transform:translateX(-100%);pointer-events:none}
+.arch-node:hover::after{animation:archSheen .9s ease-out}
+.arch-bubble{transition:transform .35s cubic-bezier(.34,1.56,.64,1)}
+.arch-node:hover .arch-bubble{transform:scale(1.08) rotate(-6deg)}
+.arch-node.arch-missing{animation:archIn .6s cubic-bezier(.2,.8,.2,1) both,missingBreath 3.6s ease-in-out infinite;animation-delay:calc(var(--i,0) * 120ms),calc(var(--i,0) * 120ms + 600ms)}
+.arch-band{animation:archIn .6s cubic-bezier(.2,.8,.2,1) both;animation-delay:700ms}
+.arch-stage{animation:archDrift 26s linear infinite}
+@media (prefers-reduced-motion:reduce){
+  .rad .rad-ring,.arch-link,.arch-packet,.arch-node::after,.arch-node.arch-missing,.arch-band,.arch-stage{animation:none!important}
+  .arch-node:hover .arch-bubble{transform:none}
+}
 </style>
 </head>
 <body>
@@ -4430,6 +4451,7 @@ a{color:#6d28d9;font-weight:600}`;
 
     // root
     const rootG = svgNode("g", { class: "rad-root" });
+    rootG.appendChild(svgNode("rect", { x: map.root.x - rootW / 2, y: map.root.y - rootH / 2, width: rootW, height: rootH, rx: rootH / 2, fill: "none", stroke: "#111827", "stroke-width": 2, class: "rad-ring" }));
     rootG.appendChild(svgNode("rect", { x: map.root.x - rootW / 2, y: map.root.y - rootH / 2, width: rootW, height: rootH, rx: rootH / 2, fill: "#111827" }));
     rootG.appendChild(svgText(map.root.lines, map.root.x, map.root.y, { fill: "#ffffff", "font-size": 16, "font-weight": 800 }));
     const rt = svgNode("title", {}); rt.textContent = map.root.lines.join(" "); rootG.appendChild(rt);
@@ -4652,7 +4674,8 @@ a{color:#6d28d9;font-weight:600}`;
       if (i < nodes.length - 1) {
         const link = el("span", null, "arch-link");
         link.setAttribute("aria-hidden", "true");
-        link.innerHTML = '<svg viewBox="0 0 40 24" class="arch-link-svg"><path d="M2 12h30" class="arch-line"/><path d="M26 6l8 6-8 6" class="arch-head"/></svg>';
+        link.style.setProperty("--i", String(i));
+        link.innerHTML = '<svg viewBox="0 0 40 24" class="arch-link-svg"><path d="M2 12h30" class="arch-line"/><path d="M26 6l8 6-8 6" class="arch-head"/><circle class="arch-packet" cx="2" cy="12" r="3"/></svg>';
         flow.appendChild(link);
       }
     });
