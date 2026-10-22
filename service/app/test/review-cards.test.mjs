@@ -67,3 +67,9 @@ test("a role that cannot see the data gets no database rows", () => {
   const out = summaryRows({ "legacy.databases": f(["Microsoft Access (tier 1): a.mdb (x)"]) }, "security_officer");
   assert.equal(out.data.length, 0);
 });
+
+test("the What it is row shows the number of roles, and the names stay in the findings", () => {
+  const html = readFileSync(new URL("../index.html", import.meta.url), "utf8");
+  assert.ok(html.includes('item.id === "security.roles" && Array.isArray(item.value)'));
+  assert.ok(html.includes("The names stay in \"Show findings\"."));
+});

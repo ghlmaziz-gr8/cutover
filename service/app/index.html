@@ -633,6 +633,21 @@ pre{white-space:pre-wrap;word-break:break-word;background:var(--soft);padding:12
 .mm-leaf.tone-con .mm-dot{background:#b91c1c}.mm-leaf.tone-pro .mm-dot{background:#15803d}.mm-leaf.tone-possible .mm-dot{background:#b45309}
 .mm-go{margin:6px 0 0;background:none;border:0;padding:4px 0;color:var(--accent,#6d28d9);font-weight:700;cursor:pointer;font-size:14px}
 .mm-go:hover{text-decoration:underline}
+.mm-meta{margin:2px 0 8px;font-size:12px;color:var(--muted,#6b7280)}
+.mm-folder > details{margin-top:4px}
+.mm-folder-head{list-style:none;cursor:pointer;display:flex;align-items:center;gap:10px;padding:6px 8px;border-radius:10px;background:color-mix(in srgb,var(--accent,#6d28d9) 7%,transparent);font-weight:700;color:var(--accent,#6d28d9)}
+.mm-folder-head::-webkit-details-marker{display:none}
+.mm-folder-head::before{content:"▸";display:inline-block;transition:transform .2s}
+.mm-folder > details[open] > .mm-folder-head::before{transform:rotate(90deg)}
+.mm-folder-count{margin-left:auto;font-size:12px;font-weight:600;color:var(--muted,#6b7280)}
+.mm-pick{display:inline-flex;align-items:center;gap:0;background:none;border:0;padding:3px 8px;margin:-3px -8px;border-radius:9px;font:inherit;color:inherit;text-align:left;cursor:pointer;max-width:100%}
+.mm-pick:hover{background:color-mix(in srgb,var(--accent,#6d28d9) 10%,transparent)}
+.mm-pick:focus-visible{outline:3px solid var(--accent,#6d28d9);outline-offset:2px}
+.mm-pick .mm-dot{margin-right:9px}
+.mm-leaf.tone-plain .mm-dot{background:#9ca3af}
+.mm-leaf.tone-fit .mm-dot{background:#0369a1}
+.mm-leaf.tone-possible .mm-dot{background:#b45309}
+.mm-key.tone-pro{--tc:#15803d}.mm-key.tone-con{--tc:#b91c1c}.mm-key.tone-fit{--tc:#0369a1}.mm-key.tone-plain{--tc:#9ca3af}.mm-key.tone-possible{--tc:#b45309}
 .mm-go:focus-visible,.mm-head:focus-visible,.mm-btn:focus-visible{outline:3px solid var(--accent,#6d28d9);outline-offset:2px;border-radius:8px}
 @keyframes mmIn{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
 @media (max-width:600px){.mmap ul{padding-left:12px}.mm-title{font-size:15px}.mm-branch > details{padding:0 12px 10px}}
@@ -1324,6 +1339,7 @@ pre{white-space:pre-wrap;word-break:break-word;background:var(--soft);padding:12
 <script src="modernize.js"></script>
 <script src="mindmap.js"></script>
 <script src="findings-map.js"></script>
+<script src="file-map.js"></script>
 <script src="plan.js"></script>
 <script src="starter.js"></script>
 <script>
@@ -3065,7 +3081,9 @@ pre{white-space:pre-wrap;word-break:break-word;background:var(--soft);padding:12
     // These entities are long. They are listed only under "Show findings", not as rows in the card.
     const EXPAND_ONLY = ["legacy.views", "data.tables_in_code", "data.routines_in_code", "data.database_metadata"];
     const kv = el("div", null, "kv");
-    for (const item of found.filter((i) => !EXPAND_ONLY.includes(i.id))) kv.append(el("span", item.title), el("span", fmtValue(item.value)));
+    // The top row shows how many roles were found. The names stay in "Show findings".
+    const kvValue = (item) => (item.id === "security.roles" && Array.isArray(item.value) ? `${item.value.length} role${item.value.length === 1 ? "" : "s"}` : fmtValue(item.value));
+    for (const item of found.filter((i) => !EXPAND_ONLY.includes(i.id))) kv.append(el("span", item.title), el("span", kvValue(item)));
     for (const [k, v] of extraRows) kv.append(el("span", k), el("span", v));
     if (kv.childElementCount) c.appendChild(kv);
     if (found.length) c.appendChild(findingBars(found));
@@ -3856,9 +3874,44 @@ a{color:#6d28d9;font-weight:600}`;
     return li;
   }
 
+  // Set by drawMap for the duration of a draw: called when a leaf that has a path is picked.
+  let mapLeafHandler = null;
+
   function drawNode(node) {
     if (node.kind === "branch") return drawBranch(node);
     const li = document.createElement("li");
+    if (node.kind === "folder") {
+      // A folder is a closed-able section. Expand all and Collapse all reach it too.
+      li.className = "mm-folder";
+      const det = document.createElement("details");
+      det.open = true;
+      const sum = document.createElement("summary");
+      sum.className = "mm-folder-head";
+      sum.appendChild(el("span", node.label, "mm-folder-name"));
+      sum.appendChild(el("span", node.meta || "", "mm-folder-count"));
+      det.appendChild(sum);
+      const ul = document.createElement("ul");
+      node.children.forEach((c) => ul.appendChild(drawNode(c)));
+      det.appendChild(ul);
+      li.appendChild(det);
+      return li;
+    }
+    if (node.kind === "leaf") {
+      li.className = `mm-leaf tone-${node.tone || "plain"}`;
+      if (node.path && mapLeafHandler) {
+        const pick = el("button", null, "mm-pick");
+        pick.type = "button";
+        pick.setAttribute("aria-label", `${node.label}. Choose this file`);
+        pick.appendChild(el("span", null, "mm-dot"));
+        pick.appendChild(document.createTextNode(node.label));
+        pick.addEventListener("click", () => mapLeafHandler(node));
+        li.appendChild(pick);
+      } else {
+        li.appendChild(el("span", null, "mm-dot"));
+        li.appendChild(document.createTextNode(node.label));
+      }
+      return li;
+    }
     if (node.kind === "group") {
       li.className = `mm-group tone-${node.tone}`;
       const title = el("p", null, "mm-group-title");
@@ -3872,6 +3925,7 @@ a{color:#6d28d9;font-weight:600}`;
       return li;
     } else {
       li.appendChild(el("p", node.label, node.kind === "root" ? "mm-root-label" : "mm-label"));
+      if (node.kind === "root" && node.meta) li.appendChild(el("p", node.meta, "mm-meta"));
     }
     if (node.children && node.children.length) {
       const ul = document.createElement("ul");
@@ -3890,6 +3944,7 @@ a{color:#6d28d9;font-weight:600}`;
   // Draws a map into a box. Options: toolbar adds Expand all, Collapse all and a legend (opts.legend sets the keys).
   function drawMap(tree, box, opts) {
     box.replaceChildren();
+    mapLeafHandler = (opts && opts.onLeaf) || null;
     if (opts && opts.toolbar) {
       const bar = el("div", null, "mm-toolbar");
       const buttons = el("div", null, "mm-buttons");
@@ -4088,6 +4143,31 @@ a{color:#6d28d9;font-weight:600}`;
     });
     form.appendChild(go);
     box.appendChild(form);
+
+    // The file map: every file in the repository, by folder, with its conversion status. Picking a file fills the box above.
+    const fileBox = el("div", null, "mmap file-map");
+    fileBox.setAttribute("aria-label", "Map of the files and their conversion status");
+    fileBox.appendChild(el("p", "Loading the files…", "muted small"));
+    box.appendChild(fileBox);
+    loadFiles()
+      .then((files) => {
+        const cur2 = row.conversions || [];
+        drawMap(window.FileMap.tree({ label: "Files in the repository", files, conversions: cur2 }), fileBox, {
+          toolbar: true,
+          legend: {
+            tones: [["pro", "Accepted"], ["possible", "Proposed, to review"], ["con", "Rejected"], ["fit", "Needs attention"], ["plain", "Not started"]],
+            icons: [],
+          },
+          onLeaf: (node) => {
+            input.value = node.path;
+            input.focus();
+            input.scrollIntoView({ behavior: "smooth", block: "center" });
+          },
+        });
+      })
+      .catch((err) => {
+        fileBox.replaceChildren(el("p", `Could not load the files: ${err.message}`, "small"));
+      });
 
     const list = (row.conversions || []);
     if (!list.length) return;
