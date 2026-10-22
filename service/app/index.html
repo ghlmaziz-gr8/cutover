@@ -63,6 +63,7 @@ button.danger{background:transparent;color:var(--bad);box-shadow:none;border:1.5
 .fill{height:100%;width:0;border-radius:99px;background:var(--grad);transition:width .6s cubic-bezier(.2,.8,.2,1)}
 .dots{grid-column:1/-1;display:flex;gap:6px;flex-wrap:wrap}
 .dots i{flex:1 1 0;min-width:18px;height:6px;border-radius:9px;background:var(--line);transition:background .4s}
+.track[hidden],.dots[hidden]{display:none}
 .dots i.done{background:var(--ok)} .dots i.now{background:var(--accent2)}
 .top-in{padding-right:52px}
 /* Notifications: the bell, its panel, and toasts. Colors carry the tone; motion only confirms what changed. */
@@ -715,7 +716,7 @@ pre{white-space:pre-wrap;word-break:break-word;background:var(--soft);padding:12
     <div class="brand"><span class="logo">C</span>Cutover <span class="muted" style="font:600 12px var(--body)">portal</span></div>
     <div>
       <div class="pmeta"><span id="stageName">Sign in</span><span id="stepCount" class="muted"></span><span class="pct" id="pct"></span><span id="eta" class="muted"></span></div>
-      <div class="track"><div class="fill" id="barFill"></div></div>
+      <div class="track" id="barWrap"><div class="fill" id="barFill"></div></div>
     </div>
     <div class="dots" id="dots"></div>
     <button type="button" class="bell" id="bellBtn" aria-label="Notifications" aria-expanded="false" aria-controls="notifPanel">
@@ -767,6 +768,7 @@ pre{white-space:pre-wrap;word-break:break-word;background:var(--soft);padding:12
     <p class="eyebrow">Before you start</p>
     <h2 style="margin:8px 0 6px">Who are you today?</h2>
     <p class="muted">Cutover shows each role the views and decisions it owns. Your role in a workspace is set by its admin.</p>
+    <p class="muted" style="margin-top:10px">New here? <button type="button" class="ghost small-btn" id="roleGuide">Read the guide on roles</button></p>
     <div class="row" id="wsPicks" style="margin-top:18px" hidden></div>
     <div class="grid" style="margin-top:18px" id="personas"></div>
     <div class="you card" id="youSee" style="margin-top:18px"></div>
@@ -963,6 +965,7 @@ pre{white-space:pre-wrap;word-break:break-word;background:var(--soft);padding:12
     <p class="eyebrow">Step 2 of 6</p>
     <h2 style="margin:8px 0 6px">Connect the code</h2>
     <p class="muted">Choose where the code is. Use GitHub, or upload a zip of the code from this computer if you do not use GitHub.</p>
+    <p class="muted" style="margin-top:6px">Unsure how access works? <button type="button" class="ghost small-btn" id="connectGuide">Open the guide on repository access</button></p>
     <div class="card">
       <div class="src-choice" role="radiogroup" aria-label="Where the code is">
         <button type="button" class="src-opt" id="srcGithub" role="radio" aria-checked="true">
@@ -1517,6 +1520,8 @@ pre{white-space:pre-wrap;word-break:break-word;background:var(--soft);padding:12
     const dots = $("dots");
     const idx = STAGES.findIndex((s) => s.id === id);
     if (idx < 0) {
+      $("barWrap").hidden = true;
+      dots.hidden = true;
       $("stageName").textContent = id === "s-home" && ws ? ws.name : id === "s-denied" ? "Access" : "Cutover";
       $("stepCount").textContent = id === "s-home" && ws ? `Signed in as ${roleName(ws.role)}` : "";
       $("pct").textContent = "";
@@ -1525,6 +1530,8 @@ pre{white-space:pre-wrap;word-break:break-word;background:var(--soft);padding:12
       dots.innerHTML = "";
       return;
     }
+    $("barWrap").hidden = false;
+    dots.hidden = false;
     if (!dots.childElementCount) for (let i = 0; i < STAGES.length; i++) dots.appendChild(document.createElement("i"));
     [...dots.children].forEach((d, i) => { d.className = i < idx ? "done" : i === idx ? "now" : ""; });
     let p = 0;
@@ -1641,6 +1648,8 @@ pre{white-space:pre-wrap;word-break:break-word;background:var(--soft);padding:12
   }
 
   $("toHome").addEventListener("click", () => showHome());
+  $("roleGuide").addEventListener("click", () => openGuideStep("roles"));
+  $("connectGuide").addEventListener("click", () => openGuideStep("install"));
   $("changeRole").addEventListener("click", () => {
     renderWorkspacePicks();
     renderPersonas();
