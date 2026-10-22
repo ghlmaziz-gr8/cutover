@@ -4211,6 +4211,8 @@ a{color:#6d28d9;font-weight:600}`;
     if (opts && opts.radial && window.Radial) {
       const wide = el("div", null, "radial-wide");
       drawRadial(tree, wide, opts);
+      // Expand all and Collapse all read the hook from the map box, so the radial hook is passed up to it.
+      box.__radial = wide.__radial;
       box.appendChild(wide);
       if (opts.radialLinks && opts.radialLinks.length) {
         const links = el("div", null, "rad-links");

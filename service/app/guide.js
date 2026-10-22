@@ -11,6 +11,7 @@
 window.CUTOVER_GUIDE = {
   updated: "2026-10-22",
   whatsNew: [
+    "2026-10-22: Expand all and Collapse all work on the approach mind map and the other maps.",
     "2026-10-22: The target language card shows the previous state (the legacy languages with their file counts) and the future state side by side, with the chosen language and its approval.",
     "2026-10-22: The approach card on the next-steps screen has Export PDF and Export HTML, like the findings report. The mind map and the three options are included.",
     "2026-10-22: The target language choice shows the language your legacy code is written in, marks the matching option, and explains that the other options are alternates for the future state. The option labels are readable.",
