@@ -377,7 +377,7 @@ form input + button{margin-top:16px}
 .arch-band .arch-name{font:800 15px var(--body)}
 .arch-band .arch-detail{margin:0}
 .arch-key{margin:12px 0 0;text-align:center;line-height:1.5}
-@media (max-width:760px){
+@media (max-width:1100px){
   .arch-flow{flex-direction:column;overflow:visible}
   .arch-node{min-width:0;width:100%}
   .arch-link{flex:0 0 28px;width:100%}
@@ -990,9 +990,6 @@ button:not(:disabled):active{transform:scale(.965)}
 .rad .rad-ring{transform-box:fill-box;transform-origin:center;opacity:0;animation:radRing 2.8s ease-out 1.2s infinite;pointer-events:none}
 .arch-link{animation:archIn .5s cubic-bezier(.2,.8,.2,1) both;animation-delay:calc(var(--i,0) * 120ms + 300ms)}
 .arch-packet{fill:var(--accent,#6d28d9);filter:drop-shadow(0 0 4px var(--accent,#6d28d9));animation:archPacket 1.8s ease-in-out infinite;animation-delay:calc(var(--i,0) * 300ms + 900ms);opacity:0}
-.arch-node{overflow:hidden}
-.arch-node::after{content:"";position:absolute;inset:0;background:linear-gradient(100deg,transparent 35%,color-mix(in srgb,var(--c) 14%,transparent) 50%,transparent 65%);transform:translateX(-100%);pointer-events:none}
-.arch-node:hover::after{animation:archSheen .9s ease-out}
 .arch-bubble{transition:transform .35s cubic-bezier(.34,1.56,.64,1)}
 .arch-node:hover .arch-bubble{transform:scale(1.08) rotate(-6deg)}
 .arch-node.arch-missing{animation:archIn .6s cubic-bezier(.2,.8,.2,1) both,missingBreath 3.6s ease-in-out infinite;animation-delay:calc(var(--i,0) * 120ms),calc(var(--i,0) * 120ms + 600ms)}
@@ -1026,6 +1023,38 @@ button:not(:disabled):active{transform:scale(.965)}
 @media (prefers-reduced-motion:reduce){
   .findings-map::after,.findings-map-wrap > h2,.findings-map-wrap > p,.findings-map .mm-buttons > *,.findings-map .mm-legend > *,.rad .rad-branch.bump .rad-pill{animation:none!important}
   .rad .rad-point:hover{filter:none}
+}
+/* The current architecture, interactive: filters, selection, linked connectors and a detail panel. Nothing is clipped. */
+.arch-flow{overflow:visible}
+.arch-node{min-width:0;background:linear-gradient(100deg,transparent 40%,color-mix(in srgb,var(--c) 13%,transparent) 50%,transparent 60%) 150% 0/250% 100% no-repeat,var(--card,#fff);transition:transform .3s cubic-bezier(.2,.8,.2,1),box-shadow .3s,opacity .35s,filter .35s,background-position .9s ease,border-color .3s;cursor:pointer}
+.arch-node:hover{background-position:-60% 0,0 0}
+.arch-node:focus-visible,.arch-band:focus-visible{outline:3px solid var(--accent,#6d28d9);outline-offset:3px}
+.arch-band{cursor:pointer;transition:transform .3s cubic-bezier(.2,.8,.2,1),box-shadow .3s,opacity .35s,filter .35s}
+.arch-band:hover{transform:translateY(-2px);box-shadow:0 14px 30px -18px var(--c)}
+.arch-node.dim,.arch-band.dim{opacity:.38;filter:saturate(.5)}
+.arch-node.is-selected,.arch-band.is-selected{transform:translateY(-4px) scale(1.01);box-shadow:0 0 0 2px var(--c),0 22px 40px -20px var(--c)}
+.arch-node.is-near{box-shadow:0 0 0 1.5px color-mix(in srgb,var(--c) 55%,transparent),0 14px 30px -18px var(--c)}
+.arch-link{transition:opacity .35s}
+.arch-link.dim{opacity:.3}
+.arch-link.is-lit .arch-line,.arch-link.hot .arch-line{stroke-width:3.4;filter:drop-shadow(0 0 4px var(--accent,#6d28d9))}
+.arch-link.is-lit .arch-head,.arch-link.hot .arch-head{stroke-width:3}
+.arch-link.is-lit .arch-packet,.arch-link.hot .arch-packet{opacity:1}
+.arch-filters{display:flex;flex-wrap:wrap;gap:8px;margin:16px 0 0}
+.arch-chip{display:inline-flex;align-items:center;gap:8px;border:1px solid var(--line);background:var(--card,#fff);color:var(--fg);border-radius:999px;padding:7px 12px;font:600 13px var(--body);cursor:pointer;transition:background .25s,color .25s,border-color .25s,box-shadow .25s,transform .25s}
+.arch-chip:hover{transform:translateY(-1px);border-color:var(--accent,#6d28d9)}
+.arch-chip b{font:800 11px var(--body);min-width:22px;text-align:center;padding:2px 7px;border-radius:999px;background:var(--soft,#f5f3ff);color:var(--accent,#6d28d9)}
+.arch-chip[aria-pressed="true"]{background:var(--grad);color:#fff;border-color:transparent;box-shadow:0 10px 20px -12px var(--accent,#6d28d9)}
+.arch-chip[aria-pressed="true"] b{background:rgba(255,255,255,.25);color:#fff}
+.arch-chip:focus-visible{outline:3px solid var(--accent,#6d28d9);outline-offset:2px}
+.arch-panel{margin-top:14px;padding:16px 18px;border-radius:18px;border:1px solid var(--line);background:var(--card,#fff);min-height:56px;overflow-wrap:anywhere;animation:cardIn .45s cubic-bezier(.2,.8,.2,1) both}
+.arch-panel-hint{margin:0}
+.arch-panel-top{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.arch-why{margin:10px 0 0;font:600 13px var(--body);color:var(--fg)}
+.arch-panel .arch-detail{margin:10px 0 6px}
+@media (prefers-reduced-motion:reduce){
+  .arch-node,.arch-band,.arch-chip,.arch-link,.arch-panel{transition:none!important;animation:none!important}
+  .arch-node:hover{background-position:150% 0,0 0}
+  .arch-band:hover,.arch-node.is-selected,.arch-band.is-selected{transform:none}
 }
 </style>
 </head>
@@ -4669,14 +4698,44 @@ a{color:#6d28d9;font-weight:600}`;
       return wrap;
     }
     const CONF = { verified: ["Verified in code", "t-ok"], inferred: ["Inferred, needs review", "t-inf"], unknown: ["Source not listed", ""], missing: ["Not found", ""] };
+    const counts = { verified: 0, inferred: 0, unknown: 0, missing: 0 };
+    boxes.forEach((b) => { counts[b.confidence] = (counts[b.confidence] || 0) + 1; });
+    const WHY = {
+      verified: "Found directly in a file of this application.",
+      inferred: "Likely from the findings, but a person should confirm it before relying on it.",
+      unknown: "The source for this layer is not listed on this page.",
+      missing: "Not found in the code. This is a gap to check, not a fault.",
+    };
+    const state = { filter: "all", sel: null };
+
+    // Filters: show only the layers with one status. The others stay visible but step back.
+    const bar = el("div", null, "arch-filters");
+    bar.setAttribute("role", "group");
+    bar.setAttribute("aria-label", "Show layers by status");
+    const chips = [["all", "All layers", boxes.length], ["verified", "Verified in code", counts.verified], ["inferred", "Inferred", counts.inferred], ["missing", "Not found", counts.missing]].map(([key, label, n]) => {
+      const c = el("button", null, "arch-chip");
+      c.type = "button";
+      c.dataset.filter = key;
+      c.setAttribute("aria-pressed", String(key === "all"));
+      c.append(el("span", label), el("b", String(n), "arch-chip-n"));
+      c.addEventListener("click", () => { state.filter = key; paint(); });
+      bar.appendChild(c);
+      return c;
+    });
+    wrap.appendChild(bar);
+
     const stage = el("div", null, "arch-stage");
     const flow = el("div", null, "arch-flow");
     const nodes = boxes.filter((b) => !b.band);
+    const items = [];
+    const bandItems = [];
+    const linkEls = [];
     nodes.forEach((b, i) => {
       const node = el("div", null, "arch-node");
       node.style.setProperty("--c", b.tone);
       node.style.setProperty("--i", String(i));
       if (b.missing) node.classList.add("arch-missing");
+      node.dataset.conf = b.confidence;
       const top = el("div", null, "arch-top-row");
       const bubble = el("span", null, "arch-bubble");
       bubble.appendChild(archIcon(b.icon));
@@ -4699,20 +4758,28 @@ a{color:#6d28d9;font-weight:600}`;
         node.appendChild(list);
       }
       if (!b.missing) node.appendChild(el("p", b.source ? `From: ${b.source}` : "Source not listed on this page", "arch-src"));
+      node.tabIndex = 0;
+      node.setAttribute("role", "button");
+      node.setAttribute("aria-pressed", "false");
+      node.setAttribute("aria-label", `${b.layer}: ${text}`);
       flow.appendChild(node);
+      items.push({ el: node, box: b, index: i });
       if (i < nodes.length - 1) {
         const link = el("span", null, "arch-link");
         link.setAttribute("aria-hidden", "true");
         link.style.setProperty("--i", String(i));
         link.innerHTML = '<svg viewBox="0 0 40 24" class="arch-link-svg"><path d="M2 12h30" class="arch-line"/><path d="M26 6l8 6-8 6" class="arch-head"/><circle class="arch-packet" cx="2" cy="12" r="3"/></svg>';
         flow.appendChild(link);
+        linkEls.push(link);
       }
     });
     stage.appendChild(flow);
+
     const bands = el("div", null, "arch-bands");
     boxes.filter((b) => b.band).forEach((b) => {
       const band = el("div", null, "arch-band");
       band.style.setProperty("--c", b.tone);
+      band.dataset.conf = b.confidence;
       const row = el("div", null, "arch-band-row");
       const bubble = el("span", null, "arch-bubble");
       bubble.appendChild(archIcon(b.icon));
@@ -4722,13 +4789,95 @@ a{color:#6d28d9;font-weight:600}`;
       band.appendChild(row);
       band.appendChild(el("span", b.detail, "arch-detail"));
       if (!b.missing) band.appendChild(el("span", b.source ? `From: ${b.source}` : "Source not listed on this page", "arch-src"));
+      band.tabIndex = 0;
+      band.setAttribute("role", "button");
+      band.setAttribute("aria-pressed", "false");
+      band.setAttribute("aria-label", `${b.layer}: ${text}`);
       bands.appendChild(band);
+      bandItems.push({ el: band, box: b, index: -1 });
     });
     stage.appendChild(bands);
     wrap.appendChild(stage);
+
+    // The detail panel: the selected layer, what it is built from, and the layers it connects to.
+    const panel = el("div", null, "arch-panel");
+    panel.setAttribute("aria-live", "polite");
+    wrap.appendChild(panel);
+
+    const all = [...items, ...bandItems];
+    const linksOf = (it) => (it.index >= 0 ? [linkEls[it.index - 1], linkEls[it.index]].filter(Boolean) : []);
+    const adjacent = (it) => (it.index >= 0 ? items.filter((o) => o.index === it.index - 1 || o.index === it.index + 1) : []);
+    const matches = (box) => state.filter === "all" || (state.filter === "missing" ? box.missing : box.confidence === state.filter);
+
+    function renderPanel() {
+      panel.replaceChildren();
+      const it = state.sel;
+      if (!it) {
+        panel.appendChild(el("p", "Select a layer to see what it is built from, the findings behind it and the layers it connects to. Press Escape to clear.", "muted small arch-panel-hint"));
+        return;
+      }
+      const b = it.box;
+      const [text, tone] = CONF[b.confidence] || CONF.unknown;
+      const top = el("div", null, "arch-panel-top");
+      const bubble = el("span", null, "arch-bubble");
+      bubble.appendChild(archIcon(b.icon));
+      top.append(bubble, el("b", b.layer, "arch-name"), el("span", text, `tag ${tone} arch-status`));
+      panel.appendChild(top);
+      panel.appendChild(el("p", b.detail, "arch-detail"));
+      if (b.items && b.items.length) {
+        const list = el("ul", null, "arch-items");
+        b.items.forEach((x, k) => {
+          const li = el("li");
+          li.appendChild(archIcon((b.itemIcons && b.itemIcons[k]) || "code"));
+          li.appendChild(document.createTextNode(x));
+          list.appendChild(li);
+        });
+        panel.appendChild(list);
+      }
+      panel.appendChild(el("p", WHY[b.confidence] || WHY.unknown, "arch-why"));
+      if (!b.missing) panel.appendChild(el("p", b.source ? `From: ${b.source}` : "Source not listed on this page", "arch-src"));
+      const near = adjacent(it).map((o) => o.box.layer);
+      if (near.length) panel.appendChild(el("p", `Connects to: ${near.join(" and ")}`, "arch-src"));
+    }
+
+    function paint() {
+      chips.forEach((c) => c.setAttribute("aria-pressed", String(c.dataset.filter === state.filter)));
+      const sel = state.sel;
+      const near = sel ? adjacent(sel) : [];
+      const lit = new Set(sel ? linksOf(sel) : []);
+      all.forEach((it) => {
+        const isSel = sel === it;
+        it.el.classList.toggle("dim", !matches(it.box) || (!!sel && !isSel && !near.includes(it)));
+        it.el.classList.toggle("is-selected", isSel);
+        it.el.classList.toggle("is-near", near.includes(it));
+        it.el.setAttribute("aria-pressed", String(isSel));
+      });
+      linkEls.forEach((l) => {
+        l.classList.toggle("is-lit", lit.has(l));
+        l.classList.toggle("dim", !!sel && !lit.has(l));
+      });
+      renderPanel();
+    }
+
+    all.forEach((it) => {
+      const choose = () => { state.sel = state.sel === it ? null : it; paint(); };
+      it.el.addEventListener("click", choose);
+      it.el.addEventListener("keydown", (e) => {
+        if (e.key === "Enter" || e.key === " ") { e.preventDefault(); choose(); }
+      });
+      it.el.addEventListener("mouseenter", () => linksOf(it).forEach((l) => l.classList.add("hot")));
+      it.el.addEventListener("mouseleave", () => linkEls.forEach((l) => l.classList.remove("hot")));
+      it.el.addEventListener("focus", () => linksOf(it).forEach((l) => l.classList.add("hot")));
+      it.el.addEventListener("blur", () => linkEls.forEach((l) => l.classList.remove("hot")));
+    });
+    wrap.addEventListener("keydown", (e) => {
+      if (e.key === "Escape" && state.sel) { state.sel = null; paint(); }
+    });
+
     const key = el("div", null, "arch-key muted small");
     key.textContent = "Requests move down the chain from users to data. The band underneath is where the whole application runs. Dashed nodes were not found in the code.";
     wrap.appendChild(key);
+    paint();
     return wrap;
   }
 

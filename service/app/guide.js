@@ -11,6 +11,7 @@
 window.CUTOVER_GUIDE = {
   updated: "2026-10-22",
   whatsNew: [
+    "2026-10-22: The current architecture is interactive. Filter the layers by status, select a layer to see what it is built from and what it connects to, and watch its connectors light up. Nothing is cut off, and the layers stack on narrower screens.",
     "2026-10-22: The findings map is now its own section right under What we found, with the cards below it. It animates in fully: a sheen on reveal, the toolbar and legend appear in turn, branches bump when they open or close, and findings lift on hover.",
     "2026-10-22: The guide explains how to read the findings map, the architecture diagram, the effort estimate, the project plan, target languages and conversions, and it has a section on Ask Cutover.",
     "2026-10-22: The project plan export has both views on their own pages: the timeline on one page and the phase cards on the pages after it, with the gates, people and assumptions at the end.",

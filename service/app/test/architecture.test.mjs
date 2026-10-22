@@ -77,3 +77,11 @@ test("the page draws the diagram after What we found, with the placeholders and 
   // The findings map is its own section right under What we found, before the cards and the diagram.
   assert.ok(heading > 0 && map > heading && grid > map && arch > grid);
 });
+
+test("the architecture diagram is interactive: filters, selection, linked connectors and a detail panel", () => {
+  assert.ok(html.includes('el("div", null, "arch-filters")'), "status filters");
+  assert.ok(html.includes("Connects to:"), "the detail panel names the connected layers");
+  assert.ok(html.includes('e.key === "Escape"'), "Escape clears the selection");
+  assert.ok(html.includes('classList.toggle("is-lit"'), "connectors light up around the selected layer");
+  assert.ok(!/\.arch-node\{[^}]*overflow:hidden/.test(html), "nodes do not clip their own height");
+});
