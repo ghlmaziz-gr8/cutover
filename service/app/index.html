@@ -1026,6 +1026,7 @@ pre{white-space:pre-wrap;word-break:break-word;background:var(--soft);padding:12
       <div id="approachGrid"></div>
       <p class="small hint" id="approachMsg" role="status"></p>
     </div>
+    <div class="card" id="conversionCard" hidden style="margin-top:18px"><div id="conversionBody"></div></div>
     <div class="card" id="nextPathCard" hidden style="margin-top:18px"><div id="nextPath"></div></div>
     <div class="cards2" style="margin-top:20px">
       <div class="card" style="margin-top:0">
@@ -3747,6 +3748,55 @@ a{color:#6d28d9;font-weight:600}`;
     $("approachGrid").replaceChildren(templateGrid(currentFindings, row, true));
   }
 
+  // Written approval for converting files with the language model. A workspace admin gives it, once for the workspace.
+  async function setConversionApproval(row, approve, wording) {
+    try {
+      await api(`/api/workspaces/${row.workspace_id}/conversion-approval`, { method: "PUT", body: JSON.stringify({ approve, wording }) });
+      cur = await api(`/api/analyses/${row.id}`);
+      showCurrentScreen();
+    } catch (err) {
+      showToast({ tone: "bad", title: "Could not save the approval", body: err.message });
+    }
+  }
+
+  function renderConversionApproval(row) {
+    const card = $("conversionCard");
+    const box = $("conversionBody");
+    box.replaceChildren();
+    card.hidden = !(row && row.scope === "modernize");
+    if (card.hidden) return;
+    box.appendChild(el("p", "Converting files with the language model", "eyebrow-sm"));
+    box.appendChild(el("h3", "Written approval"));
+    if (row.conversion_approval) {
+      const when = new Date(row.conversion_approval.at).toLocaleDateString();
+      box.appendChild(el("p", `Approved by ${row.conversion_approval.by} on ${when}. Files can be converted one at a time.`, "small"));
+      if (row.conversion_admin) {
+        const withdraw = el("button", "Withdraw approval");
+        withdraw.type = "button";
+        withdraw.className = "ghost";
+        withdraw.addEventListener("click", () => setConversionApproval(row, false, ""));
+        box.appendChild(withdraw);
+      }
+      return;
+    }
+    box.appendChild(el("p", "No file is converted until a workspace admin approves this. Each file is sent alone, after a check for personal data.", "muted small"));
+    box.appendChild(el("p", row.conversion_wording || "", "small"));
+    if (!row.conversion_admin) {
+      box.appendChild(el("p", "A workspace admin must approve this first.", "muted small"));
+      return;
+    }
+    const input = document.createElement("textarea");
+    input.rows = 3;
+    input.style.width = "100%";
+    input.setAttribute("aria-label", "Type the approval exactly as written");
+    input.placeholder = "Type the approval exactly as written above";
+    box.appendChild(input);
+    const go = el("button", "Approve conversions");
+    go.type = "button";
+    go.addEventListener("click", () => setConversionApproval(row, true, input.value));
+    box.appendChild(go);
+  }
+
   // Returns to whichever screen the person was on after a change: the next-steps page or the findings.
   function showCurrentScreen() {
     if (!$("s-next").hidden) showNext();
@@ -3949,6 +3999,7 @@ a{color:#6d28d9;font-weight:600}`;
     renderMigrate();
     renderDbCard();
     renderApproach(cur);
+    renderConversionApproval(cur);
     const pathBox = $("nextPath");
     pathBox.replaceChildren();
     $("nextPathCard").hidden = !cur.stages;
