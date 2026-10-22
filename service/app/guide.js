@@ -11,6 +11,7 @@
 window.CUTOVER_GUIDE = {
   updated: "2026-10-22",
   whatsNew: [
+    "2026-10-22: Motion throughout the portal. Cards arrive in turn, buttons respond to a press, option tiles lift under the pointer, and folds open smoothly. Motion is turned off if your system asks for reduced motion.",
     "2026-10-22: Your path to a modernized application is the first card on What next. The footer at the bottom of the portal has been removed.",
     "2026-10-22: The project plan exports as its own document: a landscape page with a full timeline, a card for each phase, the approval gates, the people and the assumptions. PDF opens the print dialog, and HTML downloads a file.",
     "2026-10-22: What next? reads in order: scope, then the modernize path (approach, language and owner approval, effort and plan), then next steps, then team and reports. A path bar shows which step is done and which is next, and the mind map and the effort card open on request.",
