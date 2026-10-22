@@ -405,9 +405,21 @@ test("a stage cannot be reviewed while it is locked, or before its output is rea
   assert.match(locked.body.error, /Clear Choose the approach/);
   analysis.deeper_done = true;
   analysis.modern_template = "web-modern";
-  const notReady = await call(`/api/analyses/${AN_ACME}/progress`, { as: "eng_a", method: "PUT", body: { action: "review", stage: "plan" } });
+  analysis.modern_progress = { plan: { reviewed_by: PEOPLE.eng_a.email, reviewed_at: NOW } };
+  const notReady = await call(`/api/analyses/${AN_ACME}/progress`, { as: "eng_a", method: "PUT", body: { action: "review", stage: "starter" } });
   assert.equal(notReady.status, 409);
   assert.match(notReady.body.error, /not ready yet/);
+});
+
+test("a platform engineer can review the plan once the approach is chosen", async () => {
+  const analysis = state.analyses.find((a) => a.id === AN_ACME);
+  analysis.deeper_done = true;
+  analysis.modern_template = "lift-contain";
+  analysis.modern_progress = {};
+  const plan = await call(`/api/analyses/${AN_ACME}/progress`, { as: "eng_a", method: "PUT", body: { action: "review", stage: "plan" } });
+  assert.equal(plan.status, 200);
+  assert.equal(plan.body.stages.find((s) => s.id === "plan").state, "cleared");
+  assert.equal(plan.body.stages.find((s) => s.id === "starter").state, "available");
 });
 
 test("only a platform engineer can review, and an unknown stage or action is refused", async () => {

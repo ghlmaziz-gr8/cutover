@@ -1268,6 +1268,7 @@ pre{white-space:pre-wrap;word-break:break-word;background:var(--soft);padding:12
 <script src="config.js"></script>
 <script src="guide.js"></script>
 <script src="modernize.js"></script>
+<script src="plan.js"></script>
 <script>
 (() => {
   "use strict";
@@ -3548,6 +3549,29 @@ a{color:#6d28d9;font-weight:600}`;
     }
   }
 
+  // Stage 1: downloads the plan as Markdown, built from what this viewer can already see.
+  function downloadPlan(row) {
+    const deeper = row.findings && row.findings.deeper;
+    const md = window.Plan.build({
+      appName: row.app_name,
+      repo: row.repo,
+      template: row.modern_template,
+      chosenBy: row.modern_template_set_by_email,
+      chosenAt: row.modern_template_set_at ? row.modern_template_set_at.slice(0, 10) : null,
+      findings: currentFindings,
+      deeper,
+      generatedAt: new Date().toISOString().slice(0, 10),
+    });
+    const blob = new Blob([md], { type: "text/markdown" });
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = `modernization-plan-${(row.app_name || row.repo || "app").replace(/[^a-z0-9]+/gi, "-").toLowerCase()}.md`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+  }
+
   function renderPath(row) {
     const stages = row.stages || [];
     const wrap = el("div", null, "stage-path");
@@ -3577,6 +3601,13 @@ a{color:#6d28d9;font-weight:600}`;
       card.appendChild(label);
       card.appendChild(el("h4", s.title));
       card.appendChild(el("p", s.produces, "muted small"));
+      if (s.id === "plan" && s.state !== "locked" && row.modern_template) {
+        const download = el("button", "Download the plan");
+        download.type = "button";
+        download.className = "ghost";
+        download.addEventListener("click", () => downloadPlan(row));
+        card.appendChild(download);
+      }
       if (s.state === "cleared") {
         const by = s.cleared_by ? ` by ${s.cleared_by}` : "";
         card.appendChild(el("p", `Cleared${by}.`, "small"));
