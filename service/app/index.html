@@ -943,6 +943,36 @@ button:not(:disabled):active{transform:scale(.965)}
   .screen > .card,.screen > .next-group,.cards2 > .card,.fold[open] > :not(summary),.fold-card[open] > :not(summary),.next-step.is-now .next-dot{animation:none!important}
   button:not(:disabled):active,.src-opt:not(:disabled):hover,.next-step:hover{transform:none!important}
 }
+/* Motion for the maps, the people and the timeline. */
+@keyframes radDraw{from{stroke-dashoffset:1}to{stroke-dashoffset:0}}
+@keyframes radPop{from{opacity:0;transform:scale(.4)}to{opacity:1;transform:none}}
+@keyframes radLeaf{from{opacity:0;transform:translate(var(--fx,0px),var(--fy,0px)) scale(.6)}to{opacity:1;transform:none}}
+@keyframes barShine{to{transform:translateX(100%)}}
+@keyframes rowIn{from{opacity:0;transform:translateX(-12px)}to{opacity:1;transform:none}}
+@keyframes labelIn{from{opacity:0;transform:translateX(-8px)}to{opacity:1;transform:none}}
+@keyframes gatePop{from{opacity:0;transform:rotate(45deg) scale(0)}to{opacity:1;transform:rotate(45deg)}}
+.rad .rad-edge{stroke-dasharray:1;stroke-dashoffset:0;animation:radDraw 1s cubic-bezier(.4,0,.2,1) backwards}
+.rad .rad-root,.rad .rad-branch{transform-box:fill-box;transform-origin:center;animation:radPop .8s cubic-bezier(.34,1.56,.64,1) backwards}
+.rad .rad-point{animation:radLeaf .7s cubic-bezier(.2,.8,.2,1) backwards}
+.gantt-row:not(.gantt-head){animation:rowIn .6s cubic-bezier(.2,.8,.2,1) backwards;animation-delay:var(--d,0ms)}
+.gantt-label{animation:labelIn .5s cubic-bezier(.2,.8,.2,1) backwards;animation-delay:var(--d,0ms)}
+.gantt-label:hover b{color:var(--c)}
+.gantt-week{animation:effPop .4s cubic-bezier(.2,.8,.2,1) backwards;animation-delay:calc(var(--w,0) * 22ms + 80ms)}
+.gantt-bar{position:relative;transition:scale .3s cubic-bezier(.2,.8,.2,1),filter .3s}
+.gantt-bar::after{content:"";position:absolute;inset:0;background:linear-gradient(100deg,transparent 35%,rgba(255,255,255,.55) 50%,transparent 65%);transform:translateX(-100%);animation:barShine 1.1s ease-out backwards;animation-delay:calc(var(--d,0ms) + 650ms);pointer-events:none}
+.gantt-row:hover .gantt-bar{scale:1 1.18;filter:brightness(1.06)}
+.gantt-bar[data-short] .gantt-bar-d{display:none}
+.gantt-gate{animation:gatePop .6s cubic-bezier(.34,1.56,.64,1) backwards;animation-delay:calc(var(--d,0ms) + 520ms)}
+.eff-role{animation:cardIn .6s cubic-bezier(.2,.8,.2,1) backwards;animation-delay:var(--d,0ms);transition:transform .3s cubic-bezier(.2,.8,.2,1),box-shadow .3s,border-color .3s}
+.eff-role:hover{transform:translateY(-3px);box-shadow:0 18px 32px -20px var(--accent,#6d28d9);border-color:color-mix(in srgb,var(--accent,#6d28d9) 40%,transparent)}
+.eff-fte{font-variant-numeric:tabular-nums}
+.eff-role-bar{position:relative;animation-delay:calc(var(--d,0ms) + 250ms)}
+.eff-role-bar::after{content:"";position:absolute;inset:0;background:linear-gradient(100deg,transparent 35%,rgba(255,255,255,.5) 50%,transparent 65%);transform:translateX(-100%);animation:barShine 1.2s ease-out backwards;animation-delay:calc(var(--d,0ms) + 1000ms);pointer-events:none}
+@media (prefers-reduced-motion:reduce){
+  .rad .rad-edge,.rad .rad-root,.rad .rad-branch,.rad .rad-point,.gantt-row,.gantt-label,.gantt-week,.gantt-bar::after,.gantt-gate,.eff-role,.eff-role-bar::after{animation:none!important}
+  .gantt-row:hover .gantt-bar{scale:none;filter:none}
+  .eff-role:hover{transform:none}
+}
 </style>
 </head>
 <body>
@@ -4434,6 +4464,26 @@ a{color:#6d28d9;font-weight:600}`;
     }
     svg.appendChild(pills);
 
+    // Motion: the map draws itself. Edges trace out from the root, branches pop in, and each leaf flies out of its branch.
+    const branchIndex = new Map(map.branches.map((b, i) => [b.id, i]));
+    svg.querySelectorAll(".rad-edge").forEach((p) => p.setAttribute("pathLength", "1"));
+    const rootNode = svg.querySelector(".rad-root");
+    if (rootNode) rootNode.style.animationDelay = "0ms";
+    for (const b of map.branches) {
+      const i = branchIndex.get(b.id);
+      const g = groupOf.get(b.id);
+      const at = 140 * i;
+      svg.querySelectorAll(`path.rad-edge:not(.rad-leaf-edge)[data-branch="${b.id}"]`).forEach((n) => { n.style.animationDelay = `${at}ms`; });
+      svg.querySelectorAll(`.rad-leaf-edge[data-branch="${b.id}"]`).forEach((n, j) => { n.style.animationDelay = `${at + 260 + j * 50}ms`; });
+      const branchNode = g.querySelector(".rad-branch");
+      if (branchNode) branchNode.style.animationDelay = `${at + 180}ms`;
+      g.querySelectorAll(".rad-point").forEach((n, j) => {
+        const l = b.leaves[j];
+        if (l) { n.style.setProperty("--fx", `${Math.round(b.x - l.x)}px`); n.style.setProperty("--fy", `${Math.round(b.y - l.y)}px`); }
+        n.style.animationDelay = `${at + 380 + j * 70}ms`;
+      });
+    }
+
     const applyCollapse = (id) => {
       const g = groupOf.get(id);
       if (!g) return;
@@ -4725,6 +4775,23 @@ a{color:#6d28d9;font-weight:600}`;
   // Those choices live in this page only and are reset when another analysis is opened.
   // The project plan as its own document: a landscape page with a vector timeline, phase cards, the team and the gates.
   // It is built from the same estimate as the card, so the numbers match. Nothing in it depends on the portal's styles.
+  // Counts a number up to its value. Used for the people's FTE figures. Reduced motion shows the value at once.
+  function countUp(node, to, suffix, delay) {
+    const fmtNum = (v) => (Number.isInteger(to) ? String(Math.round(v)) : (Math.round(v * 10) / 10).toFixed(1));
+    const reduce = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    if (reduce) { node.textContent = `${fmtNum(to)}${suffix}`; return; }
+    node.textContent = `${fmtNum(0)}${suffix}`;
+    const start = performance.now() + delay;
+    const dur = 900;
+    const tick = (now) => {
+      const t = Math.min(1, Math.max(0, (now - start) / dur));
+      const eased = 1 - Math.pow(1 - t, 3);
+      node.textContent = `${fmtNum(to * eased)}${suffix}`;
+      if (t < 1) requestAnimationFrame(tick);
+    };
+    requestAnimationFrame(tick);
+  }
+
   let planExport = null;
   const PLAN_COLORS = ["#6d28d9", "#2563eb", "#0d9488", "#16a34a", "#d97706", "#db2777", "#7c3aed", "#0891b2", "#4f46e5", "#059669", "#ea580c", "#9333ea", "#64748b"];
   function planDocumentHtml(p, pdf) {
@@ -5081,9 +5148,12 @@ a{color:#6d28d9;font-weight:600}`;
     box.appendChild(el("p", "People needed", "eyebrow-sm"));
     const maxFte = Math.max(...est.team.map((r) => r.fte), 1);
     const teamGrid = el("div", null, "eff-team-grid");
-    for (const r of est.team) {
+    for (const [teamIdx, r] of est.team.entries()) {
       const c = el("div", null, `eff-role${r.side === "client" ? " is-client" : ""}`);
-      c.append(el("b", r.role), el("span", `${r.fte} FTE`, "eff-fte"));
+      c.style.setProperty("--d", `${teamIdx * 60}ms`);
+      const fteNode = el("span", "0 FTE", "eff-fte");
+      c.append(el("b", r.role), fteNode);
+      countUp(fteNode, r.fte, " FTE", 220 + teamIdx * 60);
       const bar = el("i", null, "eff-role-bar");
       bar.style.width = `${Math.round((r.fte / maxFte) * 100)}%`;
       const track = el("div", null, "eff-role-track");
@@ -5130,12 +5200,17 @@ a{color:#6d28d9;font-weight:600}`;
       gantt.style.setProperty("--n", String(N));
       const headRow = el("div", null, "gantt-row gantt-head");
       headRow.appendChild(el("span", "Phase", "gantt-label-h"));
-      for (let w = 1; w <= N; w++) headRow.appendChild(el("span", String(w), "gantt-week"));
+      for (let w = 1; w <= N; w++) {
+        const wk = el("span", String(w), "gantt-week");
+        wk.style.setProperty("--w", String(w));
+        headRow.appendChild(wk);
+      }
       gantt.appendChild(headRow);
       est.phases.forEach((ph, idx) => {
         const color = EFFORT_PALETTE[idx % EFFORT_PALETTE.length];
         const rowEl = el("div", null, "gantt-row");
         rowEl.style.setProperty("--c", color);
+        rowEl.style.setProperty("--d", `${idx * 60}ms`);
         // A div with role button, so the phase name stays in the export (exports remove real buttons).
         const label = el("div", null, "gantt-label");
         label.setAttribute("role", "button");
@@ -5147,6 +5222,7 @@ a{color:#6d28d9;font-weight:600}`;
         bar.style.animationDelay = `${idx * 60}ms`;
         bar.append(el("span", `${ph.weeks} wk`, "gantt-bar-t"), el("span", ph.days ? `${fmt(ph.days)} d` : "", "gantt-bar-d"));
         bar.title = `${ph.name}: weeks ${ph.startWeek}–${ph.endWeek}`;
+        if (ph.weeks < 3) bar.dataset.short = "1";
         rowEl.append(label, bar);
         if (ph.gate) {
           const gate = el("span", null, "gantt-gate");
