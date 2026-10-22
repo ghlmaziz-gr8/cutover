@@ -1,31 +1,45 @@
-// Mind map of the three approaches: a plain tree built from the options and their points.
-// No drawing library. The page renders the tree as nested lists, so it works on a phone.
+// Mind map of the three approaches: a tree of labelled nodes with tones and icons.
+// No drawing library. The page draws the tree as nested lists, so it works on a phone and with a screen reader.
 // Run: node --test service/app/test/mindmap.test.mjs
 (function (root) {
-  const FIT = { recommended: "Best fit for this application", possible: "Possible fit", weak: "Weaker fit" };
+  const FIT = {
+    recommended: { tone: "best", text: "Best fit for this application" },
+    possible: { tone: "possible", text: "Possible fit" },
+    weak: { tone: "weak", text: "Weaker fit" },
+  };
 
-  // picks: the list returned by Modernize.choose(findings), each with its points from TEMPLATES.
-  // Returns { label, children } where each child is a node with its own children, or a leaf { label }.
-  function approach(picks, points) {
+  const leaves = (list, tone) => (list || []).map((t) => ({ kind: "leaf", tone, label: t }));
+
+  // picks: Modernize.choose(findings) output, each with evidence, score and max.
+  // points: the pros, cons and best-for of each approach, keyed by id.
+  // chosenId: the approach the platform engineer chose, if any.
+  function approach(picks, points, chosenId) {
     const list = Array.isArray(picks) ? picks : [];
     return {
+      kind: "root",
       label: "Modernize the application",
-      children: list.map((p) => {
+      meta: `${list.length} approaches`,
+      children: list.map((p, index) => {
         const pts = (points && points[p.id]) || {};
-        const groups = [
-          { label: "Pros", children: (pts.pros || []).map((t) => ({ label: t })) },
-          { label: "Cons", children: (pts.cons || []).map((t) => ({ label: t })) },
-          { label: "Best for", children: (pts.best || []).map((t) => ({ label: t })) },
-        ].filter((g) => g.children.length);
-        const reasons = (p.reasons || []).map((r) => ({ label: r }));
+        const fit = FIT[p.fit] || { tone: "weak", text: "" };
+        const groups = [];
+        if ((p.evidence || []).length) {
+          groups.push({ kind: "group", tone: "evidence", icon: "●", label: "Why it matches", children: leaves(p.evidence, "evidence") });
+        }
+        if ((pts.pros || []).length) groups.push({ kind: "group", tone: "pro", icon: "✓", label: "Pros", children: leaves(pts.pros, "pro") });
+        if ((pts.cons || []).length) groups.push({ kind: "group", tone: "con", icon: "!", label: "Cons", children: leaves(pts.cons, "con") });
+        if ((pts.best || []).length) groups.push({ kind: "group", tone: "fit", icon: "◎", label: "Best for", children: leaves(pts.best, "fit") });
         return {
+          kind: "branch",
           id: p.id,
           label: p.title,
-          tag: FIT[p.fit] || "",
-          children: [
-            ...(reasons.length ? [{ label: "Matches this application", children: reasons }] : []),
-            ...groups,
-          ],
+          tone: fit.tone,
+          fitText: fit.text,
+          score: p.score || 0,
+          max: p.max || 0,
+          chosen: !!chosenId && p.id === chosenId,
+          index,
+          children: groups,
         };
       }),
     };
