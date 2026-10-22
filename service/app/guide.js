@@ -11,6 +11,7 @@
 window.CUTOVER_GUIDE = {
   updated: "2026-10-22",
   whatsNew: [
+    "2026-10-22: Every result states whether an AI model was used and which one, or that no AI model was used. It also recommends the approach that past assessments in the workspace used.",
     "2026-10-22: Results show an animated AI badge when an AI model was part of the assessment. It does not appear for rules-only results.",
     "2026-10-22: Fixed: the review shows everything again, including the charts, the findings map, the cards and the architecture diagram.",
     "2026-10-22: A new card, Links and domains, lists the outside domains and web addresses the code calls. It shows plain HTTP connections and any address with a password or token in it. Security officers and CIOs or CTOs can see it.",
@@ -384,6 +385,8 @@ window.CUTOVER_GUIDE = {
       a: "It lists the outside domains and web addresses the code calls, with the files that use them. Only the host and path are kept; query strings are dropped. A plain HTTP connection, or an address with a password or token in it, is flagged." },
     { q: "What does the AI badge on the results mean?", step: "findings",
       a: "It appears when an AI model was part of this assessment, and it names the model. Results without the badge were made by the rules only." },
+    { q: "Which AI model was used for this assessment?", step: "findings",
+      a: "The results say it under the summary. If none is named, no AI model was used and the findings come from the rules only." },
     { q: "Where does the database structure come from?", step: "database",
       a: "A platform engineer makes it with the read-only access_metadata script in their own environment, and uploads the .json file on the deeper assessment page. It has names and counts only, with no row values." },
     { q: "Where are the modernized templates?", step: "findings",
