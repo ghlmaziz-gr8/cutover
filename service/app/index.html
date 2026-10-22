@@ -1002,6 +1002,7 @@ button:not(:disabled):active{transform:scale(.965)}
 /* The findings map, fully animated: a sheen on reveal, a staggered toolbar, a bump on each click and a lift on each finding. */
 .findings-map{position:relative}
 .findings-map::after{content:"";position:absolute;inset:0;border-radius:inherit;background:linear-gradient(100deg,transparent 40%,rgba(255,255,255,.55) 50%,transparent 60%);transform:translateX(-100%);animation:barShine 1.6s ease-out .4s backwards;pointer-events:none}
+.findings-top{margin:0 0 6px}
 .findings-map-wrap > h2,.findings-map-wrap > p{animation:cardIn .6s cubic-bezier(.2,.8,.2,1) backwards}
 .findings-map-wrap > p{animation-delay:.08s}
 .findings-map .mm-buttons > *{animation:effPop .5s cubic-bezier(.2,.8,.2,1) backwards}
@@ -6000,6 +6001,8 @@ a{color:#6d28d9;font-weight:600}`;
       box.appendChild(el("p", "No findings were saved for this analysis.", "muted"));
       return;
     }
+    // "What we found" is the heading of this section and the first thing on it.
+    box.appendChild(el("h2", "What we found", "findings-top"));
     const shown = report.findings || {};
     // A result that says nothing was found is kept in the report but is not a point, so it is left out of the counts and bars.
     const all = Object.values(shown).filter((i) => !i || i.point !== false);
@@ -6062,11 +6065,7 @@ a{color:#6d28d9;font-weight:600}`;
     }
     if (charts.childElementCount) box.appendChild(charts);
 
-    // Cards
-    const heading = el("h2", "What we found");
-    heading.style.marginTop = "28px";
-    box.appendChild(heading);
-    // The findings map sits straight under the heading, as its own section, before the cards.
+    // The findings map comes after the charts and before the cards.
     box.appendChild(findingsMapSection(all, cur.viewer_role));
     const grid = el("div", null, "rgrid");
     // The findings the summary cards show are left out of the topic cards, so each appears once.

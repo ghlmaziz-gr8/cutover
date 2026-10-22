@@ -70,7 +70,7 @@ test("the page draws the diagram after What we found, with the placeholders and 
   assert.ok(html.includes("arch-missing"));
   assert.ok(html.includes('el("ul", null, "arch-items")'));
   assert.ok(html.includes("architectureSection(report.deeper, Object.fromEntries(all.filter(Boolean).map((i) => [i.id, i])), cur.viewer_role)"));
-  const heading = html.indexOf('el("h2", "What we found")');
+  const heading = html.indexOf('el("h2", "What we found"');
   const map = html.indexOf("box.appendChild(findingsMapSection(all, cur.viewer_role));");
   const grid = html.indexOf("box.appendChild(grid);", heading);
   const arch = html.indexOf("box.appendChild(architectureSection(");
