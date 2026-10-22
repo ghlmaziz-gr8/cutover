@@ -1086,15 +1086,14 @@ button:not(:disabled):active{transform:scale(.965)}
 @media (prefers-reduced-motion:reduce){.conf-seg,.conf-fill,.conf-row{transition:none!important}}
 /* The AI badge on results: a sparkle that twinkles, a glow and a moving gradient. Shown only when AI was part of the assessment. */
 .findings-head{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
-.ai-badge{position:relative;isolation:isolate;display:inline-flex;align-items:center;gap:9px;padding:6px 14px 6px 6px;border-radius:999px;font:800 11px var(--body);letter-spacing:.07em;text-transform:uppercase;color:#fff;background:linear-gradient(120deg,#7c3aed,#db2777 55%,#f59e0b,#7c3aed);background-size:250% 100%;animation:aiFlow 7s linear infinite;box-shadow:0 10px 24px -12px #7c3aed}
-.ai-badge::before{content:"";position:absolute;inset:-5px;border-radius:999px;background:inherit;filter:blur(10px);opacity:.45;z-index:-1;animation:aiGlow 2.6s ease-in-out infinite}
-.ai-spark{display:grid;place-items:center;width:24px;height:24px;border-radius:50%;background:rgba(255,255,255,.22)}
-.ai-spark svg{width:15px;height:15px;transform-origin:center;animation:aiTwinkle 2.4s ease-in-out infinite}
-.ai-badge small{font:600 10.5px var(--body);text-transform:none;letter-spacing:0;opacity:.92}
-@keyframes aiFlow{to{background-position:250% 0}}
-@keyframes aiGlow{0%,100%{opacity:.3;transform:scale(1)}50%{opacity:.75;transform:scale(1.06)}}
-@keyframes aiTwinkle{0%,100%{transform:rotate(0) scale(1)}50%{transform:rotate(20deg) scale(1.18)}}
-@media (prefers-reduced-motion:reduce){.ai-badge,.ai-badge::before,.ai-spark svg{animation:none}}
+.ai-badge{display:inline-flex;align-items:center;gap:6px;vertical-align:middle;padding:2px 9px 2px 3px;margin-left:8px;border-radius:999px;font:700 10.5px var(--body);letter-spacing:.05em;text-transform:uppercase;color:#6d28d9;background:rgba(124,58,237,.09);border:1px solid rgba(124,58,237,.22)}
+.ai-spark{display:grid;place-items:center;width:18px;height:18px;border-radius:50%;color:#fff;background:linear-gradient(135deg,#7c3aed,#db2777)}
+.ai-spark svg{width:11px;height:11px;transform-origin:center;animation:aiTwinkle 3s ease-in-out infinite}
+.ai-badge small{font:600 10px var(--body);text-transform:none;letter-spacing:0;opacity:.8}
+@keyframes aiTwinkle{0%,100%{transform:rotate(0) scale(1)}50%{transform:rotate(20deg) scale(1.15)}}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]) .ai-badge{color:#ddd6fe;background:rgba(167,139,250,.14);border-color:rgba(167,139,250,.3)}}
+:root[data-theme="dark"] .ai-badge{color:#ddd6fe;background:rgba(167,139,250,.14);border-color:rgba(167,139,250,.3)}
+@media (prefers-reduced-motion:reduce){.ai-spark svg{animation:none}}
 </style>
 </head>
 <body>
