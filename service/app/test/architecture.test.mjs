@@ -122,3 +122,8 @@ test("findings bars animate in with a staggered grow and counted numbers", () =>
   assert.ok(html.includes("animation:barGrow 1s"));
   assert.ok(html.includes("countUp(num, r.value, \"\", idx * 90 + 200);"));
 });
+
+test("architecture layers keep their dim and selected styles after the entrance animation", () => {
+  assert.ok(html.includes(".arch-node.dim,.arch-band.dim{opacity:.38!important"));
+  assert.ok(!/\.arch-node\{[^}]*animation:archIn[^}]*both/.test(html));
+});

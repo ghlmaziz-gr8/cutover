@@ -349,7 +349,7 @@ form input + button{margin-top:16px}
 .arch-tag{font:700 11px var(--body);color:var(--accent,#6d28d9);letter-spacing:.04em}
 .arch-stage{margin-top:16px;padding:18px;border-radius:20px;background-color:var(--card,#fff);background-image:radial-gradient(color-mix(in srgb,var(--accent,#6d28d9) 14%,transparent) 1px,transparent 1px);background-size:18px 18px;border:1px solid var(--line,#e5e7eb)}
 .arch-flow{display:flex;align-items:stretch;gap:0;flex-wrap:nowrap;overflow-x:auto;padding:4px 2px 8px}
-.arch-node{flex:1 1 0;min-width:150px;position:relative;background:var(--card,#fff);border:1px solid color-mix(in srgb,var(--c) 35%,var(--line,#e5e7eb));border-radius:18px;padding:14px;box-shadow:0 10px 30px -18px color-mix(in srgb,var(--c) 60%,transparent);transition:transform .25s ease,box-shadow .25s ease;animation:archIn .6s cubic-bezier(.2,.8,.2,1) both;animation-delay:calc(var(--i,0) * 120ms)}
+.arch-node{flex:1 1 0;min-width:150px;position:relative;background:var(--card,#fff);border:1px solid color-mix(in srgb,var(--c) 35%,var(--line,#e5e7eb));border-radius:18px;padding:14px;box-shadow:0 10px 30px -18px color-mix(in srgb,var(--c) 60%,transparent);transition:transform .25s ease,box-shadow .25s ease;animation:archIn .6s cubic-bezier(.2,.8,.2,1) backwards;animation-delay:calc(var(--i,0) * 120ms)}
 .arch-node::before{content:"";position:absolute;inset:-1px -1px auto -1px;height:4px;border-radius:18px 18px 0 0;background:linear-gradient(90deg,var(--c),color-mix(in srgb,var(--c) 40%,#fff))}
 .arch-node:hover{transform:translateY(-3px);box-shadow:0 18px 36px -18px color-mix(in srgb,var(--c) 70%,transparent)}
 .arch-top-row{display:flex;gap:10px;align-items:center}
@@ -994,12 +994,12 @@ button:not(:disabled):active{transform:scale(.965)}
 @keyframes archDrift{to{background-position:18px 18px}}
 @keyframes missingBreath{0%,100%{border-color:var(--line,#e5e7eb)}50%{border-color:color-mix(in srgb,var(--c) 45%,transparent)}}
 .rad .rad-ring{transform-box:fill-box;transform-origin:center;opacity:0;animation:radRing 2.8s ease-out 1.2s infinite;pointer-events:none}
-.arch-link{animation:archIn .5s cubic-bezier(.2,.8,.2,1) both;animation-delay:calc(var(--i,0) * 120ms + 300ms)}
+.arch-link{animation:archIn .5s cubic-bezier(.2,.8,.2,1) backwards;animation-delay:calc(var(--i,0) * 120ms + 300ms)}
 .arch-packet{fill:var(--accent,#6d28d9);filter:drop-shadow(0 0 4px var(--accent,#6d28d9));animation:archPacket 1.8s ease-in-out infinite;animation-delay:calc(var(--i,0) * 300ms + 900ms);opacity:0}
 .arch-bubble{transition:transform .35s cubic-bezier(.34,1.56,.64,1)}
 .arch-node:hover .arch-bubble{transform:scale(1.08) rotate(-6deg)}
-.arch-node.arch-missing{animation:archIn .6s cubic-bezier(.2,.8,.2,1) both,missingBreath 3.6s ease-in-out infinite;animation-delay:calc(var(--i,0) * 120ms),calc(var(--i,0) * 120ms + 600ms)}
-.arch-band{animation:archIn .6s cubic-bezier(.2,.8,.2,1) both;animation-delay:700ms}
+.arch-node.arch-missing{animation:archIn .6s cubic-bezier(.2,.8,.2,1) backwards,missingBreath 3.6s ease-in-out infinite;animation-delay:calc(var(--i,0) * 120ms),calc(var(--i,0) * 120ms + 600ms)}
+.arch-band{animation:archIn .6s cubic-bezier(.2,.8,.2,1) backwards;animation-delay:700ms}
 .arch-stage{animation:archDrift 26s linear infinite}
 @media (prefers-reduced-motion:reduce){
   .rad .rad-ring,.arch-link,.arch-packet,.arch-node::after,.arch-node.arch-missing,.arch-band,.arch-stage{animation:none!important}
@@ -1038,7 +1038,7 @@ button:not(:disabled):active{transform:scale(.965)}
 .arch-node:focus-visible,.arch-band:focus-visible{outline:3px solid var(--accent,#6d28d9);outline-offset:3px}
 .arch-band{cursor:pointer;transition:transform .3s cubic-bezier(.2,.8,.2,1),box-shadow .3s,opacity .35s,filter .35s}
 .arch-band:hover{transform:translateY(-2px);box-shadow:0 14px 30px -18px var(--c)}
-.arch-node.dim,.arch-band.dim{opacity:.38;filter:saturate(.5)}
+.arch-node.dim,.arch-band.dim{opacity:.38!important;filter:saturate(.5)}
 .arch-node.is-selected,.arch-band.is-selected{transform:translateY(-4px) scale(1.01);box-shadow:0 0 0 2px var(--c),0 22px 40px -20px var(--c)}
 .arch-node.is-near{box-shadow:0 0 0 1.5px color-mix(in srgb,var(--c) 55%,transparent),0 14px 30px -18px var(--c)}
 .arch-link{transition:opacity .35s}
