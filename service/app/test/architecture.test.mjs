@@ -100,3 +100,8 @@ test("links and domains have their own card, shown when found, and the same acce
 test("every SVG element is created with an attribute object, so one bad call cannot stop the review from rendering", () => {
   assert.ok(!/svgEl\("[a-zA-Z]+"\)/.test(html), "svgEl needs an attribute object, even an empty one");
 });
+
+test("results show an animated AI badge only when an AI model was part of the assessment", () => {
+  assert.ok(html.includes("if (row.model_provider) findingsHead.appendChild(aiBadge(row.model_provider));"));
+  assert.ok(html.includes('"ai-badge"') && html.includes("@keyframes aiTwinkle"));
+});
