@@ -4701,6 +4701,194 @@ a{color:#6d28d9;font-weight:600}`;
   // Effort, resources and the project plan: the Cutover AI assessment (effort.js). Shown with the approach.
   // The viewer can change the scenario, each group's position in its range, the items counted, and the team size.
   // Those choices live in this page only and are reset when another analysis is opened.
+  // The project plan as its own document: a landscape page with a vector timeline, phase cards, the team and the gates.
+  // It is built from the same estimate as the card, so the numbers match. Nothing in it depends on the portal's styles.
+  let planExport = null;
+  const PLAN_COLORS = ["#6d28d9", "#2563eb", "#0d9488", "#16a34a", "#d97706", "#db2777", "#7c3aed", "#0891b2", "#4f46e5", "#059669", "#ea580c", "#9333ea", "#64748b"];
+  function planDocumentHtml(p, pdf) {
+    const esc = (v) => String(v ?? "").replace(/[&<>"']/g, (ch) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[ch]));
+    const est = p.est;
+    const fmt = (v) => (Math.round(v * 10) / 10).toLocaleString("en-US");
+    const N = Math.max(1, est.weeks);
+    const LEFT = 250;
+    const COL = Math.max(20, Math.floor(700 / N));
+    const W = LEFT + N * COL + 16;
+    const ROW = 46;
+    const TOP = 34;
+    const H = TOP + est.phases.length * ROW + 8;
+    const defs = PLAN_COLORS.map((c, i) => `<linearGradient id="pg${i}" x1="0" x2="1"><stop offset="0" stop-color="${c}"/><stop offset="1" stop-color="${c}" stop-opacity=".62"/></linearGradient>`).join("");
+    let grid = "";
+    for (let w = 0; w <= N; w++) grid += `<line x1="${LEFT + w * COL}" y1="${TOP}" x2="${LEFT + w * COL}" y2="${H - 8}" class="gl"/>`;
+    let weeks = "";
+    for (let w = 1; w <= N; w++) weeks += `<text x="${LEFT + (w - 0.5) * COL}" y="22" class="wk">${w}</text>`;
+    let rows = "";
+    est.phases.forEach((ph, i) => {
+      const y = TOP + i * ROW;
+      const c = PLAN_COLORS[i % PLAN_COLORS.length];
+      const name = ph.name.length > 34 ? `${ph.name.slice(0, 33)}…` : ph.name;
+      const who = (ph.owners || []).slice(0, 2).join(" · ");
+      const barX = LEFT + (ph.startWeek - 1) * COL + 3;
+      const barW = ph.weeks * COL - 6;
+      rows += `<rect x="0" y="${y}" width="${W}" height="${ROW}" class="${i % 2 ? "zb" : "zr"}"/>`;
+      rows += `<text x="10" y="${y + 19}" class="pn">${i + 1}. ${esc(name)}</text>`;
+      rows += `<text x="10" y="${y + 35}" class="pw">${esc(who.length > 44 ? `${who.slice(0, 43)}…` : who)}</text>`;
+      rows += `<rect x="${barX}" y="${y + 10}" width="${barW}" height="26" rx="13" fill="url(#pg${i % PLAN_COLORS.length})"/>`;
+      const label = barW > 110 ? `${ph.weeks} wk · ${fmt(ph.days)} d` : `${ph.weeks} wk`;
+      rows += `<text x="${barX + 10}" y="${y + 27}" class="bt">${esc(label)}</text>`;
+      if (ph.gate) {
+        const cx = LEFT + ph.endWeek * COL;
+        const cy = y + 23;
+        rows += `<rect x="${cx - 7}" y="${cy - 7}" width="14" height="14" rx="3" transform="rotate(45 ${cx} ${cy})" class="gate"/>`;
+      }
+    });
+    const svg = `<svg viewBox="0 0 ${W} ${H}" class="gantt-svg" role="img" aria-label="Timeline of ${est.phases.length} phases over ${N} weeks"><defs>${defs}</defs>${grid}${weeks}${rows}</svg>`;
+
+    const cards = est.phases.map((ph, i) => `
+      <article class="pc" style="--c:${PLAN_COLORS[i % PLAN_COLORS.length]}">
+        <header><span class="pi">${i + 1}</span><div><b>${esc(ph.name)}</b><span class="pm">Weeks ${ph.startWeek}–${ph.endWeek} · ${ph.weeks} ${ph.weeks === 1 ? "week" : "weeks"} · ${fmt(ph.days)} person-days</span></div>${ph.gate ? '<em class="gt">Gate</em>' : ""}</header>
+        <div class="pb">
+          <div><h4>Tasks</h4><ul>${ph.tasks.map((t) => `<li>${esc(t)}</li>`).join("")}</ul></div>
+          <div><h4>Deliverables</h4><p>${ph.deliverables.map((d) => `<span class="pill">${esc(d)}</span>`).join("")}</p>
+          <h4>Who works on it</h4><p>${(ph.owners || []).map((o) => `<span class="pill who">${esc(o)}</span>`).join("")}</p></div>
+          <div><h4>Approval</h4>${ph.approvals.map((a) => `<p class="ap">${esc(a)}</p>`).join("")}</div>
+        </div>
+      </article>`).join("");
+
+    const team = est.team.map((r) => {
+      const max = Math.max(...est.team.map((x) => x.fte), 1);
+      return `<tr><td><b>${esc(r.role)}</b>${r.side === "client" ? ' <span class="cl">client side</span>' : ""}</td><td class="num">${r.fte}</td><td><div class="tb"><i style="width:${Math.round((r.fte / max) * 100)}%"></i></div></td><td class="muted">${esc(r.why)}</td></tr>`;
+    }).join("");
+
+    const gates = est.phases.filter((ph) => ph.gate).map((ph) => `<li><span class="gd"></span><div><b>Week ${ph.endWeek} · ${esc(ph.name)}</b>${ph.approvals.map((a) => `<span>${esc(a)}</span>`).join("")}</div></li>`).join("");
+
+    const figure = (label, value, sub) => `<div class="kf"><span>${esc(label)}</span><b>${esc(value)}</b><small>${esc(sub)}</small></div>`;
+    const figures = [
+      figure("Total effort", `${fmt(est.total.value)}`, `person-days, ${p.scenario}`),
+      figure("Duration", `${est.weeks} weeks`, `${est.phases.length} phases, one after another`),
+      figure("Team", `${est.headcount} people`, p.teamSize ? "set by the team size chosen" : "sized from the build"),
+      figure("Approval gates", `${est.phases.filter((ph) => ph.gate).length}`, "owner or a CIO or CTO approves"),
+    ].join("");
+
+    const css = `
+      @page{size:A4 landscape;margin:12mm}
+      *{box-sizing:border-box}
+      body{margin:0;font:13px/1.5 "Segoe UI",system-ui,-apple-system,Roboto,Helvetica,Arial,sans-serif;color:#111827;background:#f5f3ff}
+      .sheet{max-width:1100px;margin:0 auto;padding:28px 32px 36px;background:#fff}
+      .hero{position:relative;overflow:hidden;border-radius:22px;padding:26px 30px;color:#fff;background:linear-gradient(120deg,#6d28d9,#db2777 70%,#f59e0b)}
+      .hero::after{content:"";position:absolute;right:-60px;top:-60px;width:260px;height:260px;border-radius:50%;background:rgba(255,255,255,.12)}
+      .badge{display:inline-block;font:800 10px/1 system-ui;letter-spacing:.12em;text-transform:uppercase;padding:6px 10px;border-radius:999px;background:rgba(255,255,255,.2)}
+      h1{margin:12px 0 4px;font:800 28px/1.15 system-ui;letter-spacing:-.01em}
+      .hero p{margin:0;opacity:.92}
+      .meta{display:flex;flex-wrap:wrap;gap:8px 18px;margin-top:14px;font-size:12px;opacity:.95}
+      .kpis{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin:18px 0 6px}
+      .kf{border:1px solid #e5e7eb;border-radius:16px;padding:14px 16px;background:#fff}
+      .kf span{display:block;font:700 10px system-ui;letter-spacing:.08em;text-transform:uppercase;color:#6d28d9}
+      .kf b{display:block;font:800 22px/1.2 system-ui;margin-top:4px}
+      .kf small{color:#6b7280}
+      h2{font:800 15px system-ui;margin:24px 0 10px;display:flex;align-items:center;gap:10px}
+      h2::after{content:"";flex:1;height:1px;background:#e5e7eb}
+      .gantt-box{border:1px solid #e5e7eb;border-radius:18px;padding:10px 10px 6px;background:#fff}
+      .gantt-svg{width:100%;height:auto;display:block}
+      .gantt-svg .gl{stroke:#eef0f4;stroke-width:1}
+      .gantt-svg .wk{font:700 10px system-ui;fill:#6b7280;text-anchor:middle}
+      .gantt-svg .zr{fill:#ffffff}.gantt-svg .zb{fill:#faf9ff}
+      .gantt-svg .pn{font:700 12px system-ui;fill:#111827}
+      .gantt-svg .pw{font:500 10px system-ui;fill:#6b7280}
+      .gantt-svg .bt{font:700 10px system-ui;fill:#fff}
+      .gantt-svg .gate{fill:#111827;stroke:#fff;stroke-width:2}
+      .legend{font-size:11px;color:#6b7280;margin:8px 4px 0}
+      .cards{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+      .pc{break-inside:avoid;border:1px solid #e5e7eb;border-top:4px solid var(--c);border-radius:16px;padding:14px 16px;background:#fff}
+      .pc header{display:flex;gap:10px;align-items:flex-start}
+      .pi{display:grid;place-items:center;width:26px;height:26px;border-radius:9px;background:var(--c);color:#fff;font:800 12px system-ui;flex:0 0 auto}
+      .pc header div{flex:1}
+      .pc b{font:800 13px system-ui}
+      .pm{display:block;font-size:11px;color:#6b7280}
+      .gt{font:800 9px system-ui;letter-spacing:.08em;text-transform:uppercase;background:#111827;color:#fff;padding:4px 8px;border-radius:999px;font-style:normal}
+      .pb{display:grid;grid-template-columns:1.2fr 1fr 1fr;gap:12px;margin-top:10px}
+      .pb h4{margin:0 0 4px;font:800 9px system-ui;letter-spacing:.08em;text-transform:uppercase;color:#6d28d9}
+      .pb ul{margin:0;padding-left:16px;font-size:11.5px}
+      .pb p{margin:0;font-size:11.5px}
+      .ap{margin:0 0 4px}
+      .pill{display:inline-block;margin:0 4px 4px 0;padding:3px 8px;border-radius:999px;font-size:10.5px;background:#f5f3ff;border:1px solid #e5e7eb}
+      .pill.who{background:#eef2ff;border-color:transparent}
+      table{width:100%;border-collapse:collapse;font-size:12px}
+      th,td{text-align:left;padding:7px 8px;border-bottom:1px solid #eef0f4;vertical-align:middle}
+      th{font:800 9px system-ui;letter-spacing:.08em;text-transform:uppercase;color:#6d28d9}
+      td.num{font-weight:800;width:60px}
+      td.muted{color:#6b7280;width:45%}
+      .tb{height:6px;border-radius:99px;background:#f5f3ff;width:140px;overflow:hidden}
+      .tb i{display:block;height:100%;border-radius:99px;background:linear-gradient(90deg,#6d28d9,#db2777)}
+      .cl{font-size:9px;color:#6b7280;border:1px dashed #d1d5db;border-radius:999px;padding:1px 6px;margin-left:4px}
+      .gates{list-style:none;margin:0;padding:0;display:grid;grid-template-columns:1fr 1fr;gap:10px}
+      .gates li{display:flex;gap:10px;border:1px solid #e5e7eb;border-radius:14px;padding:10px 12px}
+      .gd{width:12px;height:12px;background:#111827;transform:rotate(45deg);margin-top:4px;flex:0 0 auto}
+      .gates span{display:block;font-size:11.5px;color:#374151}
+      .two{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+      .box{border:1px solid #e5e7eb;border-radius:16px;padding:12px 16px}
+      .box ul{margin:0;padding-left:18px;font-size:12px}
+      .foot{margin-top:22px;font-size:10.5px;color:#6b7280;display:flex;justify-content:space-between;border-top:1px solid #e5e7eb;padding-top:10px}
+      @media print{
+        body{background:#fff}
+        .sheet{padding:0;max-width:none}
+        .hero{-webkit-print-color-adjust:exact;print-color-adjust:exact}
+        .gantt-box,.pc,.box,.kf{-webkit-print-color-adjust:exact;print-color-adjust:exact}
+        h2{break-after:avoid}
+        .gantt-box{break-inside:avoid}
+      }
+      @media screen{.sheet{margin-top:24px;border-radius:24px;box-shadow:0 20px 60px -30px rgba(0,0,0,.35)}}
+      @media (max-width:760px){.kpis,.cards,.two,.gates,.pb{grid-template-columns:1fr}}`;
+
+    const tag = (name) => "<" + name + ">";
+    const script = pdf ? tag("script") + "window.addEventListener('load',function(){setTimeout(function(){window.print();},350);});" + tag("/script") : "";
+    return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${esc(p.title)}</title><style>${css}</style></head><body><main class="sheet">
+      <section class="hero">
+        <span class="badge">${esc(est.label || "Cutover AI assessment")}</span>
+        <h1>${esc(p.title)}</h1>
+        <p>${esc(p.approach)} · ${esc(p.language)}</p>
+        <div class="meta"><span>Owner: ${esc(p.owner)}</span><span>${esc(p.approved)}</span><span>Prepared ${esc(p.generated)}</span></div>
+      </section>
+      <div class="kpis">${figures}</div>
+      <h2>Timeline</h2>
+      <div class="gantt-box">${svg}</div>
+      <p class="legend">Each bar is one phase, and phases run one after another. The diamond marks an approval gate. Weeks run from the start of the project.</p>
+      <h2>Phases</h2>
+      <div class="cards">${cards}</div>
+      <h2>Approval gates</h2>
+      <ul class="gates">${gates || "<li>No approval gates in this plan.</li>"}</ul>
+      <h2>People</h2>
+      <table><thead><tr><th>Role</th><th>FTE</th><th>Share</th><th>What they do</th></tr></thead><tbody>${team}</tbody></table>
+      <div class="two" style="margin-top:18px">
+        <div class="box"><h4 style="margin:0 0 6px;font:800 9px system-ui;letter-spacing:.08em;text-transform:uppercase;color:#6d28d9">Assumptions</h4><ul>${est.assumptions.map((a) => `<li>${esc(a)}</li>`).join("")}</ul></div>
+        <div class="box"><h4 style="margin:0 0 6px;font:800 9px system-ui;letter-spacing:.08em;text-transform:uppercase;color:#6d28d9">Gaps and things to check</h4><ul>${(est.notes || []).map((n) => `<li>${esc(n)}</li>`).join("") || "<li>None found.</li>"}</ul></div>
+      </div>
+      <footer class="foot"><span>${esc(est.label || "Cutover AI assessment")} · a planning range for review, not a quote</span><span>${esc(p.app)}</span></footer>
+    </main>${script}</body></html>`;
+  }
+
+  // Opens the plan as a document: as a print dialog for a PDF, or downloads an HTML file.
+  function exportPlan(pdf) {
+    if (!planExport) return;
+    const html = planDocumentHtml(planExport, pdf);
+    const blob = new Blob([html], { type: "text/html" });
+    const url = URL.createObjectURL(blob);
+    if (pdf) {
+      const w = window.open(url, "_blank");
+      if (!w) {
+        showToast({ tone: "bad", title: "Allow pop-ups to export the plan", body: "Your browser blocked the new window. Allow pop-ups for this site and try again." });
+      }
+      setTimeout(() => URL.revokeObjectURL(url), 60000);
+      return;
+    }
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `${(planExport.app || "application").replace(/[^A-Za-z0-9_-]+/g, "-").replace(/^-+|-+$/g, "")}-project-plan.html`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  }
+
   let effortState = null;
   const EFFORT_PALETTE = ["#6d28d9", "#2563eb", "#0d9488", "#16a34a", "#d97706", "#db2777", "#7c3aed", "#0891b2", "#4f46e5", "#059669", "#ea580c", "#9333ea", "#64748b"];
   const TEAM_SIZES = [4, 6, 8, 10, 12, 15, 18, 21];
@@ -4720,6 +4908,18 @@ a{color:#6d28d9;font-weight:600}`;
     const est = E.build(effortFactsOf(row), { scenario: st.scenario, shares: st.shares, excluded: st.excluded, teamSize: st.teamSize });
     const fmt = (v) => (Math.round(v * 10) / 10).toLocaleString("en-US");
     const pct = (t) => `${Math.round(t * 100)}%`;
+    planExport = {
+      est,
+      title: planTitle(),
+      app: cur.app_name || cur.repo || "Application",
+      approach: TEMPLATE_NAME[row.modern_template] || row.modern_template,
+      language: row.target_language ? ((row.target_options || []).find((o) => o.id === row.target_language) || {}).label || row.target_language : "Language not chosen yet",
+      owner: row.target_owner_email || "Not named yet",
+      approved: row.target_approval ? `Approved${row.target_approval.by ? ` by ${row.target_approval.by}` : ""}` : "Awaiting approval",
+      generated: new Date().toLocaleDateString("en-US", { year: "numeric", month: "short", day: "numeric" }),
+      scenario: st.scenario,
+      teamSize: st.teamSize,
+    };
     $("effortSum").textContent = est.ready
       ? `Effort, resources and project plan · ${fmt(est.total.value)} person-days · ${est.weeks} weeks · ${est.headcount} people`
       : "Effort, resources and project plan";
@@ -4893,10 +5093,10 @@ a{color:#6d28d9;font-weight:600}`;
     planHead.appendChild(el("span", "", "eff-plan-spacer"));
     const planPdf = el("button", "Export plan PDF", "ghost small-btn");
     planPdf.type = "button";
-    planPdf.addEventListener("click", () => exportCardPdf("effortPlan", planTitle()));
+    planPdf.addEventListener("click", () => exportPlan(true));
     const planHtml = el("button", "Export plan HTML", "ghost small-btn");
     planHtml.type = "button";
-    planHtml.addEventListener("click", () => exportCardHtml("effortPlan", planTitle(), "project-plan"));
+    planHtml.addEventListener("click", () => exportPlan(false));
     planHead.append(planPdf, planHtml);
     planWrap.appendChild(planHead);
     planWrap.appendChild(el("p", `${est.weeks} weeks in ${est.phases.length} phases, with a team of ${est.headcount}, for ${fmt(est.total.value)} person-days (${st.scenario}). Select a phase to see its tasks, deliverables and approvals.`, "muted small"));
