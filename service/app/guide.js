@@ -11,7 +11,7 @@
 window.CUTOVER_GUIDE = {
   updated: "2026-10-22",
   whatsNew: [
-    "2026-10-22: Your path to a modernized application is the first card on What next. The Datorian footer has been removed.",
+    "2026-10-22: Your path to a modernized application is the first card on What next. The footer at the bottom of the portal has been removed.",
     "2026-10-22: The project plan exports as its own document: a landscape page with a full timeline, a card for each phase, the approval gates, the people and the assumptions. PDF opens the print dialog, and HTML downloads a file.",
     "2026-10-22: What next? reads in order: scope, then the modernize path (approach, language and owner approval, effort and plan), then next steps, then team and reports. A path bar shows which step is done and which is next, and the mind map and the effort card open on request.",
     "2026-10-22: The project plan can be exported on its own as a PDF or an HTML file, with every phase's tasks, deliverables, approvals and owners.",
