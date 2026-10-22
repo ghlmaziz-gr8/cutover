@@ -5,87 +5,10 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Modern web front end over an API · Cutover template</title>
 <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600..800&family=DM+Sans:wght@400;500;700&display=swap" rel="stylesheet">
-<style>
-:root{
-  --bg:#f7f6ff; --fg:#1d1640; --muted:#66607f; --card:#ffffff; --line:#e4e0f6;
-  --accent:#6d28d9; --accent2:#ec4899; --accent3:#0891b2; --ok:#059669; --warn:#d97706;
-  --soft:#efeafd; --grad:linear-gradient(120deg,#6d28d9,#ec4899 55%,#f59e0b);
-  --display:"Bricolage Grotesque",system-ui,sans-serif; --body:"DM Sans",system-ui,sans-serif;
-  color-scheme:light;
-}
-@media (prefers-color-scheme:dark){
-  :root:not([data-theme="light"]){
-    --bg:#120e26; --fg:#f3f0ff; --muted:#a9a2c9; --card:#1c1735; --line:#2f2857;
-    --accent:#a78bfa; --accent2:#f472b6; --accent3:#22d3ee; --ok:#34d399; --warn:#fbbf24;
-    --soft:#261f4a; color-scheme:dark;
-  }
-}
-:root[data-theme="dark"]{
-  --bg:#120e26; --fg:#f3f0ff; --muted:#a9a2c9; --card:#1c1735; --line:#2f2857;
-  --accent:#a78bfa; --accent2:#f472b6; --accent3:#22d3ee; --ok:#34d399; --warn:#fbbf24;
-  --soft:#261f4a; color-scheme:dark;
-}
-*{box-sizing:border-box}
-body{margin:0;background:var(--bg);color:var(--fg);font:16px/1.55 var(--body)}
-.wrap{max-width:880px;margin:0 auto;padding:24px 16px 56px}
-a{color:var(--accent)}
-.back{font-size:14px;text-decoration:none;font-weight:700}
-.hero{margin:22px 0 26px;padding:28px;border-radius:24px;background:var(--card);border:1px solid var(--line);position:relative;overflow:hidden}
-.hero::before{content:"";position:absolute;inset:0 0 auto 0;height:5px;background:var(--grad)}
-.eyebrow{font-size:12px;letter-spacing:.12em;text-transform:uppercase;font-weight:700;color:var(--accent2);margin:0 0 6px}
-h1{font:800 clamp(28px,5vw,40px)/1.1 var(--display);margin:0 0 10px}
-h2{font:700 22px/1.2 var(--display);margin:30px 0 10px}
-.lead{margin:0;color:var(--muted);font-size:17px}
-.card{background:var(--card);border:1px solid var(--line);border-radius:18px;padding:18px 20px;margin-top:14px}
-ol.steps{margin:0;padding:0;list-style:none;display:grid;gap:10px;counter-reset:s}
-ol.steps li{counter-increment:s;display:grid;grid-template-columns:34px 1fr;gap:12px;align-items:start;padding:12px 14px;border-radius:14px;border:1px solid var(--line);background:var(--card)}
-ol.steps li::before{content:counter(s);width:34px;height:34px;border-radius:50%;background:var(--grad);color:#fff;font-weight:800;display:grid;place-items:center}
-ul{margin:8px 0 0;padding-left:20px}
-.two{display:grid;gap:14px;grid-template-columns:1fr 1fr}
-@media (max-width:640px){.two{grid-template-columns:1fr}}
-.flow{display:grid;grid-template-columns:1fr 28px 1fr 28px 1fr;gap:10px;align-items:center;margin-top:12px}
-.flow div{padding:14px 12px;border-radius:14px;text-align:center;font-weight:700;font-size:14px;background:var(--soft);border:1px solid var(--line)}
-.flow span{text-align:center;color:var(--accent3);font-weight:800}
-@media (max-width:640px){.flow{grid-template-columns:1fr}.flow span{transform:rotate(90deg);height:20px}}
-.tag{display:inline-block;margin:4px 6px 0 0;padding:4px 10px;border-radius:999px;font-size:13px;font-weight:700;background:var(--soft);color:var(--accent)}
-.note{color:var(--muted);font-size:14px;margin-top:22px}
-</style>
+<link rel="stylesheet" href="preview.css">
 </head>
 <body>
-<div class="wrap">
-<a class="back" href="../index.html">← Back to Cutover</a>
-<section class="hero">
-  <p class="eyebrow">Modernized template · web</p>
-  <h1>Modern web front end over an API</h1>
-  <p class="lead">Rebuild the screens as a modern web front end. A clean API sits in front of the data that already exists, so users get a current interface and the database stays as it is for now.</p>
-</section>
-<h2>When it fits</h2>
-<div class="card">
-  <p>Cutover recommends this when the findings show legacy page code, such as Classic ASP, JSP or ASP.NET Web Forms, with screens and endpoints the users reach directly.</p>
-  <span class="tag">Legacy pages</span><span class="tag">Screens found</span><span class="tag">Endpoints exposed</span>
-</div>
-<h2>How the move goes</h2>
-<ol class="steps">
-  <li><div><strong>Map the screens.</strong> Use the screen names and the page flow from the review to list every screen, and agree which ones matter most.</div></li>
-  <li><div><strong>Stand up the API.</strong> Put the business rules that live in the pages behind endpoints that return data, not HTML.</div></li>
-  <li><div><strong>Build the new front end</strong> one screen group at a time, starting with the simplest group, and run it beside the old pages.</div></li>
-  <li><div><strong>Move users across</strong> group by group, and retire each old page once its replacement has been used in production.</div></li>
-</ol>
-<h2>How it fits together</h2>
-<div class="flow">
-  <div>Users · browser</div><span>→</span><div>New front end</div><span>→</span><div>API and rules</div>
-</div>
-<div class="flow" style="margin-top:10px">
-  <div>Existing database</div><span>←</span><div>API and rules</div><span>·</span><div>Old pages retire</div>
-</div>
-<h2>What stays and what changes</h2>
-<div class="two">
-  <div class="card"><strong>Stays for now</strong><ul><li>The database and its data</li><li>Existing login and roles</li><li>Stored procedures, until the services take them over</li></ul></div>
-  <div class="card"><strong>Changes</strong><ul><li>Every page is rebuilt as a screen in the new front end</li><li>Logic moves from pages into the API</li><li>Deployment moves to a modern pipeline</li></ul></div>
-</div>
-<h2>Main risks</h2>
-<div class="card"><ul><li>Logic hidden in page code may be missed. Check each screen against its findings.</li><li>Two front ends run side by side for a time. Keep the navigation between them clear.</li><li>Session and role checks must match in the API, or access may widen.</li></ul></div>
-<p class="note">This is a template, not a plan for one application. Cutover shows where each finding is in the code, and the team decides the order.</p>
-</div>
+<div id="app" data-template="web-modern"></div>
+<script src="preview.js"></script>
 </body>
 </html>
