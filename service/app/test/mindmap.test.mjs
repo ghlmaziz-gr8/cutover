@@ -71,7 +71,7 @@ test("the page draws both maps with the rich renderer and the interactions", () 
   assert.ok(html.includes("function goToOption("));
   assert.ok(html.includes('c.id = `opt-${p.id}`') || html.includes('c.id = "opt-" + p.id'));
   assert.ok(html.includes("The plan at a glance"));
-  assert.ok(html.includes("drawMap(window.Plan.tree(planInput(row)), map, { radial: true, title: "Project plan" });"));
+  assert.ok(html.includes('drawMap(window.Plan.tree(planInput(row)), map, { radial: true, title: "Project plan" });'));
   assert.ok(html.includes("function planInput(row)"));
   assert.ok(html.includes("prefers-reduced-motion"));
 });
