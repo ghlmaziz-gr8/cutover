@@ -1150,6 +1150,10 @@ pre{white-space:pre-wrap;word-break:break-word;background:var(--soft);padding:12
       <p class="eyebrow-sm">Modernize</p>
       <h3 style="margin:4px 0 6px">Choose the approach</h3>
       <p class="muted small" id="approachNote" style="margin:0"></p>
+      <div class="row export-row" style="justify-content:flex-end;gap:8px;margin:10px 0 0">
+        <button type="button" class="ghost small-btn" id="exportApproachPdf">Export PDF</button>
+        <button type="button" class="ghost small-btn" id="exportApproachHtml">Export HTML</button>
+      </div>
       <div id="approachMap" class="mmap" aria-label="Map of the three approaches"></div>
       <div id="approachGrid"></div>
       <p class="small hint" id="approachMsg" role="status"></p>
@@ -5538,14 +5542,8 @@ const REGION_OPTS = {
   function reportHeader() {
     return `${$("reviewTitle").textContent} · ${$("reviewMeta").textContent}`;
   }
-  function printReportPdf() {
-    const box = $("printReport");
-    box.replaceChildren();
-    box.className = "report-export";
-    box.appendChild(el("h1", $("reviewTitle").textContent));
-    box.appendChild(el("p", $("reviewMeta").textContent, "print-meta"));
-    box.appendChild(reviewForExport());
-    if (cur.findings && cur.findings.deeper) box.appendChild(deeperForExport());
+  // Prints whatever is in #printReport, in the light theme, so cards and charts keep their on-screen colours.
+  function runPrint() {
     // Print in the light theme, so the cards and charts keep the same colours as the report on screen.
     const root = document.documentElement;
     const hadTheme = root.hasAttribute("data-theme");
@@ -5561,6 +5559,16 @@ const REGION_OPTS = {
     window.print();
     setTimeout(done, 1500);
   }
+  function printReportPdf() {
+    const box = $("printReport");
+    box.replaceChildren();
+    box.className = "report-export";
+    box.appendChild(el("h1", $("reviewTitle").textContent));
+    box.appendChild(el("p", $("reviewMeta").textContent, "print-meta"));
+    box.appendChild(reviewForExport());
+    if (cur.findings && cur.findings.deeper) box.appendChild(deeperForExport());
+    runPrint();
+  }
   $("pdfBtn").addEventListener("click", printReportPdf);
   $("exportPdfTop").addEventListener("click", printReportPdf);
 
@@ -5571,6 +5579,43 @@ const REGION_OPTS = {
     const title = `Cutover report: ${cur.app_name || cur.repo || ""}`;
     return `<!doctype html><html lang="en" data-theme="light"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="color-scheme" content="light"><title>${esc(title)}</title><style>${css}\n${REPORT_OVERRIDES}</style></head><body class="report-export"><main style="max-width:1100px;margin:0 auto;padding:24px"><h1>${esc($("reviewTitle").textContent)}</h1><p class="print-meta">${esc($("reviewMeta").textContent)}</p>${reviewForExport().outerHTML}</main></body></html>`;
   }
+  // Modernize approach: the approach card (mind map and the three options) as a PDF or an HTML file.
+  // Buttons and forms are removed; the map and its text are kept.
+  function approachForExport() {
+    const card = $("approachCard").cloneNode(true);
+    card.querySelectorAll(".export-row, button, input, textarea, select, form, script").forEach((n) => n.remove());
+    card.querySelectorAll("[id]").forEach((n) => n.removeAttribute("id"));
+    card.removeAttribute("hidden");
+    card.style.marginTop = "0";
+    card.classList.add("report-export");
+    return card;
+  }
+  function approachTitle() {
+    return `${cur.app_name || cur.repo || "Application"}: choose the approach`;
+  }
+  $("exportApproachPdf").addEventListener("click", () => {
+    const box = $("printReport");
+    box.replaceChildren();
+    box.className = "report-export";
+    box.appendChild(el("h1", approachTitle()));
+    box.appendChild(approachForExport());
+    runPrint();
+  });
+  $("exportApproachHtml").addEventListener("click", () => {
+    const esc = (v) => String(v ?? "").replace(/[&<>"']/g, (ch) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[ch]));
+    const css = [...document.querySelectorAll("style")].map((st) => st.textContent).join("\n");
+    const html = `<!doctype html><html lang="en" data-theme="light"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="color-scheme" content="light"><title>${esc(approachTitle())}</title><style>${css}\n${REPORT_OVERRIDES}</style></head><body class="report-export"><main style="max-width:1100px;margin:0 auto;padding:24px"><h1>${esc(approachTitle())}</h1>${approachForExport().outerHTML}</main></body></html>`;
+    const blob = new Blob([html], { type: "text/html" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `${(cur.app_name || cur.repo || "approach").replace(/[^A-Za-z0-9_-]+/g, "-").replace(/^-+|-+$/g, "")}-approach.html`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  });
+
   $("exportHtmlTop").addEventListener("click", () => {
     const blob = new Blob([buildReportHtml()], { type: "text/html" });
     const url = URL.createObjectURL(blob);
