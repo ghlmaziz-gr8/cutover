@@ -122,6 +122,7 @@ test("the portal reads the real findings and shows the plan, the exports and the
   assert.ok(html.includes('"ui.screens"') || html.includes("'ui.screens'") || html.includes('val("ui.screens")'));
   assert.ok(html.includes('val("legacy.databases")'));
   assert.ok(html.includes('val("legacy.not_read")'));
-  assert.ok(html.includes("View the project plan"));
+  assert.ok(html.includes('"Timeline"') && html.includes('"Cards"'), "the plan has a timeline and a cards view");
+  assert.ok(html.includes("gantt-gate"), "approval gates are drawn on the timeline");
   assert.ok(html.includes('exportCardPdf("effortCard"'));
 });

@@ -765,6 +765,101 @@ pre{white-space:pre-wrap;word-break:break-word;background:var(--soft);padding:12
 .eff-plan{margin-top:14px;padding:14px;border-radius:14px;border:1px solid var(--line,#e5e7eb)}
 .eff-phase{padding:8px 0;border-top:1px dashed var(--line,#e5e7eb)}
 .eff-group td{font-weight:800;background:color-mix(in srgb,var(--accent,#6d28d9) 7%,transparent);color:var(--fg)}
+
+/* Effort: interactive controls, hero total, groups with sliders and switches, team cards, timeline plan. */
+.eff-controls{display:flex;flex-wrap:wrap;gap:12px;align-items:center;justify-content:space-between;margin:14px 0 4px}
+.eff-seg{display:inline-flex;gap:4px;padding:4px;border-radius:16px;background:color-mix(in srgb,var(--accent,#6d28d9) 8%,var(--card,#fff));border:1px solid var(--line,#e5e7eb);flex-wrap:wrap}
+.eff-seg-btn{all:unset;cursor:pointer;display:flex;flex-direction:column;padding:8px 14px;border-radius:12px;font:600 13px var(--body);color:var(--fg);transition:background .2s,box-shadow .2s,transform .2s}
+.eff-seg-btn b{font:800 13px var(--body)}
+.eff-seg-hint{font:500 11px var(--body);color:var(--muted,#64748b)}
+.eff-seg-btn:hover{transform:translateY(-1px)}
+.eff-seg-btn:focus-visible{outline:3px solid var(--accent,#6d28d9);outline-offset:2px}
+.eff-seg-btn.is-on{background:var(--card,#fff);box-shadow:0 6px 16px -8px var(--accent,#6d28d9)}
+.eff-seg-btn.is-on b{color:var(--accent,#6d28d9)}
+.eff-seg-small .eff-seg-btn{flex-direction:row;padding:6px 12px}
+.eff-team{display:flex;align-items:center;gap:8px}
+.eff-team-label{font:700 12px var(--body);color:var(--muted,#64748b);text-transform:uppercase;letter-spacing:.05em}
+.eff-select{font:700 14px var(--body);padding:9px 14px;border-radius:12px;border:1px solid var(--line,#e5e7eb);background:var(--card,#fff);color:var(--fg);cursor:pointer;appearance:auto}
+.eff-hero{display:grid;grid-template-columns:minmax(0,1.2fr) minmax(0,1fr);gap:16px;margin:14px 0 18px;padding:18px;border-radius:22px;background:radial-gradient(120% 140% at 0% 0%,color-mix(in srgb,var(--accent,#6d28d9) 14%,transparent),transparent 60%),var(--card,#fff);border:1px solid var(--line,#e5e7eb)}
+.eff-total{display:flex;flex-direction:column;gap:4px}
+.eff-total-num{font:800 44px/1 var(--body);background:var(--grad);-webkit-background-clip:text;background-clip:text;color:transparent;animation:effPop .5s cubic-bezier(.2,.8,.2,1) both}
+.eff-total-unit{font:600 13px var(--body);color:var(--muted,#64748b)}
+.eff-track{position:relative;height:10px;border-radius:99px;margin:14px 0 6px;background:linear-gradient(90deg,#10b981,#6d28d9 50%,#db2777)}
+.eff-marker{position:absolute;top:50%;width:20px;height:20px;border-radius:50%;background:#fff;border:3px solid var(--accent,#6d28d9);transform:translate(-50%,-50%);box-shadow:0 6px 16px -4px rgba(0,0,0,.35);transition:left .5s cubic-bezier(.2,.8,.2,1)}
+.eff-chips{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;align-content:start}
+.eff-chip{display:flex;flex-direction:column;gap:2px;padding:12px 14px;border-radius:16px;background:var(--card,#fff);border:1px solid var(--line,#e5e7eb);box-shadow:0 8px 20px -16px rgba(0,0,0,.4)}
+.eff-chip b{font:800 16px var(--body)}
+.eff-group-card{margin:10px 0;padding:14px 16px;border-radius:18px;border:1px solid var(--line,#e5e7eb);background:var(--card,#fff);transition:box-shadow .2s,transform .2s}
+.eff-group-card:hover{box-shadow:0 14px 30px -20px rgba(0,0,0,.45);transform:translateY(-1px)}
+.eff-group-head{display:flex;justify-content:space-between;gap:12px;align-items:baseline;flex-wrap:wrap}
+.eff-group-head b{font:800 15px var(--body)}
+.eff-group-val{font:700 13px var(--body);color:var(--accent,#6d28d9)}
+.eff-group-bar{height:6px;border-radius:99px;background:var(--soft,#f5f3ff);margin:10px 0;overflow:hidden}
+.eff-group-fill{display:block;height:100%;border-radius:99px;background:var(--grad);transform-origin:left;animation:effGrow .8s cubic-bezier(.2,.8,.2,1) both}
+.eff-slider-row{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin:6px 0 10px}
+.eff-slider{flex:1 1 220px;-webkit-appearance:none;appearance:none;height:8px;border-radius:99px;background:linear-gradient(90deg,var(--accent,#6d28d9) var(--p,50%),var(--line,#e5e7eb) var(--p,50%));outline:none}
+.eff-slider::-webkit-slider-thumb{-webkit-appearance:none;width:20px;height:20px;border-radius:50%;background:#fff;border:3px solid var(--accent,#6d28d9);box-shadow:0 4px 12px -2px rgba(0,0,0,.35);cursor:pointer}
+.eff-slider::-moz-range-thumb{width:16px;height:16px;border-radius:50%;background:#fff;border:3px solid var(--accent,#6d28d9);cursor:pointer}
+.eff-readout{font:700 12px var(--body);color:var(--accent,#6d28d9);min-width:120px;text-align:right}
+.eff-items{list-style:none;margin:0;padding:0;display:grid;gap:6px}
+.eff-item{display:grid;grid-template-columns:auto minmax(0,1fr) auto auto auto;gap:10px;align-items:center;padding:8px 10px;border-radius:12px;background:color-mix(in srgb,var(--soft,#f5f3ff) 60%,transparent);font:500 13px var(--body);transition:opacity .2s}
+.eff-item.is-off{opacity:.45}
+.eff-item.is-off .eff-item-label{text-decoration:line-through}
+.eff-item-val{font:800 13px var(--body);color:var(--fg);min-width:52px;text-align:right}
+.eff-item-range{min-width:70px;text-align:right}
+.eff-item-found{white-space:nowrap}
+.eff-switch{appearance:none;-webkit-appearance:none;width:38px;height:22px;border-radius:99px;background:var(--line,#d1d5db);position:relative;cursor:pointer;transition:background .25s;margin:0;flex:0 0 auto}
+.eff-switch::after{content:"";position:absolute;top:3px;left:3px;width:16px;height:16px;border-radius:50%;background:#fff;box-shadow:0 2px 6px rgba(0,0,0,.25);transition:transform .25s cubic-bezier(.2,.8,.2,1)}
+.eff-switch:checked{background:var(--grad)}
+.eff-switch:checked::after{transform:translateX(16px)}
+.eff-switch:focus-visible{outline:3px solid var(--accent,#6d28d9);outline-offset:2px}
+.eff-team-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:10px;margin:8px 0 16px}
+.eff-role{padding:12px 14px;border-radius:16px;border:1px solid var(--line,#e5e7eb);background:var(--card,#fff);display:flex;flex-direction:column;gap:6px}
+.eff-role.is-client{border-style:dashed;background:transparent}
+.eff-role b{font:700 14px var(--body)}
+.eff-fte{font:800 13px var(--body);color:var(--accent,#6d28d9)}
+.eff-role-track{height:6px;border-radius:99px;background:var(--soft,#f5f3ff);overflow:hidden}
+.eff-role-bar{display:block;height:100%;border-radius:99px;background:var(--grad);animation:effGrow .8s cubic-bezier(.2,.8,.2,1) both}
+.eff-plan-head{display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;margin-top:20px}
+.eff-plan-head .eyebrow-sm{margin:0}
+.gantt-wrap{overflow-x:auto;border-radius:20px;border:1px solid var(--line,#e5e7eb);background:var(--card,#fff);padding:12px 12px 6px}
+.gantt{min-width:calc(230px + var(--n) * 30px)}
+.gantt-row{display:grid;grid-template-columns:230px repeat(var(--n),minmax(30px,1fr));align-items:center;min-height:52px;border-top:1px dashed var(--line,#e5e7eb);position:relative}
+.gantt-head{min-height:30px;border-top:0;font:700 11px var(--body);color:var(--muted,#64748b)}
+.gantt-week{text-align:center}
+.gantt-label-h{font:800 11px var(--body);text-transform:uppercase;letter-spacing:.06em;color:var(--accent,#6d28d9)}
+.gantt-label{all:unset;cursor:pointer;display:flex;flex-direction:column;gap:2px;padding:8px 10px 8px 4px;border-radius:12px;min-width:0}
+.gantt-label b{font:700 13px var(--body);color:var(--fg)}
+.gantt-label span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.gantt-label:focus-visible{outline:3px solid var(--accent,#6d28d9);outline-offset:2px}
+.gantt-row.is-open .gantt-label{background:color-mix(in srgb,var(--c) 8%,transparent)}
+.gantt-bar{margin:10px 0;height:30px;border-radius:999px;background:linear-gradient(90deg,var(--c),color-mix(in srgb,var(--c) 55%,#fff));color:#fff;display:flex;align-items:center;justify-content:space-between;padding:0 12px;font:700 11px var(--body);box-shadow:0 10px 20px -12px var(--c);transform-origin:left;animation:effGrow .7s cubic-bezier(.2,.8,.2,1) both;min-width:0;overflow:hidden;white-space:nowrap}
+.gantt-bar-d{opacity:.85}
+.gantt-gate{align-self:center;justify-self:end;width:16px;height:16px;background:#111827;transform:rotate(45deg);border-radius:3px;box-shadow:0 0 0 3px #fff,0 0 0 4px var(--c);margin-right:-8px;z-index:1}
+.gantt-detail{grid-column:1 / -1;padding:12px 14px;margin:0 0 8px;border-radius:16px;background:color-mix(in srgb,var(--soft,#f5f3ff) 70%,transparent)}
+.gantt-detail-cols{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:14px;margin-top:8px}
+.gantt-col ul{margin:6px 0 0;padding-left:18px}
+.gantt-col p{margin:6px 0 0}
+.eff-col-h{display:block;font:800 11px var(--body);text-transform:uppercase;letter-spacing:.06em;color:var(--accent,#6d28d9)}
+.eff-chip-row{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}
+.eff-pill{font:600 11px var(--body);padding:4px 10px;border-radius:999px;background:var(--card,#fff);border:1px solid var(--line,#e5e7eb);color:var(--fg)}
+.eff-pill.is-who{background:color-mix(in srgb,var(--accent,#6d28d9) 10%,transparent);border-color:transparent}
+.gantt-legend{margin-top:8px;display:flex;gap:8px;align-items:center}
+.eff-phase-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:12px;margin-top:10px}
+.eff-phase-card{border-radius:18px;padding:14px;border:1px solid var(--line,#e5e7eb);border-top:4px solid var(--c);background:var(--card,#fff);display:flex;flex-direction:column;gap:6px}
+.eff-phase-week{font:800 11px var(--body);color:var(--c);text-transform:uppercase;letter-spacing:.06em}
+.eff-phase-card ul{margin:4px 0 0;padding-left:18px}
+.eff-gate-tag{align-self:flex-start;font:800 10px var(--body);text-transform:uppercase;letter-spacing:.06em;padding:4px 9px;border-radius:999px;background:#111827;color:#fff;margin-top:4px}
+.eff-more{margin-top:16px;padding:12px 14px;border-radius:16px;border:1px solid var(--line,#e5e7eb)}
+.eff-more summary{cursor:pointer;font:700 14px var(--body)}
+@keyframes effGrow{from{transform:scaleX(0)}to{transform:scaleX(1)}}
+@keyframes effPop{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
+@media (max-width:760px){
+  .eff-hero{grid-template-columns:1fr}
+  .eff-item{grid-template-columns:auto minmax(0,1fr) auto}
+  .eff-item-found,.eff-item-range{display:none}
+}
+@media (prefers-reduced-motion:reduce){.eff-total-num,.gantt-bar,.eff-group-fill,.eff-role-bar{animation:none}}
 .eff-phase:first-of-type{border-top:0}
 .tl-owner{width:100%;max-width:420px;margin:6px 0 10px}
 .tl-status{margin-top:12px}
@@ -4519,6 +4614,12 @@ a{color:#6d28d9;font-weight:600}`;
   }
 
   // Effort, resources and the project plan: the Cutover AI assessment (effort.js). Shown with the approach.
+  // The viewer can change the scenario, each group's position in its range, the items counted, and the team size.
+  // Those choices live in this page only and are reset when another analysis is opened.
+  let effortState = null;
+  const EFFORT_PALETTE = ["#6d28d9", "#2563eb", "#0d9488", "#16a34a", "#d97706", "#db2777", "#7c3aed", "#0891b2", "#4f46e5", "#059669", "#ea580c", "#9333ea", "#64748b"];
+  const TEAM_SIZES = [4, 6, 8, 10, 12, 15, 18, 21];
+
   function renderEffort(row) {
     const card = $("effortCard");
     const box = $("effortBody");
@@ -4526,10 +4627,16 @@ a{color:#6d28d9;font-weight:600}`;
     const show = !!row && row.scope === "modernize" && !!row.modern_template && !!window.Effort;
     card.hidden = !show;
     if (!show) return;
+    if (!effortState || effortState.analysis !== row.id) {
+      effortState = { analysis: row.id, scenario: "expected", shares: {}, excluded: [], teamSize: null, view: "timeline" };
+    }
+    const st = effortState;
     const E = window.Effort;
-    const est = E.build(effortFactsOf(row));
+    const est = E.build(effortFactsOf(row), { scenario: st.scenario, shares: st.shares, excluded: st.excluded, teamSize: st.teamSize });
     const fmt = (v) => (Math.round(v * 10) / 10).toLocaleString("en-US");
-    const range = (lo, hi) => `${fmt(lo)}–${fmt(hi)}`;
+    const pct = (t) => `${Math.round(t * 100)}%`;
+    const again = () => renderEffort(row);
+
     const head = el("div", null, "arch-top");
     head.appendChild(el("span", E.LABEL, "arch-badge"));
     head.appendChild(el("span", "End to end", "arch-tag"));
@@ -4540,110 +4647,272 @@ a{color:#6d28d9;font-weight:600}`;
       box.appendChild(el("p", est.message, "muted"));
       return;
     }
-    const stats = el("div", null, "eff-stats");
-    const stat = (label, value) => {
-      const item = el("div", null, "eff-stat");
-      item.append(el("span", label, "muted small"), el("b", value));
-      stats.appendChild(item);
+
+    // Controls: scenario, team size.
+    const controls = el("div", null, "eff-controls");
+    const seg = el("div", null, "eff-seg");
+    seg.setAttribute("role", "radiogroup");
+    seg.setAttribute("aria-label", "Scenario");
+    const SCEN = [["lean", "Lean", "the low end of each range"], ["expected", "Expected", "the middle of each range"], ["cautious", "Cautious", "the high end of each range"]];
+    for (const [key, label, hint] of SCEN) {
+      const b = el("button", null, "eff-seg-btn");
+      b.type = "button";
+      b.setAttribute("role", "radio");
+      b.setAttribute("aria-checked", String(st.scenario === key));
+      b.title = hint;
+      b.append(el("b", label), el("span", hint, "eff-seg-hint"));
+      if (st.scenario === key) b.classList.add("is-on");
+      b.addEventListener("click", () => { st.scenario = key; st.shares = {}; again(); });
+      seg.appendChild(b);
+    }
+    const teamWrap = el("label", null, "eff-team");
+    teamWrap.append(el("span", "Team size", "eff-team-label"));
+    const sel = document.createElement("select");
+    sel.className = "eff-select";
+    sel.setAttribute("aria-label", "Team size");
+    const auto = document.createElement("option");
+    auto.value = "";
+    auto.textContent = `Automatic (${est.autoHeadcount} people)`;
+    sel.appendChild(auto);
+    for (const n of TEAM_SIZES) {
+      const o = document.createElement("option");
+      o.value = String(n);
+      o.textContent = `${n} people`;
+      sel.appendChild(o);
+    }
+    sel.value = st.teamSize ? String(st.teamSize) : "";
+    sel.addEventListener("change", () => { st.teamSize = sel.value ? Number(sel.value) : null; again(); });
+    teamWrap.appendChild(sel);
+    controls.append(seg, teamWrap);
+    box.appendChild(controls);
+
+    // Hero: the total, the range it sits in, and the headline numbers.
+    const hero = el("div", null, "eff-hero");
+    const big = el("div", null, "eff-total");
+    big.append(el("span", `${st.scenario === "lean" ? "Lean" : st.scenario === "cautious" ? "Cautious" : "Expected"} total`, "muted small"));
+    const num = el("b", `${fmt(est.total.value)}`, "eff-total-num");
+    big.append(num, el("span", "person-days", "eff-total-unit"));
+    const span = Math.max(1, est.total.high - est.total.low);
+    const at = Math.min(100, Math.max(0, ((est.total.value - est.total.low) / span) * 100));
+    const track = el("div", null, "eff-track");
+    track.setAttribute("aria-hidden", "true");
+    const marker = el("i", null, "eff-marker");
+    marker.style.left = `${at}%`;
+    track.appendChild(marker);
+    big.append(track, el("span", `Range ${fmt(est.total.low)} to ${fmt(est.total.high)} person-days`, "muted small"));
+    const stats = el("div", null, "eff-chips");
+    const chip = (label, value, sub) => {
+      const c = el("div", null, "eff-chip");
+      c.append(el("span", label, "muted small"), el("b", value), el("span", sub || "", "muted small"));
+      return c;
     };
-    stat("Total effort", `${range(est.total.low, est.total.high)} person-days`);
-    stat("Team", `${est.headcount} people`);
-    stat("Duration", `About ${est.weeks} weeks`);
-    stat("Phases", `${est.phases.length}`);
-    box.appendChild(stats);
+    const gates = est.phases.filter((p) => p.gate).length;
+    stats.append(
+      chip("Team", `${est.headcount} people`, st.teamSize ? `set by you, auto was ${est.autoHeadcount}` : "sized from the build"),
+      chip("Duration", `${est.weeks} weeks`, `${est.phases.length} phases`),
+      chip("Approval gates", `${gates}`, "owner or CIO or CTO"),
+    );
+    hero.append(big, stats);
+    box.appendChild(hero);
 
+    // Groups: a position slider for each part of the work, and a switch for each item.
     box.appendChild(el("p", "Effort by part of the project", "eyebrow-sm"));
-    const table = document.createElement("table");
-    table.className = "eff-table";
-    const thead = document.createElement("tr");
-    for (const h of ["Part", "Found", "Person-days"]) thead.appendChild(el("th", h));
-    table.appendChild(el("thead")).appendChild(thead);
-    const body = el("tbody");
+    box.appendChild(el("p", "Move a slider to set where a part sits in its range. Switch off an item to leave it out of the total.", "muted small"));
     for (const g of est.groups) {
-      const gr = document.createElement("tr");
-      gr.className = "eff-group";
-      const gc = el("td", g.title);
-      gc.colSpan = 2;
-      gr.append(gc, el("td", range(g.low, g.high)));
-      body.appendChild(gr);
+      const pos = st.shares[g.key] !== undefined ? st.shares[g.key] : { lean: 0, expected: 0.5, cautious: 1 }[st.scenario];
+      const gc = el("div", null, "eff-group-card");
+      const gh = el("div", null, "eff-group-head");
+      gh.append(el("b", g.title), el("span", `${fmt(g.value)} person-days`, "eff-group-val"));
+      gc.appendChild(gh);
+      const gb = el("div", null, "eff-group-bar");
+      const fill = el("i", null, "eff-group-fill");
+      fill.style.width = g.high > g.low ? "100%" : "0%";
+      gb.appendChild(fill);
+      gc.appendChild(gb);
+      const range = el("div", null, "eff-slider-row");
+      range.append(el("span", "Lean", "muted small"));
+      const slider = document.createElement("input");
+      slider.type = "range";
+      slider.min = "0";
+      slider.max = "100";
+      slider.step = "5";
+      slider.value = String(Math.round(pos * 100));
+      slider.className = "eff-slider";
+      slider.setAttribute("aria-label", `Position of ${g.title} in its range`);
+      slider.style.setProperty("--p", `${Math.round(pos * 100)}%`);
+      const readout = el("span", `${pct(pos)} of the range`, "eff-readout");
+      slider.addEventListener("input", () => { readout.textContent = `${slider.value}% of the range`; slider.style.setProperty("--p", `${slider.value}%`); });
+      slider.addEventListener("change", () => { st.shares[g.key] = Number(slider.value) / 100; again(); });
+      range.append(slider, el("span", "Cautious", "muted small"), readout);
+      gc.appendChild(range);
+      const list = el("ul", null, "eff-items");
       for (const i of g.items) {
-        const tr = document.createElement("tr");
-        const found = i.count === "" || i.count === undefined ? "—" : i.count ? `${i.count} ${i.unit}${i.count === 1 ? "" : "s"}` : "none";
-        tr.append(el("td", i.label), el("td", found), el("td", range(i.days[0], i.days[1])));
-        body.appendChild(tr);
+        const li = el("li", null, `eff-item${i.included ? "" : " is-off"}`);
+        const sw = document.createElement("input");
+        sw.type = "checkbox";
+        sw.className = "eff-switch";
+        sw.checked = i.included;
+        sw.setAttribute("role", "switch");
+        sw.setAttribute("aria-label", `Count ${i.label}`);
+        sw.addEventListener("change", () => {
+          st.excluded = sw.checked ? st.excluded.filter((x) => x !== i.label) : [...st.excluded, i.label];
+          again();
+        });
+        const found = i.count === "" || i.count === undefined ? "" : i.count ? `${i.count} ${i.unit}${i.count === 1 ? "" : "s"}` : "none found";
+        li.append(sw, el("span", i.label, "eff-item-label"), el("span", found, "eff-item-found muted small"), el("span", i.included ? `${fmt(i.value)}` : "off", "eff-item-val"), el("span", `${fmt(i.days[0])}–${fmt(i.days[1])}`, "eff-item-range muted small"));
+        list.appendChild(li);
       }
+      gc.appendChild(list);
+      box.appendChild(gc);
     }
-    const totalRow = document.createElement("tr");
-    totalRow.className = "eff-group";
-    const tc = el("td", "Total");
-    tc.colSpan = 2;
-    totalRow.append(tc, el("td", range(est.total.low, est.total.high)));
-    body.appendChild(totalRow);
-    table.appendChild(body);
-    box.appendChild(table);
 
+    // Team
     box.appendChild(el("p", "People needed", "eyebrow-sm"));
-    const res = document.createElement("table");
-    res.className = "eff-table";
-    const rh = document.createElement("tr");
-    for (const h of ["Role", "Share of time", "What they do"]) rh.appendChild(el("th", h));
-    res.appendChild(el("thead")).appendChild(rh);
-    const rb = el("tbody");
+    const maxFte = Math.max(...est.team.map((r) => r.fte), 1);
+    const teamGrid = el("div", null, "eff-team-grid");
     for (const r of est.team) {
-      const tr = document.createElement("tr");
-      tr.append(el("td", r.role + (r.side === "client" ? " (client side)" : "")), el("td", `${r.fte} FTE`), el("td", r.why));
-      rb.appendChild(tr);
+      const c = el("div", null, `eff-role${r.side === "client" ? " is-client" : ""}`);
+      c.append(el("b", r.role), el("span", `${r.fte} FTE`, "eff-fte"));
+      const bar = el("i", null, "eff-role-bar");
+      bar.style.width = `${Math.round((r.fte / maxFte) * 100)}%`;
+      const track = el("div", null, "eff-role-track");
+      track.appendChild(bar);
+      c.append(track);
+      c.append(el("span", r.why, "muted small"));
+      teamGrid.appendChild(c);
     }
-    res.appendChild(rb);
-    box.appendChild(res);
+    box.appendChild(teamGrid);
 
-    box.appendChild(el("p", "Assumptions", "eyebrow-sm"));
+    // Plan
+    const planHead = el("div", null, "eff-plan-head");
+    planHead.appendChild(el("p", "Project plan", "eyebrow-sm"));
+    const vseg = el("div", null, "eff-seg eff-seg-small");
+    vseg.setAttribute("role", "radiogroup");
+    for (const [key, label] of [["timeline", "Timeline"], ["cards", "Cards"]]) {
+      const b = el("button", label, "eff-seg-btn");
+      b.type = "button";
+      b.setAttribute("role", "radio");
+      b.setAttribute("aria-checked", String(st.view === key));
+      if (st.view === key) b.classList.add("is-on");
+      b.addEventListener("click", () => { st.view = key; again(); });
+      vseg.appendChild(b);
+    }
+    planHead.appendChild(vseg);
+    box.appendChild(planHead);
+    box.appendChild(el("p", `${est.weeks} weeks in ${est.phases.length} phases, with a team of ${est.headcount}. Select a phase to see its tasks, deliverables and approvals.`, "muted small"));
+
+    if (st.view === "timeline") {
+      const N = est.weeks;
+      const wrap = el("div", null, "gantt-wrap");
+      const gantt = el("div", null, "gantt");
+      gantt.style.setProperty("--n", String(N));
+      const headRow = el("div", null, "gantt-row gantt-head");
+      headRow.appendChild(el("span", "Phase", "gantt-label-h"));
+      for (let w = 1; w <= N; w++) headRow.appendChild(el("span", String(w), "gantt-week"));
+      gantt.appendChild(headRow);
+      est.phases.forEach((ph, idx) => {
+        const color = EFFORT_PALETTE[idx % EFFORT_PALETTE.length];
+        const rowEl = el("div", null, "gantt-row");
+        rowEl.style.setProperty("--c", color);
+        const label = el("button", null, "gantt-label");
+        label.type = "button";
+        label.setAttribute("aria-expanded", "false");
+        label.append(el("b", ph.name), el("span", ph.owners.slice(0, 2).join(" · ") || "Team", "muted small"));
+        const bar = el("div", null, "gantt-bar");
+        bar.style.gridColumn = `${ph.startWeek + 1} / ${ph.endWeek + 2}`;
+        bar.style.animationDelay = `${idx * 60}ms`;
+        bar.append(el("span", `${ph.weeks} wk`, "gantt-bar-t"), el("span", ph.days ? `${fmt(ph.days)} d` : "", "gantt-bar-d"));
+        bar.title = `${ph.name}: weeks ${ph.startWeek}–${ph.endWeek}`;
+        rowEl.append(label, bar);
+        if (ph.gate) {
+          const gate = el("span", null, "gantt-gate");
+          gate.style.gridColumn = `${ph.endWeek + 1} / ${ph.endWeek + 2}`;
+          gate.title = `Approval: ${ph.approvals.join("; ")}`;
+          rowEl.appendChild(gate);
+        }
+        const detail = el("div", null, "gantt-detail show-in-export");
+        detail.hidden = true;
+        detail.appendChild(el("p", `Weeks ${ph.startWeek}–${ph.endWeek} · ${ph.weeks} weeks · ${fmt(ph.days)} person-days`, "small muted"));
+        const cols = el("div", null, "gantt-detail-cols");
+        const tasks = el("div", null, "gantt-col");
+        tasks.append(el("b", "Tasks", "eff-col-h"));
+        const ul = el("ul", null, "small");
+        for (const t of ph.tasks) ul.appendChild(el("li", t));
+        tasks.appendChild(ul);
+        const deliv = el("div", null, "gantt-col");
+        deliv.append(el("b", "Deliverables", "eff-col-h"));
+        const chips = el("div", null, "eff-chip-row");
+        for (const d of ph.deliverables) chips.appendChild(el("span", d, "eff-pill"));
+        deliv.appendChild(chips);
+        const appr = el("div", null, "gantt-col");
+        appr.append(el("b", "Approval", "eff-col-h"));
+        for (const a of ph.approvals) appr.appendChild(el("p", a, "small"));
+        const who = el("div", null, "gantt-col");
+        who.append(el("b", "Who works on it", "eff-col-h"));
+        const wchips = el("div", null, "eff-chip-row");
+        for (const o of ph.owners) wchips.appendChild(el("span", o, "eff-pill is-who"));
+        who.appendChild(wchips);
+        cols.append(tasks, deliv, appr, who);
+        detail.appendChild(cols);
+        label.addEventListener("click", () => {
+          detail.hidden = !detail.hidden;
+          label.setAttribute("aria-expanded", String(!detail.hidden));
+          rowEl.classList.toggle("is-open", !detail.hidden);
+        });
+        gantt.append(rowEl, detail);
+      });
+      wrap.appendChild(gantt);
+      box.appendChild(wrap);
+      const legend = el("div", null, "gantt-legend muted small");
+      legend.append(el("span", "Each bar is one phase. Phases run one after another. The diamond marks an approval gate."));
+      box.appendChild(legend);
+    } else {
+      const cards = el("div", null, "eff-phase-grid");
+      est.phases.forEach((ph, idx) => {
+        const c = el("div", null, "eff-phase-card");
+        c.style.setProperty("--c", EFFORT_PALETTE[idx % EFFORT_PALETTE.length]);
+        c.append(el("span", `Weeks ${ph.startWeek}–${ph.endWeek}`, "eff-phase-week"));
+        c.append(el("b", ph.name));
+        c.append(el("span", `${ph.weeks} weeks · ${fmt(ph.days)} person-days`, "muted small"));
+        const ul = el("ul", null, "small");
+        for (const t of ph.tasks) ul.appendChild(el("li", t));
+        c.appendChild(ul);
+        const chips = el("div", null, "eff-chip-row");
+        for (const d of ph.deliverables) chips.appendChild(el("span", d, "eff-pill"));
+        c.appendChild(chips);
+        if (ph.gate) c.appendChild(el("span", "Approval gate", "eff-gate-tag"));
+        cards.appendChild(c);
+      });
+      box.appendChild(cards);
+    }
+
+    // Assumptions and gaps
+    const more = el("details", null, "eff-more");
+    more.appendChild(el("summary", "Assumptions and gaps in the analysis"));
     const aul = el("ul", null, "small");
     for (const a of est.assumptions) aul.appendChild(el("li", a));
-    box.appendChild(aul);
-
+    more.appendChild(aul);
     if (est.notes.length) {
-      box.appendChild(el("p", "Gaps and things to check in the code", "eyebrow-sm"));
-      const ul = el("ul", null, "small");
-      for (const n of est.notes) ul.appendChild(el("li", n));
-      box.appendChild(ul);
+      more.appendChild(el("p", "Gaps and things to check in the code", "eyebrow-sm"));
+      const nul = el("ul", null, "small");
+      for (const n of est.notes) nul.appendChild(el("li", n));
+      more.appendChild(nul);
     }
-
-    // Project plan: hidden until asked for, and included in the exports.
-    const plan = el("div", null, "eff-plan show-in-export");
-    plan.hidden = true;
-    plan.appendChild(el("p", "Project plan", "eyebrow-sm"));
-    plan.appendChild(el("p", `${est.weeks} weeks in ${est.phases.length} phases, with a team of ${est.headcount}. Phases run one after another.`, "muted small"));
-    for (const ph of est.phases) {
-      const item = el("div", null, "eff-phase");
-      const weeks = ph.startWeek === ph.endWeek ? `Week ${ph.startWeek}` : `Weeks ${ph.startWeek}–${ph.endWeek}`;
-      item.appendChild(el("b", `${weeks} · ${ph.name}`));
-      const ul = el("ul", null, "small");
-      for (const t of ph.tasks) ul.appendChild(el("li", t));
-      item.appendChild(ul);
-      item.appendChild(el("p", `Deliverables: ${ph.deliverables.join(", ")}`, "small muted"));
-      item.appendChild(el("p", `Approval: ${ph.approvals.join("; ")}`, "small muted"));
-      plan.appendChild(item);
-    }
+    box.appendChild(more);
 
     const actions = el("div", null, "row export-row");
     actions.style.cssText = "gap:8px;margin-top:14px;flex-wrap:wrap";
-    const toggle = el("button", "View the project plan", "ghost small-btn");
-    toggle.type = "button";
-    toggle.setAttribute("aria-expanded", "false");
-    toggle.addEventListener("click", () => {
-      plan.hidden = !plan.hidden;
-      toggle.textContent = plan.hidden ? "View the project plan" : "Hide the project plan";
-      toggle.setAttribute("aria-expanded", String(!plan.hidden));
-    });
     const pdf = el("button", "Export PDF", "ghost small-btn");
     pdf.type = "button";
     pdf.addEventListener("click", () => exportCardPdf("effortCard", effortTitle()));
     const html = el("button", "Export HTML", "ghost small-btn");
     html.type = "button";
     html.addEventListener("click", () => exportCardHtml("effortCard", effortTitle(), "effort-and-plan"));
-    actions.append(toggle, pdf, html);
-    box.append(actions, plan);
+    const reset = el("button", "Reset to the scenario", "ghost small-btn");
+    reset.type = "button";
+    reset.addEventListener("click", () => { effortState = null; again(); });
+    actions.append(reset, pdf, html);
+    box.appendChild(actions);
   }
 
   // The legacy languages the review found, one per row: "Name (tier N): N files, status".
