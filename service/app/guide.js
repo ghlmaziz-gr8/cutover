@@ -11,6 +11,7 @@
 window.CUTOVER_GUIDE = {
   updated: "2026-10-22",
   whatsNew: [
+    "2026-10-22: The target language choice shows the language your legacy code is written in, marks the matching option, and explains that the other options are alternates for the future state. The option labels are readable.",
     "2026-10-22: The History card spans the full width of the results, so it no longer leaves empty space beside it.",
     "2026-10-22: The header no longer repeats the word Cutover beside the logo on the role and sign-in screens.",
     "2026-10-22: The progress bar appears only on the steps of the wizard, so the role and sign-in screens no longer show an empty bar. The role screen and the Connect the code step link to the guide.",
