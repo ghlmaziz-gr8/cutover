@@ -77,13 +77,18 @@
       const matched = t.rules.filter((r) => {
         try { return r.test(findings || {}); } catch (e) { return false; }
       });
+      const score = matched.reduce((sum, r) => sum + r.weight, 0);
+      const max = t.rules.reduce((sum, r) => sum + r.weight, 0);
+      const percent = max ? Math.round((100 * score) / max) : 0;
       return {
         id: t.id,
         title: t.title,
         href: t.href,
         summary: t.summary,
-        score: matched.reduce((sum, r) => sum + r.weight, 0),
-        max: t.rules.reduce((sum, r) => sum + r.weight, 0),
+        score,
+        max,
+        percent,
+        level: percent >= 60 ? "Strong fit" : percent >= 30 ? "Partial fit" : "Light evidence",
         reasons: matched.map((r) => r.reason),
         // Only findings count. An absence (something not found) is not evidence for an approach, so it is not scored.
         evidence: matched.map((r) => r.reason),

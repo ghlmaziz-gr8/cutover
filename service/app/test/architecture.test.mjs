@@ -127,3 +127,10 @@ test("architecture layers keep their dim and selected styles after the entrance 
   assert.ok(html.includes(".arch-node.dim,.arch-band.dim{opacity:.38!important"));
   assert.ok(!/\.arch-node\{[^}]*animation:archIn[^}]*both/.test(html));
 });
+
+test("option cards have their own colour, icon and an animated fit score", () => {
+  assert.ok(html.includes("const OPTION_LOOK = {"));
+  assert.ok(html.includes("countUp(num, p.percent, \"%\", 250 + idx * 120);"));
+  assert.ok(html.includes("@keyframes rcFloat"));
+  assert.ok(html.includes(".rc-track b{display:block;height:100%;width:var(--w)"));
+});
