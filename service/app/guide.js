@@ -11,6 +11,7 @@
 window.CUTOVER_GUIDE = {
   updated: "2026-10-22",
   whatsNew: [
+    "2026-10-22: The Cutover AI assessment covers the whole project: discovery, onboarding and access, stories and workshops, design, build, database, security, testing, approvals, training, cutover and retiring the legacy system. It reads the screens, roles, databases and unread files from this analysis, and lists its assumptions and gaps.",
     "2026-10-22: The architecture diagram is redrawn with icons for users, screens, services, data and hosting, and each item carries its own icon. The current state is labelled as a Cutover AI assessment.",
     "2026-10-22: The next-steps screen shows a Cutover AI assessment of effort, resources and a project plan for the chosen approach. The plan opens on request and can be exported as PDF or HTML.",
     "2026-10-22: Selecting a target language lists its advantages, risks and constraints, and says whether the team already knows the language.",

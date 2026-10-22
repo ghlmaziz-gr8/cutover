@@ -1,21 +1,23 @@
-// The Cutover AI assessment: effort, resources and the project plan. Run: node --test service/app/test/effort.test.mjs
+// The Cutover AI assessment: effort, resources and the project plan, end to end.
+// Run: node --test service/app/test/effort.test.mjs
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import vm from "node:vm";
 
-const src = readFileSync(new URL("../effort.js", import.meta.url), "utf8");
 const sandbox = {};
-vm.runInNewContext(src, sandbox);
+vm.runInNewContext(readFileSync(new URL("../effort.js", import.meta.url), "utf8"), sandbox);
 const E = sandbox.Effort;
 const html = readFileSync(new URL("../index.html", import.meta.url), "utf8");
 
 const facts = {
-  template: "web-modern", screens: 12, endpoints: 20, routines: { procedures: 8, functions: 3, views: 2 },
-  tables: 14, dependencies: 6, targetLanguage: "py-fastapi", targetLabel: "Python with FastAPI", targetMatchesLegacy: false,
+  template: "web-modern", screens: 75, endpoints: 0, controllers: 0, routines: { procedures: 8, functions: 3, views: 2 },
+  tables: 14, dependencies: 6, roles: 4, accessDbs: 2, sourceFiles: 17, notRead: 3, needsReview: 2, personalData: false,
+  hasIac: false, hasCi: false, targetLanguage: "cs-aspnet", targetLabel: "C# with ASP.NET Core", targetMatchesLegacy: false,
 };
+const group = (r, key) => r.groups.find((g) => g.key === key);
 
-test("the assessment says it is a Cutover AI assessment", () => {
+test("the assessment is labelled as a Cutover AI assessment", () => {
   assert.equal(E.LABEL, "Cutover AI assessment");
 });
 
@@ -25,56 +27,101 @@ test("without an approach there is no estimate", () => {
   assert.ok(r.message);
 });
 
-test("every range is low to high, and totals add up", () => {
+test("project management and onboarding are counted once, not replacing other items", () => {
+  const r = E.build(facts);
+  assert.equal(group(r, "governance").items.filter((i) => /Project management/.test(i.label)).length, 1);
+  assert.ok(group(r, "governance").items.some((i) => /Steering/.test(i.label)));
+  assert.equal(group(r, "access").items.filter((i) => /Team onboarding/.test(i.label)).length, 1);
+});
+
+test("the totals are the sum of the groups, low to high", () => {
   const r = E.build(facts);
   assert.equal(r.ready, true);
-  assert.ok(r.coding.low <= r.coding.high);
-  assert.ok(r.database.low <= r.database.high);
-  assert.ok(r.total.low <= r.total.high);
-  assert.ok(r.total.low >= r.coding.low + r.database.low);
+  const low = r.groups.reduce((a, g) => a + g.low, 0);
+  const high = r.groups.reduce((a, g) => a + g.high, 0);
+  assert.ok(Math.abs(r.total.low - low) < 0.5, `${r.total.low} vs ${low}`);
+  assert.ok(Math.abs(r.total.high - high) < 0.5, `${r.total.high} vs ${high}`);
+  for (const g of r.groups) assert.ok(g.low <= g.high, g.title);
 });
 
-test("the database part covers tables, routines and migration", () => {
+test("every end-to-end area is covered", () => {
   const r = E.build(facts);
-  const labels = r.database.items.map((i) => i.label);
-  assert.ok(labels.includes("Tables and schema"));
-  assert.ok(labels.includes("Stored procedures, functions and views"));
-  assert.ok(labels.includes("Data migration and checks"));
-  assert.equal(r.database.items.find((i) => i.label.startsWith("Stored")).count, 13);
+  const titles = r.groups.map((g) => g.title).join(" | ");
+  for (const word of ["Discovery", "Mobilise", "Requirements", "Application build", "Database", "Testing", "Security", "Approvals", "Training", "Cutover"]) {
+    assert.ok(titles.includes(word), word);
+  }
 });
 
-test("a new language costs more than the legacy language", () => {
+test("onboarding, access, stories and stakeholder reviews are counted", () => {
+  const r = E.build(facts);
+  assert.ok(group(r, "access").items.some((i) => /onboarding/i.test(i.label) && i.days[1] > 0));
+  assert.ok(group(r, "access").items.some((i) => /Access grants/.test(i.label)));
+  assert.ok(group(r, "requirements").items.some((i) => /User stories/.test(i.label)));
+  assert.ok(group(r, "requirements").items.some((i) => /workshops/.test(i.label)));
+  assert.ok(group(r, "testing").items.some((i) => /acceptance/.test(i.label)));
+});
+
+test("files that were not read and databases that were not read are counted and named", () => {
+  const r = E.build({ ...facts, tables: 0 });
+  assert.ok(group(r, "discovery").items.some((i) => /not read/.test(i.label) && i.count === 3));
+  assert.ok(group(r, "database").items.some((i) => /database files|Access/i.test(i.label) && i.count === 2));
+  assert.ok(r.notes.some((n) => /found but not read/.test(n)));
+});
+
+test("missing infrastructure and pipeline add their own work", () => {
+  const without = E.build(facts);
+  const withIt = E.build({ ...facts, hasIac: true, hasCi: true });
+  assert.ok(without.total.high > withIt.total.high);
+  assert.ok(group(without, "build").items.some((i) => /Infrastructure as code/.test(i.label)));
+});
+
+test("no REST endpoints means the logic in the pages is counted", () => {
+  const r = E.build(facts);
+  assert.ok(group(r, "build").items.some((i) => /Page logic/.test(i.label) && i.days[1] > 0));
+  assert.ok(r.notes.some((n) => /inside the pages/.test(n)));
+});
+
+test("a new language costs more than the legacy one", () => {
   const same = E.build({ ...facts, targetMatchesLegacy: true });
   const other = E.build(facts);
-  assert.ok(other.coding.high > same.coding.high);
+  assert.ok(other.total.high > same.total.high);
 });
 
-test("lift and contain moves the code as it is and adds container work", () => {
+test("lift and contain adds container work and drops the rebuild of endpoints", () => {
   const r = E.build({ ...facts, template: "lift-contain" });
-  assert.equal(r.coding.items.find((i) => i.label.startsWith("Container")).days[0] > 0, true);
-  const screens = r.coding.items.find((i) => i.label === "Screens and pages");
-  assert.ok(screens.days[1] / screens.count <= 1, "at most a day per screen");
+  assert.ok(group(r, "build").items.some((i) => /Container packaging/.test(i.label)));
+  assert.ok(!group(r, "build").items.some((i) => /Endpoints and controllers/.test(i.label)));
 });
 
-test("the team and the plan stay within limits, and phases follow one another", () => {
+test("the team, the phases and the plan line up", () => {
   const r = E.build(facts);
-  assert.ok(r.team >= 2 && r.team <= 12);
-  assert.ok(r.resources.some((x) => x.role === "Developers"));
+  assert.ok(r.headcount >= 2);
+  assert.ok(r.team.some((x) => x.role === "Project manager"));
+  assert.ok(r.team.some((x) => x.role === "Developers"));
   assert.equal(r.phases[0].startWeek, 1);
   for (let i = 1; i < r.phases.length; i++) assert.equal(r.phases[i].startWeek, r.phases[i - 1].endWeek + 1);
   assert.equal(r.weeks, r.phases[r.phases.length - 1].endWeek);
-  for (const ph of r.phases) assert.ok(ph.tasks.length > 0, ph.name);
+  for (const ph of r.phases) {
+    assert.ok(ph.tasks.length > 0, ph.name);
+    assert.ok(ph.deliverables.length > 0, ph.name);
+    assert.ok(ph.approvals.length > 0, ph.name);
+  }
+  assert.ok(r.phases.some((p) => /Approvals/.test(p.name)));
 });
 
-test("missing findings are named, not guessed", () => {
-  const r = E.build({ template: "web-modern" });
-  assert.ok(r.notes.some((n) => /No screens were found/.test(n)));
-  assert.ok(r.notes.some((n) => /No target language/.test(n)));
+test("the assumptions state the working basis and the gates", () => {
+  const r = E.build(facts);
+  assert.ok(r.assumptions.some((a) => /person-days/.test(a)));
+  assert.ok(r.assumptions.some((a) => /approval gates/.test(a)));
+  assert.ok(r.assumptions.some((a) => /not included/.test(a)));
 });
 
-test("the portal shows the card, the plan toggle and the exports", () => {
+test("the portal reads the real findings and shows the plan, the exports and the label", () => {
   assert.ok(html.includes('id="effortCard"'));
   assert.ok(html.includes('src="effort.js"'));
-  assert.ok(html.includes("exportCardPdf(\"effortCard\""));
+  assert.ok(html.includes('"ui.screens"') || html.includes("'ui.screens'") || html.includes('val("ui.screens")'));
+  assert.ok(html.includes('val("legacy.databases")'));
+  assert.ok(html.includes('val("legacy.not_read")'));
   assert.ok(html.includes("View the project plan"));
+  assert.ok(html.includes('exportCardPdf("effortCard"'));
 });

@@ -764,6 +764,7 @@ pre{white-space:pre-wrap;word-break:break-word;background:var(--soft);padding:12
 .eff-table th{font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:var(--accent,#6d28d9)}
 .eff-plan{margin-top:14px;padding:14px;border-radius:14px;border:1px solid var(--line,#e5e7eb)}
 .eff-phase{padding:8px 0;border-top:1px dashed var(--line,#e5e7eb)}
+.eff-group td{font-weight:800;background:color-mix(in srgb,var(--accent,#6d28d9) 7%,transparent);color:var(--fg)}
 .eff-phase:first-of-type{border-top:0}
 .tl-owner{width:100%;max-width:420px;margin:6px 0 10px}
 .tl-status{margin-top:12px}
@@ -4475,32 +4476,49 @@ a{color:#6d28d9;font-weight:600}`;
     "cs-aspnet": /c#|c sharp|csharp|asp\.net|\.net/i,
     "java-spring": /\bjava\b|spring|\bjsp\b/i,
   };
-  // The facts the effort estimate reads from the findings of this analysis.
+  // The facts the effort estimate reads from this analysis: its findings, and what the review could not read.
   function effortFactsOf(row) {
-    const fact = (id) => (row.findings && row.findings.findings && row.findings.findings[id] ? row.findings.findings[id].value : undefined) || {};
+    const shown = (row.findings && row.findings.findings) || {};
+    const val = (id) => (shown[id] ? shown[id].value : undefined);
     const num = (v) => (typeof v === "number" ? v : 0);
-    const endpoints = fact("ui.endpoints");
-    const routines = fact("data.routines_in_code");
-    const tables = fact("data.tables");
-    const screens = fact("ui.screen_names");
-    const deps = fact("legacy.dependencies");
-    const legacy = legacyLanguagesOf(row).map((l) => l.name);
+    const count = (v) => (Array.isArray(v) ? v.length : num(v && v.count));
+    const endpoints = val("ui.endpoints") || {};
+    const routines = val("data.routines_in_code") || {};
+    const tables = val("data.tables") || {};
+    const screens = typeof val("ui.screens") === "number" ? val("ui.screens") : num((val("ui.screen_names") || {}).count);
+    const deps = val("legacy.dependencies") || {};
+    const roles = Array.isArray(val("security.roles")) ? val("security.roles").length : num((val("ui.roles") || {}).count);
+    const legacyRows = legacyLanguagesOf(row);
+    const sourceFiles = legacyRows.reduce((a, l) => a + (l.files || 0), 0);
+    const needsReview = Object.values(shown).filter((f) => f && f.confidence && f.confidence !== "verified").length;
+    const personalData = Object.values(shown).some((f) => f && f.category === "privacy" && (typeof f.value === "number" ? f.value > 0 : Array.isArray(f.value) && f.value.length > 0));
     const target = (row.target_options || []).find((o) => o.id === row.target_language) || null;
-    const matches = target ? (target.id === "current" ? row.modern_template === "lift-contain" : !!LEGACY_LANGUAGE_MATCH[target.id] && legacy.some((n) => LEGACY_LANGUAGE_MATCH[target.id].test(n))) : undefined;
+    const legacyNames = legacyRows.map((l) => l.name);
+    const matches = target ? (target.id === "current" ? row.modern_template === "lift-contain" : !!LEGACY_LANGUAGE_MATCH[target.id] && legacyNames.some((n) => LEGACY_LANGUAGE_MATCH[target.id].test(n))) : undefined;
     return {
       template: row.modern_template,
-      screens: num(screens.count),
+      screens,
       endpoints: num(endpoints.endpoint_annotations),
+      controllers: num(endpoints.controllers),
       routines: { procedures: num(routines.procedures), functions: num(routines.functions), views: num(routines.views) },
       tables: num(tables.count),
       dependencies: num(deps.count),
+      roles,
+      accessDbs: count(val("legacy.databases")),
+      sourceFiles,
+      notRead: num((val("legacy.not_read") || {}).count),
+      needsReview,
+      personalData,
+      hasIac: !!val("infrastructure.as_code"),
+      hasCi: !!val("delivery.ci"),
+      hasContainers: !!val("containers.images"),
       targetLanguage: target ? target.id : null,
       targetLabel: target ? target.label : null,
       targetMatchesLegacy: matches,
     };
   }
 
-  // Effort, resources and the project plan, from the Cutover AI assessment (effort.js). Shown with the approach.
+  // Effort, resources and the project plan: the Cutover AI assessment (effort.js). Shown with the approach.
   function renderEffort(row) {
     const card = $("effortCard");
     const box = $("effortBody");
@@ -4511,9 +4529,13 @@ a{color:#6d28d9;font-weight:600}`;
     const E = window.Effort;
     const est = E.build(effortFactsOf(row));
     const fmt = (v) => (Math.round(v * 10) / 10).toLocaleString("en-US");
-    box.appendChild(el("p", E.LABEL, "eyebrow-sm"));
+    const range = (lo, hi) => `${fmt(lo)}–${fmt(hi)}`;
+    const head = el("div", null, "arch-top");
+    head.appendChild(el("span", E.LABEL, "arch-badge"));
+    head.appendChild(el("span", "End to end", "arch-tag"));
+    box.appendChild(head);
     box.appendChild(el("h3", "Effort, resources and project plan"));
-    box.appendChild(el("p", "Cutover AI assessment, generated from the findings of this analysis by Cutover's assessment rules. It is a planning range for review, not a quote.", "muted small"));
+    box.appendChild(el("p", "Cutover AI assessment, built from this analysis: its findings, the deeper assessment and the files the code review could not read. It covers the project from discovery to retiring the legacy system. A planning range for review, not a quote.", "muted small"));
     if (!est.ready) {
       box.appendChild(el("p", est.message, "muted"));
       return;
@@ -4524,51 +4546,64 @@ a{color:#6d28d9;font-weight:600}`;
       item.append(el("span", label, "muted small"), el("b", value));
       stats.appendChild(item);
     };
-    stat("Coding", `${fmt(est.coding.low)}–${fmt(est.coding.high)} person-days`);
-    stat("Database", `${fmt(est.database.low)}–${fmt(est.database.high)} person-days`);
-    stat("Total", `${fmt(est.total.low)}–${fmt(est.total.high)} person-days`);
-    stat("Team", `${est.team} people`);
+    stat("Total effort", `${range(est.total.low, est.total.high)} person-days`);
+    stat("Team", `${est.headcount} people`);
     stat("Duration", `About ${est.weeks} weeks`);
+    stat("Phases", `${est.phases.length}`);
     box.appendChild(stats);
 
-    // Effort breakdown
-    box.appendChild(el("p", "Effort by part", "eyebrow-sm"));
+    box.appendChild(el("p", "Effort by part of the project", "eyebrow-sm"));
     const table = document.createElement("table");
     table.className = "eff-table";
     const thead = document.createElement("tr");
-    for (const h of ["Area", "Part", "Found", "Person-days"]) thead.appendChild(el("th", h));
+    for (const h of ["Part", "Found", "Person-days"]) thead.appendChild(el("th", h));
     table.appendChild(el("thead")).appendChild(thead);
     const body = el("tbody");
-    const line = (area, label, count, days) => {
-      const tr = document.createElement("tr");
-      tr.append(el("td", area), el("td", label), el("td", count === "" ? "—" : count ? String(count) : "none"), el("td", `${fmt(days[0])}–${fmt(days[1])}`));
-      body.appendChild(tr);
-    };
-    for (const i of est.coding.items) line("Coding", i.label, i.count, i.days);
-    line("Coding", "Testing and fixes", "", est.coding.testing);
-    for (const i of est.database.items) line("Database", i.label, i.count, i.days);
-    line("Management", "Planning, reviews and governance", "", est.management);
+    for (const g of est.groups) {
+      const gr = document.createElement("tr");
+      gr.className = "eff-group";
+      const gc = el("td", g.title);
+      gc.colSpan = 2;
+      gr.append(gc, el("td", range(g.low, g.high)));
+      body.appendChild(gr);
+      for (const i of g.items) {
+        const tr = document.createElement("tr");
+        const found = i.count === "" || i.count === undefined ? "—" : i.count ? `${i.count} ${i.unit}${i.count === 1 ? "" : "s"}` : "none";
+        tr.append(el("td", i.label), el("td", found), el("td", range(i.days[0], i.days[1])));
+        body.appendChild(tr);
+      }
+    }
+    const totalRow = document.createElement("tr");
+    totalRow.className = "eff-group";
+    const tc = el("td", "Total");
+    tc.colSpan = 2;
+    totalRow.append(tc, el("td", range(est.total.low, est.total.high)));
+    body.appendChild(totalRow);
     table.appendChild(body);
     box.appendChild(table);
 
-    // Resources
-    box.appendChild(el("p", "Resources needed", "eyebrow-sm"));
+    box.appendChild(el("p", "People needed", "eyebrow-sm"));
     const res = document.createElement("table");
     res.className = "eff-table";
     const rh = document.createElement("tr");
-    for (const h of ["Role", "People", "What they do"]) rh.appendChild(el("th", h));
+    for (const h of ["Role", "Share of time", "What they do"]) rh.appendChild(el("th", h));
     res.appendChild(el("thead")).appendChild(rh);
     const rb = el("tbody");
-    for (const r of est.resources) {
+    for (const r of est.team) {
       const tr = document.createElement("tr");
-      tr.append(el("td", r.role), el("td", String(r.fte)), el("td", r.why));
+      tr.append(el("td", r.role + (r.side === "client" ? " (client side)" : "")), el("td", `${r.fte} FTE`), el("td", r.why));
       rb.appendChild(tr);
     }
     res.appendChild(rb);
     box.appendChild(res);
 
+    box.appendChild(el("p", "Assumptions", "eyebrow-sm"));
+    const aul = el("ul", null, "small");
+    for (const a of est.assumptions) aul.appendChild(el("li", a));
+    box.appendChild(aul);
+
     if (est.notes.length) {
-      box.appendChild(el("p", "Assumptions and gaps", "eyebrow-sm"));
+      box.appendChild(el("p", "Gaps and things to check in the code", "eyebrow-sm"));
       const ul = el("ul", null, "small");
       for (const n of est.notes) ul.appendChild(el("li", n));
       box.appendChild(ul);
@@ -4578,7 +4613,7 @@ a{color:#6d28d9;font-weight:600}`;
     const plan = el("div", null, "eff-plan show-in-export");
     plan.hidden = true;
     plan.appendChild(el("p", "Project plan", "eyebrow-sm"));
-    plan.appendChild(el("p", `${est.weeks} weeks in ${est.phases.length} phases, with a team of ${est.team}. Phases run one after another.`, "muted small"));
+    plan.appendChild(el("p", `${est.weeks} weeks in ${est.phases.length} phases, with a team of ${est.headcount}. Phases run one after another.`, "muted small"));
     for (const ph of est.phases) {
       const item = el("div", null, "eff-phase");
       const weeks = ph.startWeek === ph.endWeek ? `Week ${ph.startWeek}` : `Weeks ${ph.startWeek}–${ph.endWeek}`;
@@ -4586,6 +4621,8 @@ a{color:#6d28d9;font-weight:600}`;
       const ul = el("ul", null, "small");
       for (const t of ph.tasks) ul.appendChild(el("li", t));
       item.appendChild(ul);
+      item.appendChild(el("p", `Deliverables: ${ph.deliverables.join(", ")}`, "small muted"));
+      item.appendChild(el("p", `Approval: ${ph.approvals.join("; ")}`, "small muted"));
       plan.appendChild(item);
     }
 
