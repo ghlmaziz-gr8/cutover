@@ -60,6 +60,9 @@
     userSupport: [1, 2],
   };
 
+  // Scenario: where in each range the estimate sits. Lean is the low end, cautious the high end.
+  const SCENARIO_T = { lean: 0, expected: 0.5, cautious: 1 };
+
   const num = (v) => (typeof v === "number" && isFinite(v) && v > 0 ? v : 0);
   const r1 = (v) => Math.round(v * 10) / 10;
   const mid = (pair) => (pair[0] + pair[1]) / 2;
@@ -73,8 +76,12 @@
   //   roles, accessDbs, databaseEngines[], sourceFiles, notRead, needsReview, personalData (bool),
   //   hasIac, hasCi, hasContainers, targetLanguage, targetLabel, targetMatchesLegacy
   // }
-  function build(facts) {
+  // options: { scenario: "lean" | "expected" | "cautious", shares: {groupKey: 0..1}, excluded: [labels], teamSize: n|null }
+  function build(facts, options) {
     const f = facts || {};
+    const opt = options || {};
+    const excluded = new Set(opt.excluded || []);
+    const pickT = (key) => (opt.shares && typeof opt.shares[key] === "number" ? Math.min(1, Math.max(0, opt.shares[key])) : SCENARIO_T[opt.scenario] ?? 0.5);
     const template = RATES[f.template] ? f.template : null;
     if (!template) return { label: LABEL, ready: false, message: "Choose an approach first. The estimate follows the approach." };
     const R = RATES[template];
@@ -108,17 +115,27 @@
 
     // Effort, in groups. Each item: label, count, unit, days as [low, high].
     const groups = [];
+    // Each item carries whether it is included, and its value at the chosen point of its range.
+    const mark = (key, i) => {
+      const included = !excluded.has(i.label);
+      const t = pickT(key);
+      return { ...i, included, value: included ? r1(i.days[0] + (i.days[1] - i.days[0]) * t) : 0 };
+    };
+    const makeGroup = (key, title, items) => {
+      const inc = items.filter((i) => i.included);
+      const range = add(...inc.map((i) => i.days));
+      return { key, title, items, low: range[0], high: range[1], value: r1(inc.reduce((a, i) => a + i.value, 0)) };
+    };
     const group = (key, title, items) => {
-      const clean = items.filter((i) => i.days[1] > 0);
-      groups.push({ key, title, items: clean, low: add(...clean.map((i) => i.days))[0], high: add(...clean.map((i) => i.days))[1] });
+      groups.push(makeGroup(key, title, items.filter((i) => i.days[1] > 0).map((i) => mark(key, i))));
     };
     // Adds or replaces an item in a group by its label, at the top of the group.
     const upsert = (key, item) => {
       const g = groups.find((x) => x.key === key);
-      g.items = [item, ...g.items.filter((i) => i.label !== item.label)];
-      g.low = add(...g.items.map((i) => i.days))[0];
-      g.high = add(...g.items.map((i) => i.days))[1];
+      const items = [mark(key, item), ...g.items.filter((i) => i.label !== item.label)];
+      Object.assign(g, makeGroup(key, g.title, items));
     };
+    const valueOf = (key) => groups.find((g) => g.key === key).value;
 
     group("discovery", "Discovery and assessment", [
       { label: "Confirm the findings that need review", count: needsReview, unit: "finding", days: scale(S.reviewFinding, needsReview) },
@@ -149,7 +166,7 @@
     if (!lift && !f.hasIac) coding.push({ label: "Infrastructure as code, built from scratch", count: 1, unit: "set", days: fixed(S.iacMissing) });
     if (!f.hasCi) coding.push({ label: lift ? "Container build pipeline" : "Build and deploy pipeline", count: 1, unit: "pipeline", days: fixed(S.pipelineMissing) });
     group("build", "Application build", coding);
-    const codingMid = add(...groups[groups.length - 1].items.map((i) => i.days));
+    const codingMid = [groups[groups.length - 1].low, groups[groups.length - 1].high];
 
     const database = [
       { label: "Tables and schema", count: tables, unit: "table", days: scale(R.table, tables, languageFactor) },
@@ -158,7 +175,7 @@
       { label: "Move the database files found (Access or others)", count: accessDbs, unit: "file", days: scale(S.accessDb, accessDbs) },
     ];
     group("database", "Database", database);
-    const dbMid = add(...groups[groups.length - 1].items.map((i) => i.days));
+    const dbMid = [groups[groups.length - 1].low, groups[groups.length - 1].high];
 
     const testing = [r1(codingMid[0] * S.testingShare[0]), r1(codingMid[1] * S.testingShare[1])];
     group("testing", "Testing and acceptance", [
@@ -193,7 +210,7 @@
     ]);
 
     // Team: enough developers to finish the build and database work in the planned weeks, within limits.
-    const coreMid = mid(codingMid) + mid(dbMid) + mid(testing);
+    const coreMid = valueOf("build") + valueOf("database") + valueOf("testing");
     const devs = Math.min(DEV_MAX, Math.max(DEV_MIN, Math.ceil(coreMid / (R.weeks * WORK_DAYS * PRODUCTIVITY))));
     const team = [
       { role: "Project manager", fte: 1, side: "delivery", why: "Plan, reporting, risks, and the gates in the plan" },
@@ -210,15 +227,22 @@
       { role: "Application owner (client side)", fte: 0.2, side: "client", why: "Approves the gates and tests the result" },
       { role: "Stakeholder representatives (client side)", fte: r1(Math.min(3, roles) * 0.1), side: "client", why: "Workshops, reviews and acceptance" },
     ].filter((r) => r.fte > 0);
-    const headcount = Math.ceil(team.filter((r) => r.side === "delivery").reduce((a, r) => a + r.fte, 0));
+    // A team size chosen by the user scales every delivery role in the same proportion, in half-person steps.
+    const deliveryFte = () => team.filter((r) => r.side === "delivery").reduce((a, r) => a + r.fte, 0);
+    const autoHeadcount = Math.ceil(deliveryFte());
+    if (opt.teamSize && autoHeadcount > 0) {
+      const k = Math.max(1, Math.round(opt.teamSize)) / deliveryFte();
+      for (const r of team) if (r.side === "delivery") r.fte = Math.max(0.5, Math.round(r.fte * k * 2) / 2);
+    }
+    const headcount = Math.ceil(deliveryFte());
 
     // Onboarding is per person in the team.
     const onboard = scale(S.onboarding, headcount);
     upsert("access", { label: "Team onboarding", count: headcount, unit: "person", days: onboard });
 
     // Plan: phases in order. Weeks come from effort, shared by the whole team.
-    const weeksFor = (pair) => Math.max(1, Math.ceil(mid(pair) / (headcount * WORK_DAYS * PRODUCTIVITY)));
-    const sumOf = (key) => add(...groups.find((g) => g.key === key).items.map((i) => i.days));
+    const weeksFor = (days) => Math.max(1, Math.ceil(days / (headcount * WORK_DAYS * PRODUCTIVITY)));
+    const sumOf = (key) => valueOf(key);
     const accessWeeks = Math.max(1, Math.ceil((5 + accessDbs) / 4)) + (S.accessCalendarDays > 5 ? 1 : 0);
     const phaseDefs = [
       { name: "Mobilise and grant access", weeks: accessWeeks,
@@ -230,7 +254,7 @@
       { name: "Requirements and user stories", weeks: weeksFor(sumOf("requirements")),
         tasks: [`Run ${roles} workshops, one per role`, `Write and refine ${stories} user stories`, "Agree the acceptance criteria for each story", "Target design written and reviewed"],
         deliverables: ["User stories", "Design document", "Steering presentation: scope and design"], approvals: ["Gate 1 (scope) and gate 2 (design) approved by the owner or a CIO or CTO"] },
-      { name: "Platform and pipeline", weeks: weeksFor([mid(sumOf("build")) * 0.3, mid(sumOf("build")) * 0.3]),
+      { name: "Platform and pipeline", weeks: weeksFor(sumOf("build") * 0.3),
         tasks: [f.hasIac ? "Extend the existing infrastructure as code" : "Build the infrastructure as code", f.hasCi ? "Extend the existing pipeline" : "Build the build and deploy pipeline", "Set up the environments: test, staging and the cutover target"],
         deliverables: ["Environments", "Pipeline", "Infrastructure code"], approvals: ["Platform owner signs off the environments"] },
       { name: "Database build and migration", weeks: weeksFor(sumOf("database")),
@@ -261,9 +285,29 @@
         tasks: ["Archive the legacy code and data as agreed", "Remove the legacy access", "Close the project and review the lessons"],
         deliverables: ["Closure report", "Lessons learned"], approvals: ["Application owner closes the project"] },
     ];
+    // Who works on each phase, and which effort group it draws on.
+    const META = {
+      "Mobilise and grant access": { effort: "access", owners: ["Project manager", "Technical lead and architect", "Security engineer"] },
+      "Discover and confirm findings": { effort: "discovery", owners: ["Business analyst", "Technical lead and architect", "Developers"] },
+      "Requirements and user stories": { effort: "requirements", owners: ["Business analyst", "Product owner", "UX designer"] },
+      "Platform and pipeline": { effort: "build", owners: ["Platform and delivery engineer"] },
+      "Database build and migration": { effort: "database", owners: ["Database engineer", "Developers"] },
+      "Application build": { effort: "build", owners: ["Developers", "Technical lead and architect"] },
+      "Security, privacy and integration review": { effort: "security", owners: ["Security engineer", "Technical lead and architect"] },
+      "Testing and acceptance": { effort: "testing", owners: ["QA engineers", "Product owner"] },
+      "Approvals and go/no-go": { effort: "governance", owners: ["Project manager", "Application owner (client side)"] },
+      "Training and documentation": { effort: "people", owners: ["Change and training lead"] },
+      "Cutover and go-live": { effort: "cutover", owners: ["Platform and delivery engineer", "Project manager"] },
+      "Hypercare": { effort: null, owners: ["Developers", "QA engineers"] },
+      "Retire the legacy system": { effort: null, owners: ["Platform and delivery engineer", "Project manager"] },
+    };
     let week = 1;
     const phases = phaseDefs.map((p) => {
-      const out = { name: p.name, startWeek: week, endWeek: week + p.weeks - 1, weeks: p.weeks, tasks: p.tasks, deliverables: p.deliverables, approvals: p.approvals };
+      const meta = META[p.name] || { effort: null, owners: [] };
+      const out = {
+        name: p.name, startWeek: week, endWeek: week + p.weeks - 1, weeks: p.weeks, tasks: p.tasks, deliverables: p.deliverables, approvals: p.approvals,
+        owners: meta.owners, days: meta.effort ? sumOf(meta.effort) : 0, gate: p.approvals.some((a) => /Gate|gate/.test(a)),
+      };
       week += p.weeks;
       return out;
     });
@@ -289,11 +333,16 @@
       label: LABEL,
       ready: true,
       approach: template,
+      scenario: opt.scenario || "expected",
+      shares: opt.shares || {},
+      excluded: [...excluded],
+      teamSize: opt.teamSize || null,
+      autoHeadcount,
       method: "Fixed rules applied to the findings of this analysis, the deeper assessment and the files the code review could not read. A planning range for review.",
       unit: UNIT,
       basis: { screens, endpoints, controllers, routineCount, tables, dependencies: deps, roles, accessDbs, sourceFiles, notRead, needsReview },
       groups,
-      total: { low: total[0], high: total[1] },
+      total: { low: total[0], high: total[1], value: r1(groups.reduce((a, g) => a + g.value, 0)) },
       headcount,
       team,
       weeks,
