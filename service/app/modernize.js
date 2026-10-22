@@ -66,8 +66,6 @@
         best: ["Teams that need to leave the current host quickly"],
       },
       rules: [
-        { weight: 1, reason: "The lowest-risk first step", general: true, test: () => true },
-        { weight: 2, reason: "No infrastructure as code was found", test: (f) => !hasPoint(f, "infrastructure.as_code") },
         { weight: 2, reason: "Dependencies are listed for upgrade", test: (f) => hasPoint(f, "legacy.dependencies") },
       ],
     },
@@ -87,13 +85,14 @@
         score: matched.reduce((sum, r) => sum + r.weight, 0),
         max: t.rules.reduce((sum, r) => sum + r.weight, 0),
         reasons: matched.map((r) => r.reason),
-        // Reasons that come from this application's findings. General reasons (true for every application) are left out.
-        evidence: matched.filter((r) => !r.general).map((r) => r.reason),
+        // Only findings count. An absence (something not found) is not evidence for an approach, so it is not scored.
+        evidence: matched.map((r) => r.reason),
       };
     });
     scored.sort((a, b) => b.score - a.score);
     scored.forEach((s, i) => {
-      s.fit = i === 0 ? "recommended" : s.score > 1 ? "possible" : "weak";
+      // Nothing is recommended unless at least one finding supports an approach.
+      s.fit = i === 0 && s.score > 0 ? "recommended" : s.score > 1 ? "possible" : "weak";
     });
     return scored;
   }

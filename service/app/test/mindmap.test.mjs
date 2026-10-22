@@ -33,17 +33,6 @@ test("the root has one branch per approach, in the order given, each with a scor
   }
 });
 
-test("a general reason is never shown as evidence for this application", () => {
-  const picks = Modernize.choose({});
-  const lift = picks.find((p) => p.id === "lift-contain");
-  assert.ok(lift.score > 0, "it still counts toward the score");
-  assert.ok(!lift.evidence.includes("The lowest-risk first step"), "but it is not listed as a match");
-  const map = MindMap.approach(picks, allPoints());
-  const branch = map.children.find((b) => b.id === "lift-contain");
-  const why = branch.children.find((g) => g.label === "Why it matches");
-  assert.ok(!why || !why.children.some((l) => l.label === "The lowest-risk first step"));
-});
-
 test("evidence from real findings is shown as Why it matches", () => {
   const picks = Modernize.choose({ "ui.screens": { point: true, value: ["Home"] } });
   const web = picks.find((p) => p.id === "web-modern");
