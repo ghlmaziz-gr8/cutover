@@ -639,6 +639,21 @@ pre{white-space:pre-wrap;word-break:break-word;background:var(--soft);padding:12
 .mm-leaf.tone-con .mm-dot{background:#b91c1c}.mm-leaf.tone-pro .mm-dot{background:#15803d}.mm-leaf.tone-possible .mm-dot{background:#b45309}
 .mm-go{margin:6px 0 0;background:none;border:0;padding:4px 0;color:var(--accent,#6d28d9);font-weight:700;cursor:pointer;font-size:14px}
 .mm-go:hover{text-decoration:underline}
+.radial-wide{display:none}
+.rad{display:block;width:100%;max-width:1200px;height:auto;margin:0 auto}
+.rad .rad-edge{fill:none;stroke-width:2.2;stroke-linecap:round;transition:opacity .4s ease}
+.rad .rad-edge.is-collapsed{opacity:0}
+.rad .rad-point{transition:opacity .35s ease}
+.rad .rad-point.is-collapsed{opacity:0;pointer-events:none}
+.rad .rad-branch{cursor:pointer;outline:none}
+.rad .rad-branch .rad-pill{transition:transform .2s ease,filter .2s ease;transform-box:fill-box;transform-origin:center}
+.rad .rad-branch:hover .rad-pill{filter:brightness(1.08);transform:scale(1.03)}
+.rad .rad-branch:focus-visible .rad-pill{stroke:#111827;stroke-width:3}
+.rad .rad-branch text{pointer-events:none}
+.rad .rad-point text{pointer-events:none}
+.rad-links{display:flex;flex-wrap:wrap;justify-content:center;gap:8px;margin-top:12px}
+.rad-link{font-size:13px;padding:6px 12px}
+@media (min-width:760px){.radial-wide{display:block}.list-narrow{display:none}}
 .mm-meta{margin:2px 0 8px;font-size:12px;color:var(--muted,#6b7280)}
 .mm-folder > details{margin-top:4px}
 .mm-folder-head{list-style:none;cursor:pointer;display:flex;align-items:center;gap:10px;padding:6px 8px;border-radius:10px;background:color-mix(in srgb,var(--accent,#6d28d9) 7%,transparent);font-weight:700;color:var(--accent,#6d28d9)}
@@ -1346,6 +1361,7 @@ pre{white-space:pre-wrap;word-break:break-word;background:var(--soft);padding:12
 <script src="mindmap.js"></script>
 <script src="findings-map.js"></script>
 <script src="file-map.js"></script>
+<script src="radial.js"></script>
 <script src="plan.js"></script>
 <script src="starter.js"></script>
 <script>
@@ -3784,7 +3800,7 @@ a{color:#6d28d9;font-weight:600}`;
       wrap.appendChild(el("h4", "The plan at a glance", "eyebrow-sm"));
       const map = el("div", null, "mmap plan-map");
       map.setAttribute("aria-label", "Map of the modernization plan");
-      drawMap(window.Plan.tree(planInput(row)), map);
+      drawMap(window.Plan.tree(planInput(row)), map, { radial: true });
       wrap.appendChild(map);
     }
     return wrap;
@@ -3985,7 +4001,110 @@ a{color:#6d28d9;font-weight:600}`;
     icons: [["●", "Why it matches"], ["✓", "Pros"], ["!", "Cons"], ["◎", "Best for"]],
   };
 
+  // The radial map (wide screens): the root in the middle, branches on both sides, points as outlined pills.
+  // Clicking a branch opens or closes its points. Built as SVG; the list version stays for phones and screen readers.
+  function svgNode(tag, attrs) {
+    const node = document.createElementNS("http://www.w3.org/2000/svg", tag);
+    for (const [k, v] of Object.entries(attrs)) node.setAttribute(k, String(v));
+    return node;
+  }
+
+  function svgText(lines, x, y, attrs) {
+    const t = svgNode("text", Object.assign({ x, y, "text-anchor": "middle", "dominant-baseline": "middle" }, attrs));
+    const lh = attrs["font-size"] ? Number(attrs["font-size"]) * 1.25 : 16;
+    lines.forEach((line, i) => {
+      const ts = svgNode("tspan", { x, dy: i === 0 ? (lines.length > 1 ? -lh / 2 : 0) : lh });
+      ts.textContent = line;
+      t.appendChild(ts);
+    });
+    return t;
+  }
+
+  function drawRadial(tree, box, opts) {
+    const map = window.Radial.build(tree);
+    const svg = svgNode("svg", { viewBox: `0 0 ${map.viewW} ${map.viewH}`, class: "rad", "aria-hidden": "true", focusable: "false" });
+    const edges = svgNode("g", {});
+    const pills = svgNode("g", {});
+    const collapsed = new Set();
+    const groupOf = new Map();
+
+    const rootW = Math.min(360, Math.max(...map.root.lines.map((l) => l.length)) * 9.5 + 44);
+    const rootH = map.root.lines.length * 22 + 22;
+    for (const b of map.branches) {
+      const g = svgNode("g", { class: "rad-group" });
+      groupOf.set(b.id, g);
+      for (const l of b.leaves) {
+        const d = window.Radial.curve(b.x, b.y, l.x, l.y);
+        edges.appendChild(svgNode("path", { d, class: "rad-edge rad-leaf-edge", stroke: b.color, "data-branch": b.id }));
+      }
+      edges.appendChild(svgNode("path", { d: window.Radial.curve(map.root.x, map.root.y, b.x, b.y), class: "rad-edge", stroke: b.color, "data-branch": b.id }));
+    }
+    svg.appendChild(edges);
+
+    // root
+    const rootG = svgNode("g", { class: "rad-root" });
+    rootG.appendChild(svgNode("rect", { x: map.root.x - rootW / 2, y: map.root.y - rootH / 2, width: rootW, height: rootH, rx: rootH / 2, fill: "#111827" }));
+    rootG.appendChild(svgText(map.root.lines, map.root.x, map.root.y, { fill: "#ffffff", "font-size": 16, "font-weight": 800 }));
+    const rt = svgNode("title", {}); rt.textContent = map.root.lines.join(" "); rootG.appendChild(rt);
+    pills.appendChild(rootG);
+
+    for (const b of map.branches) {
+      const g = groupOf.get(b.id);
+      const longest = Math.max(...b.lines.map((l) => l.length));
+      const w = Math.min(250, longest * 8.6 + 40);
+      const h = b.lines.length * 21 + 20;
+      const bg = svgNode("g", { class: "rad-branch", tabindex: "0", role: "button", "data-branch": b.id });
+      bg.appendChild(svgNode("rect", { x: b.x - w / 2, y: b.y - h / 2, width: w, height: h, rx: h / 2, fill: b.color, class: "rad-pill", stroke: b.chosen ? "#111827" : "none", "stroke-width": b.chosen ? 3 : 0 }));
+      bg.appendChild(svgText(b.lines, b.x, b.y, { fill: "#ffffff", "font-size": 15, "font-weight": 800 }));
+      const bt = svgNode("title", {}); bt.textContent = `${b.label}${b.fitText ? ` · ${b.fitText}` : ""}${b.chosen ? " · chosen" : ""}`; bg.appendChild(bt);
+      const toggle = () => {
+        const open = collapsed.has(b.id);
+        if (open) collapsed.delete(b.id); else collapsed.add(b.id);
+        applyCollapse(b.id);
+        bg.setAttribute("aria-expanded", String(!collapsed.has(b.id)));
+      };
+      bg.addEventListener("click", toggle);
+      bg.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); toggle(); } });
+      bg.setAttribute("aria-expanded", "true");
+      g.appendChild(bg);
+      for (const l of b.leaves) {
+        const lw = Math.min(230, Math.max(...l.lines.map((x) => x.length)) * 7.1 + 40);
+        const lh = l.lines.length * 17 + 16;
+        const lg = svgNode("g", { class: "rad-point", "data-branch": b.id });
+        lg.appendChild(svgNode("rect", { x: l.x - lw / 2, y: l.y - lh / 2, width: lw, height: lh, rx: lh / 2, fill: "#ffffff", stroke: b.color, "stroke-width": 1.5 }));
+        const text = svgText(l.lines, l.x, l.y, { fill: "#1f2937", "font-size": 13 });
+        const icon = svgNode("tspan", { fill: b.color, "font-weight": 800 });
+        icon.textContent = `${l.icon}  `;
+        const first = text.querySelector("tspan");
+        first.insertBefore(icon, first.firstChild);
+        lg.appendChild(text);
+        const lt = svgNode("title", {}); lt.textContent = l.label; lg.appendChild(lt);
+        g.appendChild(lg);
+      }
+      pills.appendChild(g);
+    }
+    svg.appendChild(pills);
+
+    const applyCollapse = (id) => {
+      const g = groupOf.get(id);
+      if (!g) return;
+      const shut = collapsed.has(id);
+      g.querySelectorAll(".rad-point").forEach((n) => n.classList.toggle("is-collapsed", shut));
+      svg.querySelectorAll(`.rad-leaf-edge[data-branch="${id}"]`).forEach((n) => n.classList.toggle("is-collapsed", shut));
+    };
+    box.__radial = (open) => {
+      for (const b of map.branches) {
+        if (open) collapsed.delete(b.id); else collapsed.add(b.id);
+        applyCollapse(b.id);
+        const bg = groupOf.get(b.id).querySelector(".rad-branch");
+        if (bg) bg.setAttribute("aria-expanded", String(open));
+      }
+    };
+    box.appendChild(svg);
+  }
+
   // Draws a map into a box. Options: toolbar adds Expand all, Collapse all and a legend (opts.legend sets the keys).
+  // opts.radial draws the radial map on wide screens and keeps the list for phones.
   function drawMap(tree, box, opts) {
     box.replaceChildren();
     mapLeafHandler = (opts && opts.onLeaf) || null;
@@ -3994,10 +4113,10 @@ a{color:#6d28d9;font-weight:600}`;
       const buttons = el("div", null, "mm-buttons");
       const open = el("button", "Expand all", "ghost mm-btn");
       open.type = "button";
-      open.addEventListener("click", () => box.querySelectorAll("details").forEach((d) => (d.open = true)));
+      open.addEventListener("click", () => { box.querySelectorAll("details").forEach((d) => (d.open = true)); if (box.__radial) box.__radial(true); });
       const shut = el("button", "Collapse all", "ghost mm-btn");
       shut.type = "button";
-      shut.addEventListener("click", () => box.querySelectorAll("details").forEach((d) => (d.open = false)));
+      shut.addEventListener("click", () => { box.querySelectorAll("details").forEach((d) => (d.open = false)); if (box.__radial) box.__radial(false); });
       buttons.append(open, shut);
       bar.appendChild(buttons);
       const legend = el("div", null, "mm-legend");
@@ -4016,6 +4135,28 @@ a{color:#6d28d9;font-weight:600}`;
       });
       bar.appendChild(legend);
       box.appendChild(bar);
+    }
+    if (opts && opts.radial && window.Radial) {
+      const wide = el("div", null, "radial-wide");
+      drawRadial(tree, wide, opts);
+      box.appendChild(wide);
+      if (opts.radialLinks && opts.radialLinks.length) {
+        const links = el("div", null, "rad-links");
+        for (const link of opts.radialLinks) {
+          const b = el("button", `See ${link.label} →`, "ghost rad-link");
+          b.type = "button";
+          b.addEventListener("click", () => goToOption(link.id));
+          links.appendChild(b);
+        }
+        wide.appendChild(links);
+      }
+      const narrow = el("div", null, "list-narrow");
+      const root = document.createElement("ul");
+      root.className = "mm-root";
+      root.appendChild(drawNode(tree));
+      narrow.appendChild(root);
+      box.appendChild(narrow);
+      return;
     }
     const root = document.createElement("ul");
     root.className = "mm-root";
@@ -4037,7 +4178,8 @@ a{color:#6d28d9;font-weight:600}`;
     const box = $("approachMap");
     if (!box || !window.MindMap || !window.Modernize) return;
     const points = Object.fromEntries(window.Modernize.TEMPLATES.map((t) => [t.id, t.points]));
-    drawMap(window.MindMap.approach(window.Modernize.choose(findings || {}), points, chosenId), box, { toolbar: true });
+    const tree = window.MindMap.approach(window.Modernize.choose(findings || {}), points, chosenId);
+    drawMap(tree, box, { toolbar: true, radial: true, radialLinks: tree.children.map((c) => ({ id: c.id, label: c.label })) });
   }
 
   // Findings map: under the review cards, one branch per card, with its findings. Only what this viewer may see.
@@ -4062,6 +4204,7 @@ a{color:#6d28d9;font-weight:600}`;
     box.setAttribute("aria-label", "Map of the findings");
     drawMap(window.FindingsMap.tree({ label: "What we found", cards }), box, {
       toolbar: true,
+      radial: true,
       legend: {
         tones: [["high", "High"], ["medium", "Medium"], ["low", "Low"], ["clear", "Nothing found"]],
         icons: [["✓", "Verified in code"], ["?", "Inferred, needs review"]],
