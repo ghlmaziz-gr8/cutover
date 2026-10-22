@@ -73,3 +73,10 @@ test("the What it is row shows the number of roles, and the names stay in the fi
   assert.ok(html.includes('item.id === "security.roles" && Array.isArray(item.value)'));
   assert.ok(html.includes("The names stay in \"Show findings\"."));
 });
+
+test("the names under Show the names are a bulleted list, one name per bullet", () => {
+  const html = readFileSync(new URL("../index.html", import.meta.url), "utf8");
+  assert.ok(html.includes('list.className = "ds-names-list";'));
+  assert.ok(html.includes("for (const n of item.value.names) list.appendChild(el(\"li\", n));"));
+  assert.ok(html.includes("list-style:disc"));
+});

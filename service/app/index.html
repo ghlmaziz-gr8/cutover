@@ -203,7 +203,8 @@ button.danger{background:transparent;color:var(--bad);box-shadow:none;border:1.5
 .ds-table>summary .muted{margin-left:8px}
 .ds-names{margin:6px 0}
 .ds-names>summary{cursor:pointer;font-size:14px}
-.ds-names-list{line-height:1.6;overflow-wrap:anywhere}
+.ds-names-list{list-style:disc;margin:8px 0 0;padding-left:20px;line-height:1.6;overflow-wrap:anywhere;column-width:200px;column-gap:24px;font-size:14px}
+.ds-names-list li{break-inside:avoid;margin:0 0 2px}
 .app-foot{display:flex;justify-content:center;align-items:center;gap:10px;padding:24px 16px;font-size:13px;color:var(--muted)}
 .app-foot img{height:26px;width:auto;background:#ffffff;border-radius:8px;padding:4px 8px;box-sizing:content-box}
 .ds-fields{margin:6px 0 4px;padding-left:18px;font-size:13px;color:var(--muted,#64748b)}
@@ -2925,7 +2926,12 @@ pre{white-space:pre-wrap;word-break:break-word;background:var(--soft);padding:12
       const names = document.createElement("details");
       names.className = "ds-names";
       names.appendChild(el("summary", `Show the ${item.value.names.length} names`));
-      names.appendChild(el("p", item.value.names.join(", "), "ds-names-list"));
+      // One name per bullet, in two columns on wide screens and one on a phone.
+      const list = document.createElement("ul");
+      list.className = "ds-names-list";
+      list.setAttribute("aria-label", `${item.value.names.length} names`);
+      for (const n of item.value.names) list.appendChild(el("li", n));
+      names.appendChild(list);
       card.appendChild(names);
     }
     if (hasDetail) {
