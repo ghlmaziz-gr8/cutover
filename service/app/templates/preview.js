@@ -422,9 +422,7 @@
     const app = document.getElementById("app");
     app.textContent = "";
     const wrap = make("div", null, "wrap");
-    const back = make("a", "← Back to Cutover", "back");
-    back.href = "../index.html";
-    wrap.appendChild(back);
+    wrap.appendChild(backLink("← Back to the assessment", "back"));
 
     const hero = make("section", null, "hero");
     hero.appendChild(make("p", t.eyebrow, "eyebrow"));
@@ -498,6 +496,9 @@
     wrap.appendChild(section("Main risks"));
     wrap.appendChild(card([list(t.risks)]));
     wrap.appendChild(make("p", "This is a template, not a plan for one application. Cutover shows where each finding is in the code, and the team decides the order.", "note"));
+    const footer = make("div", null, "preview-foot");
+    footer.appendChild(backLink("← Back to the assessment", "back-btn"));
+    wrap.appendChild(footer);
 
     // The other two options, behind the proposal, for comparison.
     const others = make("section", null, "others");
@@ -518,6 +519,22 @@
     others.appendChild(grid);
     wrap.appendChild(others);
     app.appendChild(wrap);
+  }
+
+  // Returns to the screen the reader came from, which is the assessment's review. If the page was opened
+  // directly, the link goes to the portal instead.
+  function backLink(text, cls) {
+    const link = make("a", text, cls);
+    link.href = "../index.html";
+    link.addEventListener("click", (e) => {
+      let fromSameSite = false;
+      try { fromSameSite = Boolean(document.referrer) && new URL(document.referrer).origin === window.location.origin; } catch (err) { fromSameSite = false; }
+      if (fromSameSite && window.history.length > 1) {
+        e.preventDefault();
+        window.history.back();
+      }
+    });
+    return link;
   }
 
   function tagRow(tags) {
