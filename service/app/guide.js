@@ -11,6 +11,7 @@
 window.CUTOVER_GUIDE = {
   updated: "2026-10-22",
   whatsNew: [
+    "2026-10-22: The approach card on the next-steps screen has Export PDF and Export HTML, like the findings report. The mind map and the three options are included.",
     "2026-10-22: The target language choice shows the language your legacy code is written in, marks the matching option, and explains that the other options are alternates for the future state. The option labels are readable.",
     "2026-10-22: The History card spans the full width of the results, so it no longer leaves empty space beside it.",
     "2026-10-22: The header no longer repeats the word Cutover beside the logo on the role and sign-in screens.",
