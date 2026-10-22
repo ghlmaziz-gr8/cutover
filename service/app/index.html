@@ -686,13 +686,22 @@ pre{white-space:pre-wrap;word-break:break-word;background:var(--soft);padding:12
 .tl-name{font:700 15px var(--body);color:var(--fg)}
 .tl-note{font:500 13px var(--body);color:var(--muted,#64748b);line-height:1.4}
 .tl-tag{margin-top:2px}
-.tl-flow{display:grid;grid-template-columns:1fr auto 1fr;gap:12px;align-items:stretch;margin:12px 0 6px}
-.tl-col{background:var(--soft,#f5f3ff);border:1px solid var(--line,#e5e7eb);border-radius:16px;padding:14px}
-.tl-col .eyebrow-sm{margin:0 0 8px}
-.tl-lang{display:flex;flex-direction:column;gap:2px;padding:8px 0;border-top:1px dashed var(--line,#e5e7eb)}
-.tl-lang:first-of-type{border-top:0}
-.tl-arrow{align-self:center;font:800 26px var(--body);color:var(--accent,#6d28d9)}
-@media (max-width:640px){.tl-flow{grid-template-columns:1fr}.tl-arrow{transform:rotate(90deg);justify-self:center}}
+.tl-parts{margin:12px 0 6px;border:1px solid var(--line,#e5e7eb);border-radius:16px;overflow:hidden}
+.tl-parts-head,.tl-part{display:grid;grid-template-columns:minmax(120px,.8fr) 1.2fr auto 1.2fr;gap:12px;align-items:center;padding:10px 14px}
+.tl-parts-head{background:var(--soft,#f5f3ff);font:800 11px var(--body);letter-spacing:.06em;text-transform:uppercase;color:var(--accent,#6d28d9)}
+.tl-part{border-top:1px solid var(--line,#e5e7eb);font:500 14px var(--body);color:var(--fg)}
+.tl-part:nth-child(even){background:color-mix(in srgb,var(--soft,#f5f3ff) 45%,transparent)}
+.tl-part-name{font:700 14px var(--body)}
+.tl-prev{color:var(--muted,#64748b);font-size:13px;line-height:1.4}
+.tl-next{font-weight:700;font-size:13px;line-height:1.4;color:var(--fg)}
+.tl-arrow{font:800 20px var(--body);color:var(--accent,#6d28d9)}
+@media (max-width:640px){
+  .tl-parts-head{display:none}
+  .tl-part{grid-template-columns:1fr;gap:4px}
+  .tl-part .tl-arrow{display:none}
+  .tl-prev::before{content:"Before: ";font-weight:700;color:var(--fg)}
+  .tl-next::before{content:"After: ";font-weight:700;color:var(--accent,#6d28d9)}
+}
 .tl-owner{width:100%;max-width:420px;margin:6px 0 10px}
 .tl-status{margin-top:12px}
 .rad-links{display:flex;flex-wrap:wrap;justify-content:center;gap:8px;margin-top:12px}
@@ -4384,6 +4393,33 @@ a{color:#6d28d9;font-weight:600}`;
     }
     return out;
   }
+  // What each approach does with each part of the application. Text only: the approach decides it, not the code.
+  const APPROACH_FUTURE = {
+    "lift-contain": {
+      db: "Stays in the current database. Nothing moves.",
+      ui: "Kept as it is, inside a container.",
+      logic: "Stays where it is, inside the legacy code.",
+      integrations: "Kept as they are.",
+      roles: "Kept as they are.",
+      build: "Packaged in a container and deployed as it is.",
+    },
+    "web-modern": {
+      db: "Data stays where it is, behind a new API.",
+      ui: "Rebuilt as a modern web front end.",
+      logic: "Moved behind a new API.",
+      integrations: "Each one is kept behind the API or replaced, decided in the plan.",
+      roles: "Carried into the new front end and API.",
+      build: "Rebuilt for the chosen language.",
+    },
+    "services-data": {
+      db: "Moves in steps to a modern database.",
+      ui: "Kept for now, and changed once the services are in place.",
+      logic: "Business rules move out of the database into services.",
+      integrations: "Each one moves with the service that uses it.",
+      roles: "Carried into the services.",
+      build: "Rebuilt for the chosen language, one service at a time.",
+    },
+  };
   const TIER_TEXT = (t) => (t === 3 ? "Counted by file extension only" : t ? "Read from the source" : "Found in the code");
 
   function renderTarget(row) {
@@ -4399,45 +4435,84 @@ a{color:#6d28d9;font-weight:600}`;
     const legacy = legacyLanguagesOf(row);
     const legacyNames = legacy.map((l) => l.name);
     const isLegacyName = (o) => (o.id === "current" ? row.modern_template === "lift-contain" : !!LEGACY_LANGUAGE_MATCH[o.id] && legacyNames.some((n) => LEGACY_LANGUAGE_MATCH[o.id].test(n)));
-    const flow = el("div", null, "tl-flow");
-    const before = el("div", null, "tl-col");
-    before.append(el("p", "Previous state: the legacy code today", "eyebrow-sm"));
-    if (legacy.length) {
-      for (const l of legacy) {
-        const item = el("div", null, "tl-lang");
-        item.append(el("b", l.name));
-        item.append(el("span", [l.files !== null ? `${l.files} ${l.files === 1 ? "file" : "files"}` : null, l.tier ? TIER_TEXT(l.tier) : null].filter(Boolean).join(" · "), "muted small"));
-        before.appendChild(item);
-      }
-    } else {
-      before.append(el("p", "No legacy language was read from the files reviewed.", "muted small"));
-    }
-    const arrow = el("div", "→", "tl-arrow");
-    arrow.setAttribute("aria-hidden", "true");
-    const after = el("div", null, "tl-col");
-    after.append(el("p", "Future state: the modernized application", "eyebrow-sm"));
+
+    // Each part of a legacy application: what the code has today, and what the chosen approach does with it.
     const chosen = row.target_language ? (row.target_options || []).find((o) => o.id === row.target_language) : null;
+    const approachFuture = APPROACH_FUTURE[row.modern_template] || null;
+    const fact = (id) => (row.findings && row.findings.findings && row.findings.findings[id] ? row.findings.findings[id].value : undefined);
+    const dbEngines = fact("data.database_engines");
+    const engineText = Array.isArray(dbEngines) ? dbEngines.filter((e) => e && e !== "none found").join(", ") : "";
+    const routines = fact("data.routines_in_code") || {};
+    const tables = fact("data.tables");
+    const screens = fact("ui.screen_names");
+    const endpoints = fact("ui.endpoints") || {};
+    const deps = fact("legacy.dependencies");
+    const roles = fact("ui.roles");
+    const ci = fact("delivery.ci");
+    const join = (parts) => parts.filter(Boolean).join(" · ") || "Not found in the code";
+    const future = (key, fallback) => (approachFuture ? approachFuture[key] : fallback);
+    const parts = [
+      {
+        name: "Language",
+        before: legacy.length ? legacy.map((l) => [l.name, l.files !== null ? `${l.files} files` : null, l.tier ? TIER_TEXT(l.tier) : null].filter(Boolean).join(" · ")).join("; ") : "Not found in the code",
+        after: chosen ? chosen.label : "Choose below",
+      },
+      {
+        name: "Database",
+        before: join([engineText || null, tables && tables.count ? `${tables.count} tables` : null, routines.procedures ? `${routines.procedures} stored procedures` : null, routines.views ? `${routines.views} views` : null, routines.functions ? `${routines.functions} functions` : null]),
+        after: future("db", "Depends on the approach chosen above"),
+      },
+      {
+        name: "Screens and pages",
+        before: join([screens && screens.count ? `${screens.count} screens in the code` : null]),
+        after: future("ui", "Depends on the approach chosen above"),
+      },
+      {
+        name: "Business logic and endpoints",
+        before: join([typeof endpoints.endpoint_annotations === "number" && endpoints.endpoint_annotations ? `${endpoints.endpoint_annotations} endpoints` : null, typeof endpoints.controllers === "number" && endpoints.controllers ? `${endpoints.controllers} controllers` : null]),
+        after: future("logic", "Depends on the approach chosen above"),
+      },
+      {
+        name: "Programs and modules called",
+        before: join([deps && deps.count ? `${deps.count} programs or modules${Array.isArray(deps.names) && deps.names.length ? `, for example ${deps.names.slice(0, 3).join(", ")}` : ""}` : null]),
+        after: future("integrations", "Depends on the approach chosen above"),
+      },
+      {
+        name: "Roles and access",
+        before: join([roles && roles.count ? `${roles.count} roles in access rules` : null]),
+        after: future("roles", "Depends on the approach chosen above"),
+      },
+      {
+        name: "Build and delivery",
+        before: ci ? (Array.isArray(ci) ? ci.join(", ") : String(typeof ci === "object" ? (ci.name || ci.value || "") : ci)) || "Not found in the code" : "Not found in the code",
+        after: future("build", "Depends on the approach chosen above"),
+      },
+    ];
+
+    const head = el("div", null, "tl-parts-head");
+    head.append(el("span", "Part of the application"), el("span", "Previous state: the legacy code today"), el("span", ""), el("span", "Future state: the modernized application"));
+    const table = el("div", null, "tl-parts");
+    table.setAttribute("role", "table");
+    table.appendChild(head);
+    for (const pt of parts) {
+      const row2 = el("div", null, "tl-part");
+      row2.setAttribute("role", "row");
+      const arrow = el("span", "→", "tl-arrow");
+      arrow.setAttribute("aria-hidden", "true");
+      row2.append(el("b", pt.name, "tl-part-name"), el("span", pt.before, "tl-prev"), arrow, el("span", pt.after, "tl-next"));
+      table.appendChild(row2);
+    }
+    box.appendChild(table);
     if (chosen) {
-      const item = el("div", null, "tl-lang");
-      item.append(el("b", chosen.label));
       const approved = row.target_approval
         ? `Approved${row.target_approval.by ? ` by ${row.target_approval.by}` : ""}`
         : "Waiting for the owner or a CIO or CTO to approve";
-      item.append(el("span", approved, "muted small"));
-      after.appendChild(item);
-    } else {
-      after.append(el("p", "Not chosen yet. Pick one of the options below.", "muted small"));
+      box.appendChild(el("p", `${chosen.label} is chosen. ${approved}.`, "small"));
     }
-    flow.append(before, arrow, after);
-    box.appendChild(flow);
     const hasMatch = options.some((o) => isLegacyName(o));
     box.appendChild(el("p", legacy.length && !hasMatch
-      ? "None of the options is the language of the legacy code, so each one is a new language for the future state."
-      : "The option that matches the legacy language keeps that language. The other options are new languages for the future state. A platform engineer chooses, and the named application owner or a CIO or CTO approves before any file is converted.", "muted small"));
-    box.appendChild(el("p", legacy.length
-      ? `Your legacy code is written in ${legacy.join(", ")}.`
-      : "We could not read the language of the legacy code from the files reviewed.", "small"));
-    box.appendChild(el("p", "Choose the language the modernized application should use. The option that matches your legacy language keeps that language. Each other option is the alternate for the future state, the modern version of the application. A platform engineer chooses, and the named application owner or a CIO or CTO approves before any file is converted.", "muted small"));
+      ? "None of the options is the language of the legacy code, so each one is a new language for the future state. The future state of the other parts follows the approach chosen above."
+      : "The option that matches the legacy language keeps that language. A platform engineer chooses, and the named application owner or a CIO or CTO approves before any file is converted.", "muted small"));
 
     if (targetPick.analysis !== row.id) targetPick = { analysis: row.id, language: row.target_language || null };
     const grid = el("div", null, "tl-grid");
