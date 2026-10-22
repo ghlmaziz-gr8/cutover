@@ -111,3 +111,9 @@ test("results always say whether an AI model was used, and recommend based on pa
   assert.ok(html.includes("An AI model was used for this assessment: ${modelName}."));
   assert.ok(html.includes("Recommendation: decide per assessment."));
 });
+
+test("each analyses list row shows the AI badge when a model was used", () => {
+  const start = html.indexOf("function analysisItem");
+  const body = html.slice(start, html.indexOf("function renderList", start));
+  assert.ok(body.includes("if (r.model_provider) title.appendChild(aiBadge(r.model_provider));"));
+});

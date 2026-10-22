@@ -2483,6 +2483,7 @@ button:not(:disabled):active{transform:scale(.965)}
     const title = el("b", r.app_name || r.repo);
     if (isNewest) title.appendChild(tag("Newest", "newest"));
     if (isUnread) title.appendChild(tag("Not opened", "new"));
+    if (r.model_provider) title.appendChild(aiBadge(r.model_provider));
     text.append(
       title,
       el("div", `${r.repo}${r.ref ? " @ " + r.ref : ""} · ${STATUS_TEXT[r.status] || r.status} · ${r.is_mine ? "started by you" : "started by a teammate"} · ${new Date(r.created_at).toLocaleDateString()}`, "muted small"),
