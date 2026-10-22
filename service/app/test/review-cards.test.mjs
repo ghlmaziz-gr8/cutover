@@ -122,3 +122,14 @@ test("the header counts the analysis steps only, and shows the estimate once the
   assert.ok(html.includes('const ETA_FROM = "s-run";'));
   assert.ok(html.includes("idx >= etaStart ? etaFrom(idx) : \"\""));
 });
+
+test("each screen's own step label matches the header: Name is step 1 of 6, through Next steps as step 6 of 6", () => {
+  const html = readFileSync(new URL("../index.html", import.meta.url), "utf8");
+  const label = (id) => { const i = html.indexOf(`id="${id}"`); return html.slice(i, html.indexOf("</p>", i)).match(/eyebrow">([^<]+)/)[1]; };
+  assert.equal(label("s-name"), "Step 1 of 6");
+  assert.equal(label("s-connect"), "Step 2 of 6");
+  assert.equal(label("s-rules"), "Step 3 of 6");
+  assert.equal(label("s-run"), "Step 4 of 6");
+  assert.equal(label("s-review"), "Step 5 of 6");
+  assert.equal(label("s-next"), "Step 6 of 6");
+});
