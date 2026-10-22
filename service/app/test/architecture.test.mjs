@@ -134,3 +134,11 @@ test("option cards have their own colour, icon and an animated fit score", () =>
   assert.ok(html.includes("@keyframes rcFloat"));
   assert.ok(html.includes(".rc-track b{display:block;height:100%;width:var(--w)"));
 });
+
+test("mind maps and the architecture diagram can open in an enlarged view", () => {
+  assert.ok(html.includes("function magnify(node, label, opener)"));
+  assert.ok(html.includes("function enlargeButton(target, label)"));
+  assert.ok(html.includes("zoomRow.appendChild(enlargeButton(box,"));
+  assert.ok(html.includes("head.appendChild(enlargeButton(wrap, \"How the application fits together today\"));"));
+  assert.ok(html.includes(".zoom-node .zoom-btn,.zoom-node .zoom-row{display:none!important}"));
+});

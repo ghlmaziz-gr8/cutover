@@ -11,6 +11,7 @@
 window.CUTOVER_GUIDE = {
   updated: "2026-10-22",
   whatsNew: [
+    "2026-10-22: Mind maps and the architecture diagram have an Enlarge button. The diagram opens full screen with zoom controls, and Escape closes it.",
     "2026-10-22: The Findings by area bars grow in one after another, with a shine and counted numbers.",
     "2026-10-22: The analyses list shows the AI badge on each row that used an AI model, as the results page does.",
     "2026-10-22: Every result states whether an AI model was used and which one, or that no AI model was used. It also recommends the approach that past assessments in the workspace used.",
