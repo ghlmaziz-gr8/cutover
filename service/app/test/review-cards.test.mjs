@@ -86,7 +86,13 @@ test("lists and multi-part objects are shown as bullets, and single values stay 
   assert.ok(html.includes("function valueNode(v, depth = 0)"));
   assert.ok(html.includes('ul.className = "vlist";'));
   assert.ok(html.includes("const value = el(\"span\", null, \"kv-value\");"));
-  assert.ok(html.includes("value.appendChild(item.id === \"security.roles\" ? document.createTextNode(kvValue(item)) : valueNode(item.value));"));
+  assert.ok(html.includes("value.appendChild(item.id === \"security.roles\" ? document.createTextNode(kvValue(item)) : valueNode(v));"));
   assert.ok(html.includes('summaryBox.appendChild(valueNode(summary));'));
   assert.ok(html.includes(".vlist{list-style:disc"));
+});
+
+test("a list value gets the full width of its card, with its label above it", () => {
+  const html = readFileSync(new URL("../index.html", import.meta.url), "utf8");
+  assert.ok(html.includes('kv.append(el("span", item.title, "kv-label kv-wide"));'));
+  assert.ok(html.includes(".kv-wide{grid-column:1 / -1}"));
 });
