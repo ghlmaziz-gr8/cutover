@@ -143,6 +143,8 @@ test("the plan document is a print-first page with a timeline, phase cards and g
   assert.ok(page.includes(est.phases[0].name.replace(/&/g, "&amp;")), "phase names are kept");
   assert.ok(page.includes("Demo &lt;app&gt;"), "text is escaped");
   assert.ok(page.includes("window.print()"), "the PDF version opens the print dialog");
+  assert.ok(page.includes('id="timeline"') && page.includes('id="phases"') && page.includes('id="people"'), "the timeline and the phase cards each have their own section");
+  assert.ok(page.includes(".pg{break-after:page}"), "each section starts on a new page when printed");
   assert.ok(page.includes("class=\"gate\"") && est.phases.some((ph) => ph.gate), "gates are marked on the timeline");
   const htmlOnly = ctx.planDocumentHtml({ est, title: "Demo", app: "Demo", approach: "x", language: "y", owner: "z", approved: "w", generated: "g", scenario: "expected", teamSize: 4 }, false);
   assert.ok(!htmlOnly.includes("window.print()"), "the HTML download has no script");
