@@ -80,3 +80,13 @@ test("the names under Show the names are a bulleted list, one name per bullet", 
   assert.ok(html.includes("for (const n of item.value.names) list.appendChild(el(\"li\", n));"));
   assert.ok(html.includes("list-style:disc"));
 });
+
+test("lists and multi-part objects are shown as bullets, and single values stay as text", () => {
+  const html = readFileSync(new URL("../index.html", import.meta.url), "utf8");
+  assert.ok(html.includes("function valueNode(v, depth = 0)"));
+  assert.ok(html.includes('ul.className = "vlist";'));
+  assert.ok(html.includes("const value = el(\"span\", null, \"kv-value\");"));
+  assert.ok(html.includes("value.appendChild(item.id === \"security.roles\" ? document.createTextNode(kvValue(item)) : valueNode(item.value));"));
+  assert.ok(html.includes('summaryBox.appendChild(valueNode(summary));'));
+  assert.ok(html.includes(".vlist{list-style:disc"));
+});
