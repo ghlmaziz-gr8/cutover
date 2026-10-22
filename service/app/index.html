@@ -3793,7 +3793,7 @@ a{color:#6d28d9;font-weight:600}`;
     box.appendChild(input);
     const go = el("button", "Approve conversions");
     go.type = "button";
-    go.addEventListener("click", () => setConversionApproval(row, true, input.value));
+    go.addEventListener("click", () => setConversionApproval(row, true, input.value.trim()));
     box.appendChild(go);
   }
 
