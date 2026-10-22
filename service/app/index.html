@@ -1522,7 +1522,7 @@ pre{white-space:pre-wrap;word-break:break-word;background:var(--soft);padding:12
     if (idx < 0) {
       $("barWrap").hidden = true;
       dots.hidden = true;
-      $("stageName").textContent = id === "s-home" && ws ? ws.name : id === "s-denied" ? "Access" : "Cutover";
+      $("stageName").textContent = id === "s-home" && ws ? ws.name : id === "s-denied" ? "Access" : "";
       $("stepCount").textContent = id === "s-home" && ws ? `Signed in as ${roleName(ws.role)}` : "";
       $("pct").textContent = "";
       $("eta").textContent = "";

@@ -11,6 +11,7 @@
 window.CUTOVER_GUIDE = {
   updated: "2026-10-22",
   whatsNew: [
+    "2026-10-22: The header no longer repeats the word Cutover beside the logo on the role and sign-in screens.",
     "2026-10-22: The progress bar appears only on the steps of the wizard, so the role and sign-in screens no longer show an empty bar. The role screen and the Connect the code step link to the guide.",
     "2026-10-21: Signing out clears the bell: the list, the count and any open messages are removed, so the next person does not see them. The bell reappears when you sign in again.",
     "2026-10-21: Findings are shorter to read. Long lists sit under Show findings or Show details, and each card shows its count. The summary and bars count only results that found something, and the bars say 'findings'.",
