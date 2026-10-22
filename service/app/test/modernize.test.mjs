@@ -42,7 +42,7 @@ test("each preview shows the proposal and the two other options, with fit from t
 test("the portal loads the rules and shows a section per template", () => {
   assert.ok(html.includes('<script src="modernize.js"></script>'));
   assert.ok(html.includes("function modernizeSection"));
-  assert.ok(html.includes("modernizeSection(Object.fromEntries"));
+  assert.ok(html.includes("modernizeSection(currentFindings"));
   assert.ok(html.includes("?fit=${p.fit}&rec="), "the review passes this template's fit and the recommended one");
 });
 

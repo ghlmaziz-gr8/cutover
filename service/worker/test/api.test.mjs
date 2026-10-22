@@ -346,13 +346,24 @@ const visibleIds = (findings) => Object.keys(findings || {}).sort();
 // ---- Choosing the modernized template ----
 
 test("only a platform engineer can choose the modernized template, from the three there are", async () => {
+  state.analyses.find((a) => a.id === AN_ACME).scope = "modernize";
   const auditor = await call(`/api/analyses/${AN_ACME}/template`, { as: "aud_a", method: "PUT", body: { template: "web-modern" } });
   assert.equal(auditor.status, 403);
   const unknown = await call(`/api/analyses/${AN_ACME}/template`, { as: "eng_a", method: "PUT", body: { template: "anything" } });
   assert.equal(unknown.status, 400);
 });
 
+test("the approach can only be chosen once Modernize is the next stage", async () => {
+  const analysis = state.analyses.find((a) => a.id === AN_ACME);
+  analysis.scope = "deeper";
+  const early = await call(`/api/analyses/${AN_ACME}/template`, { as: "eng_a", method: "PUT", body: { template: "web-modern" } });
+  assert.equal(early.status, 409);
+  assert.match(early.body.error, /Choose Modernize/);
+  analysis.scope = "modernize";
+});
+
 test("a platform engineer's choice is saved with who chose it and when, and a later choice replaces it", async () => {
+  state.analyses.find((a) => a.id === AN_ACME).scope = "modernize";
   const first = await call(`/api/analyses/${AN_ACME}/template`, { as: "eng_a", method: "PUT", body: { template: "web-modern" } });
   assert.equal(first.status, 200);
   assert.equal(first.body.template, "web-modern");
@@ -369,25 +380,31 @@ test("a platform engineer's choice is saved with who chose it and when, and a la
 test("the stages unlock one after another, and a locked stage says what to clear first", async () => {
   const before = await call(`/api/analyses/${AN_ACME}`, { as: "eng_a" });
   const stages = before.body.stages;
-  assert.deepEqual(stages.map((s) => s.id), ["deeper", "plan", "starter", "convert", "pr"]);
+  assert.deepEqual(stages.map((s) => s.id), ["deeper", "approach", "plan", "starter", "convert", "pr"]);
   const plan = stages.find((s) => s.id === "plan");
+  const approach = stages.find((s) => s.id === "approach");
   if (before.body.deeper_done !== true) {
     assert.equal(stages[0].state, "available");
+    assert.equal(approach.state, "locked");
     assert.equal(plan.state, "locked");
-    assert.match(plan.lock_reason, /Clear Deeper assessment to unlock Modernization plan/);
+    assert.match(approach.lock_reason, /Clear Deeper assessment to unlock Choose the approach/);
+    assert.match(plan.lock_reason, /Clear Choose the approach to unlock Modernization plan/);
   } else {
     assert.equal(stages[0].state, "cleared");
-    assert.equal(plan.state, "available");
+    assert.equal(approach.state, before.body.modern_template ? "cleared" : "available");
+    assert.equal(plan.state, before.body.modern_template ? "available" : "locked");
   }
 });
 
 test("a stage cannot be reviewed while it is locked, or before its output is ready", async () => {
   const analysis = state.analyses.find((a) => a.id === AN_ACME);
   analysis.deeper_done = false;
+  analysis.modern_template = null;
   const locked = await call(`/api/analyses/${AN_ACME}/progress`, { as: "eng_a", method: "PUT", body: { action: "review", stage: "plan" } });
   assert.equal(locked.status, 409);
-  assert.match(locked.body.error, /Clear Deeper assessment/);
+  assert.match(locked.body.error, /Clear Choose the approach/);
   analysis.deeper_done = true;
+  analysis.modern_template = "web-modern";
   const notReady = await call(`/api/analyses/${AN_ACME}/progress`, { as: "eng_a", method: "PUT", body: { action: "review", stage: "plan" } });
   assert.equal(notReady.status, 409);
   assert.match(notReady.body.error, /not ready yet/);

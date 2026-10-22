@@ -1019,6 +1019,14 @@ pre{white-space:pre-wrap;word-break:break-word;background:var(--soft);padding:12
         </div>
       </div>
     </div>
+    <div class="card" id="approachCard" hidden style="margin-top:18px">
+      <p class="eyebrow-sm">Modernize</p>
+      <h3 style="margin:4px 0 6px">Choose the approach</h3>
+      <p class="muted small" id="approachNote" style="margin:0"></p>
+      <div id="approachGrid"></div>
+      <p class="small hint" id="approachMsg" role="status"></p>
+    </div>
+    <div class="card" id="nextPathCard" hidden style="margin-top:18px"><div id="nextPath"></div></div>
     <div class="cards2" style="margin-top:20px">
       <div class="card" style="margin-top:0">
         <h3 style="margin-top:0">Download the report</h3>
@@ -1330,6 +1338,7 @@ pre{white-space:pre-wrap;word-break:break-word;background:var(--soft);padding:12
   let me = null;          // { email, is_operator, workspaces }
   let ws = null;          // the workspace the person is working in
   let cur = null;         // the analysis on screen
+  let currentFindings = {}; // the findings map shown on the review, used by the next-steps screen
   let wizard = { appName: "", repo: "", ref: "" };
   let started = false;
   let runTimer = null;
@@ -2811,7 +2820,6 @@ pre{white-space:pre-wrap;word-break:break-word;background:var(--soft);padding:12
     renderReview(cur);
     renderDiscussion(cur);
     celebrateStages(cur);
-    applyPendingTemplate();
   }
 
   // Turn a finding value into readable text, the same way the engine does.
@@ -3512,7 +3520,7 @@ a{color:#6d28d9;font-weight:600}`;
     try {
       await api(`/api/analyses/${row.id}/template`, { method: "PUT", body: JSON.stringify({ template }) });
       cur = await api(`/api/analyses/${row.id}`);
-      showReview();
+      showCurrentScreen();
     } catch (err) {
       showToast({ tone: "bad", title: "Could not choose the template", body: err.message });
     }
@@ -3534,7 +3542,7 @@ a{color:#6d28d9;font-weight:600}`;
     try {
       await api(`/api/analyses/${row.id}/progress`, { method: "PUT", body: JSON.stringify({ action: "review", stage }) });
       cur = await api(`/api/analyses/${row.id}`);
-      showReview();
+      showCurrentScreen();
     } catch (err) {
       showToast({ tone: "bad", title: "Could not mark the stage reviewed", body: err.message });
     }
@@ -3609,15 +3617,8 @@ a{color:#6d28d9;font-weight:600}`;
     }
   }
 
-  function modernizeSection(shown, row) {
-    const wrap = el("div", null, "modern");
-    if (row && row.stages) wrap.appendChild(renderPath(row));
-    wrap.appendChild(el("h3", "Modernized templates"));
-    if (row && row.modern_template) {
-      const by = row.modern_template_set_by_email ? ` by ${row.modern_template_set_by_email}` : "";
-      wrap.appendChild(el("p", `Chosen approach: ${TEMPLATE_NAME[row.modern_template] || row.modern_template}${by}.`, "small"));
-    }
-    wrap.appendChild(el("p", "Designs are ready for this application. Each option shows the proposed look, page flow and wireframes, built from the screens and evidence Cutover found.", "muted small"));
+  // The three options as cards. On the findings page they are read-only; on the next-steps page they can be chosen.
+  function templateGrid(shown, row, choosable) {
     const grid = el("div", null, "rgrid");
     const picks = window.Modernize ? window.Modernize.choose(shown) : [];
     const ctx = encodeContext(previewContext(shown));
@@ -3637,7 +3638,7 @@ a{color:#6d28d9;font-weight:600}`;
       link.textContent = "See the proposed design →";
       link.style.cssText = "display:inline-block;margin-top:10px;font-weight:700;color:var(--accent)";
       c.appendChild(link);
-      if (row && row.can_plan) {
+      if (choosable && row && row.can_plan) {
         const pick = el("button", row.modern_template === p.id ? "Chosen approach" : "Choose this approach");
         pick.type = "button";
         pick.className = row.modern_template === p.id ? "tag" : "ghost";
@@ -3648,8 +3649,49 @@ a{color:#6d28d9;font-weight:600}`;
       }
       grid.appendChild(c);
     }
-    wrap.appendChild(grid);
+    return grid;
+  }
+
+  // Findings page: the options and their previews only. The choice is made on the next-steps page.
+  function modernizeSection(shown, row) {
+    const wrap = el("div", null, "modern");
+    wrap.appendChild(el("h3", "Modernized templates"));
+    wrap.appendChild(el("p", "Designs are ready for this application. Each option shows the proposed look, page flow and wireframes, built from the screens and evidence Cutover found.", "muted small"));
+    if (row && row.modern_template) {
+      const by = row.modern_template_set_by_email ? ` by ${row.modern_template_set_by_email}` : "";
+      wrap.appendChild(el("p", `Chosen approach: ${TEMPLATE_NAME[row.modern_template] || row.modern_template}${by}.`, "small"));
+    }
+    const note = row && row.scope === "modernize"
+      ? "Modernize is the next stage. The approach is chosen on the next steps page."
+      : "To choose an approach, first choose Modernize as the next stage.";
+    wrap.appendChild(el("p", note, "small"));
+    const next = el("button", "Go to next steps");
+    next.type = "button";
+    next.className = "ghost";
+    next.addEventListener("click", () => showNext());
+    wrap.appendChild(next);
+    wrap.appendChild(templateGrid(shown, row, false));
     return wrap;
+  }
+
+  // Next-steps page: when Modernize is the chosen stage, the three options can be chosen here.
+  function renderApproach(row) {
+    const card = $("approachCard");
+    const visible = !!row && row.scope === "modernize";
+    card.hidden = !visible;
+    if (!visible) return;
+    const by = row.modern_template_set_by_email ? ` by ${row.modern_template_set_by_email}` : "";
+    const chosen = row.modern_template ? `Chosen: ${TEMPLATE_NAME[row.modern_template] || row.modern_template}${by}. ` : "";
+    $("approachNote").textContent = row.can_plan
+      ? `${chosen}Compare the three options and their previews, then choose one.`
+      : `${chosen}A platform engineer chooses the approach.`;
+    $("approachGrid").replaceChildren(templateGrid(currentFindings, row, true));
+  }
+
+  // Returns to whichever screen the person was on after a change: the next-steps page or the findings.
+  function showCurrentScreen() {
+    if (!$("s-next").hidden) showNext();
+    else showReview();
   }
 
   function renderReview(row) {
@@ -3743,7 +3785,8 @@ a{color:#6d28d9;font-weight:600}`;
     // Entrance order: cards and panels appear one after another.
     box.querySelectorAll(".rcard, .panel, .stat").forEach((n, i) => n.style.setProperty("--i", String(i)));
 
-    box.appendChild(modernizeSection(Object.fromEntries(all.filter(Boolean).map((i) => [i.id, i])), row));
+    currentFindings = Object.fromEntries(all.filter(Boolean).map((i) => [i.id, i]));
+    box.appendChild(modernizeSection(currentFindings, row));
 
     if (report.limitations && report.limitations.length) {
       box.appendChild(el("h3", "What this review does not cover"));
@@ -3846,8 +3889,15 @@ a{color:#6d28d9;font-weight:600}`;
     renderScope();
     renderMigrate();
     renderDbCard();
+    renderApproach(cur);
+    const pathBox = $("nextPath");
+    pathBox.replaceChildren();
+    $("nextPathCard").hidden = !cur.stages;
+    if (cur.stages) pathBox.appendChild(renderPath(cur));
     updateRunBanner();
     startRunBanner();
+    applyPendingTemplate();
+    celebrateStages(cur);
     const deeperReady = cur.deeper_done === true;
     $("deeperNoteNext").textContent = deeperReady
       ? "Ready. It covers the business, systems, data and workflows, with an architecture overview."
