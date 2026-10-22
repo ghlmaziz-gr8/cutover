@@ -70,8 +70,10 @@ test("the page draws the diagram after What we found, with the placeholders and 
   assert.ok(html.includes("arch-missing"));
   assert.ok(html.includes('el("ul", null, "arch-items")'));
   assert.ok(html.includes("architectureSection(report.deeper, Object.fromEntries(all.filter(Boolean).map((i) => [i.id, i])), cur.viewer_role)"));
-  const grid = html.indexOf("box.appendChild(grid);");
-  const arch = html.indexOf("box.appendChild(architectureSection(");
+  const heading = html.indexOf('el("h2", "What we found")');
   const map = html.indexOf("box.appendChild(findingsMapSection(all, cur.viewer_role));");
-  assert.ok(grid > 0 && arch > grid && map > arch);
+  const grid = html.indexOf("box.appendChild(grid);", heading);
+  const arch = html.indexOf("box.appendChild(architectureSection(");
+  // The findings map is its own section right under What we found, before the cards and the diagram.
+  assert.ok(heading > 0 && map > heading && grid > map && arch > grid);
 });
