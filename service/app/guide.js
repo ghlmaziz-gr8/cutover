@@ -11,6 +11,7 @@
 window.CUTOVER_GUIDE = {
   updated: "2026-10-22",
   whatsNew: [
+    "2026-10-22: The findings map is now its own section right under What we found, with the cards below it. It animates in fully: a sheen on reveal, the toolbar and legend appear in turn, branches bump when they open or close, and findings lift on hover.",
     "2026-10-22: The guide explains how to read the findings map, the architecture diagram, the effort estimate, the project plan, target languages and conversions, and it has a section on Ask Cutover.",
     "2026-10-22: The project plan export has both views on their own pages: the timeline on one page and the phase cards on the pages after it, with the gates, people and assumptions at the end.",
     "2026-10-22: The architecture diagram comes alive: a packet travels along each connector, cards show a sheen and a bouncing icon on hover, and the not-found boxes breathe. The findings map centre pulses.",

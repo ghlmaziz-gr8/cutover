@@ -1002,6 +1002,31 @@ button:not(:disabled):active{transform:scale(.965)}
   .rad .rad-ring,.arch-link,.arch-packet,.arch-node::after,.arch-node.arch-missing,.arch-band,.arch-stage{animation:none!important}
   .arch-node:hover .arch-bubble{transform:none}
 }
+/* The findings map, fully animated: a sheen on reveal, a staggered toolbar, a bump on each click and a lift on each finding. */
+.findings-map{position:relative}
+.findings-map::after{content:"";position:absolute;inset:0;border-radius:inherit;background:linear-gradient(100deg,transparent 40%,rgba(255,255,255,.55) 50%,transparent 60%);transform:translateX(-100%);animation:barShine 1.6s ease-out .4s backwards;pointer-events:none}
+.findings-map-wrap > h2,.findings-map-wrap > p{animation:cardIn .6s cubic-bezier(.2,.8,.2,1) backwards}
+.findings-map-wrap > p{animation-delay:.08s}
+.findings-map .mm-buttons > *{animation:effPop .5s cubic-bezier(.2,.8,.2,1) backwards}
+.findings-map .mm-buttons > :nth-child(2){animation-delay:.08s}
+.findings-map .mm-legend > *{animation:effPop .5s cubic-bezier(.2,.8,.2,1) backwards}
+.findings-map .mm-legend > :nth-child(1){animation-delay:.12s}
+.findings-map .mm-legend > :nth-child(2){animation-delay:.16s}
+.findings-map .mm-legend > :nth-child(3){animation-delay:.2s}
+.findings-map .mm-legend > :nth-child(4){animation-delay:.24s}
+.findings-map .mm-legend > :nth-child(5){animation-delay:.28s}
+.findings-map .mm-legend > :nth-child(6){animation-delay:.32s}
+.findings-map .mm-legend > :nth-child(n+7){animation-delay:.36s}
+.rad .rad-branch.bump .rad-pill{animation:radBump .55s cubic-bezier(.34,1.56,.64,1)}
+@keyframes radBump{0%{transform:scale(1)}35%{transform:scale(1.09)}100%{transform:scale(1)}}
+.rad .rad-point{transition:opacity .35s ease,filter .25s ease}
+.rad .rad-point:hover{filter:drop-shadow(0 6px 10px rgba(17,24,39,.18))}
+.rad .rad-point:hover rect{stroke-width:2.6}
+.rad .rad-point rect{transition:stroke-width .2s ease}
+@media (prefers-reduced-motion:reduce){
+  .findings-map::after,.findings-map-wrap > h2,.findings-map-wrap > p,.findings-map .mm-buttons > *,.findings-map .mm-legend > *,.rad .rad-branch.bump .rad-pill{animation:none!important}
+  .rad .rad-point:hover{filter:none}
+}
 </style>
 </head>
 <body>
@@ -4471,6 +4496,10 @@ a{color:#6d28d9;font-weight:600}`;
         if (open) collapsed.delete(b.id); else collapsed.add(b.id);
         applyCollapse(b.id);
         bg.setAttribute("aria-expanded", String(!collapsed.has(b.id)));
+        // A small bump so the branch answers the click.
+        bg.classList.remove("bump");
+        void bg.getBoundingClientRect();
+        bg.classList.add("bump");
       };
       bg.addEventListener("click", toggle);
       bg.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); toggle(); } });
@@ -5888,6 +5917,8 @@ a{color:#6d28d9;font-weight:600}`;
     const heading = el("h2", "What we found");
     heading.style.marginTop = "28px";
     box.appendChild(heading);
+    // The findings map sits straight under the heading, as its own section, before the cards.
+    box.appendChild(findingsMapSection(all, cur.viewer_role));
     const grid = el("div", null, "rgrid");
     // The findings the summary cards show are left out of the topic cards, so each appears once.
     const SUMMARY_IDS = ["runtime.java", "runtime.spring_boot", "ui.endpoints", "ui.client_facing", "ui.screen_names", "ui.roles", "ui.page_preview", "app.purpose", "data.tables", "data.migrations", "infrastructure.as_code"];
@@ -5905,7 +5936,6 @@ a{color:#6d28d9;font-weight:600}`;
     for (const node of componentCards(shown, history, cur.viewer_role)) grid.appendChild(node);
     box.appendChild(grid);
     box.appendChild(architectureSection(report.deeper, Object.fromEntries(all.filter(Boolean).map((i) => [i.id, i])), cur.viewer_role));
-    box.appendChild(findingsMapSection(all, cur.viewer_role));
     // Entrance order: cards and panels appear one after another.
     box.querySelectorAll(".rcard, .panel, .stat").forEach((n, i) => n.style.setProperty("--i", String(i)));
 
