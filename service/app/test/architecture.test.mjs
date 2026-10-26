@@ -158,3 +158,10 @@ test("a converting file shows its language, model, elapsed time and typical dura
   assert.ok(html.includes('factChip("Proposed lines"'));
   assert.ok(html.includes("@keyframes cvSpin"));
 });
+
+test("the convert button is off until a target language is chosen", () => {
+  assert.ok(html.includes("const chosen = !!row.target_language;"));
+  assert.ok(html.includes("go.disabled = true;"));
+  assert.ok(html.includes("Choose the target language first. Files can be converted once a language is chosen above."));
+  assert.ok(html.includes("if (!chosen) return;"));
+});
