@@ -1883,6 +1883,8 @@ button:not(:disabled):active{transform:scale(.965)}
     { id: "s-next", name: "Next steps", w: 10, min: 0.5 },
   ];
   const ETA_FROM = "s-run";
+  // Screens after the assessment. Each is its own task, shown by name only.
+  const TASK_TITLES = { "s-next": "Next steps", "s-plan": "Cutover risks and fallbacks", "s-files": "File-level results", "s-deeper": "Deeper assessment" };
   const SCREENS = ["s-login", "s-denied", "s-role", "s-home", "s-name", "s-connect", "s-rules", "s-run", "s-review", "s-next", "s-plan", "s-files", "s-deeper"];
   const MODEL_LABELS = { anthropic: "Anthropic (Claude)", google: "Google (Gemini)" };
   // The AI stage says whether the workspace's own model was added to this analysis, or opted out.
@@ -1965,6 +1967,18 @@ button:not(:disabled):active{transform:scale(.965)}
   // The header shows the step in the wizard, or the workspace elsewhere.
   function renderHeader(id) {
     const dots = $("dots");
+    // Later tasks are their own work, so they show only their name, with no assessment bar or steps.
+    if (TASK_TITLES[id]) {
+      $("barWrap").hidden = true;
+      dots.hidden = true;
+      dots.innerHTML = "";
+      $("stageName").textContent = TASK_TITLES[id];
+      $("stepCount").textContent = "";
+      $("pct").textContent = "";
+      $("eta").textContent = "";
+      $("barFill").style.width = "0%";
+      return;
+    }
     const idx = STAGES.findIndex((s) => s.id === id);
     if (idx < 0) {
       $("barWrap").hidden = true;
@@ -1980,15 +1994,18 @@ button:not(:disabled):active{transform:scale(.965)}
     $("barWrap").hidden = false;
     dots.hidden = false;
     if (!dots.childElementCount) for (let i = 0; i < STAGES.length; i++) dots.appendChild(document.createElement("i"));
-    [...dots.children].forEach((d, i) => { d.className = i < idx ? "done" : i === idx ? "now" : ""; });
+    // The review step is the end of the assessment, so the bar reads complete there.
+    const done = id === "s-review";
+    [...dots.children].forEach((d, i) => { d.className = i < idx || (done && i === idx) ? "done" : i === idx && !done ? "now" : ""; });
     let p = 0;
     for (let i = 0; i < idx; i++) p += STAGES[i].w;
-    $("stageName").textContent = STAGES[idx].name;
-    $("stepCount").textContent = `Step ${idx + 1} of ${STAGES.length}`;
+    if (done) p = 100;
+    $("stageName").textContent = done ? "Assessment complete" : STAGES[idx].name;
+    $("stepCount").textContent = done ? "" : `Step ${idx + 1} of ${STAGES.length}`;
     $("pct").textContent = `${p}%`;
     $("barFill").style.width = `${p}%`;
     const etaStart = STAGES.findIndex((s) => s.id === ETA_FROM);
-    $("eta").textContent = idx >= etaStart ? etaFrom(idx) : "";
+    $("eta").textContent = !done && idx >= etaStart ? etaFrom(idx) : "";
   }
 
   function show(id) {

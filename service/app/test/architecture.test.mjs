@@ -142,3 +142,10 @@ test("mind maps and the architecture diagram can open in an enlarged view", () =
   assert.ok(html.includes("head.appendChild(enlargeButton(wrap, \"How the application fits together today\"));"));
   assert.ok(html.includes(".zoom-node .zoom-btn,.zoom-node .zoom-row{display:none!important}"));
 });
+
+test("the header bar reads complete at review, and later tasks show only their name", () => {
+  assert.ok(html.includes('const done = id === "s-review";'));
+  assert.ok(html.includes('"Assessment complete"'));
+  assert.ok(html.includes('const TASK_TITLES = { "s-next": "Next steps"'));
+  assert.ok(html.includes("if (TASK_TITLES[id]) {"));
+});
