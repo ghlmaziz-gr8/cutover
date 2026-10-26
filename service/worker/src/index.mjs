@@ -2540,6 +2540,7 @@ async function startConversion(request, env, id) {
   const state = stageStates(row, access.user.id).find((s) => s.id === "convert");
   if (state && state.state !== "available") return json({ error: state.lock_reason || "This stage is not open yet." }, 409);
   if (!row.modern_template) return json({ error: "Choose the approach before converting a file." }, 409);
+  if (!row.target_language) return json({ error: "Choose the target language first." }, 409);
   if (row.scope !== "modernize") return json({ error: "Choose Modernize as the next stage first." }, 409);
   if (row.source_upload === true) {
     return json({ error: "The uploaded zip is deleted when its run ends. Upload the code again to convert a file." }, 409);

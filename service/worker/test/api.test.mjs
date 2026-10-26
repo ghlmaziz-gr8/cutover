@@ -467,7 +467,7 @@ const CONVERSION_TEXT = "I approve one file at a time being sent to the language
 function readyForConversion(overrides = {}) {
   const analysis = state.analyses.find((a) => a.id === AN_ACME);
   Object.assign(analysis, {
-    deeper_done: true, scope: "modernize", modern_template: "web-modern", model_key_id: "key-1", source_upload: false,
+    deeper_done: true, scope: "modernize", modern_template: "web-modern", target_language: "python-fastapi", model_key_id: "key-1", source_upload: false,
     modern_progress: {
       plan: { reviewed_by: PEOPLE.eng_a.email, reviewed_at: NOW },
       starter: { reviewed_by: PEOPLE.eng_a.email, reviewed_at: NOW },

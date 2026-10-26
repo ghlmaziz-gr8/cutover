@@ -6347,7 +6347,17 @@ a{color:#6d28d9;font-weight:600}`;
     const go = el("button", "Convert this file");
     go.type = "button";
     go.style.marginLeft = "0";
+    // A file can be converted only after a target language is chosen. Until then the box and the button are off.
+    const chosen = !!row.target_language;
+    if (!chosen) {
+      input.disabled = true;
+      go.disabled = true;
+      const why = el("p", "Choose the target language first. Files can be converted once a language is chosen above.", "small");
+      why.setAttribute("role", "status");
+      form.insertBefore(why, input);
+    }
     go.addEventListener("click", () => {
+      if (!chosen) return;
       const path = input.value.trim();
       if (path) startConversion(row, path);
     });
@@ -6370,6 +6380,7 @@ a{color:#6d28d9;font-weight:600}`;
             icons: [],
           },
           onLeaf: (node) => {
+            if (!chosen) return;
             input.value = node.path;
             input.focus();
             input.scrollIntoView({ behavior: "smooth", block: "center" });
