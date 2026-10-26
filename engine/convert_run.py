@@ -55,7 +55,7 @@ def post_result(callback: str, analysis_id: str, secret: str, payload: dict,
         return 0
 
 
-def run(path: str, template: str, source: Path, provider_ask: Callable[[str], str]) -> dict:
+def run(path: str, template: str, source: Path, provider_ask: Callable[[str], str], language: str = "") -> dict:
     """Reads the one file and converts it. Returns the result, without any key in it."""
     if not SAFE_PATH.match(path) or ".." in path.split("/"):
         return {"path": path, "template": template, "status": "refused", "reason": "The file name is not allowed."}
@@ -63,13 +63,14 @@ def run(path: str, template: str, source: Path, provider_ask: Callable[[str], st
     code = read(path)
     if code is None:
         return {"path": path, "template": template, "status": "refused", "reason": "The file could not be read."}
-    return convert_file(path, code, template, provider_ask)
+    return convert_file(path, code, template, provider_ask, language=language)
 
 
 def main(argv=None, opener=urllib.request.urlopen) -> int:
     ap = argparse.ArgumentParser(description="Convert one file with the chosen language model.")
     ap.add_argument("--path", required=True, help="The file, relative to the checkout")
     ap.add_argument("--template", required=True)
+    ap.add_argument("--language", required=True, help="The target language name, for example Python with FastAPI")
     ap.add_argument("--source", required=True, help="The checkout folder")
     ap.add_argument("--callback", required=True)
     ap.add_argument("--analysis-id", required=True)
@@ -93,7 +94,8 @@ def main(argv=None, opener=urllib.request.urlopen) -> int:
     try:
         result = run(args.path, args.template, Path(args.source),
                      lambda text: call_provider(provider, model, api_key, text, opener=opener,
-                                                base_url=base_url, token_field=token_field, max_tokens=4000))
+                                                base_url=base_url, token_field=token_field, max_tokens=4000),
+                     language=args.language)
     except (ProviderStopped, ProviderError):
         result = {"status": "failed", "reason": "The language model did not answer. Nothing was kept."}
     status = post_result(args.callback, args.analysis_id, secret, result_payload(args.path, args.template, result),

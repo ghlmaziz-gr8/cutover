@@ -2564,8 +2564,11 @@ async function startConversion(request, env, id) {
     body: JSON.stringify({ analysis_id: id, path, template: row.modern_template, status: "queued", requested_by_email: normalizeEmail(access.user.email) }),
   });
   if (!made.ok) return json({ error: "Could not start the conversion." }, 502);
+  const chosenLanguage = (row.target_options || []).find((o) => o.id === row.target_language);
+  const languageName = String((chosenLanguage && chosenLanguage.label) || row.target_language || "");
+  if (!/^[A-Za-z0-9 #.()+\/-]{1,80}$/.test(languageName)) return json({ error: "The chosen language name cannot be used. Choose it again." }, 409);
   const dispatch = await dispatchConvert(env, {
-    analysis_id: id, repo: row.repo, ref: row.ref || "", path, template: row.modern_template, model_token: modelToken,
+    analysis_id: id, repo: row.repo, ref: row.ref || "", path, template: row.modern_template, language: languageName, model_token: modelToken,
   });
   if (!dispatch.ok) {
     await serviceRest(env, `analysis_conversions?analysis_id=eq.${id}&path=eq.${encodeURIComponent(path)}`, {
