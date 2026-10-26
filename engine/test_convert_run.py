@@ -6,6 +6,13 @@ from pathlib import Path
 
 import convert_run as cr
 
+LANG = "Python with FastAPI"
+
+
+def run(*args, **kwargs):
+    kwargs.setdefault("language", LANG)
+    return cr.run(*args, **kwargs)
+
 
 class FakeResponse:
     def __init__(self, status=201):
@@ -20,18 +27,18 @@ class ResultTests(unittest.TestCase):
     def test_a_file_is_converted_and_the_outcome_is_returned(self):
         with tempfile.TemporaryDirectory() as folder:
             (Path(folder) / "visits.sql").write_text("SELECT id FROM visits;", encoding="utf-8")
-            got = cr.run("visits.sql", "services-data", Path(folder), lambda text: "SELECT id FROM visit_table;")
+            got = run("visits.sql", "services-data", Path(folder), lambda text: "SELECT id FROM visit_table;")
             self.assertEqual(got["status"], "ok")
             self.assertEqual(got["proposed"], "SELECT id FROM visit_table;")
 
     def test_paths_that_leave_the_checkout_are_refused(self):
         with tempfile.TemporaryDirectory() as folder:
             for bad in ["../secrets.txt", "/etc/passwd", "a b.sql", "x" * 400]:
-                self.assertEqual(cr.run(bad, "web-modern", Path(folder), lambda t: "x")["status"], "refused", bad)
+                self.assertEqual(run(bad, "web-modern", Path(folder), lambda t: "x")["status"], "refused", bad)
 
     def test_a_missing_file_is_refused(self):
         with tempfile.TemporaryDirectory() as folder:
-            self.assertEqual(cr.run("missing.sql", "web-modern", Path(folder), lambda t: "x")["status"], "refused")
+            self.assertEqual(run("missing.sql", "web-modern", Path(folder), lambda t: "x")["status"], "refused")
 
     def test_the_payload_holds_the_outcome_and_no_key(self):
         payload = cr.result_payload("a.sql", "web-modern", {"status": "ok", "proposed": "x", "api_key": "sk-secret"})
