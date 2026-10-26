@@ -11,6 +11,7 @@
 window.CUTOVER_GUIDE = {
   updated: "2026-10-22",
   whatsNew: [
+    "2026-10-26: Each converted file shows the original and the proposal side by side, with the changed lines shaded. The original is read at the analysed commit and is not stored.",
     "2026-10-26: The top bar reads 100% at Review findings, marked Assessment complete. Next steps, the plan, file results and deeper assessment show only their names, without the bar.",
     "2026-10-22: Mind maps and the architecture diagram have an Enlarge button. The diagram opens full screen with zoom controls, and Escape closes it.",
     "2026-10-22: The Findings by area bars grow in one after another, with a shine and counted numbers.",

@@ -675,6 +675,17 @@ pre{white-space:pre-wrap;word-break:break-word;background:var(--soft);padding:12
 .rc-icon svg{width:22px;height:22px}
 .rcard.opt.is-rec .rc-icon{animation:rcFloat 4.2s ease-in-out infinite,rcPulse 2.6s ease-out infinite}
 .rc-titles h3{margin:2px 0 0}
+.cmp{margin-top:10px}
+.cmp-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:10px}
+.cmp-pane{min-width:0;border:1px solid var(--line);border-radius:14px;background:var(--card);overflow:hidden}
+.cmp-head{margin:0;padding:8px 12px;font-size:12px;font-weight:700;color:var(--muted);border-bottom:1px solid var(--line);background:var(--bg)}
+.cmp-scroll{max-height:420px;overflow:auto;font:12.5px/1.5 ui-monospace,SFMono-Regular,Menlo,monospace;padding:6px 0}
+.cmp-line{display:flex;min-width:max-content}
+.cmp-n{flex:0 0 44px;text-align:right;padding-right:10px;color:var(--muted);user-select:none}
+.cmp-t{white-space:pre;padding-right:14px}
+.cmp-line.chg.removed{background:rgba(220,38,38,.12)}
+.cmp-line.chg.added{background:rgba(22,163,74,.14)}
+@media (max-width:760px){.cmp-grid{grid-template-columns:1fr}}
 .rc-score{margin-top:14px}
 .rc-score-top{display:flex;justify-content:space-between;align-items:baseline;font-size:12px;color:var(--muted);font-weight:600}
 .rc-num{font:800 15px var(--display);color:var(--k)}
@@ -1840,6 +1851,7 @@ button:not(:disabled):active{transform:scale(.965)}
 <script src="config.js"></script>
 <script src="guide.js"></script>
 <script src="modernize.js"></script>
+<script src="compare.js"></script>
 <script src="mindmap.js"></script>
 <script src="findings-map.js"></script>
 <script src="file-map.js"></script>
@@ -6210,6 +6222,58 @@ a{color:#6d28d9;font-weight:600}`;
     box.appendChild(go);
   }
 
+  // The original and the proposal side by side. The original is read at the analysed commit when this opens.
+  function comparePane(label, lines, marks, tone) {
+    const pane = el("div", null, "cmp-pane");
+    pane.appendChild(el("p", label, "cmp-head"));
+    const scroll = el("div", null, "cmp-scroll");
+    lines.forEach((t, i) => {
+      const line = el("div", null, "cmp-line" + (marks[i] ? ` chg ${tone}` : ""));
+      line.append(el("span", String(i + 1), "cmp-n"), el("span", t === "" ? " " : t, "cmp-t"));
+      scroll.appendChild(line);
+    });
+    pane.appendChild(scroll);
+    return pane;
+  }
+
+  // Two panes scroll together, so a line on one side stays level with its counterpart.
+  function linkScroll(a, b) {
+    let busy = false;
+    const follow = (from, to) => () => {
+      if (busy) return;
+      busy = true;
+      to.scrollTop = from.scrollTop;
+      requestAnimationFrame(() => { busy = false; });
+    };
+    a.addEventListener("scroll", follow(a, b));
+    b.addEventListener("scroll", follow(b, a));
+  }
+
+  function renderComparison(row, c, card) {
+    const box = el("div", null, "cmp");
+    box.appendChild(el("p", "Loading the original file at this commit…", "muted small"));
+    card.appendChild(box);
+    api(`/api/analyses/${row.id}/conversions/original?path=${encodeURIComponent(c.path)}`)
+      .then((res) => {
+        const left = res.text.split("\n");
+        const right = String(c.proposed).split("\n");
+        const grid = el("div", null, "cmp-grid");
+        grid.append(
+          comparePane(`Original at ${String(row.commit_sha).slice(0, 7)}`, left, window.Compare.changedLines(left, right), "removed"),
+          comparePane("Proposed", right, window.Compare.changedLines(right, left), "added"),
+        );
+        box.replaceChildren(el("p", "Needs review and testing. Only you merge it. Lines that changed are shaded.", "muted small"), grid);
+        const panes = grid.querySelectorAll(".cmp-scroll");
+        linkScroll(panes[0], panes[1]);
+      })
+      .catch((err) => {
+        box.replaceChildren(el("p", `Could not load the original: ${err.message}`, "small"));
+        const pre = el("pre", c.proposed, "conv-proposal");
+        pre.style.cssText = "max-height:320px;overflow:auto;background:var(--bg);border:1px solid var(--line);border-radius:12px;padding:12px;font-size:12.5px;white-space:pre-wrap";
+        box.appendChild(pre);
+      });
+  }
+
   // Once approved: a platform engineer picks one file to convert, and reviews each proposal.
   async function startConversion(row, path) {
     try {
@@ -6300,9 +6364,7 @@ a{color:#6d28d9;font-weight:600}`;
       if (c.reason) card.appendChild(el("p", c.reason, "muted small"));
       if (c.kinds && c.kinds.length) card.appendChild(el("p", `Found: ${c.kinds.join(", ")}`, "muted small"));
       if (c.status === "ok" && c.proposed) {
-        const pre = el("pre", c.proposed, "conv-proposal");
-        pre.style.cssText = "max-height:320px;overflow:auto;background:var(--bg);border:1px solid var(--line);border-radius:12px;padding:12px;font-size:12.5px;white-space:pre-wrap";
-        card.appendChild(pre);
+        renderComparison(row, c, card);
         if (row.commit_sha && row.repo) {
           const link = document.createElement("a");
           link.href = `https://github.com/${row.repo}/blob/${row.commit_sha}/${encodeURI(c.path)}`;
