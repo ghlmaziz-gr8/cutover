@@ -2502,6 +2502,30 @@ function dispatchConvert(env, inputs) {
   });
 }
 
+// The original file at the analysed commit, for the side-by-side view. Read only when asked, and never stored.
+async function conversionOriginal(request, env, id) {
+  const access = await analysisAccess(env, request, id);
+  if (access.response) return access.response;
+  const url = new URL(request.url);
+  const path = (url.searchParams.get("path") || "").trim();
+  if (!CONVERT_PATH.test(path) || path.split("/").includes("..")) return json({ error: "Choose a file from this analysis." }, 400);
+  const row = access.row;
+  if (!row.repo || !row.commit_sha) return json({ error: "The original is not available for this analysis." }, 409);
+  const known = await serviceRest(env, `analysis_conversions?analysis_id=eq.${id}&path=eq.${encodeURIComponent(path)}&select=id&limit=1`);
+  if (!known.ok) return json({ error: "Could not check the file." }, 502);
+  if (!(await known.json()).length) return json({ error: "That file has no conversion in this analysis." }, 400);
+  const readable = await readToken(env, row.repo);
+  if (readable.notInstalled || readable.failed) return json({ error: "Cutover cannot read the original right now. Try again in a minute." }, 502);
+  const encoded = path.split("/").map(encodeURIComponent).join("/");
+  const res = await fetch(`https://api.github.com/repos/${row.repo}/contents/${encoded}?ref=${encodeURIComponent(row.commit_sha)}`, {
+    headers: { ...GH_HEADERS, authorization: `Bearer ${readable.token}`, accept: "application/vnd.github.raw" },
+  });
+  if (!res.ok) return json({ error: "The original could not be read at this commit." }, 502);
+  const text = await res.text();
+  if (text.length > 400000) return json({ error: "This file is too large to compare here. Open it on GitHub." }, 413);
+  return json({ path, commit_sha: row.commit_sha, text });
+}
+
 async function startConversion(request, env, id) {
   const access = await analysisAccess(env, request, id);
   if (access.response) return access.response;
@@ -3119,6 +3143,8 @@ async function route(request, env) {
     if (workspaceApproval && UUID_PATTERN.test(workspaceApproval[1]) && method === "PUT") return setConversionApproval(request, env, workspaceApproval[1]);
     const analysisConversions = path.match(/^\/api\/analyses\/([^/]+)\/conversions$/);
     if (analysisConversions && UUID_PATTERN.test(analysisConversions[1]) && method === "POST") return startConversion(request, env, analysisConversions[1]);
+    const analysisOriginal = path.match(/^\/api\/analyses\/([^/]+)\/conversions\/original$/);
+    if (analysisOriginal && UUID_PATTERN.test(analysisOriginal[1]) && method === "GET") return conversionOriginal(request, env, analysisOriginal[1]);
     const analysisDecision = path.match(/^\/api\/analyses\/([^/]+)\/conversions\/decision$/);
     if (analysisDecision && UUID_PATTERN.test(analysisDecision[1]) && method === "POST") return decideConversion(request, env, analysisDecision[1]);
     const runnerConversionRoute = path.match(/^\/api\/runner\/([^/]+)\/conversion$/);
