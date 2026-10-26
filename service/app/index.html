@@ -706,6 +706,17 @@ pre{white-space:pre-wrap;word-break:break-word;background:var(--soft);padding:12
 .cv-fact{display:grid;gap:2px;border:1px solid var(--line);border-radius:12px;padding:7px 11px;background:var(--card);font-size:11px;color:var(--muted);animation:rise .5s both;animation-delay:calc(var(--i,0) * 90ms)}
 .cv-fact b{font:800 13px var(--display);color:var(--cv,var(--accent))}
 .cv-tags{display:flex;flex-wrap:wrap;gap:6px;margin:6px 0}
+.conv-strip{display:flex;flex-wrap:wrap;gap:8px;margin:10px 0 14px}
+.conv-pill{display:inline-flex;align-items:center;gap:8px;padding:7px 12px;border-radius:999px;font-size:12px;font-weight:700;color:var(--fg);background:var(--soft,rgba(124,58,237,.08));border:1px solid var(--line)}
+.conv-pill b{font:800 14px var(--display)}
+.conv-pill.run{color:#6d28d9;background:rgba(124,58,237,.1)}
+.conv-pill.run::before{content:"";width:8px;height:8px;border-radius:50%;background:#7c3aed;animation:cvPulse 1.4s ease-in-out infinite}
+.conv-pill.rev{color:#b45309;background:rgba(245,158,11,.12)}
+.conv-pill.acc{color:#15803d;background:rgba(22,163,74,.12)}
+.conv-pill.rej{color:#b91c1c;background:rgba(220,38,38,.1)}
+.conv-row{display:grid;gap:2px;padding:8px 4px;border-bottom:1px solid var(--line);font-size:13px}
+@keyframes cvPulse{0%,100%{transform:scale(1);opacity:1}50%{transform:scale(1.5);opacity:.4}}
+@media (prefers-reduced-motion:reduce){.conv-pill.run::before{animation:none}}
 @keyframes cvSpin{to{transform:rotate(360deg)}}
 @keyframes cvSlide{from{transform:translateX(-100%)}to{transform:translateX(260%)}}
 @keyframes cvStep{0%,100%{opacity:.45}8%,24%{opacity:1}34%{opacity:.45}}
@@ -1635,7 +1646,12 @@ button:not(:disabled):active{transform:scale(.965)}
       <div id="effortBody"></div>
     </details>
     <div class="next-group" id="groupNext"><span>3</span>Next steps<em>Conversion and the path ahead</em></div>
-    <div class="card" id="conversionCard" hidden style="margin-top:18px"><div id="conversionBody"></div></div>
+    <div class="card" id="conversionCardNext" hidden style="margin-top:18px">
+      <h3 style="margin-top:0">Convert files to the chosen language</h3>
+      <p class="muted small" id="conversionNoteNext" style="margin:6px 0 10px"></p>
+      <div class="conv-strip" id="conversionStripNext"></div>
+      <button type="button" class="ghost" id="conversionOpen">Open conversion</button>
+    </div>
     <div class="card" id="planCardNext" style="margin-top:18px">
       <h3 style="margin-top:0">Continue to planning</h3>
       <p class="muted small" style="margin:6px 0 12px">Plan the risks and fallbacks for this cutover. Proposals are drafted from the findings, then edited by platform engineers.</p>
@@ -1791,6 +1807,17 @@ button:not(:disabled):active{transform:scale(.965)}
   </section>
 
   <!-- Deeper assessment: plain-language documents built from the findings -->
+  <section id="s-convert" class="screen" hidden>
+    <p class="eyebrow">Conversion</p>
+    <h2 style="margin:8px 0 6px">Converting files</h2>
+    <p class="muted small" id="convertMeta"></p>
+    <div class="row wzNav" style="margin:14px 0 4px">
+      <button type="button" class="ghost" id="convertBack">Back to next steps</button>
+    </div>
+    <div class="conv-strip" id="convertStrip" style="margin-top:12px"></div>
+    <div class="card" id="conversionCard" hidden style="margin-top:12px"><div id="conversionBody"></div></div>
+  </section>
+
   <section id="s-deeper" class="screen" hidden>
     <p class="eyebrow">Next stage</p>
     <h2 style="margin:8px 0 6px">Deeper assessment</h2>
@@ -1923,8 +1950,8 @@ button:not(:disabled):active{transform:scale(.965)}
   ];
   const ETA_FROM = "s-run";
   // Screens after the assessment. Each is its own task, shown by name only.
-  const TASK_TITLES = { "s-next": "Next steps", "s-plan": "Cutover risks and fallbacks", "s-files": "File-level results", "s-deeper": "Deeper assessment" };
-  const SCREENS = ["s-login", "s-denied", "s-role", "s-home", "s-name", "s-connect", "s-rules", "s-run", "s-review", "s-next", "s-plan", "s-files", "s-deeper"];
+  const TASK_TITLES = { "s-next": "Next steps", "s-plan": "Cutover risks and fallbacks", "s-files": "File-level results", "s-deeper": "Deeper assessment", "s-convert": "Converting files" };
+  const SCREENS = ["s-login", "s-denied", "s-role", "s-home", "s-name", "s-connect", "s-rules", "s-run", "s-review", "s-next", "s-plan", "s-files", "s-deeper", "s-convert"];
   const MODEL_LABELS = { anthropic: "Anthropic (Claude)", google: "Google (Gemini)" };
   // The AI stage says whether the workspace's own model was added to this analysis, or opted out.
   function aiStageName(a) {
@@ -6210,6 +6237,48 @@ a{color:#6d28d9;font-weight:600}`;
     }
   }
 
+  // The counts of each conversion state, shown as pills on Next steps and on the conversion page.
+  function convCounts(row) {
+    const all = row.conversions || [];
+    return {
+      running: all.filter((c) => c.status === "queued").length,
+      review: all.filter((c) => c.status === "ok" && c.decision !== "accepted" && c.decision !== "rejected").length,
+      accepted: all.filter((c) => c.status === "ok" && c.decision === "accepted").length,
+      rejected: all.filter((c) => c.status === "ok" && c.decision === "rejected").length,
+    };
+  }
+  function convPills(row) {
+    const n = convCounts(row);
+    const pill = (cls, label, value) => {
+      const p = el("span", null, `conv-pill ${cls}`);
+      p.append(document.createTextNode(`${label} `), el("b", String(value)));
+      return p;
+    };
+    return [pill("run", "Running", n.running), pill("rev", "Ready for review", n.review), pill("acc", "Accepted", n.accepted), pill("rej", "Rejected", n.rejected)];
+  }
+
+  // Next steps: a short summary. The work itself is on the conversion page.
+  function renderConversionSummary(row) {
+    const card = $("conversionCardNext");
+    card.hidden = !(row && row.scope === "modernize");
+    if (card.hidden) return;
+    const lang = row.target_language ? languageLabel(row) : "No language chosen yet";
+    const approval = row.conversion_approval
+      ? "Conversion is approved."
+      : row.conversion_admin
+        ? "Conversion needs your approval."
+        : "A workspace admin must approve conversion first.";
+    $("conversionNoteNext").textContent = `Language: ${lang}. ${approval}`;
+    $("conversionStripNext").replaceChildren(...convPills(row));
+  }
+
+  function showConvert() {
+    show("s-convert");
+    $("convertMeta").textContent = `${cur.app_name || cur.repo} · ${cur.repo}`;
+    $("convertStrip").replaceChildren(...convPills(cur));
+    renderConversionApproval(cur);
+  }
+
   function renderConversionApproval(row) {
     const card = $("conversionCard");
     const box = $("conversionBody");
@@ -6317,6 +6386,9 @@ a{color:#6d28d9;font-weight:600}`;
     try {
       await api(`/api/analyses/${row.id}/conversions/decision`, { method: "POST", body: JSON.stringify({ path, decision }) });
       cur = await api(`/api/analyses/${row.id}`);
+      showToast(decision === "accepted"
+        ? { tone: "success", title: "Accepted", body: `${path} is accepted. Only you merge it.` }
+        : { tone: "success", title: "Rejected", body: `${path} stays in the file list, marked Rejected.` });
       showCurrentScreen();
     } catch (err) {
       showToast({ tone: "bad", title: "Could not save the decision", body: err.message });
@@ -6391,10 +6463,38 @@ a{color:#6d28d9;font-weight:600}`;
         fileBox.replaceChildren(el("p", `Could not load the files: ${err.message}`, "small"));
       });
 
-    const list = (row.conversions || []);
-    if (!list.length) return;
-    box.appendChild(el("h3", "Proposals"));
-    for (const c of list) box.appendChild(proposalCard(row, c));
+    const all = row.conversions || [];
+    const running = all.filter((c) => c.status === "queued");
+    const review = all.filter((c) => c.status === "ok" && c.decision !== "accepted" && c.decision !== "rejected");
+    const accepted = all.filter((c) => c.status === "ok" && c.decision === "accepted");
+    const rejected = all.filter((c) => c.status === "ok" && c.decision === "rejected");
+    const held = all.filter((c) => c.status !== "queued" && c.status !== "ok");
+    if (!all.length) box.appendChild(el("p", "No file has been converted yet. Choose one above.", "muted small"));
+    if (running.length) {
+      box.appendChild(el("h3", "Running now"));
+      running.forEach((c) => box.appendChild(proposalCard(row, c)));
+    }
+    if (review.length) {
+      box.appendChild(el("h3", "Ready for review"));
+      review.forEach((c) => box.appendChild(proposalCard(row, c)));
+    }
+    if (accepted.length) {
+      const fold = el("details", null, "fold conv-accepted");
+      fold.appendChild(el("summary", `Accepted (${accepted.length})`));
+      accepted.forEach((c) => {
+        const line = el("div", null, "conv-row");
+        const when = c.decided_at ? ` on ${new Date(c.decided_at).toLocaleDateString()}` : "";
+        line.append(el("b", c.path), el("span", `Accepted by ${c.decided_by_email || "a platform engineer"}${when}`, "muted small"));
+        fold.appendChild(line);
+      });
+      box.appendChild(fold);
+    }
+    if (rejected.length) {
+      box.appendChild(el("p", `${rejected.length} rejected. ${rejected.length === 1 ? "It is" : "They are"} marked Rejected in the file list.`, "muted small"));
+    }
+    if (held.length) {
+      box.appendChild(el("p", `${held.length} not kept. Personal data was found, or the model could not convert ${held.length === 1 ? "it" : "them"}. ${held.length === 1 ? "It is" : "They are"} marked in the file list.`, "muted small"));
+    }
   }
 
   // The conversion card. Running, ready and held each look different. The portal cannot see which step is running,
@@ -6536,7 +6636,8 @@ a{color:#6d28d9;font-weight:600}`;
 
   // Returns to whichever screen the person was on after a change: the next-steps page or the findings.
   function showCurrentScreen() {
-    if (!$("s-next").hidden) showNext();
+    if (!$("s-convert").hidden) showConvert();
+    else if (!$("s-next").hidden) showNext();
     else showReview();
   }
 
@@ -6774,7 +6875,7 @@ a{color:#6d28d9;font-weight:600}`;
     renderTarget(cur);
     renderEffort(cur);
     renderNextRail(cur);
-    renderConversionApproval(cur);
+    renderConversionSummary(cur);
     const pathBox = $("nextPath");
     pathBox.replaceChildren();
     $("nextPathCard").hidden = !cur.stages;
@@ -6966,6 +7067,8 @@ a{color:#6d28d9;font-weight:600}`;
 
   $("deeperOpen").addEventListener("click", showDeeper);
   $("deeperBack").addEventListener("click", () => showNext());
+  $("conversionOpen").addEventListener("click", showConvert);
+  $("convertBack").addEventListener("click", () => showNext());
   $("deeperBackBottom").addEventListener("click", () => showNext());
 
   const SCOPE_OPTIONS = [

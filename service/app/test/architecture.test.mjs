@@ -165,3 +165,15 @@ test("the convert button is off until a target language is chosen", () => {
   assert.ok(html.includes("Choose the target language first. Files can be converted once a language is chosen above."));
   assert.ok(html.includes("if (!chosen) return;"));
 });
+
+test("the conversion page holds the work; Next steps shows a summary; rejected files leave the list", () => {
+  assert.ok(html.includes('<section id="s-convert" class="screen" hidden>'));
+  assert.ok(html.includes('"s-convert"]'));
+  assert.ok(html.includes('"s-convert": "Converting files"'));
+  assert.ok(html.includes("function showConvert()"));
+  assert.ok(html.includes("function renderConversionSummary(row)"));
+  assert.ok(html.includes('id="conversionCardNext"'));
+  assert.ok(html.includes('const rejected = all.filter((c) => c.status === "ok" && c.decision === "rejected");'));
+  assert.ok(html.includes("marked Rejected in the file list."));
+  assert.ok(html.includes("stays in the file list, marked Rejected."));
+});
