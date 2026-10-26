@@ -149,3 +149,12 @@ test("the header bar reads complete at review, and later tasks show only their n
   assert.ok(html.includes('const TASK_TITLES = { "s-next": "Next steps"'));
   assert.ok(html.includes("if (TASK_TITLES[id]) {"));
 });
+
+test("a converting file shows its language, model, elapsed time and typical duration; a finished one shows its facts", () => {
+  assert.ok(html.includes("function proposalCard(row, c)"));
+  assert.ok(html.includes("`Converting to ${languageLabel(row)}`"));
+  assert.ok(html.includes("Usually 1 to 3 minutes for one file."));
+  assert.ok(html.includes("The portal does not report which step is running"));
+  assert.ok(html.includes('factChip("Proposed lines"'));
+  assert.ok(html.includes("@keyframes cvSpin"));
+});
