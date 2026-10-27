@@ -44,6 +44,7 @@ import { validateDbMetadata } from "./db-metadata.mjs";
 //   GET    /api/analyses/:id/files                        file-level results, a page at a time (platform engineers)
 //   POST   /api/analyses/:id/files/approve-all            approve every file still in draft (platform engineers)
 //   GET    /api/analyses/:id/business?path=               business assessments of one file (platform engineers)
+//   POST   /api/analyses/:id/business/start               start a business assessment of one file (platform engineers)
 //   POST   /api/analyses/:id/business/approve             approve a draft; the earlier approved one is superseded (platform engineers)
 //   POST   /api/analyses/:id/business/discard             discard a draft (platform engineers)
 //   POST   /api/runner/:id/business                       one draft business assessment (shared secret)
@@ -1177,13 +1178,21 @@ async function busyRun(env, workspaceId, exceptAnalysisId = null) {
   if (!conversions.ok) throw new Error("Could not check the conversions.");
   const [conv] = await conversions.json();
   if (conv) return { kind: "conversion", name: conv.analyses.app_name || conv.analyses.repo, repo: conv.analyses.repo, path: conv.path, started: conv.created_at };
+  // A business assessment of one file counts as a run until the runner answers, or until it is stale.
+  const businessCutoff = new Date(Date.now() - STALE_RUN_MS).toISOString();
+  const business = await serviceRest(env, `file_business_assessments?review_status=eq.running&created_at=gt.${businessCutoff}&select=path,created_at,analyses!inner(workspace_id,app_name,repo)&analyses.workspace_id=eq.${workspaceId}&limit=1`);
+  if (!business.ok) throw new Error("Could not check the business assessments.");
+  const [biz] = await business.json();
+  if (biz) return { kind: "business", name: biz.analyses.app_name || biz.analyses.repo, repo: biz.analyses.repo, path: biz.path, started: biz.created_at };
   return null;
 }
 
 function busyResponse(busy) {
   const what = busy.kind === "conversion"
     ? `A file conversion is running in this workspace: ${busy.path} in ${busy.name}.`
-    : `Another assessment is running in this workspace: ${busy.name}${busy.repo && busy.repo !== busy.name ? ` (${busy.repo})` : ""}.`;
+    : busy.kind === "business"
+      ? `A business assessment of one file is running in this workspace: ${busy.path} in ${busy.name}.`
+      : `Another assessment is running in this workspace: ${busy.name}${busy.repo && busy.repo !== busy.name ? ` (${busy.repo})` : ""}.`;
   return json({ error: `${what} ${LOCK_TEXT}`, busy: { kind: busy.kind, name: busy.name, repo: busy.repo, started: busy.started || null } }, 409);
 }
 
@@ -3015,6 +3024,14 @@ async function saveBusiness(request, env, id) {
   const path = typeof body.path === "string" ? body.path : "";
   if (!CONVERT_PATH.test(path)) return json({ error: "Choose a file." }, 400);
   const commitSha = typeof body.commit_sha === "string" && body.commit_sha.length <= 64 ? body.commit_sha : null;
+  const pathFilter = `analysis_id=eq.${id}&path=eq.${encodeURIComponent(path)}&review_status=eq.running`;
+  if (body.status !== "ok") {
+    // The run did not produce a usable draft. Its running row is cleared, and the failure is logged.
+    const refusedFail = await logFirst(env, { workspace_id: analysis.workspace_id, user: null, action: "business_fail", analysis_id: id, repo: analysis.repo, detail: path });
+    if (refusedFail) return refusedFail;
+    await serviceRest(env, `file_business_assessments?${pathFilter}`, { method: "DELETE", headers: { prefer: "return=minimal" } });
+    return json({ saved: false, reason: typeof body.reason === "string" ? body.reason.slice(0, 300) : "The file was not assessed." });
+  }
   const content = body.content;
   if (!content || typeof content !== "object" || Array.isArray(content)) return json({ error: "content must be an object." }, 400);
   if (JSON.stringify(content).length > BUSINESS_MAX_CHARS) return json({ error: "The assessment is too large to save." }, 400);
@@ -3023,6 +3040,7 @@ async function saveBusiness(request, env, id) {
   if (!(await known.json()).length) return json({ error: "That file is not in this analysis." }, 400);
   const refused = await logFirst(env, { workspace_id: analysis.workspace_id, user: null, action: "business_finish", analysis_id: id, repo: analysis.repo, detail: path });
   if (refused) return refused;
+  await serviceRest(env, `file_business_assessments?${pathFilter}`, { method: "DELETE", headers: { prefer: "return=minimal" } });
   const res = await serviceRest(env, "file_business_assessments", {
     method: "POST",
     headers: { prefer: "return=representation" },
@@ -3031,6 +3049,59 @@ async function saveBusiness(request, env, id) {
   if (!res.ok) return json({ error: "Could not save the assessment." }, 502);
   const [saved] = await res.json();
   return json({ saved: true, id: saved ? saved.id : null }, 201);
+}
+
+// Starts a business assessment of one file with the analysis's model. The row is 'running' until the runner answers.
+async function startBusiness(request, env, id) {
+  const access = await analysisAccess(env, request, id);
+  if (access.response) return access.response;
+  if (!canStart(access.member)) return json({ error: "Only platform engineers can start a business assessment." }, 403);
+  const parsed = await readJson(request);
+  if (parsed.error) return json({ error: parsed.error }, 400);
+  const path = typeof parsed.value?.path === "string" ? parsed.value.path : "";
+  if (!CONVERT_PATH.test(path) || path.split("/").includes("..")) return json({ error: "Choose a file from this analysis." }, 400);
+  const row = access.row;
+  if (row.status !== "complete") return json({ error: "Finish the assessment first." }, 409);
+  if (!row.model_key_id) return json({ error: "Choose a language model for this analysis first." }, 409);
+  const chosen = await chooseAnalysisModel(env, row.workspace_id, row.model_key_id);
+  if (chosen.response) return chosen.response;
+  const known = await serviceRest(env, `file_findings?analysis_id=eq.${id}&path=eq.${encodeURIComponent(path)}&select=id&limit=1`);
+  if (!known.ok) return json({ error: "Could not check the file." }, 502);
+  if (!(await known.json()).length) return json({ error: "That file is not in this analysis." }, 400);
+
+  const busyResp = await refuseIfBusy(env, access.user, row.workspace_id, row.repo);
+  if (busyResp) return busyResp;
+  const modelToken = (await issueModelToken(env, id, row.model_key_id)) || "";
+  if (!modelToken) return json({ error: "Could not prepare the model. Try again in a minute." }, 502);
+  const refusedStart = await logFirst(env, { workspace_id: row.workspace_id, user: access.user, action: "business_start", analysis_id: id, repo: row.repo, detail: path });
+  if (refusedStart) return refusedStart;
+  await serviceRest(env, `file_business_assessments?analysis_id=eq.${id}&path=eq.${encodeURIComponent(path)}&review_status=eq.running`, { method: "DELETE", headers: { prefer: "return=minimal" } });
+  const made = await serviceRest(env, "file_business_assessments", {
+    method: "POST",
+    headers: { prefer: "return=minimal" },
+    body: JSON.stringify({ analysis_id: id, path, content: {}, review_status: "running", created_by_email: normalizeEmail(access.user.email) }),
+  });
+  if (!made.ok) return json({ error: "Could not start the assessment." }, 502);
+  const dispatch = await dispatchBusiness(env, { analysis_id: id, repo: row.repo, ref: row.ref || "", path, model_token: modelToken });
+  if (!dispatch.ok) {
+    await serviceRest(env, `file_business_assessments?analysis_id=eq.${id}&path=eq.${encodeURIComponent(path)}&review_status=eq.running`, { method: "DELETE", headers: { prefer: "return=minimal" } });
+    return json({ error: "The runner could not be started. Try again in a minute." }, 502);
+  }
+  return json({ queued: true, path }, 202);
+}
+
+function dispatchBusiness(env, inputs) {
+  return fetch(`https://api.github.com/repos/${env.RUNNER_REPO}/actions/workflows/business.yml/dispatches`, {
+    method: "POST",
+    headers: {
+      authorization: `Bearer ${env.GITHUB_DISPATCH_TOKEN}`,
+      accept: "application/vnd.github+json",
+      "x-github-api-version": "2022-11-28",
+      "content-type": "application/json",
+      "user-agent": "cutover-api",
+    },
+    body: JSON.stringify({ ref: "main", inputs }),
+  });
 }
 
 // Checks one file record. Only the fields we store are kept.
@@ -3579,6 +3650,8 @@ async function route(request, env) {
     if (businessList && UUID_PATTERN.test(businessList[1]) && method === "GET") return listBusiness(request, env, businessList[1]);
     const businessApprove = path.match(/^\/api\/analyses\/([^/]+)\/business\/approve$/);
     if (businessApprove && UUID_PATTERN.test(businessApprove[1]) && method === "POST") return approveBusiness(request, env, businessApprove[1]);
+    const businessStart = path.match(/^\/api\/analyses\/([^/]+)\/business\/start$/);
+    if (businessStart && UUID_PATTERN.test(businessStart[1]) && method === "POST") return startBusiness(request, env, businessStart[1]);
     const businessDiscard = path.match(/^\/api\/analyses\/([^/]+)\/business\/discard$/);
     if (businessDiscard && UUID_PATTERN.test(businessDiscard[1]) && method === "POST") return discardBusiness(request, env, businessDiscard[1]);
     const businessSave = path.match(/^\/api\/runner\/([^/]+)\/business$/);

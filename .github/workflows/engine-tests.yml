@@ -35,6 +35,10 @@ jobs:
         working-directory: engine
         run: python -m unittest test_legacy.py test_languages.py test_deeper_docs.py test_file_inventory.py -v
 
+      - name: Run the business assessment tests (the reply form, personal-data stops, the runner's posting)
+        working-directory: engine
+        run: python -m unittest test_model_business.py -v
+
   worker-tests:
     runs-on: ubuntu-latest
     steps:

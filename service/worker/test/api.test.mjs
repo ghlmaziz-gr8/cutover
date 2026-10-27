@@ -163,6 +163,12 @@ const j = (body, status = 200) => new Response(body === undefined ? null : JSON.
 const SKIP_PARAMS = ["select", "order", "limit", "offset", "on_conflict"];
 
 function matches(row, key, value) {
+  // A filter on a joined table (analyses.workspace_id) is checked against the analysis the row belongs to.
+  if (key.startsWith("analyses.")) {
+    const parent = state.analyses.find((a) => a.id === row.analysis_id);
+    return parent ? matches(parent, key.slice("analyses.".length), value) : false;
+  }
+  if (value.startsWith("gt.")) return String(row[key]) > value.slice(3);
   if (value.startsWith("eq.")) return String(row[key]) === decodeURIComponent(value.slice(3));
   if (value.startsWith("in.(")) return value.slice(4, -1).split(",").includes(String(row[key]));
   if (value.startsWith("lt.")) return String(row[key]) < value.slice(3);
@@ -205,6 +211,12 @@ function handleRest(url, init) {
 
   if (method === "GET") {
     let out = rows.filter(hit).map((r) => ({ ...r }));
+    if ((u.searchParams.get("select") || "").includes("analyses!inner")) {
+      out = out.map((r) => {
+        const parent = state.analyses.find((a) => a.id === r.analysis_id);
+        return { ...r, analyses: parent ? { workspace_id: parent.workspace_id, app_name: parent.app_name, repo: parent.repo } : null };
+      });
+    }
     if ((u.searchParams.get("select") || "").includes("workspace:workspaces")) {
       out = out.map((r) => {
         const ws = state.workspaces.find((w) => w.id === r.workspace_id);
@@ -280,7 +292,7 @@ function handleGithub(url, init) {
     return j({ id: 99 });
   }
   if (path.endsWith("/app/installations/99/access_tokens")) return j({ token: "ghs_test" }, 201);
-  if (path.endsWith("/actions/workflows/analyze.yml/dispatches") || path.endsWith("/actions/workflows/convert.yml/dispatches")) {
+  if (path.endsWith("/actions/workflows/analyze.yml/dispatches") || path.endsWith("/actions/workflows/convert.yml/dispatches") || path.endsWith("/actions/workflows/business.yml/dispatches")) {
     github.dispatches.push(JSON.parse(init.body));
     return github.dispatchOk ? new Response(null, { status: 204 }) : j({ message: "failed" }, 500);
   }
@@ -1170,7 +1182,7 @@ test("a platform engineer lists the assessments of one file only", async () => {
 });
 
 test("the runner saves a draft only with the shared secret, and only for a file in the analysis", async () => {
-  const body = { path: "src/A.java", commit_sha: "abc123", content: { purpose: "Takes orders." } };
+  const body = { status: "ok", path: "src/A.java", commit_sha: "abc123", content: { purpose: "Takes orders." } };
   const wrong = await call(`/api/runner/${AN_ACME}/business`, { method: "POST", body, secret: "wrong" });
   assert.equal(wrong.status, 401);
   const unknown = await call(`/api/runner/${AN_ACME}/business`, { method: "POST", body: { ...body, path: "nope.java" }, secret: env.RUNNER_SECRET });
@@ -1211,6 +1223,76 @@ test("a draft can be discarded, and an approved result cannot", async () => {
   assert.equal(res.status, 200);
   assert.equal(state.file_business_assessments.some((r) => r.id === uid(960)), false);
   assert.ok(state.assessment_log.some((e) => e.action === "business_discard"));
+});
+
+// ---- Starting a business assessment of one file ----
+
+const MODEL_KEY_UUID = uid(980);
+
+function readyForBusiness() {
+  readyForConversion({ model_key_id: MODEL_KEY_UUID });
+  state.model_keys.push({ id: MODEL_KEY_UUID, workspace_id: W_ACME, provider: "anthropic", last4: "1234", label: "Key", model: "claude", base_url: null, created_by_email: PEOPLE.admin_a.email, created_at: NOW, revoked_at: null });
+  signedOff();
+}
+
+test("a business assessment starts only for a platform engineer, a file in the analysis, and a model with the privacy sign-off", async () => {
+  readyForBusiness();
+  const auditor = await call(`/api/analyses/${AN_ACME}/business/start`, { as: "aud_a", method: "POST", body: { path: "src/A.java" } });
+  assert.equal(auditor.status, 403);
+  const traversal = await call(`/api/analyses/${AN_ACME}/business/start`, { as: "eng_a", method: "POST", body: { path: "../secret.txt" } });
+  assert.equal(traversal.status, 400);
+  const unknown = await call(`/api/analyses/${AN_ACME}/business/start`, { as: "eng_a", method: "POST", body: { path: "nope/Missing.java" } });
+  assert.equal(unknown.status, 400);
+  state.privacy_signoffs.length = 0;
+  const unsigned = await call(`/api/analyses/${AN_ACME}/business/start`, { as: "eng_a", method: "POST", body: { path: "src/A.java" } });
+  assert.equal(unsigned.status, 409);
+});
+
+test("a business assessment without a model is refused", async () => {
+  readyForConversion({ model_key_id: null });
+  signedOff();
+  const res = await call(`/api/analyses/${AN_ACME}/business/start`, { as: "eng_a", method: "POST", body: { path: "src/A.java" } });
+  assert.equal(res.status, 409);
+});
+
+test("starting queues one run: the file is marked running, the start is logged, and the runner is dispatched", async () => {
+  readyForBusiness();
+  const before = github.dispatches.length;
+  const res = await call(`/api/analyses/${AN_ACME}/business/start`, { as: "eng_a", method: "POST", body: { path: "src/A.java" } });
+  assert.equal(res.status, 202);
+  const running = state.file_business_assessments.filter((r) => r.analysis_id === AN_ACME && r.review_status === "running");
+  assert.equal(running.length, 1);
+  assert.equal(running[0].path, "src/A.java");
+  assert.ok(state.assessment_log.some((e) => e.action === "business_start" && e.detail === "src/A.java"));
+  assert.equal(github.dispatches.length, before + 1);
+  assert.equal(github.dispatches[github.dispatches.length - 1].inputs.path, "src/A.java");
+});
+
+test("a business assessment is refused while another run is going in the workspace", async () => {
+  readyForBusiness();
+  state.file_business_assessments.push({ id: uid(990), analysis_id: AN_ACME, path: "src/Other.java", content: {}, review_status: "running", created_by_email: "eng@acme.test", created_at: new Date().toISOString() });
+  const res = await call(`/api/analyses/${AN_ACME}/business/start`, { as: "eng_a", method: "POST", body: { path: "src/A.java" } });
+  assert.equal(res.status, 409);
+  assert.match(res.body.error, /business assessment of one file is running/);
+});
+
+test("a failed run clears its running row and is logged, and saves no draft", async () => {
+  state.file_business_assessments.push({ id: uid(991), analysis_id: AN_ACME, path: "src/A.java", content: {}, review_status: "running", created_by_email: "eng@acme.test", created_at: NOW });
+  const res = await call(`/api/runner/${AN_ACME}/business`, { method: "POST", body: { status: "failed", path: "src/A.java", reason: "The model did not answer." }, secret: env.RUNNER_SECRET });
+  assert.equal(res.status, 200);
+  assert.equal(res.body.saved, false);
+  assert.equal(state.file_business_assessments.some((r) => r.id === uid(991)), false);
+  assert.equal(state.file_business_assessments.filter((r) => r.analysis_id === AN_ACME && r.review_status === "draft").length, 0);
+  assert.ok(state.assessment_log.some((e) => e.action === "business_fail" && e.detail === "src/A.java"));
+});
+
+test("a successful run replaces its running row with the draft", async () => {
+  state.file_business_assessments.push({ id: uid(992), analysis_id: AN_ACME, path: "src/A.java", content: {}, review_status: "running", created_by_email: "eng@acme.test", created_at: NOW });
+  const res = await call(`/api/runner/${AN_ACME}/business`, { method: "POST", body: { status: "ok", path: "src/A.java", commit_sha: "abc123", content: { purpose: "Takes orders." } }, secret: env.RUNNER_SECRET });
+  assert.equal(res.status, 201);
+  const rows = state.file_business_assessments.filter((r) => r.analysis_id === AN_ACME && r.path === "src/A.java");
+  assert.equal(rows.some((r) => r.review_status === "running"), false);
+  assert.equal(rows.filter((r) => r.review_status === "draft").length, 1);
 });
 
 // ---- Reviewing file-level results (platform engineers) ----
