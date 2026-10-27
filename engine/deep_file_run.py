@@ -132,7 +132,8 @@ def main(argv=None, opener=urllib.request.urlopen) -> int:
     try:
         result = run(args.path, source,
                      lambda text: call_provider(provider, model, api_key, text, opener=opener,
-                                                base_url=base_url, token_field=token_field, max_tokens=MAX_TOKENS),
+                                                base_url=base_url, token_field=token_field, max_tokens=MAX_TOKENS,
+                                                json_reply=True),
                      report=lambda payload: post_progress(args.callback, args.analysis_id, secret, payload,
                                                           opener=opener))
     except ProviderError as err:

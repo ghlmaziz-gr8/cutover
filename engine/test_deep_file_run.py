@@ -113,3 +113,24 @@ class FailureReason(unittest.TestCase):
 
     def test_any_other_error_is_generic(self):
         self.assertEqual(dr.explain(dr.ProviderError("request failed")), "The language model did not answer. Nothing was kept.")
+
+
+class JsonReply(unittest.TestCase):
+    def test_google_is_asked_for_a_json_object(self):
+        from model_purposes import build_request
+        _, _, body = build_request("google", "gemini-3.5-flash", "k", "text", max_tokens=3000, json_reply=True)
+        self.assertEqual(json.loads(body)["generationConfig"]["responseMimeType"], "application/json")
+
+    def test_openai_is_asked_for_a_json_object(self):
+        from model_purposes import build_request
+        _, _, body = build_request("openai", "gpt", "k", "text", base_url="https://api.openai.com/v1", max_tokens=3000, json_reply=True)
+        self.assertEqual(json.loads(body)["response_format"], {"type": "json_object"})
+
+    def test_other_requests_are_unchanged_by_default(self):
+        from model_purposes import build_request
+        _, _, body = build_request("google", "gemini-3.5-flash", "k", "text", max_tokens=3000)
+        self.assertNotIn("responseMimeType", json.loads(body)["generationConfig"])
+
+    def test_the_deep_file_run_asks_for_json(self):
+        src = Path(dr.__file__).read_text(encoding="utf-8")
+        self.assertIn("json_reply=True", src)
