@@ -2870,7 +2870,7 @@ function suggestionsOk(value) {
 
 // File-level review. Only platform engineers see file-level results, for now.
 const FILE_PAGE_MAX = 200;
-const FILE_COLUMNS = "id,path,category,purpose,purpose_source,suggestions,review_status,reviewed_by_email,reviewed_at";
+const FILE_COLUMNS = "id,path,category,purpose,purpose_source,suggestions,review_status,reviewed_by_email,reviewed_at,commit_sha";
 
 async function listFiles(request, env, id) {
   const access = await analysisAccess(env, request, id);
@@ -3285,6 +3285,14 @@ async function runnerResult(request, env, id) {
     body: JSON.stringify(update),
   });
   if (!res.ok) return json({ error: "Could not save the result." }, 502);
+  // The drafts this run wrote are stamped with the commit it read. Approved results keep the commit they were approved at,
+  // so the portal can flag one that is older than the code now analysed. Stamping only fills in drafts without a commit.
+  if (update.commit_sha) {
+    const stamped = await serviceRest(env, `file_findings?analysis_id=eq.${id}&review_status=eq.draft&commit_sha=is.null`, {
+      method: "PATCH", headers: { prefer: "return=minimal" }, body: JSON.stringify({ commit_sha: update.commit_sha }),
+    });
+    if (!stamped.ok) return json({ error: "Could not record the commit for the file results." }, 502);
+  }
   const [saved] = await res.json().catch(() => []);
   if (saved) {
     await notifyPeople(env, saved.workspace_id, [saved.owner_id], body.status === "complete"

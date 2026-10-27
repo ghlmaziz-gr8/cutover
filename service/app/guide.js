@@ -11,6 +11,7 @@
 window.CUTOVER_GUIDE = {
   updated: "2026-10-22",
   whatsNew: [
+    "2026-10-27: A file purpose approved at an older commit than the latest run is flagged on its card, with both commits. Nothing is changed automatically: edit the purpose and save it to approve it again.",
     "2026-10-27: Clean up, on the Workspaces tab, removes superseded business assessments of this workspace. It shows how many it will remove first, and removes only those many. Each cleanup is recorded in the log.",
     "2026-10-27: Business view, on a file's card, starts a business assessment of that file with the workspace's model. Its draft appears there to approve or discard. An approved draft replaces the earlier approved one, which is kept as history.",
     "2026-10-27: Operators see the database size against the free-tier limit on the All workspaces card. The limit is 490 MB.",
