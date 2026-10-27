@@ -464,9 +464,49 @@ pre{white-space:pre-wrap;word-break:break-word;background:var(--soft);padding:12
 .steps{list-style:none;padding:0;margin:0;display:grid;gap:10px}
 .steps li{display:flex;gap:12px;align-items:center;padding:10px 14px;border-radius:14px;background:var(--card);border:1px solid var(--line)}
 .tick{width:22px;height:22px;border-radius:50%;border:2px solid var(--line);flex:0 0 auto;display:grid;place-items:center}
-.runWait{margin:12px 0 0;padding:12px 14px;border-radius:12px;background:#fff;border:1px solid var(--soft);max-width:720px}
-.runWaitTime{margin:0;font-weight:700;font-size:14px}
-.runWaitNote{margin:4px 0 0;font-size:14px;opacity:.8}
+.runWait{position:relative;overflow:hidden;margin:12px 0 0;padding:16px 18px 14px;border-radius:18px;max-width:720px;border:1px solid #e9d5ff;background:linear-gradient(120deg,#ffffff,#f5f3ff,#fdf2f8,#ecfeff);background-size:300% 300%;animation:rwDrift 16s ease-in-out infinite alternate;box-shadow:0 18px 40px -26px #4c1d95aa}
+.runWait[hidden]{display:none}
+.runWait[data-tone=long]{--tone:#f59e0b}
+.runWait[data-tone=late]{--tone:#e11d48}
+.runWait,.runWait[data-tone=ok]{--tone:#14b8a6}
+.rw-top{display:flex;align-items:center;gap:16px;flex-wrap:wrap}
+.rw-radar{position:relative;width:54px;height:54px;flex:0 0 auto;border-radius:50%;background:conic-gradient(from 0deg,transparent 0 72%,rgba(124,58,237,.38) 100%);animation:rwSweep 2.6s linear infinite}
+.rw-radar i{position:absolute;inset:0;border-radius:50%;border:2px solid rgba(124,58,237,.55);opacity:0;animation:rwPulse 2.6s ease-out infinite}
+.rw-radar i:nth-child(2){animation-delay:.87s}
+.rw-radar i:nth-child(3){animation-delay:1.73s}
+.rw-radar b{position:absolute;left:50%;top:50%;width:10px;height:10px;margin:-5px 0 0 -5px;border-radius:50%;background:linear-gradient(135deg,#7c3aed,#ec4899);box-shadow:0 0 12px 2px #ec489988}
+.rw-clock{min-width:0}
+.rw-label{margin:0;font:600 11px var(--body);letter-spacing:.14em;text-transform:uppercase;color:#6d28d9;opacity:.8}
+.rw-time{margin:2px 0 0;display:flex;font:800 34px/1 var(--display,system-ui);font-variant-numeric:tabular-nums;letter-spacing:.02em;color:#1e1b4b}
+.rw-d{display:inline-block;overflow:hidden;min-width:.6ch;text-align:center}
+.rw-d.flip{animation:rwFlip .45s cubic-bezier(.2,.9,.3,1.2)}
+.rw-d.sep{animation:rwBlink 1s steps(1) infinite}
+.rw-expect{margin:0 0 0 auto;font-size:13px;color:#52525b;text-align:right;max-width:240px}
+.rw-track{position:relative;height:12px;margin:18px 0 0;border-radius:99px;background:#ede9fe}
+.rw-fill{position:absolute;left:0;top:0;bottom:0;width:0;border-radius:99px;background:linear-gradient(90deg,#7c3aed,#ec4899,#f59e0b);background-size:200% 100%;transition:width .9s ease;animation:rwShimmer 2.6s linear infinite}
+.rw-band{position:absolute;top:-4px;bottom:-4px;left:50%;width:30%;border-radius:99px;background:linear-gradient(90deg,#ccfbf1,#fde68a,#fecdd3,#ccfbf1);background-size:200% 100%;opacity:.7;animation:rwShimmer 3.4s linear infinite}
+.no-band .rw-band{display:none}
+.rw-marker{position:absolute;top:50%;left:0;width:20px;height:20px;margin:-10px 0 0 -10px;border-radius:50%;background:#fff;border:3px solid var(--tone);transition:left .9s ease,border-color .5s ease;animation:rwGlow 2s ease-in-out infinite}
+.rw-scale{position:relative;height:14px;margin-top:8px;font-size:11px;color:#71717a}
+.rw-scale span{position:absolute;top:0;transform:translateX(-50%);white-space:nowrap}
+.rw-scale span:first-child{transform:none}
+.rw-scale span:last-child{transform:translateX(-100%)}
+.runWaitTime{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
+.runWaitNote{margin:12px 0 0;font-size:14px;color:#3f3f46;min-height:1.4em}
+.runWaitNote.rw-swap{animation:rwSwap .6s ease both}
+@keyframes rwSweep{to{transform:rotate(360deg)}}
+@keyframes rwPulse{0%{transform:scale(.35);opacity:.9}100%{transform:scale(1.5);opacity:0}}
+@keyframes rwFlip{from{transform:translateY(55%);opacity:0}to{transform:none;opacity:1}}
+@keyframes rwBlink{50%{opacity:.25}}
+@keyframes rwShimmer{from{background-position:0 0}to{background-position:200% 0}}
+@keyframes rwGlow{0%,100%{box-shadow:0 0 0 0 color-mix(in srgb,var(--tone) 45%,transparent)}50%{box-shadow:0 0 0 7px color-mix(in srgb,var(--tone) 0%,transparent)}}
+@keyframes rwDrift{from{background-position:0% 50%}to{background-position:100% 50%}}
+@keyframes rwSwap{from{opacity:0;transform:translateY(6px);filter:blur(3px)}to{opacity:1;transform:none;filter:none}}
+@media (max-width:520px){.rw-expect{margin:0;text-align:left;max-width:none;width:100%}.rw-time{font-size:28px}}
+@media (prefers-reduced-motion:reduce){
+  .runWait,.rw-radar,.rw-radar i,.rw-d.flip,.rw-d.sep,.rw-fill,.rw-band,.rw-marker,.runWaitNote.rw-swap{animation:none!important}
+  .rw-fill,.rw-marker{transition:none}
+}
 #s-run.is-running .tick{border-color:var(--accent3);border-top-color:transparent;animation:spin .8s linear infinite}
 #s-run.is-done .tick{background:var(--ok);border-color:var(--ok)}
 #s-run.is-done .tick::after{content:"✓";color:#fff;font-size:12px;font-weight:800}
@@ -1511,6 +1551,20 @@ button:not(:disabled):active{transform:scale(.965)}
     <h2 style="margin:8px 0 6px" id="runTitle">Analyzing</h2>
     <p class="muted" id="runStatus"></p>
     <div class="runWait" id="runWait" hidden>
+      <div class="rw-top">
+        <div class="rw-radar" aria-hidden="true"><i></i><i></i><i></i><b></b></div>
+        <div class="rw-clock">
+          <p class="rw-label" aria-hidden="true">Elapsed</p>
+          <p class="rw-time" id="rwTime" aria-hidden="true"></p>
+        </div>
+        <p class="rw-expect" id="rwExpect" aria-hidden="true"></p>
+      </div>
+      <div class="rw-track" aria-hidden="true">
+        <div class="rw-fill" id="rwFill"></div>
+        <div class="rw-band"></div>
+        <div class="rw-marker" id="rwMarker"></div>
+      </div>
+      <div class="rw-scale" aria-hidden="true"><span style="left:0">0</span><span style="left:50%">5 min</span><span style="left:80%">8 min</span><span style="left:100%">10 min</span></div>
       <p class="runWaitTime" id="runWaitTime"></p>
       <p class="runWaitNote" id="runWaitNote"></p>
     </div>
@@ -3449,6 +3503,22 @@ button:not(:disabled):active{transform:scale(.965)}
   function formatElapsed(sec) {
     return `${Math.floor(sec / 60)}:${String(sec % 60).padStart(2, "0")}`;
   }
+  // The elapsed time as separate digits. A digit that changed flips in; the colon blinks.
+  function setClock(sec) {
+    const wrap = $("rwTime");
+    const text = formatElapsed(sec);
+    const prev = wrap.dataset.value || "";
+    if (text === prev) return;
+    wrap.dataset.value = text;
+    wrap.textContent = "";
+    for (let i = 0; i < text.length; i++) {
+      const d = el("span", text[i], "rw-d");
+      if (text[i] === ":") d.classList.add("sep");
+      else if (prev && prev[i] !== text[i]) d.classList.add("flip");
+      wrap.append(d);
+    }
+  }
+
   function updateWait() {
     const box = $("runWait");
     const st = cur && cur.status;
@@ -3460,10 +3530,25 @@ button:not(:disabled):active{transform:scale(.965)}
     const sec = Number.isFinite(started) ? Math.max(0, Math.floor((Date.now() - started) / 1000)) : 0;
     const ai = Boolean(cur.model_provider);
     const late = sec > (ai ? 8 * 60 : 5 * 60);
-    $("runWaitTime").textContent = `Elapsed ${formatElapsed(sec)}. Expected wait: ${ai ? "about 5 to 8 minutes with AI" : "a few minutes"}.`;
-    $("runWaitNote").textContent = late
+    const expect = ai ? "about 5 to 8 minutes with AI" : "a few minutes";
+    $("runWaitTime").textContent = `Elapsed ${formatElapsed(sec)}. Expected wait: ${expect}.`;
+    $("rwExpect").textContent = `Expected wait: ${expect}`;
+    const tone = ai ? (sec > 8 * 60 ? "late" : sec > 5 * 60 ? "long" : "ok") : (late ? "late" : "ok");
+    box.dataset.tone = tone;
+    box.classList.toggle("no-band", !ai);
+    $("rwFill").style.width = `${Math.min(sec / 600, 1) * 100}%`;
+    $("rwMarker").style.left = `${Math.min(sec / 600, 1) * 100}%`;
+    setClock(sec);
+    const note = $("runWaitNote");
+    const next = late
       ? "This is taking longer than usual. Larger codebases need more time. You can leave this page; the analysis keeps running."
       : WAIT_LINES[Math.floor(sec / 12) % WAIT_LINES.length];
+    if (note.textContent !== next) {
+      note.textContent = next;
+      note.classList.remove("rw-swap");
+      void note.offsetWidth;
+      note.classList.add("rw-swap");
+    }
     box.hidden = false;
   }
   setInterval(() => { if (!$("s-run").hidden) updateWait(); }, 1000);

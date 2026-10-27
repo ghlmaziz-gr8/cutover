@@ -11,6 +11,7 @@
 window.CUTOVER_GUIDE = {
   updated: "2026-10-22",
   whatsNew: [
+    "2026-10-27: The progress screen shows the elapsed time as a live clock, with a bar against the expected 5 to 8 minutes. The bar turns amber and then rose when the wait runs long. Motion is turned off when your device asks for less motion.",
     "2026-10-27: The notification bell is hidden on the progress screen while an analysis runs, so the page stays calm. It comes back on the other screens.",
     "2026-10-27: Feature groups, at the foot of a file-results screen, are proposed by a platform engineer from the approved business summaries. Each grouping is a draft until a platform engineer approves it or discards it; an approved grouping replaces the earlier one, which is kept as history.",
     "2026-10-27: A file purpose approved at an older commit than the latest run is flagged on its card, with both commits. Nothing is changed automatically: edit the purpose and save it to approve it again.",
