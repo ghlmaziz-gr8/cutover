@@ -8280,6 +8280,12 @@ const REGION_OPTS = {
       body.appendChild(sticker);
     }
     body.appendChild(el("div", f.purpose || "No purpose written yet.", "small"));
+    // An approved result read at an older commit than the one now analysed is flagged. Nothing is changed automatically.
+    if ((f.review_status === "approved" || f.review_status === "edited") && f.commit_sha && cur && cur.commit_sha && f.commit_sha !== cur.commit_sha) {
+      const older = el("span", `Approved at commit ${String(f.commit_sha).slice(0, 7)}; the latest run read ${String(cur.commit_sha).slice(0, 7)}`, "tag");
+      older.title = "The approval may not match the current code. Use Edit purpose and save it to approve it again.";
+      body.appendChild(older);
+    }
     for (const s of f.suggestions || []) {
       body.appendChild(el("div", `${s.severity ? s.severity + ": " : ""}${s.text}`, "small muted"));
     }

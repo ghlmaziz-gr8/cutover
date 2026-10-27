@@ -1346,6 +1346,27 @@ test("nothing is removed when the cleanup cannot be logged", async () => {
   assert.equal(state.file_business_assessments.some((r) => r.id === uid(1030)), true);
 });
 
+// ---- Commits of file-level results ----
+
+test("a finished run stamps its new drafts with its commit, and an approved result keeps the commit it was approved at", async () => {
+  runningAnalysis();
+  state.file_findings.push(
+    { id: uid(1040), analysis_id: AN_RUNNING, path: "src/Kept.java", category: "application", purpose: "Kept", suggestions: [], sample_only: true, review_status: "approved", commit_sha: "old1111", created_at: NOW },
+    { id: uid(1041), analysis_id: AN_RUNNING, path: "src/New.java", category: "application", purpose: null, suggestions: [], sample_only: true, review_status: "draft", commit_sha: null, created_at: NOW },
+  );
+  const res = await call(`/api/runner/${AN_RUNNING}/result`, { method: "POST", secret: env.RUNNER_SECRET, body: { status: "complete", commit_sha: "new2222", findings: {} } });
+  assert.equal(res.status, 200);
+  assert.equal(state.file_findings.find((f) => f.id === uid(1040)).commit_sha, "old1111");
+  assert.equal(state.file_findings.find((f) => f.id === uid(1041)).commit_sha, "new2222");
+});
+
+test("the file list says which commit each file result was read at", async () => {
+  state.file_findings.push({ id: uid(1050), analysis_id: AN_ACME, path: "src/Commit.java", category: "application", purpose: "x", suggestions: [], sample_only: true, review_status: "approved", commit_sha: "abc1234", created_at: NOW });
+  const res = await call(`/api/analyses/${AN_ACME}/files`, { as: "eng_a" });
+  assert.equal(res.status, 200);
+  assert.equal(res.body.files.find((f) => f.path === "src/Commit.java").commit_sha, "abc1234");
+});
+
 // ---- Reviewing file-level results (platform engineers) ----
 
 test("only platform engineers see the file-level results", async () => {
