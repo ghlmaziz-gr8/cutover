@@ -1947,7 +1947,16 @@ button:not(:disabled):active{transform:scale(.965)}
       <div><b id="runBannerTitleD">Analysis running</b><span class="stage" id="runBannerStageD"></span></div>
       <div class="run-bar" aria-hidden="true"><i></i></div>
     </div>
-    <div class="card" id="dbCard" style="margin-top:0">
+    <div class="card" id="lensCard" style="margin-top:20px">
+      <h2>The three deeper assessments</h2>
+      <p class="muted small" id="lensNote" style="margin-top:6px"></p>
+      <div class="scope-opts" id="lensOpts"></div>
+      <div class="row" style="margin-top:12px"><button type="button" class="ghost small-btn" id="lensAll" hidden>Show everything</button></div>
+      <p class="small hint" id="lensMsg" role="status"></p>
+    </div>
+    <div id="deeperDataBox" hidden>
+      <p class="small muted" style="margin:20px 0 0">Part of the deep data assessment</p>
+    <div class="card" id="dbCard" style="margin-top:10px">
       <h2>Database structure</h2>
       <p class="muted small" style="margin-top:6px">
         Upload the .json file made by the read-only script (access_metadata.py) to add the table and field names of a database.
@@ -1965,23 +1974,17 @@ button:not(:disabled):active{transform:scale(.965)}
       </div>
       <p class="small hint" id="dbMsg" role="status"></p>
     </div>
-    <div class="card" id="deeperRunCard" style="margin-top:20px">
-      <h2>Run the deeper assessment</h2>
+    <div class="card" id="deeperRunCard" style="margin-top:14px">
+      <h2>Run deep data assessment</h2>
       <p class="muted small" style="margin-top:6px">
         This reads the code again and builds the business, systems, data and workflow documents. It includes the database structure above when one is saved.
       </p>
       <p class="small hint" style="margin-top:8px">The database structure appears under Data structure on the report when this run finishes.</p>
       <div class="row" style="margin-top:12px">
-        <button type="button" id="deeperRun">Run deeper assessment</button>
+        <button type="button" id="deeperRun">Run deep data assessment</button>
       </div>
       <p class="small hint" id="deeperRunMsg" role="status"></p>
     </div>
-    <div class="card" id="lensCard" style="margin-top:20px">
-      <h2>The three deeper assessments</h2>
-      <p class="muted small" id="lensNote" style="margin-top:6px"></p>
-      <div class="scope-opts" id="lensOpts"></div>
-      <div class="row" style="margin-top:12px"><button type="button" class="ghost small-btn" id="lensAll" hidden>Show everything</button></div>
-      <p class="small hint" id="lensMsg" role="status"></p>
     </div>
     <div class="card" id="deeperArch"></div>
     <div id="deeperSections"></div>
@@ -7288,9 +7291,10 @@ a{color:#6d28d9;font-weight:600}`;
       list.appendChild(card);
     }
     $("lensAll").hidden = !active;
+    $("deeperDataBox").hidden = ready && !!active && active.key !== "data";
     $("lensNote").textContent = ready
       ? "Open one of the three to read it. Opening one lets you continue to Next steps."
-      : "The deeper assessment is not finished yet. Run it above, and the three open when it is ready.";
+      : "The deeper assessment is not finished yet. Run deep data assessment below, and the three open when it is ready.";
   }
   function openLens(key) {
     lensState = { analysis: cur.id, key, opened: true };
