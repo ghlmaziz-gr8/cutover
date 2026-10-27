@@ -8245,6 +8245,7 @@ const REGION_OPTS = {
     };
     if (f.review_status !== "approved") button("Approve", () => reviewFile(f.id, { review_status: "approved" }));
     button("Edit purpose", () => openFileEditor(li, f));
+    button("Business view", () => businessPanel(li, f));
     li.appendChild(buttons);
     return li;
   }
@@ -8257,6 +8258,97 @@ const REGION_OPTS = {
     } catch (err) {
       setMsg("filesMsg", err.message, true);
     }
+  }
+
+  // ---- Business view of one file: start an assessment, then approve or discard its drafts ----
+  const BIZ_STATUS = { running: "Running", draft: "Draft to review", approved: "Approved", superseded: "Replaced by a later approval" };
+  const BIZ_FIELDS = [["purpose", "Purpose"], ["business_rules", "Business rules"], ["workflows", "Workflows"],
+    ["data_used", "Data used"], ["risks", "Risks to keep safe"], ["questions", "Open questions"]];
+
+  // Opens under one file. The text comes from the model, so it is always written as plain text, never as markup.
+  function businessPanel(li, f) {
+    const panel = el("div", null, "biz-panel");
+    panel.style.marginTop = "10px";
+    const msg = el("p", null, "muted small");
+    msg.setAttribute("role", "status");
+    const list = el("div");
+    const top = el("div", null, "row");
+    top.style.gap = "8px";
+    const start = el("button", "Assess for the business", "small-btn");
+    start.type = "button";
+    const refresh = el("button", "Refresh", "ghost small-btn");
+    refresh.type = "button";
+    const close = el("button", "Close", "ghost small-btn");
+    close.type = "button";
+    close.addEventListener("click", () => renderFiles());
+    async function load() {
+      list.innerHTML = "";
+      try {
+        const res = await api(`/api/analyses/${cur.id}/business?path=${encodeURIComponent(f.path)}`);
+        if (!res.assessments.length) list.appendChild(el("p", "No business assessment yet.", "muted small"));
+        for (const a of res.assessments) list.appendChild(bizCard(a, load, msg));
+      } catch (err) {
+        msg.textContent = err.message;
+      }
+    }
+    start.addEventListener("click", async () => {
+      msg.textContent = "";
+      try {
+        await api(`/api/analyses/${cur.id}/business/start`, { method: "POST", body: JSON.stringify({ path: f.path }) });
+        msg.textContent = "Started. Refresh in a minute to see the draft.";
+        load();
+      } catch (err) {
+        msg.textContent = err.message;
+      }
+    });
+    refresh.addEventListener("click", load);
+    top.append(start, refresh, close);
+    panel.append(top, msg, list);
+    li.appendChild(panel);
+    load();
+  }
+
+  function bizCard(a, reload, msg) {
+    const card = el("div", null, "biz-card");
+    card.style.borderTop = "1px solid var(--line, #ddd)";
+    card.style.paddingTop = "8px";
+    card.style.marginTop = "8px";
+    const commit = a.commit_sha ? ` · commit ${String(a.commit_sha).slice(0, 7)}` : "";
+    card.append(el("div", `${BIZ_STATUS[a.review_status] || a.review_status}${commit}`, "muted small"));
+    for (const [key, label] of BIZ_FIELDS) {
+      const value = a.content ? a.content[key] : undefined;
+      if (value === undefined || value === null || value === "" || (Array.isArray(value) && !value.length)) continue;
+      card.append(el("div", `${label}: ${Array.isArray(value) ? value.join("; ") : value}`, "small"));
+    }
+    if (a.review_status === "draft") {
+      const row = el("div", null, "row");
+      row.style.gap = "8px";
+      const approve = el("button", "Approve this draft", "small-btn");
+      approve.type = "button";
+      approve.addEventListener("click", async () => {
+        msg.textContent = "";
+        try {
+          await api(`/api/analyses/${cur.id}/business/approve`, { method: "POST", body: JSON.stringify({ assessment_id: a.id }) });
+          reload();
+        } catch (err) {
+          msg.textContent = err.message;
+        }
+      });
+      const discard = el("button", "Discard", "ghost small-btn");
+      discard.type = "button";
+      discard.addEventListener("click", async () => {
+        msg.textContent = "";
+        try {
+          await api(`/api/analyses/${cur.id}/business/discard`, { method: "POST", body: JSON.stringify({ assessment_id: a.id }) });
+          reload();
+        } catch (err) {
+          msg.textContent = err.message;
+        }
+      });
+      row.append(approve, discard);
+      card.append(row);
+    }
+    return card;
   }
 
   // Replaces one file's purpose with an editable box. Saving marks the file as edited and approved.
