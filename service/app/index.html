@@ -1348,6 +1348,14 @@ button:not(:disabled):active{transform:scale(.965)}
       <p id="databaseSize" class="muted small" style="margin-top:12px" role="status"></p>
     </div>
 
+    <div class="card" id="cleanupCard" hidden>
+      <h2>Clean up</h2>
+      <p class="muted small" style="margin-top:6px">Removes earlier business results that a newer approval replaced. Drafts and the current approved results are kept. Each cleanup is recorded in the log.</p>
+      <div id="cleanupList" style="margin-top:10px"></div>
+      <div class="row" style="margin-top:12px"><button id="cleanupRun" class="small-btn" type="button" hidden></button></div>
+      <p id="cleanupMsg" class="muted small" role="status"></p>
+    </div>
+
     <div class="card" id="privacyCard" hidden>
       <h2>Privacy sign-off</h2>
       <p class="muted small" style="margin-top:6px">Needed before this workspace can set up its own language model. Cutover keeps a record of who signed, the name typed, and the exact text accepted.</p>
@@ -2247,6 +2255,9 @@ button:not(:disabled):active{transform:scale(.965)}
     $("operatorCard").hidden = !(me.is_operator && homeTab === "workspaces");
     $("overviewCard").hidden = !(me.is_operator && homeTab === "workspaces");
     if (me.is_operator && homeTab === "workspaces") loadOverview();
+    const cleanupHere = !!(ws && ws.role === "platform_engineer" && homeTab === "workspaces");
+    $("cleanupCard").hidden = !cleanupHere;
+    if (cleanupHere) loadCleanupPreview();
     $("guideCard").hidden = homeTab !== "guide";
     if (homeTab === "analyses" && ws) loadList();
     if (homeTab === "workspaces" && ws && ws.is_admin) loadPeople();
@@ -2378,6 +2389,43 @@ button:not(:disabled):active{transform:scale(.965)}
     ws = (ws && me.workspaces.find((w) => w.id === ws.id)) || me.workspaces[0] || null;
     showHome();
   }
+
+  // ---- Clean up superseded business assessments in this workspace: preview first, then confirm the same count ----
+  let cleanupExpected = 0;
+
+  async function loadCleanupPreview() {
+    const list = $("cleanupList");
+    const run = $("cleanupRun");
+    list.innerHTML = "";
+    run.hidden = true;
+    $("cleanupMsg").textContent = "";
+    try {
+      const res = await api(`/api/workspaces/${ws.id}/cleanup/superseded`);
+      cleanupExpected = res.count;
+      if (!res.count) {
+        list.appendChild(el("p", "Nothing to clean up. There are no superseded business assessments.", "muted small"));
+        return;
+      }
+      list.appendChild(el("p", `${res.count} superseded business assessment${res.count === 1 ? "" : "s"} can be removed:`, "small"));
+      for (const item of res.items) list.appendChild(el("div", `${item.app} · ${item.path} · ${item.count}`, "small muted"));
+      run.textContent = `Remove ${res.count} superseded`;
+      run.hidden = false;
+    } catch (err) {
+      $("cleanupMsg").textContent = err.message;
+    }
+  }
+
+  $("cleanupRun").addEventListener("click", async () => {
+    const msg = $("cleanupMsg");
+    try {
+      const res = await api(`/api/workspaces/${ws.id}/cleanup/superseded`, { method: "POST", body: JSON.stringify({ expected_count: cleanupExpected }) });
+      await loadCleanupPreview();
+      msg.textContent = `Removed ${res.removed} superseded business assessment${res.removed === 1 ? "" : "s"}.`;
+    } catch (err) {
+      msg.textContent = err.message;
+      loadCleanupPreview();
+    }
+  });
 
   // The database size against the free-tier limit, for operators only. Shown beside the workspace list.
   async function loadDatabaseSize() {
