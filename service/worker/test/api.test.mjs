@@ -151,6 +151,7 @@ let outbound;
 let github;
 let failLog;
 let failActivityLog;
+let resendCalls = [];
 const realFetch = globalThis.fetch;
 
 const j = (body, status = 200) => new Response(body === undefined ? null : JSON.stringify(body), {
@@ -298,6 +299,7 @@ beforeEach(() => {
   outbound = [];
   failLog = false;
   failActivityLog = false;
+  resendCalls = [];
   github = { dispatches: [], dispatchOk: true };
   globalThis.fetch = async (url, init = {}) => {
     const u = String(url);
@@ -309,6 +311,10 @@ beforeEach(() => {
     if (u.startsWith(`${env.SUPABASE_URL}/rest/v1/`)) return handleRest(u, init);
     if (u.startsWith(`${env.SUPABASE_URL}/storage/v1/object/analysis-sources/`)) return handleStorage(u, init);
     if (u.startsWith("https://api.github.com/")) return handleGithub(u, init);
+    if (u.startsWith("https://api.resend.com/")) {
+      resendCalls.push(JSON.parse(init.body));
+      return j({ id: "email-test" });
+    }
     if (u.startsWith("https://generativelanguage.googleapis.com/v1beta/models/")) {
       const key = init.headers?.["x-goog-api-key"];
       if (key === GOOD_GOOGLE_KEY) return j({ candidates: [{ content: { parts: [{ text: "OK" }] } }] });
@@ -2494,4 +2500,28 @@ test("the retention deletion and the trim are in the database scripts with their
   assert.ok(sql.includes("'unopened'"));
   assert.ok(sql.includes("security definer"));
   assert.ok(sql.includes("grant execute on function public.purge_oldest_assessment_log(numeric) to service_role;"));
+});
+
+test("retention emails go to the owner and admins through Resend, once the key and sender are set", async () => {
+  env.RESEND_API_KEY = "re_test";
+  env.EMAIL_FROM = "Cutover <notices@cutover.test>";
+  try {
+    state.analyses.push({ id: uid(980), workspace_id: W_ACME, owner_id: PEOPLE.eng_a.id, repo: "acme/old", app_name: "Old", status: "complete", created_at: "2026-01-01T00:00:00.000Z", last_opened_at: "2026-01-02T00:00:00.000Z", expires_at: FAR_FUTURE, findings: null, error: null, commit_sha: null, finished_at: null, file_bytes: 0 });
+    await runDailyJob(env);
+    assert.equal(resendCalls.length, 1);
+    assert.equal(resendCalls[0].from, "Cutover <notices@cutover.test>");
+    assert.ok(resendCalls[0].to.includes(PEOPLE.eng_a.email));
+    assert.ok(resendCalls[0].to.includes(PEOPLE.admin_a.email));
+    assert.ok(resendCalls[0].subject.includes("Old"));
+  } finally {
+    delete env.RESEND_API_KEY;
+    delete env.EMAIL_FROM;
+  }
+});
+
+test("without the Resend key, no email is sent and the portal notice is still written", async () => {
+  state.analyses.push({ id: uid(981), workspace_id: W_ACME, owner_id: PEOPLE.eng_a.id, repo: "acme/old2", app_name: "Old2", status: "complete", created_at: "2026-01-01T00:00:00.000Z", last_opened_at: "2026-01-02T00:00:00.000Z", expires_at: FAR_FUTURE, findings: null, error: null, commit_sha: null, finished_at: null, file_bytes: 0 });
+  await runDailyJob(env);
+  assert.equal(resendCalls.length, 0);
+  assert.ok(state.notifications.some((n) => n.kind === "retention_deleted" && n.user_id === PEOPLE.eng_a.id));
 });

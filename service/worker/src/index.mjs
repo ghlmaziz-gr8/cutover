@@ -3132,15 +3132,14 @@ async function purgeUnopened(env) {
   const ids = rows.map((r) => r.id).join(",");
   const res = await serviceRest(env, `analyses?id=in.(${ids})`, { method: "DELETE", headers: { prefer: "return=minimal" } });
   if (!res.ok) throw new Error(`Unopened purge failed with status ${res.status}`);
-  // Tell the owner and the workspace admins, in the portal. The deletion is also in the log.
+  // Tell the owner and the workspace admins, in the portal and by email. The deletion is also in the log.
   for (const r of rows) {
     const admins = await adminIdsExcept(env, r.workspace_id, SYSTEM_WORKSPACE);
-    await notifyPeople(env, r.workspace_id, [r.owner_id, ...admins], {
-      kind: "retention_deleted",
-      tone: "warning",
-      title: `Deleted after 90 days unopened: ${r.app_name || r.repo}`,
-      body: "Nobody opened this assessment for 90 days, so its results were removed. The deletion is recorded in the action log.",
-    });
+    const people = [r.owner_id, ...admins];
+    const title = `Deleted after 90 days unopened: ${r.app_name || r.repo}`;
+    const body = "Nobody opened this assessment for 90 days, so its results were removed. The deletion is recorded in the action log.";
+    await notifyPeople(env, r.workspace_id, people, { kind: "retention_deleted", tone: "warning", title, body });
+    await emailPeople(env, r.workspace_id, people, `Cutover: ${title}`, `${body}\n\nOpen the Cutover portal to see the action log for this workspace.`);
   }
 }
 
@@ -3154,6 +3153,29 @@ async function trimLog(env) {
   if (!logged) throw new Error("Could not record the log trim, so nothing was removed.");
   const res = await serviceRest(env, "rpc/purge_oldest_assessment_log", { method: "POST", body: JSON.stringify({ batch_share: LOG_TRIM_SHARE }) });
   if (!res.ok) throw new Error("The log trim failed.");
+}
+
+// ---- Email (Resend). Off until RESEND_API_KEY and EMAIL_FROM are set. The portal notice is always written. ----
+
+// Sends one email to people in a workspace. Never throws: a failed email must not undo the action it reports.
+async function emailPeople(env, workspaceId, userIds, subject, text) {
+  if (!env.RESEND_API_KEY || !env.EMAIL_FROM) return false;
+  const ids = [...new Set((userIds || []).filter((id) => typeof id === "string" && UUID_PATTERN.test(id)))];
+  if (ids.length === 0) return false;
+  try {
+    const res = await serviceRest(env, `members?workspace_id=eq.${workspaceId}&select=user_id,email`);
+    if (!res.ok) return false;
+    const to = (await res.json()).filter((m) => ids.includes(m.user_id) && m.email).map((m) => m.email);
+    if (to.length === 0) return false;
+    const sent = await fetch("https://api.resend.com/emails", {
+      method: "POST",
+      headers: { authorization: `Bearer ${env.RESEND_API_KEY}`, "content-type": "application/json" },
+      body: JSON.stringify({ from: env.EMAIL_FROM, to, subject: String(subject).slice(0, 200), text: String(text).slice(0, 4000) }),
+    });
+    return sent.ok;
+  } catch {
+    return false;
+  }
 }
 
 // The daily job. Each step runs on its own, so one failing step does not stop the others.
