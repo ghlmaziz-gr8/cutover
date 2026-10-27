@@ -1434,6 +1434,16 @@ test("approving a grouping supersedes the earlier one, and only a draft can be d
   assert.equal(state.feature_groupings.some((g) => g.id === uid(1072)), false);
 });
 
+test("the runner reads only the approved business results to group them, with the shared secret", async () => {
+  state.file_business_assessments.push(businessRow(1080, "approved"), businessRow(1081, "draft", "src/Other.java"));
+  const wrong = await call(`/api/runner/${AN_ACME}/grouping-sources`, { method: "GET", secret: "wrong" });
+  assert.equal(wrong.status, 401);
+  const res = await call(`/api/runner/${AN_ACME}/grouping-sources`, { method: "GET", secret: env.RUNNER_SECRET });
+  assert.equal(res.status, 200);
+  assert.deepEqual(res.body.files.map((f) => f.path), ["src/A.java"]);
+  assert.equal(res.body.files[0].content.purpose, "Business");
+});
+
 // ---- Reviewing file-level results (platform engineers) ----
 
 test("only platform engineers see the file-level results", async () => {

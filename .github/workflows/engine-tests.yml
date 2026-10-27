@@ -39,6 +39,10 @@ jobs:
         working-directory: engine
         run: python -m unittest test_model_business.py -v
 
+      - name: Run the feature grouping tests (the reply form, personal-data stops, the runner step)
+        working-directory: engine
+        run: python -m unittest test_model_grouping.py -v
+
   worker-tests:
     runs-on: ubuntu-latest
     steps:
