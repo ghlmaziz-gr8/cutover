@@ -1,0 +1,89 @@
+# Assesses one file of an analysed repository for the business, with the workspace's own model, and posts the draft to the Cutover API.
+# Started by the API through workflow_dispatch. The repository is cloned into a temporary folder, one file is read,
+# and the folder is discarded when the job ends. Nothing from the repository is executed, and nothing is merged here.
+
+name: business
+
+on:
+  workflow_dispatch:
+    inputs:
+      analysis_id:
+        description: "Analysis UUID created by the API"
+        required: true
+        type: string
+      repo:
+        description: "Target repository (owner/name)"
+        required: true
+        type: string
+      ref:
+        description: "Branch, tag, or commit (optional)"
+        required: false
+        type: string
+        default: ""
+      path:
+        description: "The file to assess, relative to the repository (set by the API)"
+        required: true
+        type: string
+      model_token:
+        description: "One-time token for the workspace's own model key (set by the API)"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  business:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      ANALYSIS_ID: ${{ inputs.analysis_id }}
+      TARGET_REPO: ${{ inputs.repo }}
+      TARGET_REF: ${{ inputs.ref }}
+      TARGET_PATH: ${{ inputs.path }}
+    steps:
+      # The token is one-time and lasts ten minutes. Hide it from the log before any other step runs.
+      - name: Hide the model token
+        env:
+          MODEL_TOKEN: ${{ inputs.model_token }}
+        run: |
+          if [ -n "$MODEL_TOKEN" ]; then echo "::add-mask::$MODEL_TOKEN"; fi
+
+      - name: Check out the Cutover engine
+        uses: actions/checkout@v4
+        with:
+          path: cutover
+
+      - name: Validate inputs
+        run: |
+          set -euo pipefail
+          [[ "$ANALYSIS_ID" =~ ^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$ ]] || { echo "Bad analysis id"; exit 1; }
+          [[ "$TARGET_REPO" =~ ^[A-Za-z0-9][A-Za-z0-9-]{0,38}/[A-Za-z0-9_][A-Za-z0-9_.-]{0,99}$ ]] || { echo "Bad repository name"; exit 1; }
+          [[ "$TARGET_PATH" =~ ^[A-Za-z0-9_./-]{1,300}$ && "$TARGET_PATH" != *..* ]] || { echo "Bad file path"; exit 1; }
+          if [ -n "$TARGET_REF" ]; then
+            [[ "$TARGET_REF" =~ ^[A-Za-z0-9_./-]{1,200}$ && "$TARGET_REF" != *..* ]] || { echo "Bad ref"; exit 1; }
+          fi
+
+      - name: Clone the target repository
+        env:
+          TARGET_TOKEN: ${{ secrets.TARGET_READ_TOKEN }}
+        run: |
+          set -euo pipefail
+          # The token is sent as an HTTP header, never in the URL, and is not printed.
+          AUTH=$(printf 'x-access-token:%s' "$TARGET_TOKEN" | base64 -w0)
+          git -c "http.extraheader=Authorization: Basic $AUTH" \
+            clone --quiet "https://github.com/$TARGET_REPO.git" "$RUNNER_TEMP/target"
+          if [ -n "$TARGET_REF" ]; then
+            git -C "$RUNNER_TEMP/target" checkout --quiet --detach "$TARGET_REF"
+          fi
+
+      - name: Assess the file
+        env:
+          MODEL_TOKEN: ${{ inputs.model_token }}
+          RUNNER_SECRET: ${{ secrets.RUNNER_SECRET }}
+          CALLBACK_URL: ${{ secrets.CUTOVER_API_URL }}
+        run: |
+          set -euo pipefail
+          python3 cutover/engine/business_run.py \
+            --path "$TARGET_PATH" --source "$RUNNER_TEMP/target" \
+            --callback "$CALLBACK_URL" --analysis-id "$ANALYSIS_ID"
