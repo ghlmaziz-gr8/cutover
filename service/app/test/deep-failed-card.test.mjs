@@ -21,7 +21,8 @@ test("the card shows the reason the run ended and says it can be run again", () 
 
 test("the runner prints the reason and maps a payment problem to a clear message", () => {
   const runner = readFileSync(join(here, "..", "..", "..", "engine", "deep_file_run.py"), "utf8");
-  assert.ok(runner.includes("def explain(err: Exception) -> str:"));
-  assert.ok(runner.includes("The model provider asked for payment (HTTP 402)"));
-  assert.ok(runner.includes("{result['reason']}"));
+  const purposes = readFileSync(join(here, "..", "..", "..", "engine", "model_purposes.py"), "utf8");
+  assert.ok(purposes.includes("def explain_failure(err: Exception) -> str:"));
+  assert.ok(purposes.includes("The model provider asked for payment (HTTP 402)"));
+  assert.ok(runner.includes("reason = f\" {result['reason']}\""));
 });
