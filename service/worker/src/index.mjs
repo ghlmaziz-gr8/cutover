@@ -48,6 +48,8 @@ import { validateDbMetadata } from "./db-metadata.mjs";
 //   GET    /api/analyses/:id/files                        file-level results, a page at a time (platform engineers)
 //   POST   /api/analyses/:id/files/approve-all            approve every file still in draft (platform engineers)
 //   GET    /api/analyses/:id/business?path=               business assessments of one file (platform engineers)
+//   POST   /api/analyses/:id/deep-files/start           start a deep file assessment of one file (platform engineers)
+//   POST   /api/runner/:id/deep-file                       one deep file assessment (shared secret)
 //   POST   /api/analyses/:id/business/start               start a business assessment of one file (platform engineers)
 //   POST   /api/analyses/:id/business/approve             approve a draft; the earlier approved one is superseded (platform engineers)
 //   POST   /api/analyses/:id/business/discard             discard a draft (platform engineers)
@@ -1194,6 +1196,12 @@ async function busyRun(env, workspaceId, exceptAnalysisId = null) {
   if (!grouping.ok) throw new Error("Could not check the feature groupings.");
   const [grp] = await grouping.json();
   if (grp) return { kind: "grouping", name: grp.analyses.app_name || grp.analyses.repo, repo: grp.analyses.repo, started: grp.created_at };
+  // A deep file assessment counts as a run until the runner answers, or until it is stale.
+  const deepCutoff = new Date(Date.now() - STALE_RUN_MS).toISOString();
+  const deep = await serviceRest(env, `file_deep_assessments?status=eq.running&created_at=gt.${deepCutoff}&select=file_path,created_at,analyses!inner(workspace_id,app_name,repo)&analyses.workspace_id=eq.${workspaceId}&limit=1`);
+  if (!deep.ok) throw new Error("Could not check the deep file assessments.");
+  const [dp] = await deep.json();
+  if (dp) return { kind: "deep", name: dp.analyses.app_name || dp.analyses.repo, repo: dp.analyses.repo, path: dp.file_path, started: dp.created_at };
   return null;
 }
 
@@ -1204,6 +1212,8 @@ function busyResponse(busy) {
       ? `A business assessment of one file is running in this workspace: ${busy.path} in ${busy.name}.`
       : busy.kind === "grouping"
         ? `A feature grouping is running in this workspace: ${busy.name}.`
+        : busy.kind === "deep"
+          ? `A deep file assessment is running in this workspace: ${busy.path} in ${busy.name}.`
         : `Another assessment is running in this workspace: ${busy.name}${busy.repo && busy.repo !== busy.name ? ` (${busy.repo})` : ""}.`;
   return json({ error: `${what} ${LOCK_TEXT}`, busy: { kind: busy.kind, name: busy.name, repo: busy.repo, started: busy.started || null } }, 409);
 }
@@ -3116,6 +3126,105 @@ function dispatchBusiness(env, inputs) {
   });
 }
 
+// ---- Deep file assessment: one file's purpose, functions, calls and user stories (slice 2) ----
+// Same flow as the business assessment of one file. A row is 'running' until the runner answers. Every name in the
+// account must appear in the file; the runner drops any that do not, and the count is kept with the draft.
+const DEEP_MAX_CHARS = 60000;
+
+async function startDeepFile(request, env, id) {
+  const access = await analysisAccess(env, request, id);
+  if (access.response) return access.response;
+  if (!canStart(access.member)) return json({ error: "Only platform engineers can start a deep file assessment." }, 403);
+  const parsed = await readJson(request);
+  if (parsed.error) return json({ error: parsed.error }, 400);
+  const path = typeof parsed.value?.path === "string" ? parsed.value.path : "";
+  if (!CONVERT_PATH.test(path) || path.split("/").includes("..")) return json({ error: "Choose a file from this analysis." }, 400);
+  const row = access.row;
+  if (row.status !== "complete") return json({ error: "Finish the assessment first." }, 409);
+  if (!row.model_key_id) return json({ error: "Choose a language model for this analysis first." }, 409);
+  const chosen = await chooseAnalysisModel(env, row.workspace_id, row.model_key_id);
+  if (chosen.response) return chosen.response;
+  const known = await serviceRest(env, `file_findings?analysis_id=eq.${id}&path=eq.${encodeURIComponent(path)}&select=id&limit=1`);
+  if (!known.ok) return json({ error: "Could not check the file." }, 502);
+  if (!(await known.json()).length) return json({ error: "That file is not in this analysis." }, 400);
+
+  const busyResp = await refuseIfBusy(env, access.user, row.workspace_id, row.repo);
+  if (busyResp) return busyResp;
+  const modelToken = (await issueModelToken(env, id, row.model_key_id)) || "";
+  if (!modelToken) return json({ error: "Could not prepare the model. Try again in a minute." }, 502);
+  const refusedStart = await logFirst(env, { workspace_id: row.workspace_id, user: access.user, action: "deep_file_start", analysis_id: id, repo: row.repo, detail: path });
+  if (refusedStart) return refusedStart;
+  const runningFilter = `analysis_id=eq.${id}&file_path=eq.${encodeURIComponent(path)}&status=eq.running`;
+  await serviceRest(env, `file_deep_assessments?${runningFilter}`, { method: "DELETE", headers: { prefer: "return=minimal" } });
+  const made = await serviceRest(env, "file_deep_assessments", {
+    method: "POST",
+    headers: { prefer: "return=minimal" },
+    body: JSON.stringify({ analysis_id: id, file_path: path, content: {}, status: "running", created_by_email: normalizeEmail(access.user.email) }),
+  });
+  if (!made.ok) return json({ error: "Could not start the deep assessment." }, 502);
+  const dispatch = await dispatchDeepFile(env, { analysis_id: id, repo: row.repo, ref: row.ref || "", path, model_token: modelToken });
+  if (!dispatch.ok) {
+    await serviceRest(env, `file_deep_assessments?${runningFilter}`, { method: "DELETE", headers: { prefer: "return=minimal" } });
+    return json({ error: "The runner could not be started. Try again in a minute." }, 502);
+  }
+  return json({ queued: true, path }, 202);
+}
+
+function dispatchDeepFile(env, inputs) {
+  return fetch(`https://api.github.com/repos/${env.RUNNER_REPO}/actions/workflows/deep-file.yml/dispatches`, {
+    method: "POST",
+    headers: {
+      authorization: `Bearer ${env.GITHUB_DISPATCH_TOKEN}`,
+      accept: "application/vnd.github+json",
+      "x-github-api-version": "2022-11-28",
+      "content-type": "application/json",
+      "user-agent": "cutover-api",
+    },
+    body: JSON.stringify({ ref: "main", inputs }),
+  });
+}
+
+async function saveDeepFile(request, env, id) {
+  if (!timingSafeEqual(request.headers.get("x-runner-secret") || "", env.RUNNER_SECRET || "")) {
+    return json({ error: "Unauthorized." }, 401);
+  }
+  const found = await serviceRest(env, `analyses?id=eq.${id}&select=id,workspace_id,repo`);
+  if (!found.ok) return json({ error: "Could not load the analysis." }, 502);
+  const [analysis] = await found.json();
+  if (!analysis) return json({ error: "Not found." }, 404);
+  const parsed = await readJson(request, DEEP_MAX_CHARS + 4000);
+  if (parsed.error) return json({ error: parsed.error }, 400);
+  const body = parsed.value || {};
+  const path = typeof body.path === "string" ? body.path : "";
+  if (!CONVERT_PATH.test(path)) return json({ error: "Choose a file." }, 400);
+  const commitSha = typeof body.commit_sha === "string" && body.commit_sha.length <= 64 ? body.commit_sha : null;
+  const runningFilter = `analysis_id=eq.${id}&file_path=eq.${encodeURIComponent(path)}&status=eq.running`;
+  if (body.status !== "ok") {
+    const refusedFail = await logFirst(env, { workspace_id: analysis.workspace_id, user: null, action: "deep_file_fail", analysis_id: id, repo: analysis.repo, detail: path });
+    if (refusedFail) return refusedFail;
+    await serviceRest(env, `file_deep_assessments?${runningFilter}`, { method: "DELETE", headers: { prefer: "return=minimal" } });
+    return json({ saved: false, reason: typeof body.reason === "string" ? body.reason.slice(0, 300) : "The file was not assessed." });
+  }
+  const content = body.content;
+  if (!content || typeof content !== "object" || Array.isArray(content)) return json({ error: "content must be an object." }, 400);
+  if (JSON.stringify(content).length > DEEP_MAX_CHARS) return json({ error: "The assessment is too large to save." }, 400);
+  const dropped = Number.isInteger(body.dropped) && body.dropped >= 0 ? body.dropped : 0;
+  const known = await serviceRest(env, `file_findings?analysis_id=eq.${id}&path=eq.${encodeURIComponent(path)}&select=id&limit=1`);
+  if (!known.ok) return json({ error: "Could not check the file." }, 502);
+  if (!(await known.json()).length) return json({ error: "That file is not in this analysis." }, 400);
+  const refused = await logFirst(env, { workspace_id: analysis.workspace_id, user: null, action: "deep_file_finish", analysis_id: id, repo: analysis.repo, detail: path });
+  if (refused) return refused;
+  await serviceRest(env, `file_deep_assessments?${runningFilter}`, { method: "DELETE", headers: { prefer: "return=minimal" } });
+  const res = await serviceRest(env, "file_deep_assessments", {
+    method: "POST",
+    headers: { prefer: "return=representation" },
+    body: JSON.stringify({ analysis_id: id, file_path: path, commit_sha: commitSha, content, confidence: "model_read", dropped, status: "draft" }),
+  });
+  if (!res.ok) return json({ error: "Could not save the deep assessment." }, 502);
+  const [saved] = await res.json();
+  return json({ saved: true, id: saved ? saved.id : null }, 201);
+}
+
 // ---- Cleanup: superseded business assessments in a workspace. Preview first, then confirm the same count. ----
 // Only superseded results are removed. Drafts and approved results are never touched here.
 async function supersededInWorkspace(env, workspaceId) {
@@ -4012,6 +4121,10 @@ async function route(request, env) {
     if (businessStart && UUID_PATTERN.test(businessStart[1]) && method === "POST") return startBusiness(request, env, businessStart[1]);
     const businessDiscard = path.match(/^\/api\/analyses\/([^/]+)\/business\/discard$/);
     if (businessDiscard && UUID_PATTERN.test(businessDiscard[1]) && method === "POST") return discardBusiness(request, env, businessDiscard[1]);
+    const deepStart = path.match(/^\/api\/analyses\/([^/]+)\/deep-files\/start$/);
+    if (deepStart && UUID_PATTERN.test(deepStart[1]) && method === "POST") return startDeepFile(request, env, deepStart[1]);
+    const deepSave = path.match(/^\/api\/runner\/([^/]+)\/deep-file$/);
+    if (deepSave && UUID_PATTERN.test(deepSave[1]) && method === "POST") return saveDeepFile(request, env, deepSave[1]);
     const businessSave = path.match(/^\/api\/runner\/([^/]+)\/business$/);
     if (businessSave && UUID_PATTERN.test(businessSave[1]) && method === "POST") return saveBusiness(request, env, businessSave[1]);
 
