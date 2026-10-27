@@ -1604,8 +1604,9 @@ async function rerunAnalysis(request, env, id) {
 
   const refused = await logFirst(env, { workspace_id: row.workspace_id, user: access.user, action: "rerun", analysis_id: id, repo: row.repo, detail: row.model_key_id ? "AI model" : "Rules only" });
   if (refused) return refused;
-  for (const table of ["file_findings", "analysis_screens"]) {
-    const cleared = await serviceRest(env, `${table}?analysis_id=eq.${id}`, { method: "DELETE", headers: { prefer: "return=minimal" } });
+  // Approved and edited file results stay until they are replaced. Only the drafts are cleared.
+  for (const filter of [`file_findings?analysis_id=eq.${id}&review_status=eq.draft`, `analysis_screens?analysis_id=eq.${id}`]) {
+    const cleared = await serviceRest(env, filter, { method: "DELETE", headers: { prefer: "return=minimal" } });
     if (!cleared.ok) return json({ error: "Could not clear the earlier results. Try again in a minute." }, 502);
   }
   const reset = await serviceRest(env, `analyses?id=eq.${id}`, {
@@ -2982,10 +2983,19 @@ async function runnerFiles(request, env, id) {
     paths.add(checked.row.path);
     rows.push(checked.row);
   }
-  const bytes = new TextEncoder().encode(JSON.stringify(rows)).length;
+  // A path that already has an approved or edited result keeps it. Only new paths are saved.
+  const keptPaths = new Set();
+  for (const status of ["approved", "edited"]) {
+    const found = await serviceRest(env, `file_findings?analysis_id=eq.${id}&review_status=eq.${status}&select=path&limit=100000`);
+    if (!found.ok) return json({ error: "Could not check the earlier file results." }, 502);
+    for (const item of await found.json()) keptPaths.add(item.path);
+  }
+  const fresh = rows.filter((row) => !keptPaths.has(row.path));
+  const kept = rows.length - fresh.length;
+  const bytes = new TextEncoder().encode(JSON.stringify(fresh)).length;
   const total = Number(analysis.file_bytes || 0) + bytes;
   if (total > FREE_TIER_ANALYSIS_BYTES) {
-    await serviceRest(env, `file_findings?analysis_id=eq.${id}`, { method: "DELETE", headers: { prefer: "return=minimal" } });
+    await serviceRest(env, `file_findings?analysis_id=eq.${id}&review_status=eq.draft`, { method: "DELETE", headers: { prefer: "return=minimal" } });
     await serviceRest(env, `analyses?id=eq.${id}`, {
       method: "PATCH",
       headers: { prefer: "return=minimal" },
@@ -2998,19 +3008,21 @@ async function runnerFiles(request, env, id) {
     });
     return json({ error: "This analysis is over the free-tier limit, so it was stopped." }, 413);
   }
-  const res = await serviceRest(env, "file_findings", {
-    method: "POST",
-    headers: { prefer: "return=minimal" },
-    body: JSON.stringify(rows.map((row) => ({ ...row, analysis_id: id }))),
-  });
-  if (!res.ok) return json({ error: "Could not save these file results. A path may already be saved." }, 502);
+  if (fresh.length > 0) {
+    const res = await serviceRest(env, "file_findings", {
+      method: "POST",
+      headers: { prefer: "return=minimal" },
+      body: JSON.stringify(fresh.map((row) => ({ ...row, analysis_id: id }))),
+    });
+    if (!res.ok) return json({ error: "Could not save these file results. A path may already be saved." }, 502);
+  }
   const update = await serviceRest(env, `analyses?id=eq.${id}`, {
     method: "PATCH",
     headers: { prefer: "return=minimal" },
     body: JSON.stringify({ status: "running", file_bytes: total }),
   });
   if (!update.ok) return json({ error: "Could not update the analysis." }, 502);
-  return json({ saved: rows.length, total_bytes: total }, 201);
+  return json({ saved: fresh.length, kept, total_bytes: total }, 201);
 }
 
 async function runnerResult(request, env, id) {

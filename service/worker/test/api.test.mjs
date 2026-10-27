@@ -1108,15 +1108,41 @@ test("a finished analysis takes no more file chunks", async () => {
   assert.equal(res.status, 409);
 });
 
-test("going over the free-tier cap fails the analysis and removes its file rows", async () => {
+test("going over the free-tier cap fails the analysis, removes its draft file rows and keeps approved ones", async () => {
   runningAnalysis({ file_bytes: 25 * 1024 * 1024 - 10 });
-  state.file_findings.push({ id: uid(900), analysis_id: AN_RUNNING, path: "old.java", category: "application", purpose: null, suggestions: [], sample_only: true, created_at: NOW });
+  state.file_findings.push({ id: uid(900), analysis_id: AN_RUNNING, path: "old.java", category: "application", purpose: null, suggestions: [], sample_only: true, review_status: "draft", created_at: NOW });
+  state.file_findings.push({ id: uid(901), analysis_id: AN_RUNNING, path: "approved.java", category: "application", purpose: "Approved", suggestions: [], sample_only: true, review_status: "approved", created_at: NOW });
   const res = await call(`/api/runner/${AN_RUNNING}/files`, { method: "POST", body: { files: [sampleFile("src/A.java")] }, secret: env.RUNNER_SECRET });
   assert.equal(res.status, 413);
   const row = state.analyses.find((a) => a.id === AN_RUNNING);
   assert.equal(row.status, "failed");
   assert.match(row.error, /25 MB limit/);
-  assert.equal(state.file_findings.filter((f) => f.analysis_id === AN_RUNNING).length, 0);
+  assert.equal(state.file_findings.filter((f) => f.analysis_id === AN_RUNNING && f.review_status === "draft").length, 0);
+  assert.equal(state.file_findings.filter((f) => f.analysis_id === AN_RUNNING && f.review_status === "approved").length, 1);
+});
+
+test("a chunk keeps the approved result for a path that already has one and saves only the new paths", async () => {
+  runningAnalysis();
+  state.file_findings.push({ id: uid(920), analysis_id: AN_RUNNING, path: "src/A.java", category: "application", purpose: "Approved purpose", suggestions: [], sample_only: true, review_status: "approved", reviewed_by_email: "eng@acme.test", reviewed_at: NOW, created_at: NOW });
+  const res = await call(`/api/runner/${AN_RUNNING}/files`, { method: "POST", body: { files: [sampleFile("src/A.java"), sampleFile("src/B.java")] }, secret: env.RUNNER_SECRET });
+  assert.equal(res.status, 201);
+  assert.equal(res.body.saved, 1);
+  assert.equal(res.body.kept, 1);
+  const rows = state.file_findings.filter((f) => f.analysis_id === AN_RUNNING && f.path === "src/A.java");
+  assert.equal(rows.length, 1);
+  assert.equal(rows[0].purpose, "Approved purpose");
+});
+
+test("a rerun clears only the draft file results and keeps the approved ones until they are replaced", async () => {
+  state.file_findings.push(
+    { id: uid(930), analysis_id: AN_ACME, path: "keep/Approved.java", category: "application", purpose: "Kept", suggestions: [], sample_only: true, review_status: "approved", reviewed_by_email: "eng@acme.test", reviewed_at: NOW, created_at: NOW },
+    { id: uid(931), analysis_id: AN_ACME, path: "keep/Draft.java", category: "application", purpose: null, suggestions: [], sample_only: true, review_status: "draft", reviewed_by_email: null, reviewed_at: null, created_at: NOW },
+  );
+  const res = await call(`/api/analyses/${AN_ACME}/rerun`, { as: "eng_a", method: "POST" });
+  assert.equal(res.status, 202);
+  const paths = state.file_findings.filter((f) => f.analysis_id === AN_ACME).map((f) => f.path);
+  assert.ok(paths.includes("keep/Approved.java"));
+  assert.ok(!paths.includes("keep/Draft.java"));
 });
 
 // ---- Reviewing file-level results (platform engineers) ----
