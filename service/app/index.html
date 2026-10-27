@@ -1955,7 +1955,7 @@ button:not(:disabled):active{transform:scale(.965)}
       <p class="small hint" id="lensMsg" role="status"></p>
     </div>
     <div id="deeperDataBox" hidden>
-      <p class="small muted" style="margin:20px 0 0">Part of the deep data assessment</p>
+      <p class="small muted" id="deepDataLabel" style="margin:20px 0 0">Part of the deep data assessment</p>
     <div class="card" id="dbCard" style="margin-top:10px">
       <h2>Database structure</h2>
       <p class="muted small" style="margin-top:6px">
@@ -7299,7 +7299,12 @@ a{color:#6d28d9;font-weight:600}`;
       list.appendChild(card);
     }
     $("lensAll").hidden = !active;
-    $("deeperDataBox").hidden = ready && !!active && active.key !== "data";
+    // The database structure shows only once the deep data assessment is opened. Before the assessment is
+    // ready, the run card stays visible so the assessment can still be started.
+    const dataOpen = ready && !!active && active.key === "data";
+    $("deeperDataBox").hidden = ready && !dataOpen;
+    $("deepDataLabel").hidden = !dataOpen;
+    $("dbCard").hidden = !dataOpen;
     $("lensNote").textContent = ready
       ? "Open one of the three to read it. Opening one lets you continue to Next steps."
       : "The deeper assessment is not finished yet. Run deep data assessment below, and the three open when it is ready.";
