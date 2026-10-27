@@ -140,6 +140,7 @@ function seed() {
     analysis_screens: [],
     analysis_conversions: [],
     assessment_log: [],
+    file_business_assessments: [],
     analysis_target_approvals: [],
     analysis_db_metadata: [],
   };
@@ -162,7 +163,7 @@ const j = (body, status = 200) => new Response(body === undefined ? null : JSON.
 const SKIP_PARAMS = ["select", "order", "limit", "offset", "on_conflict"];
 
 function matches(row, key, value) {
-  if (value.startsWith("eq.")) return String(row[key]) === value.slice(3);
+  if (value.startsWith("eq.")) return String(row[key]) === decodeURIComponent(value.slice(3));
   if (value.startsWith("in.(")) return value.slice(4, -1).split(",").includes(String(row[key]));
   if (value.startsWith("lt.")) return String(row[key]) < value.slice(3);
   if (value === "is.null") return row[key] === null || row[key] === undefined;
@@ -1143,6 +1144,73 @@ test("a rerun clears only the draft file results and keeps the approved ones unt
   const paths = state.file_findings.filter((f) => f.analysis_id === AN_ACME).map((f) => f.path);
   assert.ok(paths.includes("keep/Approved.java"));
   assert.ok(!paths.includes("keep/Draft.java"));
+});
+
+// ---- Business assessment of one file ----
+
+function businessRow(idN, status = "draft", path = "src/A.java") {
+  return {
+    id: uid(idN), analysis_id: AN_ACME, path, commit_sha: "abc123", content: { purpose: "Business" },
+    review_status: status, created_by_email: "eng@acme.test", created_at: NOW, reviewed_by_email: null, reviewed_at: null,
+  };
+}
+
+test("only platform engineers see business assessments, and a file path is required", async () => {
+  const aud = await call(`/api/analyses/${AN_ACME}/business?path=src/A.java`, { as: "aud_a" });
+  assert.equal(aud.status, 403);
+  const noPath = await call(`/api/analyses/${AN_ACME}/business`, { as: "eng_a" });
+  assert.equal(noPath.status, 400);
+});
+
+test("a platform engineer lists the assessments of one file only", async () => {
+  state.file_business_assessments.push(businessRow(970, "approved"), businessRow(971, "draft", "src/Other.java"));
+  const res = await call(`/api/analyses/${AN_ACME}/business?path=src/A.java`, { as: "eng_a" });
+  assert.equal(res.status, 200);
+  assert.deepEqual(res.body.assessments.map((a) => a.id), [uid(970)]);
+});
+
+test("the runner saves a draft only with the shared secret, and only for a file in the analysis", async () => {
+  const body = { path: "src/A.java", commit_sha: "abc123", content: { purpose: "Takes orders." } };
+  const wrong = await call(`/api/runner/${AN_ACME}/business`, { method: "POST", body, secret: "wrong" });
+  assert.equal(wrong.status, 401);
+  const unknown = await call(`/api/runner/${AN_ACME}/business`, { method: "POST", body: { ...body, path: "nope.java" }, secret: env.RUNNER_SECRET });
+  assert.equal(unknown.status, 400);
+  const res = await call(`/api/runner/${AN_ACME}/business`, { method: "POST", body, secret: env.RUNNER_SECRET });
+  assert.equal(res.status, 201);
+  const rows = state.file_business_assessments.filter((r) => r.analysis_id === AN_ACME);
+  assert.equal(rows.length, 1);
+  assert.equal(rows[0].review_status, "draft");
+  assert.ok(state.assessment_log.some((e) => e.action === "business_finish" && e.detail === "src/A.java"));
+});
+
+test("approving a draft makes it the approved result, and the earlier approved one is superseded and kept", async () => {
+  state.file_business_assessments.push(businessRow(940, "approved"), businessRow(941, "draft"));
+  const res = await call(`/api/analyses/${AN_ACME}/business/approve`, { as: "eng_a", method: "POST", body: { assessment_id: uid(941) } });
+  assert.equal(res.status, 200);
+  assert.equal(state.file_business_assessments.find((r) => r.id === uid(940)).review_status, "superseded");
+  const now = state.file_business_assessments.find((r) => r.id === uid(941));
+  assert.equal(now.review_status, "approved");
+  assert.equal(now.reviewed_by_email, PEOPLE.eng_a.email);
+  assert.ok(state.assessment_log.some((e) => e.action === "business_supersede" && e.detail === "src/A.java"));
+});
+
+test("only a draft can be approved, and approving needs a platform engineer", async () => {
+  state.file_business_assessments.push(businessRow(950, "superseded"), businessRow(951, "draft"));
+  const notDraft = await call(`/api/analyses/${AN_ACME}/business/approve`, { as: "eng_a", method: "POST", body: { assessment_id: uid(950) } });
+  assert.equal(notDraft.status, 409);
+  const auditor = await call(`/api/analyses/${AN_ACME}/business/approve`, { as: "aud_a", method: "POST", body: { assessment_id: uid(951) } });
+  assert.equal(auditor.status, 403);
+  assert.equal(state.file_business_assessments.find((r) => r.id === uid(951)).review_status, "draft");
+});
+
+test("a draft can be discarded, and an approved result cannot", async () => {
+  state.file_business_assessments.push(businessRow(960, "draft"), businessRow(961, "approved", "src/Other.java"));
+  const approvedRefused = await call(`/api/analyses/${AN_ACME}/business/discard`, { as: "eng_a", method: "POST", body: { assessment_id: uid(961) } });
+  assert.equal(approvedRefused.status, 409);
+  const res = await call(`/api/analyses/${AN_ACME}/business/discard`, { as: "eng_a", method: "POST", body: { assessment_id: uid(960) } });
+  assert.equal(res.status, 200);
+  assert.equal(state.file_business_assessments.some((r) => r.id === uid(960)), false);
+  assert.ok(state.assessment_log.some((e) => e.action === "business_discard"));
 });
 
 // ---- Reviewing file-level results (platform engineers) ----
