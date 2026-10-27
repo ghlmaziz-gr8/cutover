@@ -127,3 +127,22 @@ class TolerantReply(unittest.TestCase):
         shape = reply_shape("secret customer code here")
         self.assertIn("chars=", shape)
         self.assertNotIn("secret", shape)
+
+
+class ProviderFailureReasons(unittest.TestCase):
+    CODE = "Public Sub TakeOrder()\nEnd Sub\n"
+
+    def test_a_reply_cut_off_says_so_instead_of_a_generic_failure(self):
+        from model_purposes import ProviderError
+        def ask(_):
+            raise ProviderError("reply cut off")
+        result = md.assess_file("src/A.bas", self.CODE, ask)
+        self.assertEqual(result["status"], "failed")
+        self.assertIn("ran out of room", result["reason"])
+
+    def test_a_rate_limit_says_so(self):
+        from model_purposes import ProviderStopped
+        def ask(_):
+            raise ProviderStopped(429)
+        result = md.assess_file("src/A.bas", self.CODE, ask)
+        self.assertIn("HTTP 429", result["reason"])

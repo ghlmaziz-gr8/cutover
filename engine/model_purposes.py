@@ -383,3 +383,27 @@ def main(argv=None, opener=urllib.request.urlopen) -> int:
 
 if __name__ == "__main__":
     sys.exit(main())
+
+
+def explain_failure(err: Exception) -> str:
+    """A reason an engineer can act on, from a provider error. The provider's messages carry no key, only a status."""
+    status = getattr(err, "status", None)  # a stopped provider carries its HTTP status here
+    text = str(status) if status is not None else str(err)
+    if text == "reply cut off":
+        return "The model ran out of room before it finished the answer. Nothing was kept."
+    if text in ("401", "403"):
+        return f"The model provider refused the key (HTTP {text}). Check the key for this workspace."
+    if text == "429":
+        return "The model provider is rate-limiting or out of quota (HTTP 429). Check the quota, or try again later."
+    if text == "request failed":
+        return "The model provider could not be reached. Try again in a minute."
+    if "HTTP 402" in text:
+        return "The model provider asked for payment (HTTP 402). Check the billing for this workspace's model key."
+    if "HTTP 401" in text or "HTTP 403" in text:
+        return f"The model provider refused the key ({text}). Check the key for this workspace."
+    if text.startswith("HTTP "):
+        return f"The model provider answered {text}. Nothing was kept."
+    if isinstance(err, (ProviderError, ProviderStopped)):
+        return "The language model did not answer. Nothing was kept."
+    # Anything else names its kind, so the log says what went wrong.
+    return f"The language model did not answer ({type(err).__name__}). Nothing was kept."

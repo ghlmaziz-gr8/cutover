@@ -148,3 +148,8 @@ class StoppedAndCutOff(unittest.TestCase):
 
     def test_the_budget_leaves_room_for_reasoning_models(self):
         self.assertGreaterEqual(dr.MAX_TOKENS, 8000)
+
+
+class UnknownFailure(unittest.TestCase):
+    def test_an_unexpected_error_names_its_kind(self):
+        self.assertIn("(KeyError)", dr.explain(KeyError("candidates")))

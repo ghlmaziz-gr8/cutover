@@ -13,6 +13,7 @@ import re
 from typing import Callable
 
 from model_convert import MAX_SOURCE_CHARS
+from model_purposes import explain_failure
 from privacy_scan import scan
 
 CONFIDENCE = "model_read"
@@ -147,8 +148,8 @@ def assess_file(path: str, code: str, ask: Callable[[str], str]) -> dict:
                 "reason": "The file holds text that looks like personal data, so nothing was sent."}
     try:
         reply = ask(build_user_text(path, code))
-    except Exception:  # The provider may be down or the key stopped working; the reason stays generic.
-        return {**base, "status": "failed", "reason": "The language model did not answer. Nothing was kept."}
+    except Exception as err:  # The provider may be down, cut the reply short, or refuse the key. The reason says which.
+        return {**base, "status": "failed", "reason": explain_failure(err)}
     cleaned = clean_reply(reply, code)
     if cleaned is None:
         return {**base, "status": "unusable", "reason": "The model did not reply in the form needed, so nothing was kept.",
