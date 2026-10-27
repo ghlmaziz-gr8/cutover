@@ -1366,10 +1366,13 @@ button:not(:disabled):active{transform:scale(.965)}
     <div class="card" id="analysesCard">
       <div class="row between">
         <h2>Analyses</h2>
-        <button type="button" id="startNew">Start a new assessment</button>
+        <div class="row" style="gap:8px;flex-wrap:wrap">
+          <button type="button" class="ghost small-btn" id="findToggle" aria-expanded="false" aria-controls="listTools">Find an assessment</button>
+          <button type="button" id="startNew">Start a new assessment</button>
+        </div>
       </div>
       <p class="muted small" style="margin-top:6px">Only sample or public code. No patient data.</p>
-      <div class="list-tools" style="display:grid;gap:10px;margin-top:12px">
+      <div class="list-tools" id="listTools" hidden style="display:grid;gap:10px;margin-top:12px">
         <input id="listSearch" type="search" placeholder="Search by name, repository, branch or status" autocomplete="off" aria-label="Search analyses" style="width:100%">
         <div class="row" style="gap:8px;flex-wrap:wrap">
           <select id="listStatus" aria-label="Filter by status">
@@ -9086,6 +9089,13 @@ const REGION_OPTS = {
 
   // ---- Steps 3 to 5: start a new assessment ----
 
+  // The search and filters stay hidden until the person asks to find an assessment.
+  $("findToggle").addEventListener("click", () => {
+    const open = $("listTools").hidden;
+    $("listTools").hidden = !open;
+    $("findToggle").setAttribute("aria-expanded", String(open));
+    $("findToggle").textContent = open ? "Hide search" : "Find an assessment";
+  });
   $("startNew").addEventListener("click", () => {
     wizard = { appName: "", repo: "", ref: "", source: "github", zip: null };
     $("appName").value = "";

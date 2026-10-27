@@ -11,6 +11,7 @@
 window.CUTOVER_GUIDE = {
   updated: "2026-10-22",
   whatsNew: [
+    "2026-10-27: The search and filters on the Analyses list are hidden. Press Find an assessment to show them.",
     "2026-10-27: The Deep view shows the model for the analysis, and a platform engineer can switch it to an active model key once the analysis has finished. Use this when the key the analysis was made with has been replaced.",
     "2026-10-27: A deep file assessment that fails stays on the card, marked Failed, with the reason it ended (for example, a model key that needs payment). Press Run deep assessment to try again.",
     "2026-10-27: A deep file assessment shows a live card while it runs: a code scan, an elapsed clock, the lines and characters of the file, and about how long it should take. It refreshes by itself and shows the draft when it is ready.",
