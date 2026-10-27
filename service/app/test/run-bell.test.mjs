@@ -13,8 +13,9 @@ test("the bell is hidden by a body class", () => {
   assert.match(html, /\.no-bell \.bell\{display:none\}/);
 });
 
-test("show() sets the class only on the run screen", () => {
-  assert.match(html, /document\.body\.classList\.toggle\("no-bell", id === "s-run"\);/);
+test("the class is set by one function that show() calls", () => {
+  assert.match(html, /document\.body\.classList\.toggle\("no-bell", hide\);/);
+  assert.match(html, /renderHeader\(id\);\s*updateBellVisibility\(\);/);
 });
 
 test("the change is listed in What's new", () => {
