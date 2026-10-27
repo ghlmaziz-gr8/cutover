@@ -964,7 +964,7 @@ async function runnerModelKey(request, env, id) {
   });
 }
 
-const FREE_TIER_DATABASE_BYTES = 500 * 1024 * 1024;
+const FREE_TIER_DATABASE_BYTES = 490 * 1024 * 1024;
 
 // Operators only: how full the database is, so the limit is seen before it is reached.
 async function databaseSize(request, env) {
