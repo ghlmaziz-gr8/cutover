@@ -77,5 +77,50 @@
     };
   }
 
-  root.FileMap = { tree, statusOf, deepStatusOf, LIMIT };
+  // Files that probably belong with a chosen file, from the paths alone: the same folder, and a name that
+  // shares its start after a common include prefix is removed. Content-based links come later, from an index.
+  function stemOf(path) {
+    const base = String(path || "").split("/").pop().replace(/\.[^.]*$/, "").toLowerCase();
+    return base.replace(/^(inc|include|common)[_-]?/, "").replace(/[_-]/g, "");
+  }
+  function folderOf(path) {
+    const parts = String(path || "").split("/");
+    parts.pop();
+    return parts.join("/");
+  }
+  function sharedStart(a, b) {
+    let n = 0;
+    while (n < a.length && n < b.length && a[n] === b[n]) n += 1;
+    return n;
+  }
+  function related(path, paths, limit = 6) {
+    const stem = stemOf(path);
+    const folder = folderOf(path);
+    const found = [];
+    for (const other of paths || []) {
+      if (other === path) continue;
+      let score = 0;
+      const reasons = [];
+      if (folderOf(other) === folder) {
+        score += 2;
+        reasons.push("same folder");
+      }
+      const shared = sharedStart(stem, stemOf(other));
+      if (shared >= 4) {
+        score += 3;
+        reasons.push(`similar name (starts "${stemOf(other).slice(0, shared)}")`);
+      }
+      if (score > 0) found.push({ path: other, score, reason: reasons.join(", ") });
+    }
+    found.sort((x, y) => y.score - x.score || x.path.localeCompare(y.path));
+    return found.slice(0, limit);
+  }
+  // The order to assess files in: the chosen file, then its related files, then everything else in path order.
+  function processingOrder(path, paths) {
+    const near = related(path, paths, Infinity).map((r) => r.path);
+    const rest = (paths || []).filter((p) => p !== path && !near.includes(p)).sort((a, b) => a.localeCompare(b));
+    return [path, ...near, ...rest];
+  }
+
+  root.FileMap = { tree, statusOf, deepStatusOf, related, processingOrder, LIMIT };
 })(typeof globalThis !== "undefined" ? globalThis : this);

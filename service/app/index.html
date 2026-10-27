@@ -7437,6 +7437,27 @@ a{color:#6d28d9;font-weight:600}`;
       for (const sug of f.suggestions) ul.appendChild(el("li", `${sug.severity ? sug.severity + ": " : ""}${sug.text}`, "small muted"));
       box.appendChild(ul);
     }
+    // Files that probably go with this one, and the order to assess them in. Choosing one opens it.
+    const paths = (businessFiles.rows || []).map((x) => x.path);
+    const near = window.FileMap.related(f.path, paths, 6);
+    if (near.length) {
+      box.appendChild(el("div", "Related files", "small"));
+      const list = el("div", null, "small");
+      list.style.marginTop = "4px";
+      for (const r of near) {
+        const link = el("button", r.path, "ghost small-btn");
+        link.type = "button";
+        link.style.margin = "2px 6px 2px 0";
+        link.title = r.reason;
+        link.addEventListener("click", () => showBusinessFile(r.path));
+        list.appendChild(link);
+        list.appendChild(el("span", r.reason, "muted small"));
+        list.appendChild(el("br"));
+      }
+      box.appendChild(list);
+      const order = window.FileMap.processingOrder(f.path, paths).slice(0, 8);
+      box.appendChild(el("div", `Suggested order: ${order.map((p, i) => `${i + 1}. ${p}`).join("  ")}${paths.length > order.length ? " …" : ""}`, "muted small"));
+    }
     // The deep view: the purpose, user stories, functions and what they call, opened inline on this file.
     // The deep view opens by itself under the file, with a short entrance, so the status and the work show at once.
     box.classList.remove("dp-enter");
