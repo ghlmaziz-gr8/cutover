@@ -1316,6 +1316,9 @@ button:not(:disabled):active{transform:scale(.965)}
     .wc-badge{font-size:12px;padding:3px 10px;border-radius:99px;border:1px solid var(--line,#ddd)}
     .wc-close{position:absolute;top:8px;right:10px}
     .wc-label{margin-top:6px;font-weight:600}
+    .dp-title-row{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap}
+    .dp-title-row h3{margin:0}
+    .dp-actions{display:flex;gap:8px;flex-wrap:wrap}
     .wc-badge-level{font-weight:700;background:linear-gradient(90deg,rgba(29,78,216,.12),rgba(47,158,107,.14))}
     @keyframes wcIn{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
     @media (prefers-reduced-motion: reduce){.welcome-card{animation:none}.wc-fill{transition:none}}
@@ -7563,8 +7566,11 @@ a{color:#6d28d9;font-weight:600}`;
     box.hidden = false;
     box.replaceChildren();
     if (!f) return;
-    box.appendChild(el("h3", f.path, null));
-    box.firstChild.style.marginTop = "0";
+    const titleRow = el("div", null, "dp-title-row");
+    titleRow.append(el("h3", f.path, null));
+    const actions = el("div", null, "dp-actions");
+    titleRow.append(actions);
+    box.appendChild(titleRow);
     box.appendChild(el("div", `${f.category} · ${FILE_STATUS[f.review_status] || f.review_status}`, "muted small"));
     box.appendChild(el("p", f.purpose || "No purpose written yet.", "small"));
     if (f.suggestions && f.suggestions.length) {
@@ -7601,7 +7607,7 @@ a{color:#6d28d9;font-weight:600}`;
     void box.offsetWidth;
     box.classList.add("dp-enter");
     if (!window.matchMedia("(prefers-reduced-motion: reduce)").matches) box.scrollIntoView({ behavior: "smooth", block: "nearest" });
-    const panel = deepPanel(box, f, () => panel.remove());
+    const panel = deepPanel(box, f, () => panel.remove(), actions);
   }
 
   // Next steps opens only when the deeper assessment is finished and one of its three views has been opened.
@@ -8891,7 +8897,7 @@ const REGION_OPTS = {
   // ---- Deep file view: one file's purpose, user stories, functions, what they call. Drafts are approved here. ----
   const DEEP_STATUS = { running: "Running", draft: "Draft to review", approved: "Approved", superseded: "Replaced by a later approval", failed: "Failed" };
 
-  function deepPanel(li, f, onClose = () => renderFiles()) {
+  function deepPanel(li, f, onClose = () => renderFiles(), actionSlot = null) {
     const panel = el("div", null, "biz-panel");
     panel.style.marginTop = "10px";
     const msg = el("p", null, "muted small");
@@ -8995,7 +9001,9 @@ const REGION_OPTS = {
     });
     refresh.addEventListener("click", load);
     top.append(start, refresh, close);
-    panel.append(top, modelRow, msg, list);
+    if (actionSlot) actionSlot.append(top);
+    else panel.append(top);
+    panel.append(modelRow, msg, list);
     li.appendChild(panel);
     loadModels();
     load();
@@ -9219,9 +9227,29 @@ const REGION_OPTS = {
         c.append(box);
       }
     }
+    const db = content.database || {};
+    if ((db.tables || []).length || (db.queries || []).length) {
+      c.append(el("div", "Database", "small"));
+      for (const t of db.tables || []) {
+        const box = el("div", null, "small");
+        box.style.marginTop = "6px";
+        box.append(el("b", t.name));
+        if ((t.operations || []).length) box.append(el("div", `Operations: ${t.operations.join(", ")}`, "muted small"));
+        if ((t.fields || []).length) box.append(el("div", `Fields: ${t.fields.join(", ")}`, "muted small"));
+        c.append(box);
+      }
+      for (const q of db.queries || []) {
+        const box = el("div", null, "small");
+        box.style.marginTop = "6px";
+        box.append(el("b", `${q.operation}${q.function ? ` in ${q.function}` : ""} on ${q.tables.join(", ")}`));
+        if (q.purpose) box.append(el("div", q.purpose, "muted small"));
+        c.append(box);
+      }
+    }
     if (a.dropped) c.append(el("div", `${a.dropped} ${a.dropped === 1 ? "name was" : "names were"} not found in the file and left out.`, "muted small"));
     c.append(el("div", "Read by the model, so its confidence is lower than a rule-based result. An engineer checks it before it is final.", "muted small"));
     if (a.status === "draft") {
+      c.append(el("div", "Approving makes this the account for the file, and replaces any earlier approved account. It does not change the code. Discard removes this draft.", "muted small"));
       const row = el("div", null, "row");
       row.style.gap = "8px";
       const approve = el("button", "Approve this account", "small-btn");

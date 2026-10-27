@@ -28,6 +28,10 @@ MAX_EXAMPLES = 120
 MAX_DATA_ITEMS = 40
 MAX_VALUES = 30
 MAX_RULE_TEXT = 300
+MAX_TABLES = 40
+MAX_QUERIES = 60
+MAX_FIELDS = 60
+OPERATIONS = ("SELECT", "INSERT", "UPDATE", "DELETE")
 
 INSTRUCTIONS = (
     "You describe one source file of a legacy application, in plain language for a non-engineer. "
@@ -45,7 +49,12 @@ INSTRUCTIONS = (
     "examples (for each rule, up to two cases; each has: rule (the rule's id), given (the input or state), expect (the "
     "result)), "
     "data_access (for each function that reads or writes data; each has: function, reads (names), writes (names), "
-    "exactly as the code writes them). "
+    "exactly as the code writes them), "
+    "database (the database tables the code uses, and the queries it runs. tables: each has name (the table, exactly as "
+    "the code writes it), operations (any of SELECT, INSERT, UPDATE, DELETE), fields (the column names the code uses, "
+    "exactly as written). queries: each has function (exactly as the code writes it, or empty), operation (one of SELECT, "
+    "INSERT, UPDATE, DELETE), tables (names), purpose (one sentence on what the query does for the business). Use empty "
+    "lists when the file has no database access). "
     "Use only names and values that appear in the code. Never include code, names of people, or real values such as "
     "IDs, addresses or keys."
 )
@@ -154,6 +163,59 @@ def _data_access(value, code: str, function_names: set[str]) -> tuple[list[dict]
     return kept, dropped
 
 
+def _database(value, code: str, function_names: set[str]) -> tuple[dict, int]:
+    """The tables and queries the code contains. A table or column the code does not contain is dropped and counted."""
+    empty = {"tables": [], "queries": []}
+    if not isinstance(value, dict):
+        return empty, 0
+    dropped = 0
+    tables: list[dict] = []
+    known: set[str] = set()
+    raw_tables = value.get("tables") if isinstance(value.get("tables"), list) else []
+    for item in raw_tables[:MAX_TABLES * 2]:
+        if not isinstance(item, dict):
+            dropped += 1
+            continue
+        name = str(item.get("name") or "").strip()[:MAX_NAME]
+        if not name or not appears_in(name, code) or name.lower() in known:
+            dropped += 1
+            continue
+        operations = []
+        for op in item.get("operations") if isinstance(item.get("operations"), list) else []:
+            text = str(op or "").strip().upper()
+            if text in OPERATIONS and text not in operations:
+                operations.append(text)
+            elif text:
+                dropped += 1
+        fields, dropped_fields = _names(item.get("fields"), code, MAX_FIELDS)
+        dropped += dropped_fields
+        known.add(name.lower())
+        tables.append({"name": name, "operations": operations, "fields": fields})
+    queries: list[dict] = []
+    raw_queries = value.get("queries") if isinstance(value.get("queries"), list) else []
+    for item in raw_queries[:MAX_QUERIES * 2]:
+        if not isinstance(item, dict):
+            dropped += 1
+            continue
+        operation = str(item.get("operation") or "").strip().upper()
+        function = str(item.get("function") or "").strip()[:MAX_NAME]
+        if operation not in OPERATIONS or (function and not appears_in(function, code)):
+            dropped += 1
+            continue
+        query_tables, dropped_tables = _names(item.get("tables"), code, MAX_TABLES)
+        dropped += dropped_tables
+        if not query_tables:
+            dropped += 1
+            continue
+        queries.append({
+            "function": function,
+            "operation": operation,
+            "tables": query_tables,
+            "purpose": str(item.get("purpose") or "").strip()[:MAX_RULE_TEXT],
+        })
+    return {"tables": tables[:MAX_TABLES], "queries": queries[:MAX_QUERIES]}, dropped
+
+
 def build_user_text(path: str, code: str) -> str:
     return f"{INSTRUCTIONS}\n\nFile: {path}\n\n```\n{code}\n```"
 
@@ -248,7 +310,8 @@ def clean_reply(reply, code: str) -> tuple[dict, int] | None:
     rule_ids = {r["id"] for r in rules}
     examples, dropped_examples = _examples(data.get("examples"), rule_ids)
     data_access, dropped_access = _data_access(data.get("data_access"), code, function_names)
-    dropped += dropped_rules + dropped_examples + dropped_access
+    database, dropped_database = _database(data.get("database"), code, function_names)
+    dropped += dropped_rules + dropped_examples + dropped_access + dropped_database
 
     return {
         "file_purpose": purpose.strip()[:MAX_PURPOSE],
@@ -257,6 +320,7 @@ def clean_reply(reply, code: str) -> tuple[dict, int] | None:
         "rules": rules,
         "examples": examples,
         "data_access": data_access,
+        "database": database,
     }, dropped
 
 
