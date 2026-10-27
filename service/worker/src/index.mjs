@@ -21,6 +21,8 @@ import { validateDbMetadata } from "./db-metadata.mjs";
 //   POST   /api/workspaces/:id/invitations                invite an email with a role (workspace admins)
 //   DELETE /api/workspaces/:id/invitations/:email         remove a pending invitation (workspace admins)
 //   GET    /api/repo-check?workspace=&repo=&ref=          check Cutover can read a repository (platform engineers)
+//   GET    /api/workspaces/:id/cleanup/superseded         how many superseded business assessments the workspace holds (platform engineers)
+//   POST   /api/workspaces/:id/cleanup/superseded         remove them, when the count matches the preview (platform engineers)
 //   GET    /api/admin/database                            database size against the free-tier limit (operators)
 //   GET    /api/analyses?workspace=                       analyses in one workspace (members)
 //   POST   /api/analyses                                  start an analysis (platform engineers)
@@ -3104,6 +3106,55 @@ function dispatchBusiness(env, inputs) {
   });
 }
 
+// ---- Cleanup: superseded business assessments in a workspace. Preview first, then confirm the same count. ----
+// Only superseded results are removed. Drafts and approved results are never touched here.
+async function supersededInWorkspace(env, workspaceId) {
+  const res = await serviceRest(env, `file_business_assessments?review_status=eq.superseded&select=id,path,analysis_id,analyses!inner(workspace_id,app_name,repo)&analyses.workspace_id=eq.${workspaceId}&limit=100000`);
+  if (!res.ok) return { failed: true };
+  return { rows: await res.json() };
+}
+
+async function previewCleanup(request, env, workspaceId) {
+  const access = await workspaceAccess(env, request, workspaceId);
+  if (access.response) return access.response;
+  if (!canStart(access.member)) return json({ error: "Only platform engineers can clean up assessment data." }, 403);
+  const found = await supersededInWorkspace(env, workspaceId);
+  if (found.failed) return json({ error: "Could not check the superseded results. Try again in a minute." }, 502);
+  const groups = new Map();
+  for (const row of found.rows) {
+    const key = `${row.analysis_id}|${row.path}`;
+    const item = groups.get(key) || { app: row.analyses.app_name || row.analyses.repo, repo: row.analyses.repo, path: row.path, count: 0 };
+    item.count += 1;
+    groups.set(key, item);
+  }
+  return json({ count: found.rows.length, items: [...groups.values()].slice(0, 50) });
+}
+
+async function runCleanup(request, env, workspaceId) {
+  const access = await workspaceAccess(env, request, workspaceId);
+  if (access.response) return access.response;
+  if (!canStart(access.member)) return json({ error: "Only platform engineers can clean up assessment data." }, 403);
+  const parsed = await readJson(request);
+  if (parsed.error) return json({ error: parsed.error }, 400);
+  const expected = parsed.value?.expected_count;
+  if (!Number.isInteger(expected) || expected < 0) return json({ error: "Preview the cleanup first." }, 400);
+  const found = await supersededInWorkspace(env, workspaceId);
+  if (found.failed) return json({ error: "Could not check the superseded results. Try again in a minute." }, 502);
+  if (found.rows.length !== expected) {
+    return json({ error: "The superseded results changed since the preview. Preview again before confirming." }, 409);
+  }
+  if (found.rows.length === 0) return json({ removed: 0 });
+  const refused = await logFirst(env, { workspace_id: workspaceId, user: access.user, action: "business_cleanup", analysis_id: null, repo: null, detail: `superseded: ${found.rows.length}` });
+  if (refused) return refused;
+  const ids = [...new Set(found.rows.map((row) => row.id))];
+  for (let i = 0; i < ids.length; i += 100) {
+    const batch = ids.slice(i, i + 100).join(",");
+    const res = await serviceRest(env, `file_business_assessments?id=in.(${batch})&review_status=eq.superseded`, { method: "DELETE", headers: { prefer: "return=minimal" } });
+    if (!res.ok) return json({ error: "Could not remove every superseded result. Preview again to see what is left." }, 502);
+  }
+  return json({ removed: ids.length });
+}
+
 // Checks one file record. Only the fields we store are kept.
 function fileRecord(value) {
   if (!value || typeof value !== "object" || Array.isArray(value)) return { error: "Each file must be an object." };
@@ -3536,6 +3587,10 @@ async function route(request, env) {
     if (path === "/api/repo-check" && method === "GET") return repoCheck(request, env);
     if (path === "/api/admin/workspaces" && method === "GET") return overviewWorkspaces(request, env);
     if (path === "/api/admin/database" && method === "GET") return databaseSize(request, env);
+
+    const cleanupPreview = path.match(/^\/api\/workspaces\/([^/]+)\/cleanup\/superseded$/);
+    if (cleanupPreview && UUID_PATTERN.test(cleanupPreview[1]) && method === "GET") return previewCleanup(request, env, cleanupPreview[1]);
+    if (cleanupPreview && UUID_PATTERN.test(cleanupPreview[1]) && method === "POST") return runCleanup(request, env, cleanupPreview[1]);
 
     const oneWorkspace = path.match(/^\/api\/workspaces\/([^/]+)$/);
     if (oneWorkspace && method === "PATCH") return renameWorkspace(request, env, oneWorkspace[1]);

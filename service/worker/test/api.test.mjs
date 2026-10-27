@@ -1295,6 +1295,57 @@ test("a successful run replaces its running row with the draft", async () => {
   assert.equal(rows.filter((r) => r.review_status === "draft").length, 1);
 });
 
+// ---- Cleaning up superseded business assessments ----
+
+function cleanupRow(idN, status, analysisId = AN_ACME, path = "src/A.java") {
+  return { id: uid(idN), analysis_id: analysisId, path, content: {}, review_status: status, created_by_email: "eng@acme.test", created_at: NOW, reviewed_by_email: null, reviewed_at: null };
+}
+
+test("only platform engineers preview or run the cleanup of a workspace", async () => {
+  const aud = await call(`/api/workspaces/${W_ACME}/cleanup/superseded`, { as: "aud_a" });
+  assert.equal(aud.status, 403);
+  const audRun = await call(`/api/workspaces/${W_ACME}/cleanup/superseded`, { as: "aud_a", method: "POST", body: { expected_count: 0 } });
+  assert.equal(audRun.status, 403);
+});
+
+test("the preview counts only this workspace's superseded results", async () => {
+  state.file_business_assessments.push(cleanupRow(1000, "superseded"), cleanupRow(1001, "superseded"), cleanupRow(1002, "approved"), cleanupRow(1003, "draft"), cleanupRow(1004, "superseded", AN_BETA, "beta/B.java"));
+  const res = await call(`/api/workspaces/${W_ACME}/cleanup/superseded`, { as: "eng_a" });
+  assert.equal(res.status, 200);
+  assert.equal(res.body.count, 2);
+  assert.equal(res.body.items[0].path, "src/A.java");
+  assert.equal(res.body.items[0].count, 2);
+});
+
+test("the cleanup is refused when the count has changed since the preview, and removes nothing", async () => {
+  state.file_business_assessments.push(cleanupRow(1010, "superseded"));
+  const res = await call(`/api/workspaces/${W_ACME}/cleanup/superseded`, { as: "eng_a", method: "POST", body: { expected_count: 0 } });
+  assert.equal(res.status, 409);
+  assert.equal(state.file_business_assessments.some((r) => r.id === uid(1010)), true);
+});
+
+test("the cleanup removes only the superseded results it previewed, and logs it", async () => {
+  state.file_business_assessments.push(cleanupRow(1020, "superseded"), cleanupRow(1021, "superseded"), cleanupRow(1022, "approved"), cleanupRow(1023, "draft"));
+  const preview = await call(`/api/workspaces/${W_ACME}/cleanup/superseded`, { as: "eng_a" });
+  const res = await call(`/api/workspaces/${W_ACME}/cleanup/superseded`, { as: "eng_a", method: "POST", body: { expected_count: preview.body.count } });
+  assert.equal(res.status, 200);
+  assert.equal(res.body.removed, preview.body.count);
+  assert.equal(state.file_business_assessments.some((r) => r.id === uid(1020)), false);
+  assert.equal(state.file_business_assessments.some((r) => r.id === uid(1022)), true, "approved results stay");
+  assert.equal(state.file_business_assessments.some((r) => r.id === uid(1023)), true, "drafts stay");
+  assert.ok(state.assessment_log.some((e) => e.action === "business_cleanup" && e.workspace_id === W_ACME));
+});
+
+test("nothing is removed when the cleanup cannot be logged", async () => {
+  state.file_business_assessments.push(cleanupRow(1030, "superseded"));
+  const preview = await call(`/api/workspaces/${W_ACME}/cleanup/superseded`, { as: "eng_a" });
+  failActivityLog = true;
+  const res = await call(`/api/workspaces/${W_ACME}/cleanup/superseded`, { as: "eng_a", method: "POST", body: { expected_count: preview.body.count } });
+  failActivityLog = false;
+  assert.equal(res.status, 503);
+  assert.equal(state.file_business_assessments.some((r) => r.id === uid(1030)), true);
+});
+
 // ---- Reviewing file-level results (platform engineers) ----
 
 test("only platform engineers see the file-level results", async () => {
