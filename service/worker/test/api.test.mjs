@@ -142,6 +142,7 @@ function seed() {
     assessment_log: [],
     file_business_assessments: [],
     feature_groupings: [],
+    ui_clicks: [],
     analysis_target_approvals: [],
     analysis_db_metadata: [],
   };
@@ -169,6 +170,7 @@ function matches(row, key, value) {
     const parent = state.analyses.find((a) => a.id === row.analysis_id);
     return parent ? matches(parent, key.slice("analyses.".length), value) : false;
   }
+  if (value.startsWith("gte.")) return String(row[key]) >= decodeURIComponent(value.slice(4));
   if (value.startsWith("gt.")) return String(row[key]) > value.slice(3);
   if (value.startsWith("eq.")) return String(row[key]) === decodeURIComponent(value.slice(3));
   if (value.startsWith("in.(")) return value.slice(4, -1).split(",").includes(String(row[key]));
@@ -2850,3 +2852,66 @@ test("without the Resend key, no email is sent and the portal notice is still wr
   assert.equal(resendCalls.length, 0);
   assert.ok(state.notifications.some((n) => n.kind === "retention_deleted" && n.user_id === PEOPLE.eng_a.id));
 });
+
+// ---- Where people click ----
+function clickRow(screen, x, y, target = null, width = "desktop", workspace = W_ACME, ageDays = 0) {
+  return { workspace_id: workspace, screen, target, x, y, width_class: width, created_at: new Date(Date.now() - ageDays * 86400000).toISOString() };
+}
+
+test("a signed-in member can record clicks, and each saved row keeps only the screen, position, width and button name", async () => {
+  const res = await call("/api/clicks", { as: "aud_a", method: "POST", body: { workspace_id: W_ACME, events: [
+    { screen: "s-files", x: 40, y: 12, width: "desktop", target: "files-approve-all" },
+    { screen: "s-files", x: 101, y: 12, width: "desktop" },
+    { screen: "s-files", x: 5, y: 5, width: "watch" },
+    { screen: "not a screen", x: 5, y: 5, width: "desktop" },
+    { screen: "s-files", x: 9, y: 9, width: "phone", target: "Type a name here" },
+  ] } });
+  assert.equal(res.status, 202);
+  assert.equal(res.body.saved, 1, "only the valid click is kept");
+  assert.equal(state.ui_clicks.length, 1);
+  assert.deepEqual(Object.keys(state.ui_clicks[0]).filter((k) => k !== "id").sort(), ["created_at", "screen", "target", "width_class", "workspace_id", "x", "y"].sort(), "no user id, no text");
+  assert.equal(state.ui_clicks[0].target, "files-approve-all");
+});
+
+test("a signed-out visitor and a non-member cannot record clicks", async () => {
+  const anon = await call("/api/clicks", { method: "POST", body: { workspace_id: W_ACME, events: [{ screen: "s-files", x: 1, y: 1, width: "desktop" }] } });
+  assert.equal(anon.status, 401);
+  const outsider = await call("/api/clicks", { as: "aud_a", method: "POST", body: { workspace_id: W_BETA, events: [{ screen: "s-files", x: 1, y: 1, width: "desktop" }] } });
+  assert.equal(outsider.status, 404);
+  assert.equal(state.ui_clicks.length, 0);
+});
+
+test("the heat map is for workspace admins only", async () => {
+  const eng = await call(`/api/workspaces/${W_ACME}/heatmap?screen=s-files`, { as: "eng_a" });
+  assert.equal(eng.status, 403);
+  const aud = await call(`/api/workspaces/${W_ACME}/heatmap?screen=s-files`, { as: "aud_a" });
+  assert.equal(aud.status, 403);
+});
+
+test("the heat map counts the clicks of one screen in one workspace over the chosen days", async () => {
+  state.ui_clicks.push(
+    clickRow("s-files", 2, 3, "files-approve-all"),
+    clickRow("s-files", 4, 4, "files-approve-all"),
+    clickRow("s-files", 97, 99, null, "phone"),
+    clickRow("s-files", 50, 50, null, "tablet", W_ACME, 10),
+    clickRow("s-files", 50, 50, null, "desktop", W_ACME, 60),
+    clickRow("s-review", 50, 50, null, "desktop"),
+    clickRow("s-files", 50, 50, null, "desktop", W_BETA),
+  );
+  const res = await call(`/api/workspaces/${W_ACME}/heatmap?screen=s-files&days=30`, { as: "admin_a" });
+  assert.equal(res.status, 200);
+  assert.equal(res.body.total, 4, "the 60-day-old click and the other screen and workspace are left out");
+  assert.equal(res.body.cells.length, 20);
+  assert.equal(res.body.cells[0][0], 2, "top-left cell holds the two clicks near the corner");
+  assert.equal(res.body.cells[19][19], 1);
+  assert.equal(res.body.cells[10][10], 1);
+  assert.deepEqual(res.body.targets, [{ target: "files-approve-all", count: 2 }]);
+  assert.deepEqual(res.body.widths, { phone: 1, tablet: 1, desktop: 2 });
+  assert.equal(res.body.truncated, false);
+});
+
+test("the heat map asks for a known screen", async () => {
+  const res = await call(`/api/workspaces/${W_ACME}/heatmap?screen=../../etc`, { as: "admin_a" });
+  assert.equal(res.status, 400);
+});
+

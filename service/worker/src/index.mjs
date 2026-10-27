@@ -21,6 +21,8 @@ import { validateDbMetadata } from "./db-metadata.mjs";
 //   POST   /api/workspaces/:id/invitations                invite an email with a role (workspace admins)
 //   DELETE /api/workspaces/:id/invitations/:email         remove a pending invitation (workspace admins)
 //   GET    /api/repo-check?workspace=&repo=&ref=          check Cutover can read a repository (platform engineers)
+//   POST   /api/clicks                                     anonymous click positions from the portal (signed-in members)
+//   GET    /api/workspaces/:id/heatmap?screen=s-files&days=30  click heat map of one screen (workspace admins)
 //   GET    /api/workspaces/:id/cleanup/superseded         how many superseded business assessments the workspace holds (platform engineers)
 //   POST   /api/workspaces/:id/cleanup/superseded         remove them, when the count matches the preview (platform engineers)
 //   GET    /api/admin/database                            database size against the free-tier limit (operators)
@@ -3631,7 +3633,7 @@ async function emailPeople(env, workspaceId, userIds, subject, text) {
 // The first failure is raised at the end, so the run is reported as failed.
 async function runRetention(env) {
   let firstError = null;
-  for (const step of [purgeExpired, purgeUnopened, trimLog]) {
+  for (const step of [purgeExpired, purgeUnopened, trimLog, purgeClicks]) {
     try {
       await step(env);
     } catch (err) {
@@ -3640,6 +3642,83 @@ async function runRetention(env) {
     }
   }
   if (firstError) throw firstError;
+}
+
+// ---- Where people click: anonymous click positions, read back as heat maps by workspace admins ----
+// A click keeps only the screen, the position as a percentage of the screen (rounded), the width class and a
+// button name from the page's own list. It never keeps who clicked, any text, field values or page content.
+const CLICK_SCREEN = /^s-[a-z-]{1,30}$/;
+const CLICK_TARGET = /^[a-z0-9-]{1,40}$/;
+const CLICK_WIDTHS = ["phone", "tablet", "desktop"];
+const CLICK_BATCH = 200;
+const CLICK_READ_LIMIT = 50000;
+const CLICK_KEEP_DAYS = 30;
+const HEAT_CELLS = 20; // 5% cells across and down
+
+async function recordClicks(request, env) {
+  const auth = await requireUser(env, request);
+  if (auth.response) return auth.response;
+  const parsed = await readJson(request, 200_000);
+  if (parsed.error) return json({ error: parsed.error }, 400);
+  const body = parsed.value && typeof parsed.value === "object" ? parsed.value : {};
+  const access = await workspaceAccessAs(env, auth, body.workspace_id);
+  if (access.response) return access.response;
+  const events = Array.isArray(body.events) ? body.events : [];
+  if (events.length === 0 || events.length > CLICK_BATCH) return json({ error: `Send 1 to ${CLICK_BATCH} clicks at a time.` }, 400);
+  const rows = [];
+  for (const e of events) {
+    if (!e || typeof e !== "object") continue;
+    const good = typeof e.screen === "string" && CLICK_SCREEN.test(e.screen)
+      && Number.isInteger(e.x) && e.x >= 0 && e.x <= 100
+      && Number.isInteger(e.y) && e.y >= 0 && e.y <= 100
+      && CLICK_WIDTHS.includes(e.width)
+      && (e.target == null || (typeof e.target === "string" && CLICK_TARGET.test(e.target)));
+    if (good) rows.push({ workspace_id: access.workspace_id, screen: e.screen, target: e.target ?? null, x: e.x, y: e.y, width_class: e.width });
+  }
+  if (rows.length === 0) return json({ saved: 0 }, 202);
+  const res = await serviceRest(env, "ui_clicks", { method: "POST", headers: { prefer: "return=minimal" }, body: JSON.stringify(rows) });
+  if (!res.ok) return json({ error: "Could not save the clicks." }, 502);
+  return json({ saved: rows.length }, 202);
+}
+
+async function heatmap(request, env, workspaceId) {
+  const access = await workspaceAdmin(env, request, workspaceId);
+  if (access.response) return access.response;
+  const url = new URL(request.url);
+  const screen = url.searchParams.get("screen") || "";
+  if (!CLICK_SCREEN.test(screen)) return json({ error: "Choose a screen." }, 400);
+  const days = Math.min(Math.max(parseInt(url.searchParams.get("days") || "30", 10) || 30, 1), CLICK_KEEP_DAYS);
+  const since = encodeURIComponent(new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString());
+  const res = await serviceRest(env, `ui_clicks?workspace_id=eq.${workspaceId}&screen=eq.${screen}&created_at=gte.${since}&select=x,y,target,width_class&limit=${CLICK_READ_LIMIT}`);
+  if (!res.ok) return json({ error: "Could not load the clicks." }, 502);
+  const rows = await res.json();
+  const step = 100 / HEAT_CELLS;
+  const cells = Array.from({ length: HEAT_CELLS }, () => new Array(HEAT_CELLS).fill(0));
+  const targets = new Map();
+  const widths = { phone: 0, tablet: 0, desktop: 0 };
+  for (const r of rows) {
+    const cx = Math.min(HEAT_CELLS - 1, Math.floor(r.x / step));
+    const cy = Math.min(HEAT_CELLS - 1, Math.floor(r.y / step));
+    cells[cy][cx] += 1;
+    if (r.target) targets.set(r.target, (targets.get(r.target) || 0) + 1);
+    if (widths[r.width_class] !== undefined) widths[r.width_class] += 1;
+  }
+  const topTargets = [...targets.entries()].sort((a, b) => b[1] - a[1]).slice(0, 10).map(([target, count]) => ({ target, count }));
+  return json({
+    screen,
+    days,
+    total: rows.length,
+    truncated: rows.length >= CLICK_READ_LIMIT,
+    cells,
+    targets: topTargets,
+    widths,
+  });
+}
+
+async function purgeClicks(env) {
+  const cutoff = encodeURIComponent(new Date(Date.now() - CLICK_KEEP_DAYS * 24 * 60 * 60 * 1000).toISOString());
+  const res = await serviceRest(env, `ui_clicks?created_at=lt.${cutoff}`, { method: "DELETE", headers: { prefer: "return=minimal" } });
+  if (!res.ok) throw new Error(`Click retention failed with status ${res.status}`);
 }
 
 // ---- Repository check (GitHub App, read-only) ----
@@ -3794,6 +3873,10 @@ async function route(request, env) {
     if (path === "/api/repo-check" && method === "GET") return repoCheck(request, env);
     if (path === "/api/admin/workspaces" && method === "GET") return overviewWorkspaces(request, env);
     if (path === "/api/admin/database" && method === "GET") return databaseSize(request, env);
+
+    if (path === "/api/clicks" && method === "POST") return recordClicks(request, env);
+    const heatRoute = path.match(/^\/api\/workspaces\/([^/]+)\/heatmap$/);
+    if (heatRoute && UUID_PATTERN.test(heatRoute[1]) && method === "GET") return heatmap(request, env, heatRoute[1]);
 
     const cleanupPreview = path.match(/^\/api\/workspaces\/([^/]+)\/cleanup\/superseded$/);
     if (cleanupPreview && UUID_PATTERN.test(cleanupPreview[1]) && method === "GET") return previewCleanup(request, env, cleanupPreview[1]);
