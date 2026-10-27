@@ -8985,6 +8985,36 @@ const REGION_OPTS = {
       if ((fn.calls || []).length) box.append(el("div", `Calls: ${fn.calls.join(", ")}`, "muted small"));
       c.append(box);
     }
+    const rules = content.rules || [];
+    if (rules.length) {
+      // Each business rule with its values, the lines it comes from, and worked examples for it.
+      c.append(el("div", "Business rules", "small"));
+      for (const rule of rules) {
+        const box = el("div", null, "small");
+        box.style.marginTop = "6px";
+        box.append(el("b", `${rule.id} · ${rule.statement}`));
+        if (rule.condition) box.append(el("div", `When: ${rule.condition}`, "muted small"));
+        if (rule.outcome) box.append(el("div", `Then: ${rule.outcome}`, "muted small"));
+        if (rule.values && rule.values.length) box.append(el("div", `Values: ${rule.values.join(", ")}`, "muted small"));
+        const where = [rule.function, rule.lines ? `lines ${rule.lines[0]}–${rule.lines[1]}` : ""].filter(Boolean).join(", ");
+        if (where) box.append(el("div", where, "muted small"));
+        for (const ex of (content.examples || []).filter((e) => e.rule === rule.id)) {
+          box.append(el("div", `Given ${ex.given} → expect ${ex.expect}`, "muted small"));
+        }
+        c.append(box);
+      }
+    }
+    if ((content.data_access || []).length) {
+      c.append(el("div", "Data and interfaces", "small"));
+      for (const row of content.data_access) {
+        const box = el("div", null, "small");
+        box.style.marginTop = "6px";
+        box.append(el("b", row.function));
+        if (row.reads && row.reads.length) box.append(el("div", `Reads: ${row.reads.join(", ")}`, "muted small"));
+        if (row.writes && row.writes.length) box.append(el("div", `Writes: ${row.writes.join(", ")}`, "muted small"));
+        c.append(box);
+      }
+    }
     if (a.dropped) c.append(el("div", `${a.dropped} ${a.dropped === 1 ? "name was" : "names were"} not found in the file and left out.`, "muted small"));
     c.append(el("div", "Read by the model, so its confidence is lower than a rule-based result. An engineer checks it before it is final.", "muted small"));
     if (a.status === "draft") {

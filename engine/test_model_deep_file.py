@@ -146,3 +146,70 @@ class ProviderFailureReasons(unittest.TestCase):
             raise ProviderStopped(429)
         result = md.assess_file("src/A.bas", self.CODE, ask)
         self.assertIn("HTTP 429", result["reason"])
+
+
+class RulesExamplesData(unittest.TestCase):
+    """Business rules, worked examples and data access are kept only when the code supports them."""
+
+    def clean(self, **overrides):
+        return md.clean_reply(reply(**overrides), CODE)
+
+    def test_a_rule_with_real_lines_and_names_is_kept(self):
+        content, _ = self.clean(rules=[{
+            "id": "R1", "statement": "A visit is cancelled and its slot freed.",
+            "condition": "When CancelVisit runs.", "outcome": "The slot is freed.",
+            "values": ["cancelled"], "data": [], "function": "CancelVisit", "lines": [1, 4],
+        }])
+        self.assertEqual(content["rules"][0]["id"], "R1")
+        self.assertEqual(content["rules"][0]["lines"], [1, 4])
+        self.assertEqual(content["rules"][0]["values"], ["cancelled"])
+        self.assertEqual(content["rules"][0]["function"], "CancelVisit")
+
+    def test_line_numbers_outside_the_file_are_dropped_not_the_rule(self):
+        content, dropped = self.clean(rules=[{
+            "id": "R1", "statement": "Frees a slot.", "lines": [1, 999],
+        }])
+        self.assertEqual(content["rules"][0]["lines"], None)
+        self.assertEqual(len(content["rules"]), 1)
+
+    def test_a_value_the_code_does_not_contain_is_dropped_and_counted(self):
+        content, dropped = self.clean(rules=[{
+            "id": "R1", "statement": "Frees a slot.", "values": ["pdf", "cancelled"], "lines": [5, 5],
+        }])
+        self.assertEqual(content["rules"][0]["values"], ["cancelled"])
+        self.assertGreaterEqual(dropped, 1)
+
+    def test_a_rule_without_a_statement_is_skipped(self):
+        content, dropped = self.clean(rules=[{"id": "R1", "statement": "  "}, {"id": "R2", "statement": "Frees a slot."}])
+        self.assertEqual([r["id"] for r in content["rules"]], ["R2"])
+        self.assertGreaterEqual(dropped, 1)
+
+    def test_an_example_for_a_missing_rule_is_dropped(self):
+        content, _ = self.clean(
+            rules=[{"id": "R1", "statement": "Frees a slot."}],
+            examples=[{"rule": "R1", "given": "visit 7", "expect": "slot 7 free"},
+                      {"rule": "R9", "given": "visit 8", "expect": "nothing"}],
+        )
+        self.assertEqual([e["rule"] for e in content["examples"]], ["R1"])
+
+    def test_an_example_missing_its_result_is_dropped(self):
+        content, _ = self.clean(
+            rules=[{"id": "R1", "statement": "Frees a slot."}],
+            examples=[{"rule": "R1", "given": "visit 7", "expect": ""}],
+        )
+        self.assertEqual(content["examples"], [])
+
+    def test_data_access_keeps_only_names_the_code_contains(self):
+        content, dropped = self.clean(data_access=[
+            {"function": "CancelVisit", "reads": [], "writes": ["visits.status"]},
+            {"function": "NoSuchFunction", "reads": ["x"], "writes": []},
+        ])
+        self.assertEqual(content["data_access"], [])  # visits.status is not in CODE, the other function is not in CODE
+        self.assertGreaterEqual(dropped, 2)
+
+    def test_a_reply_without_the_new_fields_still_works(self):
+        content, dropped = self.clean()
+        self.assertEqual(content["rules"], [])
+        self.assertEqual(content["examples"], [])
+        self.assertEqual(content["data_access"], [])
+        self.assertEqual(dropped, 0)

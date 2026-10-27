@@ -3218,7 +3218,7 @@ async function discardDeepFile(request, env, id) {
 // ---- Deep file assessment: one file's purpose, functions, calls and user stories (slice 2) ----
 // Same flow as the business assessment of one file. A row is 'running' until the runner answers. Every name in the
 // account must appear in the file; the runner drops any that do not, and the count is kept with the draft.
-const DEEP_MAX_CHARS = 60000;
+const DEEP_MAX_CHARS = 150000;
 
 async function startDeepFile(request, env, id) {
   const access = await analysisAccess(env, request, id);
