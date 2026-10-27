@@ -22,7 +22,7 @@ test("the panel reads the list, starts a run, and approves or discards by assess
 });
 
 test("only drafts show approve and discard", () => {
-  assert.match(html, /if \(a\.status === "draft"\) \{\s*const row = el\("div", null, "row"\);/);
+  assert.match(html, /if \(a\.status === "draft"\) \{[\s\S]*?const row = el\("div", null, "row"\);/);
 });
 
 test("the account is written as plain text, never as markup", () => {
@@ -38,7 +38,7 @@ test("the change is listed in What's new, with the lower-confidence note", () =>
 test("choosing a file opens its deep view under it by itself, with an entrance, and closing removes the panel", () => {
   const detail = html.slice(html.indexOf("  function showBusinessFile(path) {"), html.indexOf("  // Next steps opens only when"));
   assert.match(detail, /box\.classList\.add\("dp-enter"\);/);
-  assert.match(detail, /const panel = deepPanel\(box, f, \(\) => panel\.remove\(\)\);/);
+  assert.match(detail, /const panel = deepPanel\(box, f, \(\) => panel\.remove\(\), actions\);/);
   assert.ok(!detail.includes('"Deep view", "small-btn"'));
 });
 

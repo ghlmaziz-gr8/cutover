@@ -213,3 +213,51 @@ class RulesExamplesData(unittest.TestCase):
         self.assertEqual(content["examples"], [])
         self.assertEqual(content["data_access"], [])
         self.assertEqual(dropped, 0)
+
+
+SQL_CODE = (
+    "Public Function LoadVisit(visitId As Long)\n"
+    "    rs = \"SELECT status FROM visits WHERE id = \" & visitId\n"
+    "    Call SaveVisit(visitId)\n"
+    "End Function\n"
+    "Sub SaveVisit(id As Long)\n"
+    "    rs = \"UPDATE visits SET status = 'x' WHERE id = \" & id\n"
+    "End Sub\n"
+)
+
+
+class DatabaseSection(unittest.TestCase):
+    def clean(self, database):
+        body = {
+            "file_purpose": "Loads and saves a visit.",
+            "functions": [{"name": "LoadVisit", "calls": ["SaveVisit"]}, {"name": "SaveVisit", "calls": []}],
+            "database": database,
+        }
+        return md.clean_reply(json.dumps(body), SQL_CODE)
+
+    def test_a_table_the_code_names_is_kept_with_its_operations_and_fields(self):
+        content, _ = self.clean({
+            "tables": [{"name": "visits", "operations": ["SELECT", "UPDATE"], "fields": ["status", "id"]}],
+            "queries": [{"function": "LoadVisit", "operation": "SELECT", "tables": ["visits"], "purpose": "Reads a visit."}],
+        })
+        self.assertEqual(content["database"]["tables"][0]["name"], "visits")
+        self.assertEqual(content["database"]["tables"][0]["operations"], ["SELECT", "UPDATE"])
+        self.assertEqual(content["database"]["tables"][0]["fields"], ["status", "id"])
+        self.assertEqual(content["database"]["queries"][0]["operation"], "SELECT")
+
+    def test_a_table_the_code_does_not_name_is_dropped(self):
+        content, dropped = self.clean({"tables": [{"name": "patients", "operations": ["SELECT"], "fields": []}], "queries": []})
+        self.assertEqual(content["database"]["tables"], [])
+        self.assertGreaterEqual(dropped, 1)
+
+    def test_an_operation_outside_the_four_is_dropped(self):
+        content, _ = self.clean({"tables": [{"name": "visits", "operations": ["MERGE", "DELETE"], "fields": []}], "queries": []})
+        self.assertEqual(content["database"]["tables"][0]["operations"], ["DELETE"])
+
+    def test_a_query_with_no_known_table_is_dropped(self):
+        content, _ = self.clean({"tables": [], "queries": [{"function": "LoadVisit", "operation": "SELECT", "tables": ["invoices"]}]})
+        self.assertEqual(content["database"]["queries"], [])
+
+    def test_a_reply_without_database_access_gives_empty_lists(self):
+        content, _ = self.clean(None)
+        self.assertEqual(content["database"], {"tables": [], "queries": []})
