@@ -98,3 +98,18 @@ class ProgressReport(unittest.TestCase):
             self.assertEqual(calls[0][0], "report")
             self.assertEqual(calls[0][1]["lines"], 3)
             self.assertEqual(result["status"], "ok")
+
+
+class FailureReason(unittest.TestCase):
+    def test_a_payment_problem_says_so(self):
+        self.assertIn("payment", dr.explain(dr.ProviderError("HTTP 402")))
+
+    def test_a_refused_key_says_so_without_the_key(self):
+        text = dr.explain(dr.ProviderError("HTTP 403"))
+        self.assertIn("refused the key", text)
+
+    def test_other_http_errors_show_the_status(self):
+        self.assertEqual(dr.explain(dr.ProviderError("HTTP 500")), "The model provider answered HTTP 500. Nothing was kept.")
+
+    def test_any_other_error_is_generic(self):
+        self.assertEqual(dr.explain(dr.ProviderError("request failed")), "The language model did not answer. Nothing was kept.")

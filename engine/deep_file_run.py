@@ -53,6 +53,18 @@ def post_result(callback: str, analysis_id: str, secret: str, payload: dict,
         return 0
 
 
+def explain(err: Exception) -> str:
+    """A reason an engineer can act on, from a provider error. The provider's messages carry no key, only a status."""
+    text = str(err)
+    if "HTTP 402" in text:
+        return "The model provider asked for payment (HTTP 402). Check the billing for this workspace's model key."
+    if "HTTP 401" in text or "HTTP 403" in text:
+        return f"The model provider refused the key ({text}). Check the key for this workspace."
+    if text.startswith("HTTP "):
+        return f"The model provider answered {text}. Nothing was kept."
+    return "The language model did not answer. Nothing was kept."
+
+
 def progress_payload(path: str, code: str) -> dict:
     """The size of the file, sent before the model is called, so the portal can show how long it will take."""
     return {"path": path, "lines": code.count("\n") + 1 if code else 0, "chars": len(code)}
@@ -123,12 +135,15 @@ def main(argv=None, opener=urllib.request.urlopen) -> int:
                                                 base_url=base_url, token_field=token_field, max_tokens=MAX_TOKENS),
                      report=lambda payload: post_progress(args.callback, args.analysis_id, secret, payload,
                                                           opener=opener))
-    except (ProviderStopped, ProviderError):
+    except ProviderError as err:
+        result = {"path": args.path, "status": "failed", "reason": explain(err)}
+    except ProviderStopped:
         result = {"path": args.path, "status": "failed", "reason": "The language model did not answer. Nothing was kept."}
     status = post_result(args.callback, args.analysis_id, secret, result_payload(args.path, commit, result),
                          opener=opener)
     del api_key, release
-    print(f"Deep assessment of {args.path}: {result.get('status')}. Saved: HTTP {status}.")
+    reason = f" {result['reason']}" if result.get("reason") and result.get("status") != "ok" else ""
+    print(f"Deep assessment of {args.path}: {result.get('status')}.{reason} Saved: HTTP {status}.")
     return 0 if status in (200, 201) else 1
 
 
