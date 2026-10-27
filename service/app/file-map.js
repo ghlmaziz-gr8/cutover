@@ -93,14 +93,28 @@
     while (n < a.length && n < b.length && a[n] === b[n]) n += 1;
     return n;
   }
-  function related(path, paths, limit = 6) {
+  // links maps each path to { defines, calls }: the function names it defines and calls, from its deep assessment.
+  // A file that calls a function the other defines is related more strongly than a shared name.
+  function related(path, paths, limit = 6, links = {}) {
     const stem = stemOf(path);
     const folder = folderOf(path);
+    const mine = links[path] || { defines: [], calls: [] };
     const found = [];
     for (const other of paths || []) {
       if (other === path) continue;
       let score = 0;
       const reasons = [];
+      const theirs = links[other] || { defines: [], calls: [] };
+      const callsThem = mine.calls.filter((n) => theirs.defines.some((d) => d.toLowerCase() === n.toLowerCase()));
+      const calledByThem = theirs.calls.filter((n) => mine.defines.some((d) => d.toLowerCase() === n.toLowerCase()));
+      if (callsThem.length) {
+        score += 4;
+        reasons.push(`calls ${callsThem[0]}`);
+      }
+      if (calledByThem.length) {
+        score += 4;
+        reasons.push(`called by ${calledByThem[0]}`);
+      }
       if (folderOf(other) === folder) {
         score += 2;
         reasons.push("same folder");
@@ -116,8 +130,8 @@
     return found.slice(0, limit);
   }
   // The order to assess files in: the chosen file, then its related files, then everything else in path order.
-  function processingOrder(path, paths) {
-    const near = related(path, paths, Infinity).map((r) => r.path);
+  function processingOrder(path, paths, links = {}) {
+    const near = related(path, paths, Infinity, links).map((r) => r.path);
     const rest = (paths || []).filter((p) => p !== path && !near.includes(p)).sort((a, b) => a.localeCompare(b));
     return [path, ...near, ...rest];
   }
