@@ -2967,13 +2967,16 @@ test("the runner saves a deep draft only with the shared secret, keeps the dropp
   assert.ok(state.assessment_log.some((r) => r.action === "deep_file_finish"));
 });
 
-test("a failed deep run keeps nothing and clears its running row", async () => {
+test("a failed deep run keeps its row, marked failed with the reason, so the portal can say why", async () => {
   state.file_deep_assessments.push({ id: uid(991), analysis_id: AN_ACME, file_path: "src/B.java", status: "running", created_at: new Date().toISOString(), content: {} });
   const res = await call(`/api/runner/${AN_ACME}/deep-file`, { method: "POST", body: { status: "failed", path: "src/B.java", reason: "no answer" }, secret: env.RUNNER_SECRET });
   assert.equal(res.status, 200);
   assert.equal(res.body.saved, false);
-  assert.equal(state.file_deep_assessments.filter((r) => r.file_path === "src/B.java").length, 0);
-  assert.ok(state.assessment_log.some((r) => r.action === "deep_file_fail"));
+  const rows = state.file_deep_assessments.filter((r) => r.file_path === "src/B.java");
+  assert.equal(rows.length, 1);
+  assert.equal(rows[0].status, "failed");
+  assert.equal(rows[0].content.failure.reason, "no answer");
+  assert.ok(state.assessment_log.some((r) => r.action === "deep_file_fail" && r.detail.includes("no answer")));
 });
 
 // ---- Deep file assessments: list, approve and discard (slice 3) ----

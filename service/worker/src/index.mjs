@@ -3302,10 +3302,17 @@ async function saveDeepFile(request, env, id) {
   const commitSha = typeof body.commit_sha === "string" && body.commit_sha.length <= 64 ? body.commit_sha : null;
   const runningFilter = `analysis_id=eq.${id}&file_path=eq.${encodeURIComponent(path)}&status=eq.running`;
   if (body.status !== "ok") {
-    const refusedFail = await logFirst(env, { workspace_id: analysis.workspace_id, user: null, action: "deep_file_fail", analysis_id: id, repo: analysis.repo, detail: path });
+    const reason = typeof body.reason === "string" && body.reason.trim() ? body.reason.slice(0, 300) : "The file was not assessed.";
+    const refusedFail = await logFirst(env, { workspace_id: analysis.workspace_id, user: null, action: "deep_file_fail", analysis_id: id, repo: analysis.repo, detail: `${path}: ${reason}`.slice(0, 300) });
     if (refusedFail) return refusedFail;
-    await serviceRest(env, `file_deep_assessments?${runningFilter}`, { method: "DELETE", headers: { prefer: "return=minimal" } });
-    return json({ saved: false, reason: typeof body.reason === "string" ? body.reason.slice(0, 300) : "The file was not assessed." });
+    // The row stays, marked failed with the reason, so the portal can say why. If that cannot be saved, the row is removed.
+    const marked = await serviceRest(env, `file_deep_assessments?${runningFilter}`, {
+      method: "PATCH",
+      headers: { prefer: "return=minimal" },
+      body: JSON.stringify({ status: "failed", content: { failure: { reason, at: new Date().toISOString() } } }),
+    });
+    if (!marked.ok) await serviceRest(env, `file_deep_assessments?${runningFilter}`, { method: "DELETE", headers: { prefer: "return=minimal" } });
+    return json({ saved: false, reason });
   }
   const content = body.content;
   if (!content || typeof content !== "object" || Array.isArray(content)) return json({ error: "content must be an object." }, 400);

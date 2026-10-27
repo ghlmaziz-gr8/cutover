@@ -8704,7 +8704,7 @@ const REGION_OPTS = {
 
   // Opens under one file. The text comes from the model, so it is always written as plain text, never as markup.
   // ---- Deep file view: one file's purpose, user stories, functions, what they call. Drafts are approved here. ----
-  const DEEP_STATUS = { running: "Running", draft: "Draft to review", approved: "Approved", superseded: "Replaced by a later approval" };
+  const DEEP_STATUS = { running: "Running", draft: "Draft to review", approved: "Approved", superseded: "Replaced by a later approval", failed: "Failed" };
 
   function deepPanel(li, f, onClose = () => renderFiles()) {
     const panel = el("div", null, "biz-panel");
@@ -8863,6 +8863,13 @@ const REGION_OPTS = {
     c.style.marginTop = "8px";
     const commit = a.commit_sha ? ` · commit ${String(a.commit_sha).slice(0, 7)}` : "";
     c.append(el("div", `${DEEP_STATUS[a.status] || a.status}${commit}`, "muted small"));
+    if (a.status === "failed") {
+      // The reason the run ended, from the runner. A new run can be started from the panel above.
+      const why = (a.content && a.content.failure && a.content.failure.reason) || "The assessment did not finish.";
+      c.append(el("div", why, "small"));
+      c.append(el("div", "Press Run deep assessment to try again.", "muted small"));
+      return c;
+    }
     const content = a.content || {};
     if (content.file_purpose) c.append(el("div", content.file_purpose, "small"));
     for (const story of content.file_user_stories || []) c.append(el("div", `• ${story}`, "small"));
