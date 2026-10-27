@@ -11,6 +11,7 @@
 window.CUTOVER_GUIDE = {
   updated: "2026-10-22",
   whatsNew: [
+    "2026-10-27: Operators see the database size against the free-tier limit on the All workspaces card. The limit is 490 MB.",
     "2026-10-27: The owner and the workspace admins are told in the portal when an assessment is deleted for not being opened for 90 days. The bell sits in the header corner, and notices use a lighter type.",
     "2026-10-27: An assessment that nobody has opened for 90 days is deleted, with its deletion recorded. When the database passes 70% of its limit, the oldest fifth of the action log is removed each day.",
     "2026-10-27: Each assessment records the commit it read. When the branch has a newer commit, Review findings says the results may be out of date and offers to run the assessment again.",

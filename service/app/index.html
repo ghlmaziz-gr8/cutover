@@ -1345,6 +1345,7 @@ button:not(:disabled):active{transform:scale(.965)}
       <p class="muted small" style="margin-top:6px">Counts are shown for every workspace. You see people only in workspaces you are invited into.</p>
       <div id="overviewList" style="margin-top:10px"></div>
       <p id="overviewMsg" class="muted small" role="status"></p>
+      <p id="databaseSize" class="muted small" style="margin-top:12px" role="status"></p>
     </div>
 
     <div class="card" id="privacyCard" hidden>
@@ -2378,10 +2379,24 @@ button:not(:disabled):active{transform:scale(.965)}
     showHome();
   }
 
+  // The database size against the free-tier limit, for operators only. Shown beside the workspace list.
+  async function loadDatabaseSize() {
+    const line = $("databaseSize");
+    line.textContent = "";
+    try {
+      const d = await api("/api/admin/database");
+      const mb = (bytes) => (Math.round((bytes / (1024 * 1024)) * 10) / 10).toFixed(1);
+      line.textContent = `Database: ${mb(d.bytes)} MB of the ${mb(d.limit_bytes)} MB free-tier limit (${d.percent}%).`;
+    } catch (err) {
+      line.textContent = "Could not read the database size.";
+    }
+  }
+
   async function loadOverview() {
     const box = $("overviewList");
     const msg = $("overviewMsg");
     msg.textContent = "";
+    loadDatabaseSize();
     try {
       const rows = await api("/api/admin/workspaces");
       box.innerHTML = "";
