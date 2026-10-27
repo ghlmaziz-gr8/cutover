@@ -6,6 +6,7 @@
 import { test, beforeEach, afterEach } from "node:test";
 import assert from "node:assert/strict";
 import { generateKeyPairSync, randomUUID, randomBytes } from "node:crypto";
+import { readFileSync } from "node:fs";
 import worker from "../src/index.mjs";
 import { validateDbMetadata } from "../src/db-metadata.mjs";
 
@@ -138,6 +139,7 @@ function seed() {
     analysis_model_tokens: [],
     analysis_screens: [],
     analysis_conversions: [],
+    assessment_log: [],
     analysis_target_approvals: [],
     analysis_db_metadata: [],
   };
@@ -171,7 +173,7 @@ let signoffClock = Date.parse(NOW);
 function defaultsFor(table) {
   const base = { id: randomUUID(), created_at: NOW };
   if (table === "privacy_signoffs") return { ...base, created_at: new Date(signoffClock += 1000).toISOString() };
-  if (table === "analyses") return { ...base, status: "queued", findings: null, error: null, commit_sha: null, finished_at: null, expires_at: FAR_FUTURE };
+  if (table === "analyses") return { ...base, created_at: new Date().toISOString(), status: "queued", findings: null, error: null, commit_sha: null, finished_at: null, expires_at: FAR_FUTURE };
   if (table === "action_items") return { ...base, status: "open", done_at: null, done_by_email: null };
   if (table === "analysis_model_tokens") return { ...base, used_at: null };
   if (table === "analysis_target_approvals") return { ...base, approved_at: NOW };
@@ -1565,7 +1567,7 @@ test("screens from the model are off by default, only an admin can turn them on,
   const listed = await call(KEYS(W_ACME), { as: "admin_a" });
   assert.equal(listed.body.draw_screens, false, "off until an admin turns it on");
 
-  await call("/api/analyses", { as: "eng_a", method: "POST", body: { ...START, workspace_id: W_ACME, model_key_id: keyId } });
+  await startAndFinish({ as: "eng_a", workspace_id: W_ACME, model_key_id: keyId });
   assert.equal(github.dispatches.at(-1).inputs.draw_screens, false, "the run is told screens are off");
 
   const notAdmin = await call(`/api/workspaces/${W_ACME}/model-screens`, { as: "eng_a", method: "PUT", body: { enabled: true } });
@@ -1578,12 +1580,21 @@ test("screens from the model are off by default, only an admin can turn them on,
   assert.deepEqual(on.body, { draw_screens: true });
   assert.equal((await call(KEYS(W_ACME), { as: "admin_a" })).body.draw_screens, true);
 
-  await call("/api/analyses", { as: "eng_a", method: "POST", body: { ...START, workspace_id: W_ACME, model_key_id: keyId } });
+  await startAndFinish({ as: "eng_a", workspace_id: W_ACME, model_key_id: keyId });
   assert.equal(github.dispatches.at(-1).inputs.draw_screens, true, "the run is told screens are on");
 
-  await call("/api/analyses", { as: "eng_a", method: "POST", body: { ...START, workspace_id: W_ACME } });
+  await startAndFinish({ as: "eng_a", workspace_id: W_ACME });
   assert.equal(github.dispatches.at(-1).inputs.draw_screens, false, "without a model, no screens are drawn");
 });
+
+// Starts a run and lets the runner finish it, so the workspace is free for the next one.
+async function startAndFinish(body) {
+  const { as, ...rest } = body;
+  const res = await call("/api/analyses", { as, method: "POST", body: { ...START, ...rest } });
+  assert.equal(res.status, 202);
+  await call(`/api/runner/${res.body.id}/result`, { method: "POST", secret: env.RUNNER_SECRET, body: { status: "complete", findings: {} } });
+  return res;
+}
 
 function runningAnalysisWithId(id, owner = PEOPLE.eng_a.id) {
   state.analyses.push({
@@ -2333,4 +2344,61 @@ test("the target language: lift-contain offers only keeping the current language
   assert.equal(wrong.status, 400);
   const right = await call(`/api/analyses/${AN_ACME}/target`, { as: "eng_a", method: "PUT", body: { language: "current", owner_email: PEOPLE.stranger.email } });
   assert.equal(right.status, 200);
+});
+
+// ---- One assessment at a time in a workspace, and the action log ----
+
+test("a second run in a busy workspace is refused, and the refusal is logged", async () => {
+  const first = await call("/api/analyses", { as: "eng_a", method: "POST", body: { ...START, workspace_id: W_ACME } });
+  assert.equal(first.status, 202);
+  const second = await call("/api/analyses", { as: "eng_a", method: "POST", body: { ...START, workspace_id: W_ACME, repo: "acme/other" } });
+  assert.equal(second.status, 409);
+  assert.match(second.body.error, /Another assessment is running in this workspace/);
+  assert.equal(github.dispatches.length, 1, "the refused run is not dispatched");
+  assert.ok(state.assessment_log.some((l) => l.action === "lock_refused" && l.workspace_id === W_ACME));
+  assert.ok(state.assessment_log.some((l) => l.action === "start" && l.analysis_id === first.body.id && l.actor_email === PEOPLE.eng_a.email));
+});
+
+test("a rerun is refused while another assessment in the workspace is running", async () => {
+  const first = await call("/api/analyses", { as: "eng_a", method: "POST", body: { ...START, workspace_id: W_ACME } });
+  assert.equal(first.status, 202);
+  const rerun = await call(`/api/analyses/${AN_ACME}/rerun`, { as: "eng_a", method: "POST" });
+  assert.equal(rerun.status, 409);
+  assert.match(rerun.body.error, /Another assessment is running/);
+});
+
+test("another workspace is not held up by a run in this one", async () => {
+  const first = await call("/api/analyses", { as: "eng_a", method: "POST", body: { ...START, workspace_id: W_ACME } });
+  assert.equal(first.status, 202);
+  const other = await call("/api/analyses", { as: "eng_b", method: "POST", body: { ...START, workspace_id: W_BETA } });
+  assert.equal(other.status, 202);
+});
+
+test("finishing a run frees the workspace for the next one", async () => {
+  const first = await call("/api/analyses", { as: "eng_a", method: "POST", body: { ...START, workspace_id: W_ACME } });
+  const done = await call(`/api/runner/${first.body.id}/result`, { method: "POST", secret: env.RUNNER_SECRET, body: { status: "complete", findings: {}, commit_sha: "abc123" } });
+  assert.equal(done.status, 200);
+  const next = await call("/api/analyses", { as: "eng_a", method: "POST", body: { ...START, workspace_id: W_ACME, repo: "acme/other" } });
+  assert.equal(next.status, 202);
+  assert.ok(state.assessment_log.some((l) => l.action === "finish" && l.analysis_id === first.body.id && l.commit_sha === "abc123"));
+});
+
+test("a run that never reports is stopped after three hours, so it cannot hold the workspace", async () => {
+  state.analyses.push({ id: uid(950), workspace_id: W_ACME, owner_id: PEOPLE.eng_a.id, repo: "acme/stuck", app_name: "Stuck", status: "running", created_at: "2020-01-01T00:00:00.000Z", expires_at: FAR_FUTURE, findings: null, error: null, commit_sha: null, finished_at: null, file_bytes: 0 });
+  const res = await call("/api/analyses", { as: "eng_a", method: "POST", body: { ...START, workspace_id: W_ACME } });
+  assert.equal(res.status, 202);
+  assert.equal(state.analyses.find((a) => a.id === uid(950)).status, "failed");
+  assert.ok(state.assessment_log.some((l) => l.action === "stale_stop" && l.analysis_id === uid(950)));
+});
+
+test("deleting an analysis is logged with who did it", async () => {
+  const res = await call(`/api/analyses/${AN_ACME}`, { as: "eng_a", method: "DELETE" });
+  assert.equal(res.status, 200);
+  assert.ok(state.assessment_log.some((l) => l.action === "delete" && l.analysis_id === AN_ACME && l.actor_email === PEOPLE.eng_a.email));
+});
+
+test("the action log is kept as a separate, append-only table in the database", () => {
+  const sql = readFileSync(new URL("../../supabase/add-action-log-and-lock.sql", import.meta.url), "utf8");
+  assert.ok(sql.includes("revoke update, delete, truncate, references, trigger on public.assessment_log from service_role;"));
+  assert.ok(sql.includes("create unique index if not exists analyses_one_running_per_workspace"));
 });

@@ -1112,6 +1112,81 @@ async function markNotificationsRead(request, env) {
   return json({ saved: true });
 }
 
+// ---- One assessment at a time in a workspace, and the action log ----
+
+// A run that has not finished within this time is stopped, so a run that never reports cannot block the workspace.
+const STALE_RUN_MS = 3 * 60 * 60 * 1000;
+const LOCK_TEXT = "Only one assessment runs at a time in a workspace. Wait for the one that is running to finish, then try again.";
+
+// Writes one row to the action log (assessment_log). Returns false if it could not be saved.
+async function recordAction(env, entry) {
+  const res = await serviceRest(env, "assessment_log", {
+    method: "POST",
+    headers: { prefer: "return=minimal" },
+    body: JSON.stringify({
+      workspace_id: entry.workspace_id,
+      actor_user_id: entry.user ? entry.user.id : null,
+      actor_email: entry.user && entry.user.email ? normalizeEmail(entry.user.email) : null,
+      action: entry.action,
+      analysis_id: entry.analysis_id || null,
+      repo: entry.repo || null,
+      commit_sha: entry.commit_sha || null,
+      detail: entry.detail ? String(entry.detail).slice(0, 300) : null,
+    }),
+  });
+  return res.ok;
+}
+
+// Stops runs in the workspace that have gone on too long, and logs each one.
+async function stopStaleRuns(env, workspaceId) {
+  const cutoff = new Date(Date.now() - STALE_RUN_MS).toISOString();
+  const res = await serviceRest(env, `analyses?workspace_id=eq.${workspaceId}&status=in.(queued,running)&created_at=lt.${cutoff}`, {
+    method: "PATCH",
+    headers: { prefer: "return=representation" },
+    body: JSON.stringify({ status: "failed", error: "Stopped: the run did not finish within three hours.", finished_at: new Date().toISOString() }),
+  });
+  if (!res.ok) throw new Error("Could not check the runs.");
+  const stopped = await res.json().catch(() => []);
+  for (const r of stopped) {
+    await recordAction(env, { workspace_id: workspaceId, action: "stale_stop", analysis_id: r.id, repo: r.repo, detail: "Did not finish within three hours." });
+  }
+}
+
+// The assessment or file conversion that holds this workspace, or null when it is free.
+// Throws if the check itself fails, so the caller refuses rather than guessing.
+async function busyRun(env, workspaceId, exceptAnalysisId = null) {
+  await stopStaleRuns(env, workspaceId);
+  const runs = await serviceRest(env, `analyses?workspace_id=eq.${workspaceId}&status=in.(queued,running)&select=id,app_name,repo,created_at&limit=5`);
+  if (!runs.ok) throw new Error("Could not check the runs.");
+  const other = (await runs.json()).find((r) => r.id !== exceptAnalysisId);
+  if (other) return { kind: "assessment", name: other.app_name || other.repo, repo: other.repo, started: other.created_at };
+  const conversions = await serviceRest(env, `analysis_conversions?status=eq.queued&select=path,created_at,analyses!inner(workspace_id,app_name,repo)&analyses.workspace_id=eq.${workspaceId}&limit=1`);
+  if (!conversions.ok) throw new Error("Could not check the conversions.");
+  const [conv] = await conversions.json();
+  if (conv) return { kind: "conversion", name: conv.analyses.app_name || conv.analyses.repo, repo: conv.analyses.repo, path: conv.path, started: conv.created_at };
+  return null;
+}
+
+function busyResponse(busy) {
+  const what = busy.kind === "conversion"
+    ? `A file conversion is running in this workspace: ${busy.path} in ${busy.name}.`
+    : `Another assessment is running in this workspace: ${busy.name}${busy.repo && busy.repo !== busy.name ? ` (${busy.repo})` : ""}.`;
+  return json({ error: `${what} ${LOCK_TEXT}`, busy: { kind: busy.kind, name: busy.name, repo: busy.repo, started: busy.started || null } }, 409);
+}
+
+// Returns a response to send back when the workspace is busy, or null when the run may go ahead.
+async function refuseIfBusy(env, user, workspaceId, repo, exceptAnalysisId = null) {
+  let busy;
+  try {
+    busy = await busyRun(env, workspaceId, exceptAnalysisId);
+  } catch {
+    return json({ error: "Could not check the workspace right now. Try again in a minute." }, 502);
+  }
+  if (!busy) return null;
+  await recordAction(env, { workspace_id: workspaceId, user, action: "lock_refused", repo, detail: `${busy.kind} running: ${busy.name}` });
+  return busyResponse(busy);
+}
+
 async function startAnalysis(request, env) {
   const auth = await requireUser(env, request);
   if (auth.response) return auth.response;
@@ -1137,6 +1212,9 @@ async function startAnalysis(request, env) {
   if (data_rules_confirmed !== true) {
     return json({ error: "Confirm that the code and its settings contain no patient information." }, 400);
   }
+
+  const busyResp = await refuseIfBusy(env, auth.user, access.workspace_id, repo);
+  if (busyResp) return busyResp;
 
   // Optional: the workspace's own model for the file purposes. Without it, the rules-only engine runs.
   const keyId = body.model_key_id === undefined || body.model_key_id === null || body.model_key_id === "" ? null : body.model_key_id;
@@ -1177,6 +1255,7 @@ async function startAnalysis(request, env) {
       } : {}),
     }),
   });
+  if (created.status === 409) return json({ error: `Another assessment is starting in this workspace. ${LOCK_TEXT}` }, 409);
   if (!created.ok) return json({ error: "Could not create the analysis." }, 502);
   const [row] = await created.json();
   await notifyPeople(env, access.workspace_id, [auth.user.id], {
@@ -1213,8 +1292,10 @@ async function startAnalysis(request, env) {
       method: "PATCH",
       body: JSON.stringify({ status: "failed", error: "Could not start the analysis runner.", finished_at: new Date().toISOString() }),
     });
+    await recordAction(env, { workspace_id: access.workspace_id, user: auth.user, action: "fail", analysis_id: row.id, repo, detail: "The runner could not be started." });
     return json({ error: "Could not start the analysis runner." }, 502);
   }
+  await recordAction(env, { workspace_id: access.workspace_id, user: auth.user, action: "start", analysis_id: row.id, repo, detail: model ? "AI model" : "Rules only" });
 
   return json({ id: row.id, status: row.status }, 202);
 }
@@ -1255,6 +1336,8 @@ async function startUpload(request, env) {
   const access = await workspaceAccessAs(env, auth, query.get("workspace_id"));
   if (access.response) return access.response;
   if (!canStart(access.member)) return json({ error: "Only platform engineers can start analyses." }, 403);
+  const busyResp = await refuseIfBusy(env, auth.user, access.workspace_id, UPLOAD_REPO);
+  if (busyResp) return busyResp;
 
   const name = (query.get("app_name") || "").trim();
   if (!name || name.length > MAX_TITLE) {
@@ -1315,9 +1398,11 @@ async function startUpload(request, env) {
   });
   if (!created.ok) {
     await fetch(storageUrl(env, objectPath), { method: "DELETE", headers: storageHeaders(env) });
+    if (created.status === 409) return json({ error: `Another assessment is starting in this workspace. ${LOCK_TEXT}` }, 409);
     return json({ error: "Could not create the analysis." }, 502);
   }
   const [row] = await created.json();
+  await recordAction(env, { workspace_id: access.workspace_id, user: auth.user, action: "start", analysis_id: row.id, repo: UPLOAD_REPO, detail: model ? "AI model, uploaded code" : "Rules only, uploaded code" });
   await notifyPeople(env, access.workspace_id, [auth.user.id], {
     kind: "analysis_started",
     tone: model ? "ai" : "info",
@@ -1327,6 +1412,7 @@ async function startUpload(request, env) {
   });
 
   const failRun = async (message) => {
+    await recordAction(env, { workspace_id: access.workspace_id, user: auth.user, action: "fail", analysis_id: row.id, repo: UPLOAD_REPO, detail: message });
     await serviceRest(env, `analyses?id=eq.${row.id}`, {
       method: "PATCH",
       body: JSON.stringify({ status: "failed", error: message, finished_at: new Date().toISOString() }),
@@ -1489,6 +1575,9 @@ async function rerunAnalysis(request, env, id) {
     return json({ error: "The uploaded code was deleted after the first run. Upload the code again to run the analysis." }, 409);
   }
 
+  const busyResp = await refuseIfBusy(env, access.user, row.workspace_id, row.repo, id);
+  if (busyResp) return busyResp;
+
   // The same model as the first run, if it had one. The key must still be active and the privacy notice still signed off.
   let modelToken = "";
   let drawScreens = false;
@@ -1517,8 +1606,10 @@ async function rerunAnalysis(request, env, id) {
       method: "PATCH",
       body: JSON.stringify({ status: "failed", error: "Could not start the analysis runner.", finished_at: new Date().toISOString() }),
     });
+    await recordAction(env, { workspace_id: row.workspace_id, user: access.user, action: "fail", analysis_id: id, repo: row.repo, detail: "The runner could not be started." });
     return json({ error: "Could not start the analysis runner." }, 502);
   }
+  await recordAction(env, { workspace_id: row.workspace_id, user: access.user, action: "rerun", analysis_id: id, repo: row.repo, detail: row.model_key_id ? "AI model" : "Rules only" });
   await notifyPeople(env, row.workspace_id, [access.user.id], {
     kind: "analysis_started",
     tone: row.model_key_id ? "ai" : "info",
@@ -1676,6 +1767,7 @@ async function deleteAnalysis(request, env, id) {
     headers: { prefer: "return=minimal" },
   });
   if (!res.ok) return json({ error: "Could not delete the analysis." }, 502);
+  await recordAction(env, { workspace_id: access.row.workspace_id, user: access.user, action: "delete", analysis_id: id, repo: access.row.repo, detail: isOwner ? "By the owner" : "By a workspace admin" });
   return json({ deleted: true });
 }
 
@@ -2227,6 +2319,7 @@ async function setScope(request, env, id) {
     body: JSON.stringify({ scope, scope_set_by_email: access.user.email, scope_set_at: new Date().toISOString() }),
   });
   if (!res.ok) return json({ error: "Could not save the scope." }, 502);
+  await recordAction(env, { workspace_id: access.row.workspace_id, user: access.user, action: "scope", analysis_id: id, repo: access.row.repo, detail: scope });
   const labels = { deeper: "Deeper assessment", modernize: "Modernize", migrate: "Migrate" };
   await notifyPeople(env, access.row.workspace_id, await analysisAudienceExcept(env, access.row, access.user.id), {
     kind: "scope_chosen", tone: "info", title: `Next stage chosen: ${labels[scope]}`,
@@ -2555,6 +2648,8 @@ async function startConversion(request, env, id) {
   if (!known.ok) return json({ error: "Could not check the file." }, 502);
   if (!(await known.json()).length) return json({ error: "That file is not in this analysis." }, 400);
 
+  const busyResp = await refuseIfBusy(env, access.user, row.workspace_id, row.repo);
+  if (busyResp) return busyResp;
   const modelToken = (await issueModelToken(env, id, row.model_key_id)) || "";
   if (!modelToken) return json({ error: "Could not prepare the model. Try again in a minute." }, 502);
   await serviceRest(env, `analysis_conversions?analysis_id=eq.${id}&path=eq.${encodeURIComponent(path)}`, { method: "DELETE", headers: { prefer: "return=minimal" } });
@@ -2576,6 +2671,7 @@ async function startConversion(request, env, id) {
     });
     return json({ error: "The runner could not be started. Try again in a minute." }, 502);
   }
+  await recordAction(env, { workspace_id: row.workspace_id, user: access.user, action: "convert_start", analysis_id: id, repo: row.repo, detail: path });
   return json({ queued: true, path }, 202);
 }
 
@@ -2895,6 +2991,7 @@ async function runnerResult(request, env, id) {
   if (!res.ok) return json({ error: "Could not save the result." }, 502);
   const [saved] = await res.json().catch(() => []);
   if (saved) {
+    await recordAction(env, { workspace_id: saved.workspace_id, action: body.status === "complete" ? "finish" : "fail", analysis_id: id, repo: saved.repo, commit_sha: update.commit_sha, detail: body.status === "complete" ? "Runner" : update.error });
     await notifyPeople(env, saved.workspace_id, [saved.owner_id], body.status === "complete"
       ? { kind: "analysis_complete", tone: "success", title: `Analysis complete: ${saved.app_name}`, body: "The findings are ready for review.", analysis_id: id }
       : { kind: "analysis_failed", tone: "danger", title: `Analysis failed: ${saved.app_name}`, body: update.error || "The run did not finish.", analysis_id: id });
