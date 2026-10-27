@@ -8626,6 +8626,7 @@ const REGION_OPTS = {
     if (f.review_status !== "approved") button("Approve", () => reviewFile(f.id, { review_status: "approved" }));
     button("Edit purpose", () => openFileEditor(li, f));
     button("Business view", () => businessPanel(li, f));
+    button("Deep view", () => deepPanel(li, f));
     li.appendChild(buttons);
     return li;
   }
@@ -8646,6 +8647,103 @@ const REGION_OPTS = {
     ["data_used", "Data used"], ["risks", "Risks to keep safe"], ["questions", "Open questions"]];
 
   // Opens under one file. The text comes from the model, so it is always written as plain text, never as markup.
+  // ---- Deep file view: one file's purpose, user stories, functions, what they call. Drafts are approved here. ----
+  const DEEP_STATUS = { running: "Running", draft: "Draft to review", approved: "Approved", superseded: "Replaced by a later approval" };
+
+  function deepPanel(li, f) {
+    const panel = el("div", null, "biz-panel");
+    panel.style.marginTop = "10px";
+    const msg = el("p", null, "muted small");
+    msg.setAttribute("role", "status");
+    const list = el("div");
+    const top = el("div", null, "row");
+    top.style.gap = "8px";
+    const start = el("button", "Run deep assessment", "small-btn");
+    start.type = "button";
+    const refresh = el("button", "Refresh", "ghost small-btn");
+    refresh.type = "button";
+    const close = el("button", "Close", "ghost small-btn");
+    close.type = "button";
+    close.addEventListener("click", () => renderFiles());
+    async function load() {
+      list.innerHTML = "";
+      try {
+        const res = await api(`/api/analyses/${cur.id}/deep-files?path=${encodeURIComponent(f.path)}`);
+        if (!res.assessments.length) list.appendChild(el("p", "No deep assessment yet.", "muted small"));
+        for (const a of res.assessments) list.appendChild(deepCard(a, load, msg));
+      } catch (err) {
+        msg.textContent = err.message;
+      }
+    }
+    start.addEventListener("click", async () => {
+      msg.textContent = "";
+      try {
+        await api(`/api/analyses/${cur.id}/deep-files/start`, { method: "POST", body: JSON.stringify({ path: f.path }) });
+        msg.textContent = "Started. Refresh in a few minutes to see the draft.";
+        load();
+      } catch (err) {
+        msg.textContent = err.message;
+      }
+    });
+    refresh.addEventListener("click", load);
+    top.append(start, refresh, close);
+    panel.append(top, msg, list);
+    li.appendChild(panel);
+    load();
+  }
+
+  function deepCard(a, reload, msg) {
+    const c = el("div", null, "biz-card");
+    c.style.borderTop = "1px solid var(--line, #ddd)";
+    c.style.paddingTop = "8px";
+    c.style.marginTop = "8px";
+    const commit = a.commit_sha ? ` · commit ${String(a.commit_sha).slice(0, 7)}` : "";
+    c.append(el("div", `${DEEP_STATUS[a.status] || a.status}${commit}`, "muted small"));
+    const content = a.content || {};
+    if (content.file_purpose) c.append(el("div", content.file_purpose, "small"));
+    for (const story of content.file_user_stories || []) c.append(el("div", `• ${story}`, "small"));
+    for (const fn of content.functions || []) {
+      const box = el("div", null, "small");
+      box.style.marginTop = "8px";
+      box.append(el("b", fn.name));
+      if (fn.purpose) box.append(el("div", fn.purpose, "muted small"));
+      for (const story of fn.user_stories || []) box.append(el("div", `• ${story}`, "small"));
+      if ((fn.calls || []).length) box.append(el("div", `Calls: ${fn.calls.join(", ")}`, "muted small"));
+      c.append(box);
+    }
+    if (a.dropped) c.append(el("div", `${a.dropped} ${a.dropped === 1 ? "name was" : "names were"} not found in the file and left out.`, "muted small"));
+    c.append(el("div", "Read by the model, so its confidence is lower than a rule-based result. An engineer checks it before it is final.", "muted small"));
+    if (a.status === "draft") {
+      const row = el("div", null, "row");
+      row.style.gap = "8px";
+      const approve = el("button", "Approve this account", "small-btn");
+      approve.type = "button";
+      approve.addEventListener("click", async () => {
+        msg.textContent = "";
+        try {
+          await api(`/api/analyses/${cur.id}/deep-files/approve`, { method: "POST", body: JSON.stringify({ assessment_id: a.id }) });
+          reload();
+        } catch (err) {
+          msg.textContent = err.message;
+        }
+      });
+      const discard = el("button", "Discard", "ghost small-btn");
+      discard.type = "button";
+      discard.addEventListener("click", async () => {
+        msg.textContent = "";
+        try {
+          await api(`/api/analyses/${cur.id}/deep-files/discard`, { method: "POST", body: JSON.stringify({ assessment_id: a.id }) });
+          reload();
+        } catch (err) {
+          msg.textContent = err.message;
+        }
+      });
+      row.append(approve, discard);
+      c.append(row);
+    }
+    return c;
+  }
+
   function businessPanel(li, f) {
     const panel = el("div", null, "biz-panel");
     panel.style.marginTop = "10px";

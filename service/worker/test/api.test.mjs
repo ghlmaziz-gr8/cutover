@@ -2976,3 +2976,56 @@ test("a failed deep run keeps nothing and clears its running row", async () => {
   assert.ok(state.assessment_log.some((r) => r.action === "deep_file_fail"));
 });
 
+// ---- Deep file assessments: list, approve and discard (slice 3) ----
+
+function deepRow(idN, status, path = "src/A.java", extra = {}) {
+  return { id: uid(idN), analysis_id: AN_ACME, file_path: path, status, content: { file_purpose: "Takes orders." }, confidence: "model_read", dropped: 0, commit_sha: "abc1234", created_by_email: PEOPLE.eng_a.email, created_at: new Date().toISOString(), ...extra };
+}
+
+test("only platform engineers see, approve or discard deep file assessments", async () => {
+  state.file_deep_assessments.push(deepRow(1100, "draft"));
+  const seen = await call(`/api/analyses/${AN_ACME}/deep-files?path=src/A.java`, { as: "aud_a" });
+  assert.equal(seen.status, 403);
+  const id = state.file_deep_assessments[0].id;
+  const approved = await call(`/api/analyses/${AN_ACME}/deep-files/approve`, { as: "aud_a", method: "POST", body: { assessment_id: id } });
+  assert.equal(approved.status, 403);
+  const discarded = await call(`/api/analyses/${AN_ACME}/deep-files/discard`, { as: "aud_a", method: "POST", body: { assessment_id: id } });
+  assert.equal(discarded.status, 403);
+});
+
+test("the list returns this file's deep assessments, newest first", async () => {
+  state.file_deep_assessments.push(deepRow(1101, "draft"), deepRow(1102, "draft", "src/Other.java"));
+  const res = await call(`/api/analyses/${AN_ACME}/deep-files?path=src/A.java`, { as: "eng_a" });
+  assert.equal(res.status, 200);
+  assert.equal(res.body.assessments.length, 1);
+  assert.equal(res.body.assessments[0].file_path, "src/A.java");
+});
+
+test("approving a draft replaces the earlier approved account, which is kept as superseded", async () => {
+  state.file_deep_assessments.length = 0;
+  const old = deepRow(1110, "approved");
+  const draft = deepRow(1111, "draft");
+  state.file_deep_assessments.push(old, draft);
+  const res = await call(`/api/analyses/${AN_ACME}/deep-files/approve`, { as: "eng_a", method: "POST", body: { assessment_id: draft.id } });
+  assert.equal(res.status, 200);
+  assert.equal(state.file_deep_assessments.find((r) => r.id === old.id).status, "superseded");
+  assert.equal(state.file_deep_assessments.find((r) => r.id === draft.id).status, "approved");
+  assert.ok(state.assessment_log.some((r) => r.action === "deep_file_supersede"));
+  assert.ok(state.assessment_log.some((r) => r.action === "deep_file_approve"));
+});
+
+test("only a draft can be approved or discarded, and a discard removes the draft and is logged", async () => {
+  state.file_deep_assessments.length = 0;
+  const approved = deepRow(1120, "approved");
+  const draft = deepRow(1121, "draft");
+  state.file_deep_assessments.push(approved, draft);
+  const notDraft = await call(`/api/analyses/${AN_ACME}/deep-files/approve`, { as: "eng_a", method: "POST", body: { assessment_id: approved.id } });
+  assert.equal(notDraft.status, 409);
+  const kept = await call(`/api/analyses/${AN_ACME}/deep-files/discard`, { as: "eng_a", method: "POST", body: { assessment_id: approved.id } });
+  assert.equal(kept.status, 409);
+  const gone = await call(`/api/analyses/${AN_ACME}/deep-files/discard`, { as: "eng_a", method: "POST", body: { assessment_id: draft.id } });
+  assert.equal(gone.status, 200);
+  assert.equal(state.file_deep_assessments.some((r) => r.id === draft.id), false);
+  assert.ok(state.assessment_log.some((r) => r.action === "deep_file_discard"));
+});
+
