@@ -8721,6 +8721,41 @@ const REGION_OPTS = {
     const close = el("button", "Close", "ghost small-btn");
     close.type = "button";
     close.addEventListener("click", onClose);
+    // The model for this analysis. An engineer can switch it to an active key once the analysis has finished.
+    const modelRow = el("div", null, "row");
+    modelRow.style.gap = "8px";
+    modelRow.style.marginTop = "8px";
+    modelRow.style.flexWrap = "wrap";
+    const modelPick = el("select", null, "small-btn");
+    modelPick.setAttribute("aria-label", "Model for this analysis");
+    const modelUse = el("button", "Use this model", "ghost small-btn");
+    modelUse.type = "button";
+    const modelNote = el("span", "Model for this analysis", "muted small");
+    modelRow.append(modelNote, modelPick, modelUse);
+    async function loadModels() {
+      try {
+        const data = await api(`/api/workspaces/${ws.id}/model-keys`);
+        modelPick.replaceChildren();
+        for (const k of data.keys || []) {
+          const opt = el("option", `${k.label || k.provider} · ${k.model || ""} · …${k.last4}`);
+          opt.value = k.id;
+          modelPick.appendChild(opt);
+        }
+        if (!modelPick.options.length) modelPick.appendChild(el("option", "No model key set up"));
+      } catch (err) {
+        modelNote.textContent = err.message;
+      }
+    }
+    modelUse.addEventListener("click", async () => {
+      if (!modelPick.value) return;
+      msg.textContent = "";
+      try {
+        const res = await api(`/api/analyses/${cur.id}/model`, { method: "PATCH", body: JSON.stringify({ model_key_id: modelPick.value }) });
+        msg.textContent = `Model changed to ${res.label}. You can run the assessment now.`;
+      } catch (err) {
+        msg.textContent = err.message;
+      }
+    });
     let waitCard = null;
     let pollTimer = null;
     function rebuild(assessments) {
@@ -8765,8 +8800,9 @@ const REGION_OPTS = {
     });
     refresh.addEventListener("click", load);
     top.append(start, refresh, close);
-    panel.append(top, msg, list);
+    panel.append(top, modelRow, msg, list);
     li.appendChild(panel);
+    loadModels();
     load();
     return panel;
   }

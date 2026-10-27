@@ -3056,3 +3056,25 @@ test("the time estimate grows with the lines and stays between 25 and 150 second
   assert.equal(deepEstimateSeconds(1000), 65);
   assert.equal(deepEstimateSeconds(1000000), 150);
 });
+
+test("a platform engineer can switch a finished analysis to an active model key, and no one else can", async () => {
+  readyForBusiness();
+  const NEW_KEY = uid(981);
+  state.model_keys.push({ id: NEW_KEY, workspace_id: W_ACME, provider: "google", last4: "9876", label: "New key", model: "gemini", base_url: null, created_by_email: PEOPLE.admin_a.email, created_at: NOW, revoked_at: null });
+  const auditor = await call(`/api/analyses/${AN_ACME}/model`, { as: "aud_a", method: "PATCH", body: { model_key_id: NEW_KEY } });
+  assert.equal(auditor.status, 403);
+  const unknown = await call(`/api/analyses/${AN_ACME}/model`, { as: "eng_a", method: "PATCH", body: { model_key_id: uid(999) } });
+  assert.equal(unknown.status, 400);
+  const res = await call(`/api/analyses/${AN_ACME}/model`, { as: "eng_a", method: "PATCH", body: { model_key_id: NEW_KEY } });
+  assert.equal(res.status, 200);
+  assert.equal(res.body.model_key_id, NEW_KEY);
+  assert.equal(state.analyses.find((r) => r.id === AN_ACME).model_key_id, NEW_KEY);
+  assert.ok(state.assessment_log.some((r) => r.action === "model_change" && r.analysis_id === AN_ACME));
+});
+
+test("the model of an analysis that is still running cannot be changed", async () => {
+  readyForBusiness();
+  state.analyses.find((r) => r.id === AN_ACME).status = "running";
+  const res = await call(`/api/analyses/${AN_ACME}/model`, { as: "eng_a", method: "PATCH", body: { model_key_id: MODEL_KEY_UUID } });
+  assert.equal(res.status, 409);
+});

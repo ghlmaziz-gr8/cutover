@@ -3240,6 +3240,26 @@ async function startDeepFile(request, env, id) {
   return json({ queued: true, path }, 202);
 }
 
+// An engineer switches the model of an existing analysis to one of the workspace's active keys. The analysis must be
+// finished, so a run in progress keeps the model it started with.
+async function changeAnalysisModel(request, env, id) {
+  const access = await analysisAccess(env, request, id);
+  if (access.response) return access.response;
+  if (!canStart(access.member)) return json({ error: "Only platform engineers can change the model for an analysis." }, 403);
+  const parsed = await readJson(request);
+  if (parsed.error) return json({ error: parsed.error }, 400);
+  const keyId = parsed.value?.model_key_id;
+  const row = access.row;
+  if (row.status === "queued" || row.status === "running") return json({ error: "Wait for the analysis to finish before changing its model." }, 409);
+  const chosen = await chooseAnalysisModel(env, row.workspace_id, keyId);
+  if (chosen.response) return chosen.response;
+  const refused = await logFirst(env, { workspace_id: row.workspace_id, user: access.user, action: "model_change", analysis_id: id, repo: row.repo, detail: `Model changed to ${chosen.key.label || chosen.key.provider}` });
+  if (refused) return refused;
+  const saved = await serviceRest(env, `analyses?id=eq.${id}`, { method: "PATCH", headers: { prefer: "return=minimal" }, body: JSON.stringify({ model_key_id: keyId }) });
+  if (!saved.ok) return json({ error: "Could not change the model. Try again in a minute." }, 502);
+  return json({ model_key_id: keyId, label: chosen.key.label || chosen.key.provider, model: chosen.key.model || null });
+}
+
 function dispatchDeepFile(env, inputs) {
   return fetch(`https://api.github.com/repos/${env.RUNNER_REPO}/actions/workflows/deep-file.yml/dispatches`, {
     method: "POST",
@@ -4236,6 +4256,8 @@ async function route(request, env) {
     if (deepApprove && UUID_PATTERN.test(deepApprove[1]) && method === "POST") return approveDeepFile(request, env, deepApprove[1]);
     const deepDiscard = path.match(/^\/api\/analyses\/([^/]+)\/deep-files\/discard$/);
     if (deepDiscard && UUID_PATTERN.test(deepDiscard[1]) && method === "POST") return discardDeepFile(request, env, deepDiscard[1]);
+    const analysisModel = path.match(/^\/api\/analyses\/([^/]+)\/model$/);
+    if (analysisModel && UUID_PATTERN.test(analysisModel[1]) && method === "PATCH") return changeAnalysisModel(request, env, analysisModel[1]);
     const deepStart = path.match(/^\/api\/analyses\/([^/]+)\/deep-files\/start$/);
     if (deepStart && UUID_PATTERN.test(deepStart[1]) && method === "POST") return startDeepFile(request, env, deepStart[1]);
     const deepProgress = path.match(/^\/api\/runner\/([^/]+)\/deep-file-progress$/);
