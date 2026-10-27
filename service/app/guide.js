@@ -11,6 +11,7 @@
 window.CUTOVER_GUIDE = {
   updated: "2026-10-22",
   whatsNew: [
+    "2026-10-27: Related files now draw as a chord diagram: each line joins the chosen file to a related file and draws in turn. The order to assess files in is a tree that grows one step at a time.",
     "2026-10-27: The deep assessment now lists the database tables and queries in each file, with the operations and fields it uses. The buttons sit beside the file name, the model choice sits above the results, and Approve explains what it does.",
     "2026-10-27: The confidence ring has a halo: a glow in the colour of the status under the pointer, a dashed ring that turns, and a dot that orbits it.",
     "2026-10-27: The welcome card shows the time you have spent in each workspace, and a level badge from the first point (Starter at the start).",

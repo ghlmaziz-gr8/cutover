@@ -1319,6 +1319,33 @@ button:not(:disabled):active{transform:scale(.965)}
     .dp-title-row{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap}
     .dp-title-row h3{margin:0}
     .dp-actions{display:flex;gap:8px;flex-wrap:wrap}
+    /* Related files: the chord diagram draws its lines in turn, and the order tree grows one step at a time. */
+    .rel-wrap{display:grid;grid-template-columns:minmax(260px,400px) minmax(0,1fr);gap:22px;align-items:center;margin:14px 0 10px}
+    @media (max-width:700px){.rel-wrap{grid-template-columns:1fr}}
+    .rel-chord svg{width:100%;max-width:400px;height:auto;overflow:visible;display:block}
+    .rel-chord text{font:600 10.5px var(--body);fill:var(--fg)}
+    .rc-link{stroke-linecap:round;stroke-dasharray:1;stroke-dashoffset:1;opacity:.8;transition:stroke-dashoffset .9s cubic-bezier(.2,.8,.2,1),stroke-width .25s ease,opacity .25s ease;transition-delay:var(--d,0ms)}
+    .rel-chord.is-on .rc-link{stroke-dashoffset:0}
+    .rc-link.is-hot{stroke-width:5;opacity:1}
+    .rc-node{opacity:0;transform:scale(.2);transform-box:fill-box;transform-origin:center;transition:opacity .4s ease,transform .55s cubic-bezier(.2,.8,.2,1);transition-delay:var(--d,0ms)}
+    .rel-chord.is-on .rc-node{opacity:1;transform:none}
+    .rc-node.is-hot{transform:scale(1.35)}
+    .rel-legend{display:flex;gap:10px;flex-wrap:wrap;margin-top:6px}
+    .rel-key{font-size:11.5px;color:var(--muted);display:inline-flex;align-items:center;gap:6px}
+    .rel-key::before{content:"";width:9px;height:9px;border-radius:50%;background:var(--k)}
+    .rel-head{font:700 11px var(--body);letter-spacing:.07em;text-transform:uppercase;color:var(--muted);margin-bottom:6px}
+    .rel-tree{list-style:none;margin:0;padding:0 0 0 14px;border-left:2px solid var(--line,#e2e2e2)}
+    .rel-row{position:relative;display:flex;gap:10px;align-items:flex-start;padding:6px 8px;margin-left:-14px;border-radius:10px;opacity:0;transform:translateX(-10px);transition:opacity .45s ease,transform .5s cubic-bezier(.2,.8,.2,1),background .2s ease;transition-delay:var(--d,0ms)}
+    .rel-tree.is-on .rel-row,.rel-tree.is-on .rel-more{opacity:1;transform:none}
+    .rel-row.is-hot{background:var(--soft,#f1f0fb)}
+    .rel-more{list-style:none;opacity:0;transition:opacity .45s ease;transition-delay:var(--d,0ms);font-size:12px;color:var(--muted);padding:6px 8px 0 0}
+    .rel-num{font:700 11px var(--body);min-width:22px;height:22px;border-radius:50%;display:grid;place-items:center;background:var(--fg);color:#fff;flex:none}
+    .rel-body{min-width:0}
+    .rel-link{all:unset;cursor:pointer;font:600 12.5px var(--body);color:var(--fg);word-break:break-all}
+    .rel-link:hover,.rel-link:focus-visible{text-decoration:underline}
+    .rel-reason{font-size:11.5px;color:var(--muted);margin-top:1px}
+    .rel-reason::before{content:"";display:inline-block;width:7px;height:7px;border-radius:50%;background:var(--k,var(--muted));margin-right:6px;vertical-align:middle}
+    @media (prefers-reduced-motion: reduce){.rc-link,.rc-node,.rel-row,.rel-more{transition:none!important}}
     .wc-badge-level{font-weight:700;background:linear-gradient(90deg,rgba(29,78,216,.12),rgba(47,158,107,.14))}
     @keyframes wcIn{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
     @media (prefers-reduced-motion: reduce){.welcome-card{animation:none}.wc-fill{transition:none}}
@@ -7579,28 +7606,11 @@ a{color:#6d28d9;font-weight:600}`;
       for (const sug of f.suggestions) ul.appendChild(el("li", `${sug.severity ? sug.severity + ": " : ""}${sug.text}`, "small muted"));
       box.appendChild(ul);
     }
-    // Files that probably go with this one, and the order to assess them in. Choosing one opens it.
+    // Files that probably go with this one: a chord diagram of the links, and the order to assess them in as a tree.
     const paths = (businessFiles.rows || []).map((x) => x.path);
     const links = businessFiles.links || {};
     const near = window.FileMap.related(f.path, paths, 6, links);
-    if (near.length) {
-      box.appendChild(el("div", "Related files", "small"));
-      const list = el("div", null, "small");
-      list.style.marginTop = "4px";
-      for (const r of near) {
-        const link = el("button", r.path, "ghost small-btn");
-        link.type = "button";
-        link.style.margin = "2px 6px 2px 0";
-        link.title = r.reason;
-        link.addEventListener("click", () => showBusinessFile(r.path));
-        list.appendChild(link);
-        list.appendChild(el("span", r.reason, "muted small"));
-        list.appendChild(el("br"));
-      }
-      box.appendChild(list);
-      const order = window.FileMap.processingOrder(f.path, paths, links).slice(0, 8);
-      box.appendChild(el("div", `Suggested order: ${order.map((p, i) => `${i + 1}. ${p}`).join("  ")}${paths.length > order.length ? " …" : ""}`, "muted small"));
-    }
+    if (near.length) box.appendChild(relatedView(f, near, paths, links));
     // The deep view: the purpose, user stories, functions and what they call, opened inline on this file.
     // The deep view opens by itself under the file, with a short entrance, so the status and the work show at once.
     box.classList.remove("dp-enter");
@@ -9008,6 +9018,134 @@ const REGION_OPTS = {
     loadModels();
     load();
     return panel;
+  }
+
+  // Related files for the chosen file. Left: a chord diagram, where each line joins the chosen file to a related file,
+  // drawn in turn. Right: the order to assess the files in, as a tree that grows one step at a time.
+  const REL_COLOURS = { call: "#059669", name: "#1d4ed8", folder: "#d97706" };
+  const REL_WORDS = { call: "calls or is called by it", name: "a similar name", folder: "the same folder" };
+  function relKind(reason) {
+    if (/calls|called by/.test(reason)) return "call";
+    if (/similar name/.test(reason)) return "name";
+    return "folder";
+  }
+  function relName(path) {
+    return String(path).split("/").pop();
+  }
+  function relatedView(f, near, paths, links) {
+    const wrap = el("div", null, "rel-wrap");
+    const reasonOf = new Map(near.map((r) => [r.path, r]));
+    const order = window.FileMap.processingOrder(f.path, paths, links);
+
+    // The chord diagram.
+    const figure = el("div", null, "rel-chord");
+    const width = 400;
+    const height = 300;
+    const c = 200;
+    const cy = 150;
+    const R = 96;
+    const svg = svgEl("svg", { viewBox: `0 0 ${width} ${height}`, role: "img", "aria-label": `Files related to ${relName(f.path)}` });
+    const reduce = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    const rootPoint = { x: c, y: cy - R };
+    const nodes = near.map((r, i) => {
+      const angle = ((-90 + ((i + 1) * 360) / (near.length + 1)) * Math.PI) / 180;
+      return { r, kind: relKind(r.reason), x: c + R * Math.cos(angle), y: cy + R * Math.sin(angle), angle };
+    });
+    const linkEls = [];
+    nodes.forEach((n, i) => {
+      const d = `M ${rootPoint.x} ${rootPoint.y} Q ${c} ${cy} ${n.x.toFixed(1)} ${n.y.toFixed(1)}`;
+      const width = n.kind === "call" ? 3 : n.kind === "name" ? 2 : 1.4;
+      const link = svgEl("path", { d, class: "rc-link", pathLength: "1", fill: "none", stroke: REL_COLOURS[n.kind], "stroke-width": width });
+      link.style.setProperty("--d", `${280 + i * 140}ms`);
+      svg.appendChild(link);
+      linkEls.push(link);
+    });
+    const dots = [];
+    const rootDot = svgEl("circle", { cx: rootPoint.x, cy: rootPoint.y, r: 9, class: "rc-node", fill: "var(--fg)" });
+    rootDot.style.setProperty("--d", "0ms");
+    svg.appendChild(rootDot);
+    nodes.forEach((n, i) => {
+      const dot = svgEl("circle", { cx: n.x.toFixed(1), cy: n.y.toFixed(1), r: 7, class: "rc-node", fill: REL_COLOURS[n.kind] });
+      dot.style.setProperty("--d", `${240 + i * 140}ms`);
+      svg.appendChild(dot);
+      dots.push(dot);
+      const lx = c + (R + 22) * Math.cos(n.angle);
+      const ly = cy + (R + 22) * Math.sin(n.angle) + 4;
+      const label = svgEl("text", { x: lx.toFixed(1), y: ly.toFixed(1), "text-anchor": Math.cos(n.angle) > 0.2 ? "start" : Math.cos(n.angle) < -0.2 ? "end" : "middle" });
+      label.textContent = relName(n.r.path).slice(0, 24);
+      svg.appendChild(label);
+    });
+    const rootLabel = svgEl("text", { x: c, y: cy - R - 16, "text-anchor": "middle" });
+    rootLabel.textContent = relName(f.path).slice(0, 24);
+    svg.appendChild(rootLabel);
+    figure.appendChild(svg);
+    const legend = el("div", null, "rel-legend");
+    for (const kind of ["call", "name", "folder"]) {
+      if (!nodes.some((n) => n.kind === kind)) continue;
+      const item = el("span", REL_WORDS[kind], "rel-key");
+      item.style.setProperty("--k", REL_COLOURS[kind]);
+      legend.appendChild(item);
+    }
+    figure.appendChild(legend);
+
+    // The order, as a tree: the chosen file, then each related file, then the rest by folder.
+    const tree = el("ol", null, "rel-tree");
+    const rowFor = (path, i, reason) => {
+      const row = el("li", null, "rel-row");
+      row.style.setProperty("--d", `${i * 110}ms`);
+      const num = el("span", String(i + 1), "rel-num");
+      const body = el("div", null, "rel-body");
+      const link = el("button", path, "rel-link");
+      link.type = "button";
+      link.addEventListener("click", () => showBusinessFile(path));
+      body.append(link);
+      if (reason) {
+        const kind = relKind(reason);
+        const why = el("div", reason, "rel-reason");
+        why.style.setProperty("--k", REL_COLOURS[kind]);
+        body.append(why);
+      } else {
+        body.append(el("div", i === 0 ? "The file you chose" : "Next in path order", "rel-reason"));
+      }
+      row.append(num, body);
+      row.addEventListener("mouseenter", () => { row.classList.add("is-hot"); });
+      row.addEventListener("mouseleave", () => { row.classList.remove("is-hot"); });
+      return row;
+    };
+    tree.appendChild(rowFor(f.path, 0, null));
+    const shown = order.slice(1, 1 + near.length + 6);
+    shown.forEach((path, i) => {
+      const hit = reasonOf.get(path);
+      tree.appendChild(rowFor(path, i + 1, hit ? hit.reason : null));
+    });
+    const rest = order.length - 1 - shown.length;
+    if (rest > 0) {
+      const more = el("li", `…and ${rest} more in path order`, "rel-more");
+      more.style.setProperty("--d", `${(shown.length + 1) * 110}ms`);
+      tree.appendChild(more);
+    }
+    const orderCol = el("div", null, "rel-order");
+    orderCol.append(el("div", "Order to assess", "rel-head"), tree);
+
+    wrap.append(figure, orderCol);
+    // The chosen file's own row lights up its chords, and a hovered chord lights up its file.
+    tree.addEventListener("mouseover", (event) => {
+      const row = event.target.closest(".rel-row");
+      if (!row) return;
+      const path = row.querySelector(".rel-link") && row.querySelector(".rel-link").textContent;
+      const index = nodes.findIndex((n) => n.r.path === path);
+      linkEls.forEach((link, i) => link.classList.toggle("is-hot", i === index));
+      dots.forEach((dot, i) => dot.classList.toggle("is-hot", i === index));
+    });
+    tree.addEventListener("mouseleave", () => {
+      linkEls.forEach((link) => link.classList.remove("is-hot"));
+      dots.forEach((dot) => dot.classList.remove("is-hot"));
+    });
+    // The chords and the tree appear in turn: a short delay, then the class that starts the animation.
+    const play = () => { figure.classList.add("is-on"); tree.classList.add("is-on"); };
+    if (reduce) play();
+    else requestAnimationFrame(() => requestAnimationFrame(play));
+    return wrap;
   }
 
   // The job header on a deep file run: its status (colour-coded), its job id, and when it started, finished and how long it took.
