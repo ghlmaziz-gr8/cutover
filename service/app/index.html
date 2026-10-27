@@ -1541,6 +1541,12 @@ button:not(:disabled):active{transform:scale(.965)}
       <button type="button" class="ghost" id="reviewFilesTop" hidden>Review file results</button>
       <button type="button" id="toNextTop">Deeper assessment</button>
     </div>
+    <div class="card" id="outOfDateCard" hidden style="margin-top:12px">
+      <h3 style="margin-top:0">The repository has changed</h3>
+      <p class="muted small" id="outOfDateNote" style="margin:6px 0 10px"></p>
+      <button type="button" class="ghost" id="outOfDateRun">Run the assessment again</button>
+      <p class="small hint" id="outOfDateMsg" role="status"></p>
+    </div>
     <div class="card" id="reviewBody"></div>
 
     <div class="card" id="discussion">
@@ -6673,7 +6679,28 @@ a{color:#6d28d9;font-weight:600}`;
     return badge;
   }
 
+  // The results were made from one commit. If the branch has moved on, they may no longer match the code.
+  function renderOutOfDate(row) {
+    const card = $("outOfDateCard");
+    card.hidden = !row.out_of_date;
+    if (!row.out_of_date) return;
+    $("outOfDateNote").textContent = `The branch now has a newer commit (${String(row.head_sha).slice(0, 7)}) than the one this assessment read (${String(row.commit_sha).slice(0, 7)}). The results may not match the code. Run the assessment again to refresh them.`;
+    $("outOfDateRun").disabled = !row.can_plan;
+  }
+  $("outOfDateRun").addEventListener("click", async () => {
+    try {
+      await api(`/api/analyses/${cur.id}/rerun`, { method: "POST" });
+      await refreshAnalysis();
+      setMsg("outOfDateMsg", "Running the assessment again. This page shows the progress.");
+      updateRunBanner();
+      startRunBanner();
+    } catch (err) {
+      setMsg("outOfDateMsg", err.message, true);
+    }
+  });
+
   function renderReview(row) {
+    renderOutOfDate(row);
     const box = $("reviewBody");
     box.innerHTML = "";
     if (row.status === "failed") {
