@@ -1214,7 +1214,7 @@ test("operators see the database size against the free-tier limit", async () => 
   assert.equal(res.status, 200);
   assert.equal(res.body.bytes, DATABASE_BYTES);
   assert.equal(res.body.limit_bytes, 490 * 1024 * 1024);
-  assert.equal(res.body.percent, 25);
+  assert.equal(res.body.percent, 25.5);
 });
 
 test("the database size is only for operators", async () => {
