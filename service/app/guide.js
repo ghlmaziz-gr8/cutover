@@ -12,6 +12,7 @@ window.CUTOVER_GUIDE = {
   updated: "2026-10-22",
   whatsNew: [
     "2026-10-27: Each deep file run shows a job header: a colour-coded status (in progress, passed, approved, replaced or failed), its job id, and when it started, finished and how long it took.",
+    "2026-10-27: The file map shows each file's deep assessment (Assessing, Draft ready, Approved, Failed). Choosing a file opens its deep view under it, with a short entrance.",
     "2026-10-27: The stage-cleared notices and the bell panel sit at the edge of the screen again. They were cut off under the top bar.",
     "2026-10-27: The model for an analysis is chosen from its list in the Deep view. Choosing a model applies it straight away. A model reply with extra words around its answer is now read as well.",
     "2026-10-27: The search and filters on the Analyses list are hidden. Press Find an assessment to show them.",

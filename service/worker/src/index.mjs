@@ -3130,6 +3130,25 @@ function dispatchBusiness(env, inputs) {
 }
 
 // ---- Deep file assessments: list, approve and discard (platform engineers). Approving replaces the earlier approved one. ----
+// The deep assessment state of each file in an analysis, for the file map. An approved account wins over a later
+// draft; otherwise the latest run decides. Platform engineers only.
+async function deepSummary(request, env, id) {
+  const access = await analysisAccess(env, request, id);
+  if (access.response) return access.response;
+  if (!canStart(access.member)) return json({ error: "Only platform engineers can see the deep assessments." }, 403);
+  const res = await serviceRest(env, `file_deep_assessments?analysis_id=eq.${id}&select=id,file_path,status,created_at,finished_at&order=created_at.desc&limit=5000`);
+  if (!res.ok) return json({ error: "Could not load the deep assessments." }, 502);
+  const files = {};
+  const approved = {};
+  for (const r of await res.json()) {
+    if (r.status === "approved" && !approved[r.file_path]) {
+      approved[r.file_path] = { state: "approved", job: r.id, started_at: r.created_at, finished_at: r.finished_at || null };
+    }
+    if (!files[r.file_path]) files[r.file_path] = { state: r.status, job: r.id, started_at: r.created_at, finished_at: r.finished_at || null };
+  }
+  return json({ files: { ...files, ...approved } });
+}
+
 async function listDeepFiles(request, env, id) {
   const access = await analysisAccess(env, request, id);
   if (access.response) return access.response;
@@ -4260,6 +4279,8 @@ async function route(request, env) {
     if (businessStart && UUID_PATTERN.test(businessStart[1]) && method === "POST") return startBusiness(request, env, businessStart[1]);
     const businessDiscard = path.match(/^\/api\/analyses\/([^/]+)\/business\/discard$/);
     if (businessDiscard && UUID_PATTERN.test(businessDiscard[1]) && method === "POST") return discardBusiness(request, env, businessDiscard[1]);
+    const deepSummaryRoute = path.match(/^\/api\/analyses\/([^/]+)\/deep-files\/summary$/);
+    if (deepSummaryRoute && UUID_PATTERN.test(deepSummaryRoute[1]) && method === "GET") return deepSummary(request, env, deepSummaryRoute[1]);
     const deepList = path.match(/^\/api\/analyses\/([^/]+)\/deep-files$/);
     if (deepList && UUID_PATTERN.test(deepList[1]) && method === "GET") return listDeepFiles(request, env, deepList[1]);
     const deepApprove = path.match(/^\/api\/analyses\/([^/]+)\/deep-files\/approve$/);

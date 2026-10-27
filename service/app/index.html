@@ -1283,6 +1283,10 @@ button:not(:disabled):active{transform:scale(.965)}
     .dj-took{display:inline-block;margin-left:6px;padding:1px 7px;border-radius:999px;background:#f1f5f9;color:#334155;font-weight:600}
     @keyframes djPulse{0%,100%{box-shadow:0 0 0 0 rgba(29,78,216,.5);transform:scale(1)}50%{box-shadow:0 0 0 6px rgba(29,78,216,0);transform:scale(1.15)}}
     @media (prefers-reduced-motion: reduce){.dj-running .dj-dot{animation:none}}
+    /* The deep view under a file: it rises in when the file is chosen. */
+    .dp-enter{animation:dpEnter .5s cubic-bezier(.2,.8,.2,1) both}
+    @keyframes dpEnter{from{opacity:0;transform:translateY(16px)}to{opacity:1;transform:none}}
+    @media (prefers-reduced-motion: reduce){.dp-enter{animation:none}}
 </style>
 </head>
 <body>
@@ -7380,6 +7384,15 @@ a{color:#6d28d9;font-weight:600}`;
   }
   // The business view shows every file as a tree, the same map as the conversion page. Choosing a file shows what it does.
   let businessFiles = { analysis: null, rows: [] };
+  // The deep state of each file, for the map. An engineer sees them; anyone else sees none.
+  async function loadDeepStates() {
+    try {
+      const res = await api(`/api/analyses/${cur.id}/deep-files/summary`);
+      return res.files || {};
+    } catch (err) {
+      return {};
+    }
+  }
   async function renderBusinessFiles() {
     const box = $("deeperFilesMap");
     if (businessFiles.analysis !== cur.id) {
@@ -7397,7 +7410,8 @@ a{color:#6d28d9;font-weight:600}`;
       : "No files yet. They appear here once the analysis sends them.";
     box.replaceChildren();
     if (!rows.length) return;
-    drawMap(window.FileMap.tree({ label: "Files in the application", files: rows, conversions: cur.conversions || [] }), box, {
+    const deep = await loadDeepStates();
+    drawMap(window.FileMap.tree({ label: "Files in the application", files: rows, conversions: cur.conversions || [], deep }), box, {
       title: "Files in the application",
       toolbar: true,
       legend: {
@@ -7424,17 +7438,12 @@ a{color:#6d28d9;font-weight:600}`;
       box.appendChild(ul);
     }
     // The deep view: the purpose, user stories, functions and what they call, opened inline on this file.
-    const open = el("button", "Deep view", "small-btn");
-    open.type = "button";
-    open.style.marginTop = "10px";
-    open.addEventListener("click", () => {
-      open.hidden = true;
-      const panel = deepPanel(box, f, () => {
-        panel.remove();
-        open.hidden = false;
-      });
-    });
-    box.appendChild(open);
+    // The deep view opens by itself under the file, with a short entrance, so the status and the work show at once.
+    box.classList.remove("dp-enter");
+    void box.offsetWidth;
+    box.classList.add("dp-enter");
+    if (!window.matchMedia("(prefers-reduced-motion: reduce)").matches) box.scrollIntoView({ behavior: "smooth", block: "nearest" });
+    const panel = deepPanel(box, f, () => panel.remove());
   }
 
   // Next steps opens only when the deeper assessment is finished and one of its three views has been opened.
@@ -8781,6 +8790,7 @@ const REGION_OPTS = {
     });
     let waitCard = null;
     let pollTimer = null;
+    let wasRunning = false;
     function rebuild(assessments) {
       list.innerHTML = "";
       waitCard = null;
@@ -8800,6 +8810,9 @@ const REGION_OPTS = {
       try {
         const res = await api(`/api/analyses/${cur.id}/deep-files?path=${encodeURIComponent(f.path)}`);
         const running = res.assessments.find((a) => a.status === "running") || null;
+        // When a run ends, the file's state on the map changes, so the map is drawn again.
+        if (wasRunning && !running && businessFiles.analysis === cur.id) renderBusinessFiles();
+        wasRunning = !!running;
         if (running && waitCard && waitCard.isConnected) {
           // The live card stays in place between checks, so its animation keeps going.
           waitCard.update(running);
@@ -8816,6 +8829,7 @@ const REGION_OPTS = {
       try {
         await api(`/api/analyses/${cur.id}/deep-files/start`, { method: "POST", body: JSON.stringify({ path: f.path }) });
         msg.textContent = "Started. The live view below follows the assessment and shows the draft when it is ready.";
+        if (businessFiles.analysis === cur.id) renderBusinessFiles();
         load();
       } catch (err) {
         msg.textContent = err.message;

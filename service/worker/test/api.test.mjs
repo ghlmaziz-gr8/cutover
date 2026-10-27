@@ -3098,3 +3098,18 @@ test("a finished run keeps the job it started with, and records when it finished
   assert.equal(row.created_at, startedAt, "the draft keeps the time the run started");
   assert.ok(row.finished_at, "the draft records when the run finished");
 });
+
+test("the file map gets the latest deep state of each file, and an approved account wins over a later draft", async () => {
+  readyForBusiness();
+  state.file_deep_assessments.push(
+    { id: uid(1001), analysis_id: AN_ACME, file_path: "src/A.java", status: "approved", created_at: "2026-10-27T10:00:00Z", finished_at: "2026-10-27T10:01:00Z", content: {} },
+    { id: uid(1002), analysis_id: AN_ACME, file_path: "src/A.java", status: "draft", created_at: "2026-10-27T11:00:00Z", finished_at: "2026-10-27T11:01:00Z", content: {} },
+    { id: uid(1003), analysis_id: AN_ACME, file_path: "src/B.java", status: "running", created_at: "2026-10-27T12:00:00Z", content: {} },
+  );
+  const res = await call(`/api/analyses/${AN_ACME}/deep-files/summary`, { as: "eng_a" });
+  assert.equal(res.status, 200);
+  assert.equal(res.body.files["src/A.java"].state, "approved");
+  assert.equal(res.body.files["src/B.java"].state, "running");
+  const denied = await call(`/api/analyses/${AN_ACME}/deep-files/summary`, { as: "aud_a" });
+  assert.equal(denied.status, 403);
+});
