@@ -1229,6 +1229,45 @@ button:not(:disabled):active{transform:scale(.965)}
 @media (prefers-color-scheme:dark){:root:not([data-theme="light"]) .ai-badge{color:#ddd6fe;background:rgba(167,139,250,.14);border-color:rgba(167,139,250,.3)}}
 :root[data-theme="dark"] .ai-badge{color:#ddd6fe;background:rgba(167,139,250,.14);border-color:rgba(167,139,250,.3)}
 @media (prefers-reduced-motion:reduce){.ai-spark svg{animation:none}}
+    /* Deep file assessment: the live card while a file is being assessed. */
+    .dw-card{position:relative;overflow:hidden;border-radius:16px;padding:18px 18px 16px;margin-top:10px;background:linear-gradient(135deg,rgba(123,47,247,.08),rgba(241,7,163,.06) 55%,rgba(255,138,0,.08));border:1px solid rgba(123,47,247,.18);animation:dwIn .5s ease both}
+    @keyframes dwIn{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
+    .dw-head{display:flex;align-items:center;gap:14px}
+    .dw-orb{position:relative;width:46px;height:46px;flex:0 0 46px}
+    .dw-orb i{position:absolute;inset:0;border-radius:50%;border:2px solid #7b2ff7;opacity:0;animation:dwRing 2.4s ease-out infinite}
+    .dw-orb i:nth-child(2){animation-delay:.8s}
+    .dw-orb i:nth-child(3){animation-delay:1.6s;border-color:#ff8a00}
+    .dw-orb b{position:absolute;inset:11px;border-radius:50%;background:linear-gradient(135deg,#7b2ff7,#f107a3,#ff8a00);box-shadow:0 0 18px rgba(241,7,163,.5);animation:dwPulse 1.6s ease-in-out infinite}
+    @keyframes dwRing{0%{transform:scale(.4);opacity:.9}100%{transform:scale(1.5);opacity:0}}
+    @keyframes dwPulse{0%,100%{transform:scale(.92)}50%{transform:scale(1.08)}}
+    .dw-titles{min-width:0;flex:1}
+    .dw-title{font-weight:700;overflow-wrap:anywhere}
+    .dw-stage{font-size:13px;color:#6b5b8a;margin-top:2px}
+    .dw-scan{position:relative;margin-top:14px;border-radius:12px;padding:12px 14px;background:rgba(20,10,40,.92);overflow:hidden}
+    .dw-code{display:flex;flex-direction:column;gap:6px}
+    .dw-line{display:block;height:6px;border-radius:3px;background:rgba(255,255,255,.12);transition:background .6s ease,box-shadow .6s ease}
+    .dw-line.lit{background:linear-gradient(90deg,#7b2ff7,#f107a3);box-shadow:0 0 8px rgba(241,7,163,.45)}
+    .dw-sweep{position:absolute;left:0;right:0;height:38px;top:-40px;background:linear-gradient(180deg,transparent,rgba(255,138,0,.28),transparent);animation:dwSweep 2.6s linear infinite;pointer-events:none}
+    @keyframes dwSweep{0%{top:-40px}100%{top:100%}}
+    .dw-time{display:flex;align-items:baseline;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-top:14px}
+    .dw-clock{font-size:30px;font-weight:800;font-variant-numeric:tabular-nums;letter-spacing:.02em;background:linear-gradient(90deg,#7b2ff7,#f107a3,#ff8a00);-webkit-background-clip:text;background-clip:text;color:transparent}
+    .dw-est{font-size:13px;color:#4b3f63;text-align:right}
+    .dw-track{position:relative;height:12px;border-radius:999px;background:rgba(123,47,247,.12);margin-top:10px;overflow:hidden}
+    .dw-fill{position:absolute;left:0;top:0;bottom:0;width:0;border-radius:999px;background:linear-gradient(90deg,#7b2ff7,#f107a3,#ff8a00,#7b2ff7);background-size:200% 100%;transition:width .9s ease;animation:dwFlow 2.4s linear infinite}
+    @keyframes dwFlow{from{background-position:0 0}to{background-position:200% 0}}
+    .dw-mark{position:absolute;top:-3px;bottom:-3px;width:2px;background:#1b1333;opacity:.5}
+    .dw-stages{list-style:none;margin:14px 0 0;padding:0;display:grid;gap:6px}
+    .dw-stages li{display:flex;align-items:center;gap:10px;font-size:13px;color:#8a7fa3;transition:color .4s ease}
+    .dw-stages li::before{content:"";width:10px;height:10px;border-radius:50%;background:rgba(123,47,247,.18);flex:0 0 10px;transition:background .4s ease}
+    .dw-stages li.done{color:#2e2550}
+    .dw-stages li.done::before{background:#22c55e}
+    .dw-stages li.now{color:#1b1333;font-weight:600}
+    .dw-stages li.now::before{background:linear-gradient(135deg,#7b2ff7,#f107a3);animation:dwBeat 1.2s ease-out infinite}
+    @keyframes dwBeat{0%{box-shadow:0 0 0 0 rgba(241,7,163,.6)}100%{box-shadow:0 0 0 10px rgba(241,7,163,0)}}
+    .dw-facts{display:flex;flex-wrap:wrap;gap:6px;margin-top:12px}
+    .dw-facts span{font-size:12px;padding:4px 10px;border-radius:999px;background:rgba(123,47,247,.1);color:#4b3f63}
+    .dw-note{font-size:12px;color:#6b5b8a;margin:10px 0 0}
+    @media (prefers-reduced-motion: reduce){.dw-card,.dw-card *{animation:none!important;transition:none!important}.dw-orb i{display:none}}
 </style>
 </head>
 <body>
@@ -8682,12 +8721,34 @@ const REGION_OPTS = {
     const close = el("button", "Close", "ghost small-btn");
     close.type = "button";
     close.addEventListener("click", onClose);
-    async function load() {
+    let waitCard = null;
+    let pollTimer = null;
+    function rebuild(assessments) {
       list.innerHTML = "";
+      waitCard = null;
+      if (!assessments.length) list.appendChild(el("p", "No deep assessment yet.", "muted small"));
+      for (const a of assessments) {
+        if (a.status === "running") {
+          waitCard = deepWait(a);
+          list.appendChild(waitCard);
+        } else {
+          list.appendChild(deepCard(a, load, msg));
+        }
+      }
+    }
+    async function load() {
+      clearTimeout(pollTimer);
+      if (!panel.isConnected) return;
       try {
         const res = await api(`/api/analyses/${cur.id}/deep-files?path=${encodeURIComponent(f.path)}`);
-        if (!res.assessments.length) list.appendChild(el("p", "No deep assessment yet.", "muted small"));
-        for (const a of res.assessments) list.appendChild(deepCard(a, load, msg));
+        const running = res.assessments.find((a) => a.status === "running") || null;
+        if (running && waitCard && waitCard.isConnected) {
+          // The live card stays in place between checks, so its animation keeps going.
+          waitCard.update(running);
+        } else {
+          rebuild(res.assessments);
+        }
+        if (running) pollTimer = setTimeout(load, 4000);
       } catch (err) {
         msg.textContent = err.message;
       }
@@ -8696,7 +8757,7 @@ const REGION_OPTS = {
       msg.textContent = "";
       try {
         await api(`/api/analyses/${cur.id}/deep-files/start`, { method: "POST", body: JSON.stringify({ path: f.path }) });
-        msg.textContent = "Started. Refresh in a few minutes to see the draft.";
+        msg.textContent = "Started. The live view below follows the assessment and shows the draft when it is ready.";
         load();
       } catch (err) {
         msg.textContent = err.message;
@@ -8708,6 +8769,91 @@ const REGION_OPTS = {
     li.appendChild(panel);
     load();
     return panel;
+  }
+
+  // The live card shown while a deep file assessment runs: a code scan, an elapsed clock and the time it should take.
+  // The stages follow the estimate, so they show how far along the work should be, not a measured step.
+  const DW_STAGES = [["Reading the file", 0], ["Working out what it does", 0.15], ["Tracing its functions and calls", 0.4], ["Writing the user stories", 0.7], ["Checking the draft", 0.9]];
+  function deepFmt(sec) {
+    const s = Math.max(0, Math.round(sec));
+    return s < 60 ? `${s} s` : `${Math.floor(s / 60)} min ${s % 60} s`;
+  }
+  function deepWait(a) {
+    const card = el("div", null, "dw-card");
+    const head = el("div", null, "dw-head");
+    const orb = el("div", null, "dw-orb");
+    orb.append(el("i"), el("i"), el("i"), el("b"));
+    const titles = el("div", null, "dw-titles");
+    const stageText = el("div", "Measuring the file", "dw-stage");
+    titles.append(el("div", `Reading ${a.file_path}`, "dw-title"), stageText);
+    head.append(orb, titles);
+    const scan = el("div", null, "dw-scan");
+    const code = el("div", null, "dw-code");
+    const lineCount = 18;
+    const lines = [];
+    for (let i = 0; i < lineCount; i++) {
+      const line = el("span", null, "dw-line");
+      line.style.width = `${34 + ((i * 37) % 58)}%`;
+      line.style.marginLeft = `${((i * 7) % 3) * 14}px`;
+      lines.push(line);
+      code.appendChild(line);
+    }
+    scan.append(code, el("span", null, "dw-sweep"));
+    const time = el("div", null, "dw-time");
+    const clock = el("span", "0:00", "dw-clock");
+    const est = el("span", "", "dw-est");
+    time.append(clock, est);
+    const track = el("div", null, "dw-track");
+    const fill = el("div", null, "dw-fill");
+    const mark = el("div", null, "dw-mark");
+    mark.hidden = true;
+    track.append(fill, mark);
+    const stages = el("ol", null, "dw-stages");
+    const stageItems = DW_STAGES.map(([label]) => { const li = el("li", label); stages.appendChild(li); return li; });
+    const facts = el("div", null, "dw-facts");
+    const note = el("p", "", "dw-note");
+    card.append(head, scan, time, track, stages, facts, note);
+    let data = a;
+    function paint() {
+      const progress = (data.content || {}).progress || null;
+      const started = Date.parse(data.created_at) || Date.now();
+      const elapsed = Math.max(0, (Date.now() - started) / 1000);
+      const estimate = progress ? progress.estimate_seconds : null;
+      clock.textContent = deepFmt(elapsed);
+      if (estimate) {
+        const share = Math.min(elapsed / estimate, 1);
+        const shown = Math.min(share, 0.95);
+        // The bar runs to twice the estimate; the tick in the middle is the estimate itself.
+        fill.style.width = `${Math.round(Math.min(elapsed / (estimate * 2), 1) * 100)}%`;
+        mark.hidden = false;
+        mark.style.left = "50%";
+        lines.forEach((line, i) => line.classList.toggle("lit", i < Math.round(shown * lineCount)));
+        est.textContent = `About ${deepFmt(estimate)} · usually ${deepFmt(estimate * 0.8)} to ${deepFmt(estimate * 1.25)}`;
+        note.textContent = elapsed > estimate
+          ? "Longer than usual. The file may be large or the model is busy. Still working."
+          : "Leave this open, or come back later. The draft appears here when it is ready.";
+        let current = 0;
+        DW_STAGES.forEach(([, at], i) => { if (share >= at) current = i; });
+        stageItems.forEach((li, i) => { li.className = i < current ? "done" : i === current ? "now" : ""; });
+        stageText.textContent = DW_STAGES[current][0];
+        facts.replaceChildren(
+          el("span", `${progress.lines.toLocaleString()} lines`),
+          el("span", `${progress.chars.toLocaleString()} characters`),
+          el("span", `Estimate ${deepFmt(estimate)}`)
+        );
+      } else {
+        est.textContent = "Measuring the file to estimate the time…";
+        note.textContent = "The time estimate appears once the file has been read.";
+        facts.replaceChildren(el("span", "Reading the file size"));
+      }
+    }
+    card.update = (next) => { data = next; paint(); };
+    paint();
+    const timer = setInterval(() => {
+      if (!card.isConnected) { clearInterval(timer); return; }
+      paint();
+    }, 1000);
+    return card;
   }
 
   function deepCard(a, reload, msg) {

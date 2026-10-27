@@ -58,3 +58,43 @@ class Constants(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class ProgressReport(unittest.TestCase):
+    def test_the_size_of_the_file_is_counted_in_lines_and_characters(self):
+        payload = dr.progress_payload("src/A.bas", "one\ntwo\nthree")
+        self.assertEqual(payload, {"path": "src/A.bas", "lines": 3, "chars": 13})
+
+    def test_an_empty_file_has_no_lines(self):
+        self.assertEqual(dr.progress_payload("src/A.bas", "")["lines"], 0)
+
+    def test_the_progress_is_posted_to_its_own_route_with_the_secret(self):
+        seen = {}
+
+        class Res:
+            status = 200
+            def __enter__(self): return self
+            def __exit__(self, *a): return False
+
+        def opener(req, timeout=None):
+            seen["url"] = req.full_url
+            seen["secret"] = req.get_header("X-runner-secret")
+            seen["body"] = json.loads(req.data.decode("utf-8"))
+            return Res()
+
+        status = dr.post_progress("https://api.example", "11111111-1111-1111-1111-111111111111", "s3cret",
+                                  {"path": "src/A.bas", "lines": 2, "chars": 9}, opener=opener)
+        self.assertEqual(status, 200)
+        self.assertTrue(seen["url"].endswith("/api/runner/11111111-1111-1111-1111-111111111111/deep-file-progress"))
+        self.assertEqual(seen["secret"], "s3cret")
+        self.assertEqual(seen["body"]["lines"], 2)
+
+    def test_a_run_reports_the_size_before_the_model_is_called(self):
+        with tempfile.TemporaryDirectory() as d:
+            Path(d, "src").mkdir()
+            Path(d, "src", "A.bas").write_text("Sub A()\nEnd Sub\n", encoding="utf-8")
+            calls = []
+            result = dr.run("src/A.bas", Path(d), lambda text: GOOD, report=lambda p: calls.append(("report", p)))
+            self.assertEqual(calls[0][0], "report")
+            self.assertEqual(calls[0][1]["lines"], 3)
+            self.assertEqual(result["status"], "ok")
