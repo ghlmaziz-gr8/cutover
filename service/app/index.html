@@ -2204,10 +2204,13 @@ button:not(:disabled):active{transform:scale(.965)}
     $("eta").textContent = !done && idx >= etaStart ? etaFrom(idx) : "";
   }
 
-  // The bell is hidden while an analysis runs: on the progress screen, and on the deeper assessment page while its run is queued or running.
+  // The bell is hidden during an assessment: while an analysis is being started or opened, and on every screen
+  // except the home list while its analysis is queued or running.
+  let startingRun = false;
   function updateBellVisibility() {
     const running = !!cur && (cur.status === "queued" || cur.status === "running");
-    const hide = !$("s-run").hidden || (!$("s-deeper").hidden && running);
+    const onHome = !$("s-home").hidden;
+    const hide = startingRun || (running && !onHome);
     document.body.classList.toggle("no-bell", hide);
   }
 
@@ -3514,12 +3517,17 @@ button:not(:disabled):active{transform:scale(.965)}
 
   async function openAnalysis(id) {
     markOpened([id]);
+    startingRun = true;
+    updateBellVisibility();
     try {
       cur = await api(`/api/analyses/${id}`);
     } catch (err) {
+      startingRun = false;
+      updateBellVisibility();
       setMsg("listMsg", err.message, true);
       return;
     }
+    startingRun = false;
     if (cur.status === "queued" || cur.status === "running") showRun();
     else showReview();
   }
@@ -9014,7 +9022,8 @@ const REGION_OPTS = {
 
   $("startNow").addEventListener("click", async () => {
     // The bell is hidden from the moment the analysis is being started, not only once the run screen opens.
-    document.body.classList.add("no-bell");
+    startingRun = true;
+    updateBellVisibility();
     $("startNow").disabled = true;
     setMsg("rulesMsg", "Starting analysis...", false);
     try {
@@ -9031,8 +9040,10 @@ const REGION_OPTS = {
         res = await api("/api/analyses", { method: "POST", body: JSON.stringify(body) });
       }
       cur = await api(`/api/analyses/${res.id}`);
+      startingRun = false;
       showRun();
     } catch (err) {
+      startingRun = false;
       updateBellVisibility();
       setMsg("rulesMsg", err.message, true);
       $("startNow").disabled = !$("dataRules").checked;
