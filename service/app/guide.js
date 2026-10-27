@@ -11,6 +11,7 @@
 window.CUTOVER_GUIDE = {
   updated: "2026-10-22",
   whatsNew: [
+    "2026-10-27: The confidence ring has a halo: a glow in the colour of the status under the pointer, a dashed ring that turns, and a dot that orbits it.",
     "2026-10-27: The welcome card shows the time you have spent in each workspace, and a level badge from the first point (Starter at the start).",
     "2026-10-27: Time on the system is counted per screen while you are active. A card on the home screen greets you when you sign in: your total time, your last visit, your favourite page, and your level with points and badges. Points are for recognition only.",
     "2026-10-27: The confidence score for a deep assessment is a halo: a ring fills to the score while the number counts up, with a glow, a turning dashed ring and an orbiting dot. It shows how many names were checked against the code, how many rules have line numbers, and how many have a worked example.",

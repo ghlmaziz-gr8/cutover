@@ -1200,6 +1200,12 @@ button:not(:disabled):active{transform:scale(.965)}
 .conf-seg{stroke-dasharray:0 100;transition:stroke-dasharray 1.2s cubic-bezier(.2,.8,.2,1),stroke-width .25s ease,opacity .3s ease}
 .conf-seg.is-on{stroke-width:22px}
 .has-focus .conf-seg:not(.is-on){opacity:.3}
+/* The halo: a glow behind the ring in the colour of the status under the pointer, a dashed ring turning, and a dot orbiting. */
+.conf-halo{position:absolute;inset:-22px;border-radius:50%;background:radial-gradient(circle,var(--halo,#10b981) 0%,transparent 66%);opacity:.32;filter:blur(10px);pointer-events:none;animation:dhPulse 3.2s ease-in-out infinite;transition:background .4s ease}
+.conf-spin{position:absolute;inset:-9px;border-radius:50%;border:1.5px dashed var(--halo,#10b981);opacity:.5;pointer-events:none;animation:dhSpin 18s linear infinite;transition:border-color .4s ease}
+.conf-orbit{position:absolute;inset:0;pointer-events:none;animation:dhSpin 5.5s linear infinite}
+.conf-orbit::after{content:"";position:absolute;top:9px;left:50%;width:9px;height:9px;margin-left:-4.5px;border-radius:50%;background:var(--halo,#10b981);box-shadow:0 0 12px var(--halo,#10b981);transition:background .4s ease,box-shadow .4s ease}
+@media (prefers-reduced-motion: reduce){.conf-halo,.conf-spin,.conf-orbit{animation:none}}
 .conf-center{position:absolute;inset:0;display:grid;place-content:center;justify-items:center;text-align:center;pointer-events:none}
 .conf-n{font:800 36px/1 var(--display);color:var(--fg);font-variant-numeric:tabular-nums}
 .conf-l{margin-top:6px;max-width:112px;font:700 10.5px var(--body);letter-spacing:.07em;text-transform:uppercase;color:var(--muted);line-height:1.35}
@@ -4181,6 +4187,9 @@ button:not(:disabled):active{transform:scale(.965)}
     ].filter((p) => p.n > 0);
     const gid = `confg${Math.random().toString(36).slice(2, 8)}`;
     const ring = el("div", null, "conf-ring");
+    const defaultHalo = parts[0].c1;
+    ring.style.setProperty("--halo", defaultHalo);
+    ring.append(el("div", null, "conf-halo"), el("div", null, "conf-spin"), el("div", null, "conf-orbit"));
     const svg = svgEl("svg", { viewBox: "0 0 180 180", width: "180", height: "180", role: "img", "aria-label": `${verifiedN} of ${total} points verified in code` });
     const defs = svgEl("defs", {});
     for (const p of parts) {
@@ -4232,6 +4241,7 @@ button:not(:disabled):active{transform:scale(.965)}
     const render = (key) => {
       const hit = key ? parts.find((p) => p.key === key) : null;
       svg.classList.toggle("has-focus", !!hit);
+      ring.style.setProperty("--halo", hit ? hit.c1 : defaultHalo);
       for (const p of parts) {
         const on = hit === p;
         p.seg.classList.toggle("is-on", on);
