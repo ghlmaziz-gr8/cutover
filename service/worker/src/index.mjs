@@ -11,6 +11,8 @@ import { validateDbMetadata } from "./db-metadata.mjs";
 //
 // Routes (all under /api). Every route needs a signed-in person, except the runner callback.
 //   GET    /api/me                                        your email, operator flag, and your workspaces with roles
+//   POST   /api/me/time                                   seconds spent on one screen (signed-in person)
+//   GET    /api/me/engagement                             your time, points, level, badges and favourite screen
 //   POST   /api/workspaces                                create a customer workspace and invite its first admin (Cutover operators)
 //   PATCH  /api/workspaces/:id                             rename a workspace (operators)
 //   DELETE /api/workspaces/:id                             delete a workspace and its analyses (operators; type the name to confirm)
@@ -318,6 +320,106 @@ async function loadAnalysis(env, id) {
 }
 
 // ---- Who am I, and which workspaces am I in ----
+
+// Time on the system. Points and levels are recognition only. Totals are shown to the person they belong to.
+const POINTS_PER_MINUTE = 1;
+const SESSION_GAP_MS = 30 * 60 * 1000;
+const HEARTBEAT_MAX_SECONDS = 60;
+const FAVOURITE_MARGIN = 1.25;
+const LEVELS = [
+  { at: 0, name: "Starter" },
+  { at: 100, name: "Explorer" },
+  { at: 500, name: "Regular" },
+  { at: 1500, name: "Champion" },
+  { at: 5000, name: "Legend" },
+];
+const HOUR_BADGES = [1, 5, 25, 100];
+
+function levelFor(points) {
+  let index = 0;
+  for (let i = 0; i < LEVELS.length; i += 1) if (points >= LEVELS[i].at) index = i;
+  const next = LEVELS[index + 1] || null;
+  return { number: index + 1, name: LEVELS[index].name, points, at: LEVELS[index].at, next_at: next ? next.at : null };
+}
+
+// A heartbeat from the portal: seconds spent on one screen. A gap of over thirty minutes starts a new visit.
+async function recordScreenTime(request, env) {
+  const auth = await requireUser(env, request);
+  if (auth.response) return auth.response;
+  const parsed = await readJson(request);
+  if (parsed.error) return json({ error: parsed.error }, 400);
+  const screen = typeof parsed.value?.screen === "string" ? parsed.value.screen : "";
+  const seconds = Number(parsed.value?.seconds);
+  if (!/^s-[a-z-]{1,38}$/.test(screen)) return json({ error: "Choose a screen." }, 400);
+  if (!Number.isInteger(seconds) || seconds < 1 || seconds > HEARTBEAT_MAX_SECONDS) return json({ error: "Send the seconds in the range 1 to 60." }, 400);
+  const userId = auth.user.id;
+  const day = new Date().toISOString().slice(0, 10);
+  const now = new Date();
+
+  const current = await serviceRest(env, `screen_time?user_id=eq.${userId}&day=eq.${day}&screen=eq.${screen}&select=seconds`);
+  if (!current.ok) return json({ error: "Could not record the time." }, 502);
+  const [row] = await current.json();
+  const saved = await serviceRest(env, "screen_time?on_conflict=user_id,day,screen", {
+    method: "POST",
+    headers: { prefer: "resolution=merge-duplicates,return=minimal" },
+    body: JSON.stringify({ user_id: userId, day, screen, seconds: (row?.seconds || 0) + seconds }),
+  });
+  if (!saved.ok) return json({ error: "Could not record the time." }, 502);
+
+  const totals = await serviceRest(env, `engagement?user_id=eq.${userId}&select=total_seconds,last_seen,visit_start_total,previous_seen,previous_visit_seconds`);
+  if (!totals.ok) return json({ error: "Could not record the time." }, 502);
+  const [eng] = await totals.json();
+  const before = Number(eng?.total_seconds || 0);
+  const newVisit = !eng || !eng.last_seen || now - new Date(eng.last_seen) > SESSION_GAP_MS;
+  // When a visit ends (a new one starts), its length is kept as the previous visit.
+  const next = {
+    user_id: userId,
+    total_seconds: before + seconds,
+    last_seen: now.toISOString(),
+    visit_start_total: newVisit ? before : Number(eng?.visit_start_total || 0),
+    previous_seen: newVisit && eng?.last_seen ? eng.last_seen : eng?.previous_seen || null,
+    previous_visit_seconds: newVisit && eng?.last_seen ? Math.max(0, before - Number(eng?.visit_start_total || 0)) : Number(eng?.previous_visit_seconds || 0),
+  };
+  const saveTotals = await serviceRest(env, "engagement?on_conflict=user_id", {
+    method: "POST",
+    headers: { prefer: "resolution=merge-duplicates,return=minimal" },
+    body: JSON.stringify(next),
+  });
+  if (!saveTotals.ok) return json({ error: "Could not record the time." }, 502);
+  return json({ ok: true });
+}
+
+// What the login card shows: totals, the change since the previous visit, points and level, badges, and the
+// favourite screen over the last thirty days, named only when it is clearly ahead of the next one.
+async function engagementSummary(request, env) {
+  const auth = await requireUser(env, request);
+  if (auth.response) return auth.response;
+  const userId = auth.user.id;
+  const since = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+  const [totalsRes, screensRes] = await Promise.all([
+    serviceRest(env, `engagement?user_id=eq.${userId}&select=total_seconds,last_seen,previous_seen,previous_visit_seconds`),
+    serviceRest(env, `screen_time?user_id=eq.${userId}&day=gte.${since}&select=screen,seconds`),
+  ]);
+  if (!totalsRes.ok || !screensRes.ok) return json({ error: "Could not load your time on the system." }, 502);
+  const [eng] = await totalsRes.json();
+  const total = Number(eng?.total_seconds || 0);
+  const byScreen = {};
+  for (const r of await screensRes.json()) byScreen[r.screen] = (byScreen[r.screen] || 0) + Number(r.seconds || 0);
+  const ranked = Object.entries(byScreen).sort((a, b) => b[1] - a[1]);
+  const [topScreen, topSeconds] = ranked[0] || [null, 0];
+  const runnerUp = ranked[1] ? ranked[1][1] : 0;
+  const favourite = topScreen && topSeconds > 0 && topSeconds >= runnerUp * FAVOURITE_MARGIN ? { screen: topScreen, seconds: topSeconds } : null;
+  const points = Math.floor(total / 60) * POINTS_PER_MINUTE;
+  const previous = eng?.previous_seen || null;
+  return json({
+    total_seconds: total,
+    last_visit: previous,
+    last_visit_seconds: previous ? Number(eng.previous_visit_seconds || 0) : 0,
+    favourite,
+    level: levelFor(points),
+    badges: HOUR_BADGES.filter((h) => total >= h * 3600).map((h) => ({ id: `hours-${h}`, name: `${h} ${h === 1 ? "hour" : "hours"} on the system` })),
+  });
+}
 
 async function me(request, env) {
   const auth = await requireUser(env, request);
@@ -4168,6 +4270,8 @@ async function route(request, env) {
     const method = request.method;
 
     if (path === "/api/me" && method === "GET") return me(request, env);
+    if (path === "/api/me/time" && method === "POST") return recordScreenTime(request, env);
+    if (path === "/api/me/engagement" && method === "GET") return engagementSummary(request, env);
     if (path === "/api/workspaces" && method === "POST") return createWorkspace(request, env);
     if (path === "/api/repo-check" && method === "GET") return repoCheck(request, env);
     if (path === "/api/admin/workspaces" && method === "GET") return overviewWorkspaces(request, env);

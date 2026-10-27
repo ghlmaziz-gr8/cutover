@@ -1301,6 +1301,16 @@ button:not(:disabled):active{transform:scale(.965)}
     @keyframes dhPulse{0%,100%{transform:scale(.9);opacity:.25}50%{transform:scale(1.12);opacity:.55}}
     @keyframes dhSpin{to{transform:rotate(360deg)}}
     @media (prefers-reduced-motion: reduce){.dh-glow,.dh-dash,.dh-orbit{animation:none}.dh-arc{transition:none}}
+    /* The welcome card on the home screen: a short line of thanks, the level, and any badges. */
+    .welcome-card{position:relative;border:1px solid var(--line,#ddd);border-radius:14px;padding:16px 18px;margin:12px 0 16px;background:linear-gradient(135deg,rgba(29,78,216,.06),rgba(47,158,107,.07));animation:wcIn .5s cubic-bezier(.2,.8,.2,1) both}
+    .welcome-card h3{margin:0 0 6px}
+    .wc-bar{height:8px;border-radius:99px;background:var(--line,#e2e2e2);overflow:hidden;margin:10px 0 4px}
+    .wc-fill{height:100%;width:0;border-radius:99px;background:linear-gradient(90deg,#1d4ed8,#2f9e6b);transition:width 1.2s cubic-bezier(.2,.8,.2,1)}
+    .wc-badges{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px}
+    .wc-badge{font-size:12px;padding:3px 10px;border-radius:99px;border:1px solid var(--line,#ddd)}
+    .wc-close{position:absolute;top:8px;right:10px}
+    @keyframes wcIn{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
+    @media (prefers-reduced-motion: reduce){.welcome-card{animation:none}.wc-fill{transition:none}}
     /* The deep view under a file: it rises in when the file is chosen. */
     .dp-enter{animation:dpEnter .5s cubic-bezier(.2,.8,.2,1) both}
     @keyframes dpEnter{from{opacity:0;transform:translateY(16px)}to{opacity:1;transform:none}}
@@ -1379,6 +1389,7 @@ button:not(:disabled):active{transform:scale(.965)}
   <!-- Your workspace -->
   <section id="s-home" class="screen" hidden>
     <p class="eyebrow">Your workspace</p>
+    <div id="welcomeCard" class="welcome-card" hidden></div>
     <div class="row between" style="margin-top:8px">
       <h2 id="homeTitle">Cutover</h2>
       <span class="row">
@@ -2294,7 +2305,86 @@ button:not(:disabled):active{transform:scale(.965)}
     document.body.classList.toggle("no-bell", hide);
   }
 
+  // Time on the system. The portal sends a short heartbeat about every 30 seconds while the tab is visible and the
+  // person has been active in the last two minutes. The labels are for the login card only.
+  const SCREEN_LABELS = { "s-home": "Home", "s-run": "Run", "s-review": "Review", "s-next": "Next steps", "s-plan": "Plan",
+    "s-files": "Files", "s-deeper": "Deeper assessment", "s-convert": "Convert", "s-rules": "Rules", "s-connect": "Connect",
+    "s-name": "Name", "s-role": "Role" };
+  let timeScreen = null;
+  let lastActivity = Date.now();
+  for (const evt of ["pointerdown", "keydown", "scroll", "pointermove"]) {
+    document.addEventListener(evt, () => { lastActivity = Date.now(); }, { passive: true });
+  }
+  setInterval(() => {
+    if (!me || !timeScreen || timeScreen === "s-login" || document.hidden) return;
+    if (Date.now() - lastActivity > 120000) return;
+    api("/api/me/time", { method: "POST", body: JSON.stringify({ screen: timeScreen, seconds: 30 }) }).catch(() => {});
+  }, 30000);
+  function fmtDuration(seconds) {
+    const mins = Math.round(seconds / 60);
+    if (mins < 1) return "under a minute";
+    const h = Math.floor(mins / 60);
+    const m = mins % 60;
+    return h ? `${h} h ${m} min` : `${m} min`;
+  }
+  function fmtAgo(iso) {
+    const days = Math.floor((Date.now() - new Date(iso).getTime()) / 86400000);
+    if (days < 1) return "earlier today";
+    if (days === 1) return "yesterday";
+    if (days < 14) return `${days} days ago`;
+    return `${Math.round(days / 7)} weeks ago`;
+  }
+  // The login card: once per browser session, a few lines, closed by the person.
+  async function showWelcome() {
+    const card = $("welcomeCard");
+    let data;
+    try {
+      data = await api("/api/me/engagement");
+    } catch (err) {
+      return;
+    }
+    card.replaceChildren();
+    const close = el("button", "Close", "ghost small-btn wc-close");
+    close.type = "button";
+    close.addEventListener("click", () => { card.hidden = true; });
+    card.append(close, el("h3", "Welcome back"));
+    card.append(el("div", `You have spent ${fmtDuration(data.total_seconds)} on the system.`, "small"));
+    if (data.last_visit) {
+      card.append(el("div", `Your last visit was ${fmtAgo(data.last_visit)}, for ${fmtDuration(data.last_visit_seconds)}.`, "small"));
+    }
+    if (data.favourite) {
+      const label = SCREEN_LABELS[data.favourite.screen] || "this page";
+      card.append(el("div", `This seems to be your favourite page: ${label}. You have spent the most time here.`, "small"));
+    }
+    const lvl = data.level;
+    const span = lvl.next_at ? lvl.next_at - lvl.at : 1;
+    const pct = lvl.next_at ? Math.min(100, Math.round(((lvl.points - lvl.at) / span) * 100)) : 100;
+    card.append(el("div", `Level ${lvl.number} · ${lvl.name} · ${lvl.points} points${lvl.next_at ? ` · ${lvl.next_at - lvl.points} to the next level` : ""}`, "small"));
+    const bar = el("div", null, "wc-bar");
+    const fill = el("div", null, "wc-fill");
+    bar.append(fill);
+    card.append(bar);
+    requestAnimationFrame(() => requestAnimationFrame(() => { fill.style.width = `${pct}%`; }));
+    if (data.badges && data.badges.length) {
+      const row = el("div", null, "wc-badges");
+      for (const b of data.badges) row.append(el("span", b.name, "wc-badge"));
+      card.append(row);
+    }
+    card.hidden = false;
+  }
+  function maybeGreet() {
+    try {
+      if (sessionStorage.getItem("cutover.greeted")) return;
+      sessionStorage.setItem("cutover.greeted", "1");
+    } catch (err) {
+      // Private windows may refuse storage; the card then shows once per visit to the home screen.
+    }
+    showWelcome();
+  }
+
   function show(id) {
+    timeScreen = id;
+    if (id === "s-home" && me) maybeGreet();
     $("askFab").hidden = !me || id === "s-login" || id === "s-denied";
     if ($("askFab").hidden) closeAsk();
     if (id !== "s-run") clearTimeout(runTimer);
@@ -2319,6 +2409,7 @@ button:not(:disabled):active{transform:scale(.965)}
   async function signOut() {
     await sb.auth.signOut();
     token = null; me = null; ws = null; cur = null; started = false;
+    try { sessionStorage.removeItem("cutover.greeted"); } catch (err) { /* nothing stored */ }
     clearNotifications();
     show("s-login");
   }
