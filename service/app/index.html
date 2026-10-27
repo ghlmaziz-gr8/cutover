@@ -1397,6 +1397,35 @@ button:not(:disabled):active{transform:scale(.965)}
       <p id="cleanupMsg" class="muted small" role="status"></p>
     </div>
 
+    <div class="card" id="heatCard" hidden>
+      <h2>Where people click</h2>
+      <p class="muted small" style="margin-top:6px">Shows where clicks landed on each screen of this workspace. Cutover records only where a click landed on the screen and the id of the button used. It does not record who clicked, any text, field values or patient information. Records are removed after 30 days.</p>
+      <div class="row" style="gap:8px;flex-wrap:wrap;margin-top:12px">
+        <select id="heatScreen" aria-label="Screen">
+          <option value="s-home">Home</option>
+          <option value="s-name">Name</option>
+          <option value="s-connect">Connect</option>
+          <option value="s-rules">Rules</option>
+          <option value="s-run">Run the analysis</option>
+          <option value="s-review">Review</option>
+          <option value="s-next">Next steps</option>
+          <option value="s-plan">Plan</option>
+          <option value="s-files" selected>Files and findings</option>
+          <option value="s-convert">Convert</option>
+          <option value="s-deeper">Deeper</option>
+        </select>
+        <select id="heatDays" aria-label="Period">
+          <option value="7">Last 7 days</option>
+          <option value="30" selected>Last 30 days</option>
+        </select>
+        <button type="button" id="heatLoad" class="small-btn">Refresh</button>
+      </div>
+      <canvas id="heatCanvas" width="640" height="400" role="img" aria-label="Heat map of clicks on the selected screen" style="display:block;width:100%;max-width:640px;height:auto;margin-top:12px;border-radius:14px;border:1px solid var(--line, #e4e4f0)"></canvas>
+      <p class="small" id="heatSummary" style="margin:10px 0 0"></p>
+      <ul id="heatTargets" style="margin:8px 0 0;padding-left:18px"></ul>
+      <p id="heatMsg" class="muted small" role="status"></p>
+    </div>
+
     <div class="card" id="privacyCard" hidden>
       <h2>Privacy sign-off</h2>
       <p class="muted small" style="margin-top:6px">Needed before this workspace can set up its own language model. Cutover keeps a record of who signed, the name typed, and the exact text accepted.</p>
@@ -2321,6 +2350,9 @@ button:not(:disabled):active{transform:scale(.965)}
     const cleanupHere = !!(ws && ws.role === "platform_engineer" && homeTab === "workspaces");
     $("cleanupCard").hidden = !cleanupHere;
     if (cleanupHere) loadCleanupPreview();
+    const heatHere = !!(ws && ws.is_admin && homeTab === "workspaces");
+    $("heatCard").hidden = !heatHere;
+    if (heatHere) loadHeatmap();
     $("guideCard").hidden = homeTab !== "guide";
     if (homeTab === "analyses" && ws) loadList();
     if (homeTab === "workspaces" && ws && ws.is_admin) loadPeople();
@@ -2489,6 +2521,124 @@ button:not(:disabled):active{transform:scale(.965)}
       loadCleanupPreview();
     }
   });
+
+  // ---- Where people click: a tracker that keeps positions only, and the admin heat map that reads them back ----
+  const CLICK_FLUSH_MS = 15000;
+  const CLICK_BATCH = 200;
+  const CLICK_ID = /^[a-z0-9-]{1,40}$/;
+  let clickBuffer = [];
+
+  function clickWidth() {
+    return innerWidth < 640 ? "phone" : innerWidth < 1000 ? "tablet" : "desktop";
+  }
+
+  // The button's name is its data-track attribute, or its element id written in lowercase with dashes.
+  // Text, values and page content are never read.
+  function clickName(node) {
+    const control = node && node.closest ? node.closest("button,a,input,select,textarea,[data-track]") : null;
+    if (!control) return null;
+    const raw = control.getAttribute("data-track") || (control.id || "").replace(/[A-Z]/g, (c) => `-${c.toLowerCase()}`);
+    return CLICK_ID.test(raw) ? raw : null;
+  }
+
+  function trackClick(e) {
+    if (!token || !ws || !ws.id) return;
+    const screen = document.querySelector("section.screen:not([hidden])");
+    if (!screen) return;
+    const r = screen.getBoundingClientRect();
+    if (r.width < 1 || r.height < 1) return;
+    const x = Math.round(((e.clientX - r.left) / r.width) * 100);
+    const y = Math.round(((e.clientY - r.top) / r.height) * 100);
+    if (x < 0 || x > 100 || y < 0 || y > 100) return;
+    clickBuffer.push({ screen: screen.id, x, y, width: clickWidth(), target: clickName(e.target) });
+    if (clickBuffer.length >= CLICK_BATCH) flushClicks(false);
+  }
+
+  async function flushClicks(leaving) {
+    if (clickBuffer.length === 0 || !token || !ws || !ws.id) return;
+    const events = clickBuffer.splice(0, CLICK_BATCH);
+    try {
+      await fetch(`${cfg.API_BASE}/api/clicks`, {
+        method: "POST",
+        keepalive: !!leaving,
+        headers: { "content-type": "application/json", authorization: `Bearer ${token}` },
+        body: JSON.stringify({ workspace_id: ws.id, events }),
+      });
+    } catch {
+      // Tracking is best effort. A lost batch is not shown to the person.
+    }
+  }
+
+  document.addEventListener("click", trackClick, true);
+  setInterval(() => flushClicks(false), CLICK_FLUSH_MS);
+  document.addEventListener("visibilitychange", () => { if (document.visibilityState === "hidden") flushClicks(true); });
+
+  async function loadHeatmap() {
+    if (!ws || !ws.is_admin) return;
+    setMsg("heatMsg", "Loading the clicks...", false);
+    const screen = $("heatScreen").value;
+    const days = $("heatDays").value;
+    try {
+      const data = await api(`/api/workspaces/${ws.id}/heatmap?screen=${encodeURIComponent(screen)}&days=${encodeURIComponent(days)}`);
+      drawHeatmap(data);
+      renderHeatTargets(data);
+      setMsg("heatMsg", "", false);
+    } catch (err) {
+      setMsg("heatMsg", err.message, true);
+    }
+  }
+
+  function drawHeatmap(data) {
+    const canvas = $("heatCanvas");
+    const ctx = canvas.getContext("2d");
+    const W = canvas.width;
+    const H = canvas.height;
+    ctx.clearRect(0, 0, W, H);
+    ctx.fillStyle = "#faf9ff";
+    ctx.fillRect(0, 0, W, H);
+    ctx.setLineDash([2, 6]);
+    ctx.strokeStyle = "#d9d6ea";
+    ctx.lineWidth = 1;
+    for (let i = 1; i < 20; i++) {
+      ctx.beginPath(); ctx.moveTo(i * (W / 20), 0); ctx.lineTo(i * (W / 20), H); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(0, i * (H / 20)); ctx.lineTo(W, i * (H / 20)); ctx.stroke();
+    }
+    ctx.setLineDash([]);
+    const max = Math.max(1, ...data.cells.flat());
+    const cw = W / 20;
+    const ch = H / 20;
+    const reach = Math.max(cw, ch) * 2.2;
+    data.cells.forEach((row, y) => row.forEach((n, x) => {
+      if (!n) return;
+      const t = n / max;
+      const cx = (x + 0.5) * cw;
+      const cy = (y + 0.5) * ch;
+      const g = ctx.createRadialGradient(cx, cy, 0, cx, cy, reach);
+      g.addColorStop(0, `rgba(225,29,72,${0.25 + 0.6 * t})`);
+      g.addColorStop(0.4, `rgba(245,158,11,${0.15 + 0.4 * t})`);
+      g.addColorStop(1, "rgba(245,158,11,0)");
+      ctx.fillStyle = g;
+      ctx.fillRect(cx - reach, cy - reach, reach * 2, reach * 2);
+    }));
+    const w = data.widths || {};
+    $("heatSummary").textContent = data.total
+      ? `${data.total} clicks in the last ${data.days} days on this screen. Phone ${w.phone || 0}, tablet ${w.tablet || 0}, desktop ${w.desktop || 0}.${data.truncated ? " Only the most recent clicks are counted." : ""}`
+      : `No clicks on this screen in the last ${data.days} days yet.`;
+  }
+
+  function renderHeatTargets(data) {
+    const list = $("heatTargets");
+    list.innerHTML = "";
+    if (!data.targets || data.targets.length === 0) {
+      list.append(el("li", "No named buttons were used on this screen.", "muted small"));
+      return;
+    }
+    for (const t of data.targets) list.append(el("li", `${t.target}: ${t.count}`, "small"));
+  }
+
+  $("heatLoad").addEventListener("click", loadHeatmap);
+  $("heatScreen").addEventListener("change", loadHeatmap);
+  $("heatDays").addEventListener("change", loadHeatmap);
 
   // The database size against the free-tier limit, for operators only. Shown beside the workspace list.
   async function loadDatabaseSize() {

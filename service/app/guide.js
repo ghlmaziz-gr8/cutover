@@ -11,6 +11,7 @@
 window.CUTOVER_GUIDE = {
   updated: "2026-10-22",
   whatsNew: [
+    "2026-10-27: Where people click, on the Workspaces tab, shows workspace admins a heat map of clicks on each screen for the last 7 or 30 days. It records only where a click landed on the screen and the id of the button used. Records are removed after 30 days.",
     "2026-10-27: The progress screen shows the elapsed time as a live clock, with a bar against the expected 5 to 8 minutes. The bar turns amber and then rose when the wait runs long. Motion is turned off when your device asks for less motion.",
     "2026-10-27: The notification bell is hidden on the progress screen while an analysis runs, so the page stays calm. It comes back on the other screens.",
     "2026-10-27: Feature groups, at the foot of a file-results screen, are proposed by a platform engineer from the approved business summaries. Each grouping is a draft until a platform engineer approves it or discards it; an approved grouping replaces the earlier one, which is kept as history.",
