@@ -355,6 +355,20 @@ async function recordScreenTime(request, env) {
   const userId = auth.user.id;
   const day = new Date().toISOString().slice(0, 10);
   const now = new Date();
+  // The workspace the person is working in. It is counted only when they are a member of it.
+  const wsId = typeof parsed.value?.workspace_id === "string" && UUID_PATTERN.test(parsed.value.workspace_id) ? parsed.value.workspace_id : null;
+  if (wsId) {
+    const member = await serviceRest(env, `members?user_id=eq.${userId}&workspace_id=eq.${wsId}&select=workspace_id`);
+    if (member.ok && (await member.json()).length) {
+      const wsCurrent = await serviceRest(env, `workspace_time?user_id=eq.${userId}&workspace_id=eq.${wsId}&day=eq.${day}&select=seconds`);
+      const [wsRow] = wsCurrent.ok ? await wsCurrent.json() : [];
+      await serviceRest(env, "workspace_time?on_conflict=user_id,workspace_id,day", {
+        method: "POST",
+        headers: { prefer: "resolution=merge-duplicates,return=minimal" },
+        body: JSON.stringify({ user_id: userId, workspace_id: wsId, day, seconds: (wsRow?.seconds || 0) + seconds }),
+      });
+    }
+  }
 
   const current = await serviceRest(env, `screen_time?user_id=eq.${userId}&day=eq.${day}&screen=eq.${screen}&select=seconds`);
   if (!current.ok) return json({ error: "Could not record the time." }, 502);
@@ -403,6 +417,18 @@ async function engagementSummary(request, env) {
   if (!totalsRes.ok || !screensRes.ok) return json({ error: "Could not load your time on the system." }, 502);
   const [eng] = await totalsRes.json();
   const total = Number(eng?.total_seconds || 0);
+  const [wsTimeRes, membersRes] = await Promise.all([
+    serviceRest(env, `workspace_time?user_id=eq.${userId}&select=workspace_id,seconds`),
+    serviceRest(env, `members?user_id=eq.${userId}&select=workspace_id,workspace:workspaces(id,name)`),
+  ]);
+  if (!wsTimeRes.ok || !membersRes.ok) return json({ error: "Could not load your time on the system." }, 502);
+  const wsSeconds = {};
+  for (const r of await wsTimeRes.json()) wsSeconds[r.workspace_id] = (wsSeconds[r.workspace_id] || 0) + Number(r.seconds || 0);
+  const workspaces = (await membersRes.json())
+    .filter((m) => m.workspace)
+    .map((m) => ({ id: m.workspace.id, name: m.workspace.name, seconds: wsSeconds[m.workspace.id] || 0 }))
+    .sort((a, b) => b.seconds - a.seconds || a.name.localeCompare(b.name))
+    .slice(0, 10);
   const byScreen = {};
   for (const r of await screensRes.json()) byScreen[r.screen] = (byScreen[r.screen] || 0) + Number(r.seconds || 0);
   const ranked = Object.entries(byScreen).sort((a, b) => b[1] - a[1]);
@@ -416,8 +442,13 @@ async function engagementSummary(request, env) {
     last_visit: previous,
     last_visit_seconds: previous ? Number(eng.previous_visit_seconds || 0) : 0,
     favourite,
+    workspaces,
     level: levelFor(points),
-    badges: HOUR_BADGES.filter((h) => total >= h * 3600).map((h) => ({ id: `hours-${h}`, name: `${h} ${h === 1 ? "hour" : "hours"} on the system` })),
+    // The level badge is always shown, from the first point (Starter at zero).
+    badges: [
+      { id: `level-${levelFor(points).number}`, name: `${levelFor(points).name} badge`, kind: "level" },
+      ...HOUR_BADGES.filter((h) => total >= h * 3600).map((h) => ({ id: `hours-${h}`, name: `${h} ${h === 1 ? "hour" : "hours"} on the system`, kind: "hours" })),
+    ],
   });
 }
 

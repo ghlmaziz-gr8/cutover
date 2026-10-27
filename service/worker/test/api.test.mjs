@@ -148,6 +148,7 @@ function seed() {
     analysis_db_metadata: [],
     screen_time: [],
     engagement: [],
+    workspace_time: [],
   };
 }
 
@@ -3147,7 +3148,7 @@ test("time on the system adds up per screen, sets points and level, and names a 
   assert.equal(summary.body.level.points, 3, "one point per minute");
   assert.equal(summary.body.level.name, "Starter");
   assert.equal(summary.body.favourite.screen, "s-deeper");
-  assert.deepEqual(summary.body.badges, []);
+  assert.deepEqual(summary.body.badges.map((b) => b.name), ["Starter badge"]);
 });
 
 test("a screen is named a favourite only when it is clearly ahead, and a long gap starts a new visit", async () => {
@@ -3172,4 +3173,18 @@ test("time on the system needs a sign-in and a valid screen and length", async (
   assert.equal(badScreen.status, 400);
   const tooLong = await call("/api/me/time", { method: "POST", body: { screen: "s-home", seconds: 600 }, as: "eng_a" });
   assert.equal(tooLong.status, 400);
+});
+
+test("time is also counted per workspace the person belongs to, and the level badge shows from zero points", async () => {
+  readyForBusiness();
+  const res = await call("/api/me/time", { method: "POST", body: { screen: "s-home", seconds: 60, workspace_id: W_ACME }, as: "eng_a" });
+  assert.equal(res.status, 200);
+  const other = await call("/api/me/time", { method: "POST", body: { screen: "s-home", seconds: 30, workspace_id: uid(999) }, as: "eng_a" });
+  assert.equal(other.status, 200, "a workspace the person is not in is ignored, not refused");
+  const summary = await call("/api/me/engagement", { as: "eng_a" });
+  const acme = summary.body.workspaces.find((w) => w.id === W_ACME);
+  assert.ok(acme, "the workspace is listed");
+  assert.equal(acme.seconds, 60);
+  assert.equal(summary.body.workspaces.some((w) => w.id === uid(999)), false);
+  assert.deepEqual(summary.body.badges.map((b) => b.name), ["Starter badge"], "the starter badge is there from zero points");
 });
