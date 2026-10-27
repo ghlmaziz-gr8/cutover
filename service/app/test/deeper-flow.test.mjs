@@ -49,3 +49,15 @@ test("the header counts the deeper assessment as its own step and the weights st
 test("the change is in the what's new list", () => {
   assert.ok(guide.includes("2026-10-27: After Review findings comes the deeper assessment"));
 });
+
+test("the business view shows every file as a tree, and only that view does", () => {
+  assert.ok(html.includes('$("deeperFiles").hidden = !businessView;'));
+  assert.ok(html.includes("if (businessView) renderBusinessFiles();"));
+  assert.ok(html.includes("window.FileMap.tree({ label: \"Files in the application\", files: rows, conversions: cur.conversions || [] })"));
+  assert.ok(html.includes("onLeaf: (node) => showBusinessFile(node.path),"));
+});
+
+test("the files are loaded once per analysis, through the existing files list", () => {
+  assert.ok(html.includes("if (businessFiles.analysis !== cur.id) {"));
+  assert.ok(html.includes("businessFiles = { analysis: cur.id, rows: await loadFiles() };"));
+});
