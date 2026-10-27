@@ -3291,6 +3291,16 @@ async function saveGrouping(request, env, id) {
   return json({ saved: true, id: saved ? saved.id : null }, 201);
 }
 
+// The runner reads the approved business summaries to group them. Read only, with the shared secret.
+async function groupingSources(request, env, id) {
+  if (!timingSafeEqual(request.headers.get("x-runner-secret") || "", env.RUNNER_SECRET || "")) {
+    return json({ error: "Unauthorized." }, 401);
+  }
+  const res = await serviceRest(env, `file_business_assessments?analysis_id=eq.${id}&review_status=eq.approved&select=path,content&limit=100000`);
+  if (!res.ok) return json({ error: "Could not load the approved results." }, 502);
+  return json({ files: (await res.json()).map((r) => ({ path: r.path, content: r.content })) });
+}
+
 async function approveGrouping(request, env, id) {
   const access = await analysisAccess(env, request, id);
   if (access.response) return access.response;
@@ -3912,6 +3922,8 @@ async function route(request, env) {
     if (groupingDiscard && UUID_PATTERN.test(groupingDiscard[1]) && method === "POST") return discardGrouping(request, env, groupingDiscard[1]);
     const groupingSave = path.match(/^\/api\/runner\/([^/]+)\/grouping$/);
     if (groupingSave && UUID_PATTERN.test(groupingSave[1]) && method === "POST") return saveGrouping(request, env, groupingSave[1]);
+    const groupingInputs = path.match(/^\/api\/runner\/([^/]+)\/grouping-sources$/);
+    if (groupingInputs && UUID_PATTERN.test(groupingInputs[1]) && method === "GET") return groupingSources(request, env, groupingInputs[1]);
 
     const businessStart = path.match(/^\/api\/analyses\/([^/]+)\/business\/start$/);
     if (businessStart && UUID_PATTERN.test(businessStart[1]) && method === "POST") return startBusiness(request, env, businessStart[1]);

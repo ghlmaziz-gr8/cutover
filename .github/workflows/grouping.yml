@@ -1,0 +1,54 @@
+# Proposes feature groups from the approved business summaries of one analysis, with the workspace's own model, and posts the draft to the Cutover API.
+# Started by the API through workflow_dispatch. No repository is cloned and no source code is read: the summaries are read from the API.
+# Nothing from the run is executed, and nothing is merged here.
+
+name: grouping
+
+on:
+  workflow_dispatch:
+    inputs:
+      analysis_id:
+        description: "Analysis UUID created by the API"
+        required: true
+        type: string
+      model_token:
+        description: "One-time token for the workspace's own model key (set by the API)"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  grouping:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      ANALYSIS_ID: ${{ inputs.analysis_id }}
+    steps:
+      # The token is one-time and lasts ten minutes. Hide it from the log before any other step runs.
+      - name: Hide the model token
+        env:
+          MODEL_TOKEN: ${{ inputs.model_token }}
+        run: |
+          if [ -n "$MODEL_TOKEN" ]; then echo "::add-mask::$MODEL_TOKEN"; fi
+
+      - name: Check out the Cutover engine
+        uses: actions/checkout@v4
+        with:
+          path: cutover
+
+      - name: Validate inputs
+        run: |
+          set -euo pipefail
+          [[ "$ANALYSIS_ID" =~ ^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$ ]] || { echo "Bad analysis id"; exit 1; }
+
+      - name: Group the features
+        env:
+          MODEL_TOKEN: ${{ inputs.model_token }}
+          RUNNER_SECRET: ${{ secrets.RUNNER_SECRET }}
+          CALLBACK_URL: ${{ secrets.CUTOVER_API_URL }}
+        run: |
+          set -euo pipefail
+          python3 cutover/engine/grouping_run.py \
+            --callback "$CALLBACK_URL" --analysis-id "$ANALYSIS_ID"
