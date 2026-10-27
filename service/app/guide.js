@@ -11,6 +11,7 @@
 window.CUTOVER_GUIDE = {
   updated: "2026-10-22",
   whatsNew: [
+    "2026-10-27: An assessment that nobody has opened for 90 days is deleted, with its deletion recorded. When the database passes 70% of its limit, the oldest fifth of the action log is removed each day.",
     "2026-10-27: Each assessment records the commit it read. When the branch has a newer commit, Review findings says the results may be out of date and offers to run the assessment again.",
     "2026-10-27: Only one assessment runs at a time in a workspace. Starting another one while it runs is refused, and the message names the one that is running. Every assessment action is recorded in a log.",
     "2026-10-27: After Review findings comes the deeper assessment, in six steps out of seven. It offers three views: data, business and system. Opening one lets you go on to Next steps, where Modernize and Migrate now appear. The target language and effort plan are on this page.",

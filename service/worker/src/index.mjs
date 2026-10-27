@@ -1668,6 +1668,7 @@ async function getAnalysis(request, env, id) {
   if (access.response) return access.response;
   const { row, member, user } = access;
   await refreshHead(env, row);
+  await noteOpened(env, row);
 
   const [commentsRes, actionsRes, contingenciesRes] = await Promise.all([
     serviceRest(env, `analysis_comments?analysis_id=eq.${id}&select=id,author_id,author_email,body,created_at&order=created_at.asc`),
@@ -3087,6 +3088,78 @@ async function purgeExpired(env) {
   if (!res.ok) throw new Error(`Retention purge failed with status ${res.status}`);
 }
 
+// ---- Retention: assessments nobody opens, and the size of the action log ----
+
+const UNOPENED_MS = 90 * 24 * 60 * 60 * 1000;
+const OPENED_SAVE_MS = 60 * 60 * 1000;
+const LOG_TRIM_AT = 0.7; // the log is trimmed once the database passes 70% of its limit
+const LOG_TRIM_SHARE = 0.2; // one run removes the oldest 20% of log rows. Freed space is reclaimed later, so this is gradual.
+const SYSTEM_WORKSPACE = "00000000-0000-0000-0000-000000000000"; // the log entries that belong to no workspace
+
+// Notes that an assessment was opened, at most once an hour, so the 90-day rule knows it is still in use.
+async function noteOpened(env, row) {
+  if (row.last_opened_at && Date.now() - Date.parse(row.last_opened_at) < OPENED_SAVE_MS) return;
+  const now = new Date().toISOString();
+  await serviceRest(env, `analyses?id=eq.${row.id}`, {
+    method: "PATCH",
+    headers: { prefer: "return=minimal" },
+    body: JSON.stringify({ last_opened_at: now }),
+  });
+  row.last_opened_at = now;
+}
+
+// Deletes assessments not opened for 90 days (or, if never opened, not created for 90 days).
+// Each one is logged, and the deletion record is saved, before anything is removed. If either cannot be saved, nothing is removed.
+async function purgeUnopened(env) {
+  const cutoff = encodeURIComponent(new Date(Date.now() - UNOPENED_MS).toISOString());
+  const cols = "id,repo,workspace_id,source_path,source_kind";
+  const opened = await serviceRest(env, `analyses?last_opened_at=lt.${cutoff}&select=${cols}`);
+  const never = await serviceRest(env, `analyses?last_opened_at=is.null&created_at=lt.${cutoff}&select=${cols}`);
+  if (!opened.ok || !never.ok) throw new Error("Unopened lookup failed.");
+  const rows = [...(await opened.json()), ...(await never.json())];
+  if (rows.length === 0) return;
+  for (const r of rows) {
+    if (!(await recordAction(env, { workspace_id: r.workspace_id, action: "retention_delete", analysis_id: r.id, repo: r.repo, detail: "Not opened for 90 days" }))) {
+      throw new Error("Could not record a deletion in the log, so nothing was deleted.");
+    }
+  }
+  if (!(await recordDeletion(env, rows, "unopened"))) {
+    throw new Error("Could not save the deletion records, so nothing was deleted.");
+  }
+  for (const r of rows) {
+    if (!(await deleteSourceFile(env, r))) throw new Error("Could not delete an uploaded zip, so the rest was kept.");
+  }
+  const ids = rows.map((r) => r.id).join(",");
+  const res = await serviceRest(env, `analyses?id=in.(${ids})`, { method: "DELETE", headers: { prefer: "return=minimal" } });
+  if (!res.ok) throw new Error(`Unopened purge failed with status ${res.status}`);
+}
+
+// Trims the action log once the database passes 70% of its limit: the oldest 20% of entries go, once per run.
+async function trimLog(env) {
+  const size = await serviceRest(env, "rpc/database_size_bytes", { method: "POST", body: "{}" });
+  if (!size.ok) throw new Error("Could not read the database size.");
+  const bytes = Number(await size.json());
+  if (!Number.isFinite(bytes) || bytes < FREE_TIER_DATABASE_BYTES * LOG_TRIM_AT) return;
+  const logged = await recordAction(env, { workspace_id: SYSTEM_WORKSPACE, action: "log_trim", detail: `Database over 70% of its limit. Removing the oldest ${Math.round(LOG_TRIM_SHARE * 100)}% of log entries.` });
+  if (!logged) throw new Error("Could not record the log trim, so nothing was removed.");
+  const res = await serviceRest(env, "rpc/purge_oldest_assessment_log", { method: "POST", body: JSON.stringify({ batch_share: LOG_TRIM_SHARE }) });
+  if (!res.ok) throw new Error("The log trim failed.");
+}
+
+// The daily job. Each step runs on its own, so one failing step does not stop the others.
+// The first failure is raised at the end, so the run is reported as failed.
+async function runRetention(env) {
+  let firstError = null;
+  for (const step of [purgeExpired, purgeUnopened, trimLog]) {
+    try {
+      await step(env);
+    } catch (err) {
+      console.error("Retention step failed:", err && err.message);
+      firstError = firstError || err;
+    }
+  }
+  if (firstError) throw firstError;
+}
 
 // ---- Repository check (GitHub App, read-only) ----
 // The app is "cutover-reader-portal". It has read-only access to the repositories it is installed on.
@@ -3405,6 +3478,6 @@ export default {
   },
 
   async scheduled(event, env, ctx) {
-    ctx.waitUntil(purgeExpired(env));
+    ctx.waitUntil(runRetention(env));
   },
 };

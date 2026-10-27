@@ -182,12 +182,19 @@ function defaultsFor(table) {
   return base;
 }
 
-const DATABASE_BYTES = 125 * 1024 * 1024;
+let DATABASE_BYTES = 125 * 1024 * 1024;
 
 function handleRest(url, init) {
   const u = new URL(url);
   const table = u.pathname.replace("/rest/v1/", "");
   if (table === "rpc/database_size_bytes") return j(DATABASE_BYTES);
+  if (table === "rpc/purge_oldest_assessment_log") {
+    const share = JSON.parse(init.body).batch_share;
+    state.assessment_log.sort((a, b) => (a.created_at < b.created_at ? -1 : 1));
+    const n = Math.floor(state.assessment_log.length * share);
+    state.assessment_log.splice(0, n);
+    return j(n);
+  }
   const method = init.method || "GET";
   const prefer = init.headers?.prefer || "";
   const rows = state[table];
@@ -2433,4 +2440,55 @@ test("a delete is refused, and the analysis is kept, when its log entry cannot b
   const res = await call(`/api/analyses/${AN_ACME}`, { as: "eng_a", method: "DELETE" });
   assert.equal(res.status, 503);
   assert.ok(state.analyses.some((a) => a.id === AN_ACME));
+});
+
+// ---- Retention: 90 days unopened, and the action log trim ----
+
+async function runDailyJob(env) {
+  const work = [];
+  await worker.scheduled({}, env, { waitUntil: (p) => work.push(p) });
+  await Promise.all(work);
+}
+
+test("an assessment not opened for 90 days is deleted, its deletion is recorded first, and an opened one is kept", async () => {
+  const old = uid(960);
+  const fresh = uid(961);
+  state.analyses.push({ id: old, workspace_id: W_ACME, owner_id: PEOPLE.eng_a.id, repo: "acme/old", app_name: "Old", status: "complete", created_at: "2026-01-01T00:00:00.000Z", last_opened_at: "2026-01-02T00:00:00.000Z", expires_at: FAR_FUTURE, findings: null, error: null, commit_sha: null, finished_at: null, file_bytes: 0 });
+  state.analyses.push({ id: fresh, workspace_id: W_ACME, owner_id: PEOPLE.eng_a.id, repo: "acme/fresh", app_name: "Fresh", status: "complete", created_at: "2026-01-01T00:00:00.000Z", last_opened_at: new Date().toISOString(), expires_at: FAR_FUTURE, findings: null, error: null, commit_sha: null, finished_at: null, file_bytes: 0 });
+  await runDailyJob(env);
+  assert.equal(state.analyses.some((a) => a.id === old), false, "the unopened one is gone");
+  assert.equal(state.analyses.some((a) => a.id === fresh), true, "the one opened recently is kept");
+  assert.ok(state.deletion_log.some((d) => d.analysis_id === old && d.reason === "unopened"));
+  assert.ok(state.assessment_log.some((l) => l.action === "retention_delete" && l.analysis_id === old));
+});
+
+test("opening an assessment notes the time, so it is not deleted as unopened", async () => {
+  state.analyses.find((a) => a.id === AN_ACME).last_opened_at = "2026-01-01T00:00:00.000Z";
+  await call(`/api/analyses/${AN_ACME}`, { as: "eng_a" });
+  const noted = state.analyses.find((a) => a.id === AN_ACME).last_opened_at;
+  assert.ok(Date.parse(noted) > Date.parse("2026-01-01T00:00:00.000Z"));
+});
+
+test("the action log is trimmed by its oldest 20% once the database passes 70% of its limit, and the trim is logged", async () => {
+  const before = state.assessment_log.length;
+  DATABASE_BYTES = 125 * 1024 * 1024; // 25% of the free-tier limit: no trim
+  await runDailyJob(env);
+  assert.equal(state.assessment_log.some((l) => l.action === "log_trim"), false);
+
+  DATABASE_BYTES = 400 * 1024 * 1024; // 78%: trim
+  for (let i = 0; i < 10; i += 1) state.assessment_log.push({ id: uid(970 + i), workspace_id: W_ACME, action: "start", created_at: `2026-01-0${(i % 9) + 1}T00:00:00.000Z` });
+  const counted = state.assessment_log.length;
+  await runDailyJob(env);
+  DATABASE_BYTES = 125 * 1024 * 1024;
+  assert.ok(state.assessment_log.some((l) => l.action === "log_trim"), "the trim is logged");
+  assert.ok(state.assessment_log.length < counted, "some entries were removed");
+  assert.equal(state.assessment_log.length, counted - Math.floor(counted * 0.2) + 1, "the oldest 20% went, and the trim entry was added");
+  assert.ok(before >= 0);
+});
+
+test("the retention deletion and the trim are in the database scripts with their rules", () => {
+  const sql = readFileSync(new URL("../../supabase/add-retention.sql", import.meta.url), "utf8");
+  assert.ok(sql.includes("'unopened'"));
+  assert.ok(sql.includes("security definer"));
+  assert.ok(sql.includes("grant execute on function public.purge_oldest_assessment_log(numeric) to service_role;"));
 });
