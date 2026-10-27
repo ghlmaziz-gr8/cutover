@@ -1186,6 +1186,12 @@ async function busyRun(env, workspaceId, exceptAnalysisId = null) {
   if (!business.ok) throw new Error("Could not check the business assessments.");
   const [biz] = await business.json();
   if (biz) return { kind: "business", name: biz.analyses.app_name || biz.analyses.repo, repo: biz.analyses.repo, path: biz.path, started: biz.created_at };
+  // A feature grouping counts as a run until the runner answers, or until it is stale.
+  const groupingCutoff = new Date(Date.now() - STALE_RUN_MS).toISOString();
+  const grouping = await serviceRest(env, `feature_groupings?status=eq.running&created_at=gt.${groupingCutoff}&select=created_at,analyses!inner(workspace_id,app_name,repo)&analyses.workspace_id=eq.${workspaceId}&limit=1`);
+  if (!grouping.ok) throw new Error("Could not check the feature groupings.");
+  const [grp] = await grouping.json();
+  if (grp) return { kind: "grouping", name: grp.analyses.app_name || grp.analyses.repo, repo: grp.analyses.repo, started: grp.created_at };
   return null;
 }
 
@@ -1194,7 +1200,9 @@ function busyResponse(busy) {
     ? `A file conversion is running in this workspace: ${busy.path} in ${busy.name}.`
     : busy.kind === "business"
       ? `A business assessment of one file is running in this workspace: ${busy.path} in ${busy.name}.`
-      : `Another assessment is running in this workspace: ${busy.name}${busy.repo && busy.repo !== busy.name ? ` (${busy.repo})` : ""}.`;
+      : busy.kind === "grouping"
+        ? `A feature grouping is running in this workspace: ${busy.name}.`
+        : `Another assessment is running in this workspace: ${busy.name}${busy.repo && busy.repo !== busy.name ? ` (${busy.repo})` : ""}.`;
   return json({ error: `${what} ${LOCK_TEXT}`, busy: { kind: busy.kind, name: busy.name, repo: busy.repo, started: busy.started || null } }, 409);
 }
 
@@ -3155,6 +3163,187 @@ async function runCleanup(request, env, workspaceId) {
   return json({ removed: ids.length });
 }
 
+// ---- Feature grouping: the model proposes feature groups from the approved business results; an engineer approves ----
+// Only files with an approved business assessment can be grouped. A file can be in only one feature.
+const GROUP_MAX = 30;
+const GROUP_FILES_MAX = 200;
+
+async function approvedBusinessPaths(env, id) {
+  const res = await serviceRest(env, `file_business_assessments?analysis_id=eq.${id}&review_status=eq.approved&select=path&limit=100000`);
+  if (!res.ok) return { failed: true };
+  return { paths: [...new Set((await res.json()).map((r) => r.path))] };
+}
+
+function checkGroups(value, allowed) {
+  if (!Array.isArray(value) || value.length < 1 || value.length > GROUP_MAX) return { error: `A grouping holds 1 to ${GROUP_MAX} features.` };
+  const seen = new Set();
+  const groups = [];
+  for (const item of value) {
+    if (!item || typeof item !== "object" || Array.isArray(item)) return { error: "Each feature must be an object." };
+    const name = typeof item.name === "string" ? item.name.trim() : "";
+    if (!name || name.length > 80) return { error: "Each feature needs a name of up to 80 characters." };
+    const summary = typeof item.summary === "string" ? item.summary.trim().slice(0, 300) : "";
+    if (!Array.isArray(item.paths) || item.paths.length < 1 || item.paths.length > GROUP_FILES_MAX) return { error: "Each feature needs 1 to 200 files." };
+    const paths = [];
+    for (const path of item.paths) {
+      if (typeof path !== "string" || !allowed.has(path)) return { error: "A feature names a file that has no approved business assessment." };
+      if (seen.has(path)) return { error: "A file can be in only one feature." };
+      seen.add(path);
+      paths.push(path);
+    }
+    groups.push({ name, summary, paths });
+  }
+  return { groups };
+}
+
+async function listGroupings(request, env, id) {
+  const access = await analysisAccess(env, request, id);
+  if (access.response) return access.response;
+  if (!canStart(access.member)) return json({ error: "Only platform engineers can see feature groupings." }, 403);
+  const res = await serviceRest(env, `feature_groupings?analysis_id=eq.${id}&select=id,status,groups,source_count,created_by_email,created_at,reviewed_by_email,reviewed_at&order=created_at.desc&limit=20`);
+  if (!res.ok) return json({ error: "Could not load the feature groupings." }, 502);
+  return json({ groupings: await res.json() });
+}
+
+async function startGrouping(request, env, id) {
+  const access = await analysisAccess(env, request, id);
+  if (access.response) return access.response;
+  if (!canStart(access.member)) return json({ error: "Only platform engineers can group the features." }, 403);
+  const row = access.row;
+  if (row.status !== "complete") return json({ error: "Finish the assessment first." }, 409);
+  if (!row.model_key_id) return json({ error: "Choose a language model for this analysis first." }, 409);
+  const chosen = await chooseAnalysisModel(env, row.workspace_id, row.model_key_id);
+  if (chosen.response) return chosen.response;
+  const approved = await approvedBusinessPaths(env, id);
+  if (approved.failed) return json({ error: "Could not check the approved results. Try again in a minute." }, 502);
+  if (!approved.paths.length) return json({ error: "Approve some file business assessments first. The features are grouped from them." }, 409);
+
+  const busyResp = await refuseIfBusy(env, access.user, row.workspace_id, row.repo);
+  if (busyResp) return busyResp;
+  const modelToken = (await issueModelToken(env, id, row.model_key_id)) || "";
+  if (!modelToken) return json({ error: "Could not prepare the model. Try again in a minute." }, 502);
+  const refusedStart = await logFirst(env, { workspace_id: row.workspace_id, user: access.user, action: "grouping_start", analysis_id: id, repo: row.repo, detail: `${approved.paths.length} approved files` });
+  if (refusedStart) return refusedStart;
+  await serviceRest(env, `feature_groupings?analysis_id=eq.${id}&status=eq.running`, { method: "DELETE", headers: { prefer: "return=minimal" } });
+  const made = await serviceRest(env, "feature_groupings", {
+    method: "POST",
+    headers: { prefer: "return=minimal" },
+    body: JSON.stringify({ analysis_id: id, status: "running", groups: [], source_count: approved.paths.length, created_by_email: normalizeEmail(access.user.email) }),
+  });
+  if (!made.ok) return json({ error: "Could not start the grouping." }, 502);
+  const dispatch = await dispatchGrouping(env, { analysis_id: id, model_token: modelToken });
+  if (!dispatch.ok) {
+    await serviceRest(env, `feature_groupings?analysis_id=eq.${id}&status=eq.running`, { method: "DELETE", headers: { prefer: "return=minimal" } });
+    return json({ error: "The runner could not be started. Try again in a minute." }, 502);
+  }
+  return json({ queued: true }, 202);
+}
+
+function dispatchGrouping(env, inputs) {
+  return fetch(`https://api.github.com/repos/${env.RUNNER_REPO}/actions/workflows/grouping.yml/dispatches`, {
+    method: "POST",
+    headers: {
+      authorization: `Bearer ${env.GITHUB_DISPATCH_TOKEN}`,
+      accept: "application/vnd.github+json",
+      "x-github-api-version": "2022-11-28",
+      "content-type": "application/json",
+      "user-agent": "cutover-api",
+    },
+    body: JSON.stringify({ ref: "main", inputs }),
+  });
+}
+
+// The runner posts the proposed features. Each file it names must have an approved business assessment.
+async function saveGrouping(request, env, id) {
+  if (!timingSafeEqual(request.headers.get("x-runner-secret") || "", env.RUNNER_SECRET || "")) {
+    return json({ error: "Unauthorized." }, 401);
+  }
+  const found = await serviceRest(env, `analyses?id=eq.${id}&select=id,workspace_id,repo`);
+  if (!found.ok) return json({ error: "Could not load the analysis." }, 502);
+  const [analysis] = await found.json();
+  if (!analysis) return json({ error: "Not found." }, 404);
+  const parsed = await readJson(request, 60000);
+  if (parsed.error) return json({ error: parsed.error }, 400);
+  const body = parsed.value || {};
+  const runningOnly = `feature_groupings?analysis_id=eq.${id}&status=eq.running`;
+  if (body.status !== "ok") {
+    const refusedFail = await logFirst(env, { workspace_id: analysis.workspace_id, user: null, action: "grouping_fail", analysis_id: id, repo: analysis.repo, detail: typeof body.reason === "string" ? body.reason.slice(0, 200) : null });
+    if (refusedFail) return refusedFail;
+    await serviceRest(env, runningOnly, { method: "DELETE", headers: { prefer: "return=minimal" } });
+    return json({ saved: false, reason: typeof body.reason === "string" ? body.reason.slice(0, 300) : "The features were not grouped." });
+  }
+  const approved = await approvedBusinessPaths(env, id);
+  if (approved.failed) return json({ error: "Could not check the approved results." }, 502);
+  const checked = checkGroups(body.groups, new Set(approved.paths));
+  if (checked.error) return json({ error: checked.error }, 400);
+  const serialised = JSON.stringify(checked.groups);
+  if (serialised.length > 40000) return json({ error: "The grouping is too large to save." }, 400);
+  const refused = await logFirst(env, { workspace_id: analysis.workspace_id, user: null, action: "grouping_finish", analysis_id: id, repo: analysis.repo, detail: `${checked.groups.length} features` });
+  if (refused) return refused;
+  await serviceRest(env, runningOnly, { method: "DELETE", headers: { prefer: "return=minimal" } });
+  const res = await serviceRest(env, "feature_groupings", {
+    method: "POST",
+    headers: { prefer: "return=representation" },
+    body: JSON.stringify({ analysis_id: id, status: "draft", groups: checked.groups, source_count: approved.paths.length }),
+  });
+  if (!res.ok) return json({ error: "Could not save the grouping." }, 502);
+  const [saved] = await res.json();
+  return json({ saved: true, id: saved ? saved.id : null }, 201);
+}
+
+async function approveGrouping(request, env, id) {
+  const access = await analysisAccess(env, request, id);
+  if (access.response) return access.response;
+  if (!canStart(access.member)) return json({ error: "Only platform engineers can approve a grouping." }, 403);
+  const parsed = await readJson(request);
+  if (parsed.error) return json({ error: parsed.error }, 400);
+  const groupingId = String(parsed.value?.grouping_id || "");
+  if (!UUID_PATTERN.test(groupingId)) return json({ error: "Choose a grouping." }, 400);
+  const found = await serviceRest(env, `feature_groupings?id=eq.${groupingId}&analysis_id=eq.${id}&select=id,status`);
+  if (!found.ok) return json({ error: "Could not load the grouping." }, 502);
+  const [item] = await found.json();
+  if (!item) return json({ error: "Not found." }, 404);
+  if (item.status !== "draft") return json({ error: "Only a draft grouping can be approved." }, 409);
+  const current = await serviceRest(env, `feature_groupings?analysis_id=eq.${id}&status=eq.approved&select=id&limit=1`);
+  if (!current.ok) return json({ error: "Could not check the earlier grouping." }, 502);
+  const [earlier] = await current.json();
+  const refusedApprove = await logFirst(env, { workspace_id: access.row.workspace_id, user: access.user, action: "grouping_approve", analysis_id: id, repo: access.row.repo, detail: "features" });
+  if (refusedApprove) return refusedApprove;
+  if (earlier) {
+    const refusedSupersede = await logFirst(env, { workspace_id: access.row.workspace_id, user: access.user, action: "grouping_supersede", analysis_id: id, repo: access.row.repo, detail: "features" });
+    if (refusedSupersede) return refusedSupersede;
+    const superseded = await serviceRest(env, `feature_groupings?id=eq.${earlier.id}`, { method: "PATCH", headers: { prefer: "return=minimal" }, body: JSON.stringify({ status: "superseded" }) });
+    if (!superseded.ok) return json({ error: "Could not replace the earlier grouping." }, 502);
+  }
+  const approved = await serviceRest(env, `feature_groupings?id=eq.${groupingId}`, {
+    method: "PATCH",
+    headers: { prefer: "return=minimal" },
+    body: JSON.stringify({ status: "approved", reviewed_by_email: normalizeEmail(access.user.email), reviewed_at: new Date().toISOString() }),
+  });
+  if (!approved.ok) return json({ error: "Could not approve the grouping." }, 502);
+  return json({ approved: true });
+}
+
+async function discardGrouping(request, env, id) {
+  const access = await analysisAccess(env, request, id);
+  if (access.response) return access.response;
+  if (!canStart(access.member)) return json({ error: "Only platform engineers can discard a grouping." }, 403);
+  const parsed = await readJson(request);
+  if (parsed.error) return json({ error: parsed.error }, 400);
+  const groupingId = String(parsed.value?.grouping_id || "");
+  if (!UUID_PATTERN.test(groupingId)) return json({ error: "Choose a grouping." }, 400);
+  const found = await serviceRest(env, `feature_groupings?id=eq.${groupingId}&analysis_id=eq.${id}&select=id,status`);
+  if (!found.ok) return json({ error: "Could not load the grouping." }, 502);
+  const [item] = await found.json();
+  if (!item) return json({ error: "Not found." }, 404);
+  if (item.status !== "draft") return json({ error: "Only a draft grouping can be discarded. An approved one is replaced by approving another." }, 409);
+  const refused = await logFirst(env, { workspace_id: access.row.workspace_id, user: access.user, action: "grouping_discard", analysis_id: id, repo: access.row.repo, detail: "features" });
+  if (refused) return refused;
+  const res = await serviceRest(env, `feature_groupings?id=eq.${groupingId}&status=eq.draft`, { method: "DELETE", headers: { prefer: "return=minimal" } });
+  if (!res.ok) return json({ error: "Could not discard the grouping." }, 502);
+  return json({ discarded: true });
+}
+
 // Checks one file record. Only the fields we store are kept.
 function fileRecord(value) {
   if (!value || typeof value !== "object" || Array.isArray(value)) return { error: "Each file must be an object." };
@@ -3713,6 +3902,17 @@ async function route(request, env) {
     if (businessList && UUID_PATTERN.test(businessList[1]) && method === "GET") return listBusiness(request, env, businessList[1]);
     const businessApprove = path.match(/^\/api\/analyses\/([^/]+)\/business\/approve$/);
     if (businessApprove && UUID_PATTERN.test(businessApprove[1]) && method === "POST") return approveBusiness(request, env, businessApprove[1]);
+    const groupings = path.match(/^\/api\/analyses\/([^/]+)\/groupings$/);
+    if (groupings && UUID_PATTERN.test(groupings[1]) && method === "GET") return listGroupings(request, env, groupings[1]);
+    const groupingStart = path.match(/^\/api\/analyses\/([^/]+)\/groupings\/start$/);
+    if (groupingStart && UUID_PATTERN.test(groupingStart[1]) && method === "POST") return startGrouping(request, env, groupingStart[1]);
+    const groupingApprove = path.match(/^\/api\/analyses\/([^/]+)\/groupings\/approve$/);
+    if (groupingApprove && UUID_PATTERN.test(groupingApprove[1]) && method === "POST") return approveGrouping(request, env, groupingApprove[1]);
+    const groupingDiscard = path.match(/^\/api\/analyses\/([^/]+)\/groupings\/discard$/);
+    if (groupingDiscard && UUID_PATTERN.test(groupingDiscard[1]) && method === "POST") return discardGrouping(request, env, groupingDiscard[1]);
+    const groupingSave = path.match(/^\/api\/runner\/([^/]+)\/grouping$/);
+    if (groupingSave && UUID_PATTERN.test(groupingSave[1]) && method === "POST") return saveGrouping(request, env, groupingSave[1]);
+
     const businessStart = path.match(/^\/api\/analyses\/([^/]+)\/business\/start$/);
     if (businessStart && UUID_PATTERN.test(businessStart[1]) && method === "POST") return startBusiness(request, env, businessStart[1]);
     const businessDiscard = path.match(/^\/api\/analyses\/([^/]+)\/business\/discard$/);

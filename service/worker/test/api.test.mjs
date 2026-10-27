@@ -141,6 +141,7 @@ function seed() {
     analysis_conversions: [],
     assessment_log: [],
     file_business_assessments: [],
+    feature_groupings: [],
     analysis_target_approvals: [],
     analysis_db_metadata: [],
   };
@@ -292,7 +293,7 @@ function handleGithub(url, init) {
     return j({ id: 99 });
   }
   if (path.endsWith("/app/installations/99/access_tokens")) return j({ token: "ghs_test" }, 201);
-  if (path.endsWith("/actions/workflows/analyze.yml/dispatches") || path.endsWith("/actions/workflows/convert.yml/dispatches") || path.endsWith("/actions/workflows/business.yml/dispatches")) {
+  if (path.endsWith("/actions/workflows/analyze.yml/dispatches") || path.endsWith("/actions/workflows/convert.yml/dispatches") || path.endsWith("/actions/workflows/business.yml/dispatches") || path.endsWith("/actions/workflows/grouping.yml/dispatches")) {
     github.dispatches.push(JSON.parse(init.body));
     return github.dispatchOk ? new Response(null, { status: 204 }) : j({ message: "failed" }, 500);
   }
@@ -1365,6 +1366,72 @@ test("the file list says which commit each file result was read at", async () =>
   const res = await call(`/api/analyses/${AN_ACME}/files`, { as: "eng_a" });
   assert.equal(res.status, 200);
   assert.equal(res.body.files.find((f) => f.path === "src/Commit.java").commit_sha, "abc1234");
+});
+
+// ---- Feature grouping from the approved business results ----
+
+function groupingRow(idN, status, groups = [{ name: "Ordering", summary: "x", paths: ["src/A.java"] }]) {
+  return { id: uid(idN), analysis_id: AN_ACME, status, groups, source_count: 1, created_by_email: "eng@acme.test", created_at: NOW, reviewed_by_email: null, reviewed_at: null };
+}
+
+test("only platform engineers see or start a grouping", async () => {
+  const aud = await call(`/api/analyses/${AN_ACME}/groupings`, { as: "aud_a" });
+  assert.equal(aud.status, 403);
+  const audStart = await call(`/api/analyses/${AN_ACME}/groupings/start`, { as: "aud_a", method: "POST" });
+  assert.equal(audStart.status, 403);
+});
+
+test("a grouping cannot start until some files have an approved business assessment", async () => {
+  readyForBusiness();
+  const res = await call(`/api/analyses/${AN_ACME}/groupings/start`, { as: "eng_a", method: "POST" });
+  assert.equal(res.status, 409);
+  assert.match(res.body.error, /Approve some file business assessments first/);
+});
+
+test("starting a grouping queues one run from the approved files and dispatches the grouping workflow", async () => {
+  readyForBusiness();
+  state.file_business_assessments.push(businessRow(1060, "approved"));
+  const before = github.dispatches.length;
+  const res = await call(`/api/analyses/${AN_ACME}/groupings/start`, { as: "eng_a", method: "POST" });
+  assert.equal(res.status, 202);
+  assert.equal(state.feature_groupings.filter((g) => g.analysis_id === AN_ACME && g.status === "running").length, 1);
+  assert.ok(state.assessment_log.some((e) => e.action === "grouping_start"));
+  assert.equal(github.dispatches.length, before + 1);
+});
+
+test("the runner saves a draft grouping only when every file is one with an approved business assessment", async () => {
+  state.file_business_assessments.push(businessRow(1061, "approved"));
+  const bad = await call(`/api/runner/${AN_ACME}/grouping`, { method: "POST", secret: env.RUNNER_SECRET, body: { status: "ok", groups: [{ name: "X", summary: "", paths: ["src/Unknown.java"] }] } });
+  assert.equal(bad.status, 400);
+  const twice = await call(`/api/runner/${AN_ACME}/grouping`, { method: "POST", secret: env.RUNNER_SECRET, body: { status: "ok", groups: [{ name: "A", summary: "", paths: ["src/A.java"] }, { name: "B", summary: "", paths: ["src/A.java"] }] } });
+  assert.equal(twice.status, 400);
+  const res = await call(`/api/runner/${AN_ACME}/grouping`, { method: "POST", secret: env.RUNNER_SECRET, body: { status: "ok", groups: [{ name: "Ordering", summary: "Places orders.", paths: ["src/A.java"] }] } });
+  assert.equal(res.status, 201);
+  const draft = state.feature_groupings.find((g) => g.analysis_id === AN_ACME && g.status === "draft");
+  assert.equal(draft.groups[0].name, "Ordering");
+  assert.ok(state.assessment_log.some((e) => e.action === "grouping_finish"));
+});
+
+test("a failed grouping clears its running row and is logged", async () => {
+  state.feature_groupings.push({ id: uid(1062), analysis_id: AN_ACME, status: "running", groups: [], source_count: 1, created_by_email: "eng@acme.test", created_at: new Date().toISOString() });
+  const res = await call(`/api/runner/${AN_ACME}/grouping`, { method: "POST", secret: env.RUNNER_SECRET, body: { status: "failed", reason: "The model did not answer." } });
+  assert.equal(res.status, 200);
+  assert.equal(res.body.saved, false);
+  assert.equal(state.feature_groupings.some((g) => g.id === uid(1062)), false);
+  assert.ok(state.assessment_log.some((e) => e.action === "grouping_fail"));
+});
+
+test("approving a grouping supersedes the earlier one, and only a draft can be discarded", async () => {
+  state.feature_groupings.push(groupingRow(1070, "approved"), groupingRow(1071, "draft"), groupingRow(1072, "draft"));
+  const approve = await call(`/api/analyses/${AN_ACME}/groupings/approve`, { as: "eng_a", method: "POST", body: { grouping_id: uid(1071) } });
+  assert.equal(approve.status, 200);
+  assert.equal(state.feature_groupings.find((g) => g.id === uid(1070)).status, "superseded");
+  assert.equal(state.feature_groupings.find((g) => g.id === uid(1071)).status, "approved");
+  const refused = await call(`/api/analyses/${AN_ACME}/groupings/discard`, { as: "eng_a", method: "POST", body: { grouping_id: uid(1071) } });
+  assert.equal(refused.status, 409);
+  const discard = await call(`/api/analyses/${AN_ACME}/groupings/discard`, { as: "eng_a", method: "POST", body: { grouping_id: uid(1072) } });
+  assert.equal(discard.status, 200);
+  assert.equal(state.feature_groupings.some((g) => g.id === uid(1072)), false);
 });
 
 // ---- Reviewing file-level results (platform engineers) ----
