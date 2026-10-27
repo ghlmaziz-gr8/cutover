@@ -1137,18 +1137,27 @@ async function recordAction(env, entry) {
   return res.ok;
 }
 
-// Stops runs in the workspace that have gone on too long, and logs each one.
+// Writes the log entry for an action before the action is done. If it cannot be written, the action does not happen.
+async function logFirst(env, entry) {
+  if (await recordAction(env, entry)) return null;
+  return json({ error: "The action could not be written to the log, so nothing was done. Try again in a minute." }, 503);
+}
+
+// Stops runs in the workspace that have gone on too long. Each stop is logged first; if the log fails, the stop does not happen.
 async function stopStaleRuns(env, workspaceId) {
   const cutoff = new Date(Date.now() - STALE_RUN_MS).toISOString();
-  const res = await serviceRest(env, `analyses?workspace_id=eq.${workspaceId}&status=in.(queued,running)&created_at=lt.${cutoff}`, {
-    method: "PATCH",
-    headers: { prefer: "return=representation" },
-    body: JSON.stringify({ status: "failed", error: "Stopped: the run did not finish within three hours.", finished_at: new Date().toISOString() }),
-  });
-  if (!res.ok) throw new Error("Could not check the runs.");
-  const stopped = await res.json().catch(() => []);
-  for (const r of stopped) {
-    await recordAction(env, { workspace_id: workspaceId, action: "stale_stop", analysis_id: r.id, repo: r.repo, detail: "Did not finish within three hours." });
+  const stale = await serviceRest(env, `analyses?workspace_id=eq.${workspaceId}&status=in.(queued,running)&created_at=lt.${cutoff}&select=id,repo`);
+  if (!stale.ok) throw new Error("Could not check the runs.");
+  for (const r of await stale.json()) {
+    if (!(await recordAction(env, { workspace_id: workspaceId, action: "stale_stop", analysis_id: r.id, repo: r.repo, detail: "Did not finish within three hours." }))) {
+      throw new Error("Could not record the stop.");
+    }
+    const res = await serviceRest(env, `analyses?id=eq.${r.id}&status=in.(queued,running)`, {
+      method: "PATCH",
+      headers: { prefer: "return=minimal" },
+      body: JSON.stringify({ status: "failed", error: "Stopped: the run did not finish within three hours.", finished_at: new Date().toISOString() }),
+    });
+    if (!res.ok) throw new Error("Could not stop the run.");
   }
 }
 
@@ -1237,10 +1246,14 @@ async function startAnalysis(request, env) {
   }
   if (readable.failed) return json({ error: "Cutover could not check the repository right now. Try again in a minute." }, 502);
 
+  const id = crypto.randomUUID();
+  const refused = await logFirst(env, { workspace_id: access.workspace_id, user: auth.user, action: "start", analysis_id: id, repo, detail: model ? "AI model" : "Rules only" });
+  if (refused) return refused;
   const created = await serviceRest(env, "analyses", {
     method: "POST",
     headers: { prefer: "return=representation" },
     body: JSON.stringify({
+      id,
       owner_id: auth.user.id,
       workspace_id: access.workspace_id,
       repo,
@@ -1295,7 +1308,6 @@ async function startAnalysis(request, env) {
     await recordAction(env, { workspace_id: access.workspace_id, user: auth.user, action: "fail", analysis_id: row.id, repo, detail: "The runner could not be started." });
     return json({ error: "Could not start the analysis runner." }, 502);
   }
-  await recordAction(env, { workspace_id: access.workspace_id, user: auth.user, action: "start", analysis_id: row.id, repo, detail: model ? "AI model" : "Rules only" });
 
   return json({ id: row.id, status: row.status }, 202);
 }
@@ -1367,6 +1379,8 @@ async function startUpload(request, env) {
   }
 
   const id = crypto.randomUUID();
+  const refused = await logFirst(env, { workspace_id: access.workspace_id, user: auth.user, action: "start", analysis_id: id, repo: UPLOAD_REPO, detail: model ? "AI model, uploaded code" : "Rules only, uploaded code" });
+  if (refused) return refused;
   const objectPath = `${id}.zip`;
   const stored = await fetch(storageUrl(env, objectPath), {
     method: "POST",
@@ -1402,7 +1416,6 @@ async function startUpload(request, env) {
     return json({ error: "Could not create the analysis." }, 502);
   }
   const [row] = await created.json();
-  await recordAction(env, { workspace_id: access.workspace_id, user: auth.user, action: "start", analysis_id: row.id, repo: UPLOAD_REPO, detail: model ? "AI model, uploaded code" : "Rules only, uploaded code" });
   await notifyPeople(env, access.workspace_id, [auth.user.id], {
     kind: "analysis_started",
     tone: model ? "ai" : "info",
@@ -1589,6 +1602,8 @@ async function rerunAnalysis(request, env, id) {
     drawScreens = await workspaceDrawsScreens(env, row.workspace_id);
   }
 
+  const refused = await logFirst(env, { workspace_id: row.workspace_id, user: access.user, action: "rerun", analysis_id: id, repo: row.repo, detail: row.model_key_id ? "AI model" : "Rules only" });
+  if (refused) return refused;
   for (const table of ["file_findings", "analysis_screens"]) {
     const cleared = await serviceRest(env, `${table}?analysis_id=eq.${id}`, { method: "DELETE", headers: { prefer: "return=minimal" } });
     if (!cleared.ok) return json({ error: "Could not clear the earlier results. Try again in a minute." }, 502);
@@ -1609,7 +1624,6 @@ async function rerunAnalysis(request, env, id) {
     await recordAction(env, { workspace_id: row.workspace_id, user: access.user, action: "fail", analysis_id: id, repo: row.repo, detail: "The runner could not be started." });
     return json({ error: "Could not start the analysis runner." }, 502);
   }
-  await recordAction(env, { workspace_id: row.workspace_id, user: access.user, action: "rerun", analysis_id: id, repo: row.repo, detail: row.model_key_id ? "AI model" : "Rules only" });
   await notifyPeople(env, row.workspace_id, [access.user.id], {
     kind: "analysis_started",
     tone: row.model_key_id ? "ai" : "info",
@@ -1620,10 +1634,40 @@ async function rerunAnalysis(request, env, id) {
   return json({ id, status: "queued" }, 202);
 }
 
+// The branch's current commit, asked of GitHub at most every six hours per analysis. If GitHub cannot say,
+// nothing is changed and the results are not marked out of date.
+const HEAD_CHECK_MS = 6 * 60 * 60 * 1000;
+async function refreshHead(env, row) {
+  if (row.status !== "complete" || !row.repo || row.repo === UPLOAD_REPO) return;
+  if (row.head_checked_at && Date.now() - Date.parse(row.head_checked_at) < HEAD_CHECK_MS) return;
+  let head = null;
+  try {
+    const token = await readToken(env, row.repo);
+    if (!token.token) return;
+    const url = `https://api.github.com/repos/${row.repo}/commits?per_page=1${row.ref ? `&sha=${encodeURIComponent(row.ref)}` : ""}`;
+    const res = await fetch(url, { headers: { ...GH_HEADERS, authorization: `Bearer ${token.token}` } });
+    if (!res.ok) return;
+    const [commit] = await res.json();
+    head = commit && typeof commit.sha === "string" ? commit.sha.slice(0, 64) : null;
+  } catch {
+    return;
+  }
+  if (!head) return;
+  const now = new Date().toISOString();
+  await serviceRest(env, `analyses?id=eq.${row.id}`, {
+    method: "PATCH",
+    headers: { prefer: "return=minimal" },
+    body: JSON.stringify({ head_sha: head, head_checked_at: now }),
+  });
+  row.head_sha = head;
+  row.head_checked_at = now;
+}
+
 async function getAnalysis(request, env, id) {
   const access = await analysisAccess(env, request, id);
   if (access.response) return access.response;
   const { row, member, user } = access;
+  await refreshHead(env, row);
 
   const [commentsRes, actionsRes, contingenciesRes] = await Promise.all([
     serviceRest(env, `analysis_comments?analysis_id=eq.${id}&select=id,author_id,author_email,body,created_at&order=created_at.asc`),
@@ -1636,6 +1680,7 @@ async function getAnalysis(request, env, id) {
 
   const isAdmin = member.is_admin === true;
   const { owner_id, findings, ...analysis } = row;
+  analysis.out_of_date = Boolean(analysis.commit_sha && analysis.head_sha && analysis.head_sha !== analysis.commit_sha);
   const comments = (await commentsRes.json()).map(({ author_id, ...c }) => ({
     ...c,
     can_delete: author_id === user.id || isAdmin,
@@ -1758,6 +1803,8 @@ async function deleteAnalysis(request, env, id) {
   if (!isOwner && !access.member.is_admin) {
     return json({ error: "Only the person who started this analysis or a workspace admin can delete it." }, 403);
   }
+  const refused = await logFirst(env, { workspace_id: access.row.workspace_id, user: access.user, action: "delete", analysis_id: id, repo: access.row.repo, detail: isOwner ? "By the owner" : "By a workspace admin" });
+  if (refused) return refused;
   if (!(await recordDeletion(env, [{ id, repo: access.row.repo }], "requested"))) {
     return json({ error: "Could not record the deletion, so nothing was deleted." }, 502);
   }
@@ -1767,7 +1814,6 @@ async function deleteAnalysis(request, env, id) {
     headers: { prefer: "return=minimal" },
   });
   if (!res.ok) return json({ error: "Could not delete the analysis." }, 502);
-  await recordAction(env, { workspace_id: access.row.workspace_id, user: access.user, action: "delete", analysis_id: id, repo: access.row.repo, detail: isOwner ? "By the owner" : "By a workspace admin" });
   return json({ deleted: true });
 }
 
@@ -2313,13 +2359,14 @@ async function setScope(request, env, id) {
   if (scope !== "deeper" && access.row.deeper_done !== true) {
     return json({ error: "Finish the deeper assessment before choosing Modernize or Migrate." }, 409);
   }
+  const refused = await logFirst(env, { workspace_id: access.row.workspace_id, user: access.user, action: "scope", analysis_id: id, repo: access.row.repo, detail: scope });
+  if (refused) return refused;
   const res = await serviceRest(env, `analyses?id=eq.${id}`, {
     method: "PATCH",
     headers: { prefer: "return=minimal" },
     body: JSON.stringify({ scope, scope_set_by_email: access.user.email, scope_set_at: new Date().toISOString() }),
   });
   if (!res.ok) return json({ error: "Could not save the scope." }, 502);
-  await recordAction(env, { workspace_id: access.row.workspace_id, user: access.user, action: "scope", analysis_id: id, repo: access.row.repo, detail: scope });
   const labels = { deeper: "Deeper assessment", modernize: "Modernize", migrate: "Migrate" };
   await notifyPeople(env, access.row.workspace_id, await analysisAudienceExcept(env, access.row, access.user.id), {
     kind: "scope_chosen", tone: "info", title: `Next stage chosen: ${labels[scope]}`,
@@ -2652,6 +2699,8 @@ async function startConversion(request, env, id) {
   if (busyResp) return busyResp;
   const modelToken = (await issueModelToken(env, id, row.model_key_id)) || "";
   if (!modelToken) return json({ error: "Could not prepare the model. Try again in a minute." }, 502);
+  const refusedConv = await logFirst(env, { workspace_id: row.workspace_id, user: access.user, action: "convert_start", analysis_id: id, repo: row.repo, detail: path });
+  if (refusedConv) return refusedConv;
   await serviceRest(env, `analysis_conversions?analysis_id=eq.${id}&path=eq.${encodeURIComponent(path)}`, { method: "DELETE", headers: { prefer: "return=minimal" } });
   const made = await serviceRest(env, "analysis_conversions", {
     method: "POST",
@@ -2671,7 +2720,6 @@ async function startConversion(request, env, id) {
     });
     return json({ error: "The runner could not be started. Try again in a minute." }, 502);
   }
-  await recordAction(env, { workspace_id: row.workspace_id, user: access.user, action: "convert_start", analysis_id: id, repo: row.repo, detail: path });
   return json({ queued: true, path }, 202);
 }
 
@@ -2983,6 +3031,11 @@ async function runnerResult(request, env, id) {
     // The deeper assessment is done once the run has sent its documents.
     deeper_done: body.status === "complete" && Boolean(body.findings && body.findings.deeper),
   };
+  const current = await loadAnalysis(env, id);
+  if (current.row) {
+    const refused = await logFirst(env, { workspace_id: current.row.workspace_id, action: body.status === "complete" ? "finish" : "fail", analysis_id: id, repo: current.row.repo, commit_sha: update.commit_sha, detail: body.status === "complete" ? "Runner" : update.error });
+    if (refused) return refused;
+  }
   const res = await serviceRest(env, `analyses?id=eq.${id}`, {
     method: "PATCH",
     headers: { prefer: "return=representation" },
@@ -2991,7 +3044,6 @@ async function runnerResult(request, env, id) {
   if (!res.ok) return json({ error: "Could not save the result." }, 502);
   const [saved] = await res.json().catch(() => []);
   if (saved) {
-    await recordAction(env, { workspace_id: saved.workspace_id, action: body.status === "complete" ? "finish" : "fail", analysis_id: id, repo: saved.repo, commit_sha: update.commit_sha, detail: body.status === "complete" ? "Runner" : update.error });
     await notifyPeople(env, saved.workspace_id, [saved.owner_id], body.status === "complete"
       ? { kind: "analysis_complete", tone: "success", title: `Analysis complete: ${saved.app_name}`, body: "The findings are ready for review.", analysis_id: id }
       : { kind: "analysis_failed", tone: "danger", title: `Analysis failed: ${saved.app_name}`, body: update.error || "The run did not finish.", analysis_id: id });

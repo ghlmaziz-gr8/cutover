@@ -150,6 +150,7 @@ let state;
 let outbound;
 let github;
 let failLog;
+let failActivityLog;
 const realFetch = globalThis.fetch;
 
 const j = (body, status = 200) => new Response(body === undefined ? null : JSON.stringify(body), {
@@ -206,6 +207,7 @@ function handleRest(url, init) {
 
   if (method === "POST") {
     if (table === "deletion_log" && failLog) return j({ message: "forced failure" }, 500);
+    if (table === "assessment_log" && failActivityLog) return j({ message: "forced failure" }, 500);
     if (table === "analysis_model_tokens" && github.failTokens) return j({ message: "forced failure" }, 500);
     const body = JSON.parse(init.body);
     const list = Array.isArray(body) ? body : [body];
@@ -274,7 +276,7 @@ function handleGithub(url, init) {
     return github.dispatchOk ? new Response(null, { status: 204 }) : j({ message: "failed" }, 500);
   }
   if (path.includes("/git/trees/")) return j({ tree: [{ type: "blob" }, { type: "blob" }, { type: "tree" }], truncated: false });
-  if (path.endsWith("/commits")) return j([{ commit: { committer: { date: "2026-10-01T00:00:00Z" } } }]);
+  if (path.endsWith("/commits")) return j([{ sha: github.head || "abc123", commit: { committer: { date: "2026-10-01T00:00:00Z" } } }]);
   if (/^https:\/\/api\.github\.com\/repos\/[^/]+\/[^/]+$/.test(path)) return j({ default_branch: "main" });
   return j({ message: "unmocked" }, 599);
 }
@@ -288,6 +290,7 @@ beforeEach(() => {
   state = seed();
   outbound = [];
   failLog = false;
+  failActivityLog = false;
   github = { dispatches: [], dispatchOk: true };
   globalThis.fetch = async (url, init = {}) => {
     const u = String(url);
@@ -2401,4 +2404,33 @@ test("the action log is kept as a separate, append-only table in the database", 
   const sql = readFileSync(new URL("../../supabase/add-action-log-and-lock.sql", import.meta.url), "utf8");
   assert.ok(sql.includes("revoke update, delete, truncate, references, trigger on public.assessment_log from service_role;"));
   assert.ok(sql.includes("create unique index if not exists analyses_one_running_per_workspace"));
+});
+
+test("an assessment shows as out of date once the branch has a newer commit, and GitHub is asked at most every six hours", async () => {
+  const fresh = await call(`/api/analyses/${AN_ACME}`, { as: "eng_a" });
+  assert.equal(fresh.body.out_of_date, false, "the branch is still at the commit the results read");
+  github.head = "def456";
+  state.analyses.find((a) => a.id === AN_ACME).head_checked_at = null;
+  const moved = await call(`/api/analyses/${AN_ACME}`, { as: "eng_a" });
+  assert.equal(moved.body.out_of_date, true);
+  assert.equal(moved.body.head_sha, "def456");
+  const asked = outbound.filter((o) => o.url.includes("/commits")).length;
+  await call(`/api/analyses/${AN_ACME}`, { as: "eng_a" });
+  assert.equal(outbound.filter((o) => o.url.includes("/commits")).length, asked, "a second look within six hours does not ask GitHub again");
+  github.head = undefined;
+});
+
+test("a start is refused, and nothing is created, when its log entry cannot be written", async () => {
+  failActivityLog = true;
+  const res = await call("/api/analyses", { as: "eng_a", method: "POST", body: { ...START, workspace_id: W_ACME } });
+  assert.equal(res.status, 503);
+  assert.equal(state.analyses.filter((a) => a.workspace_id === W_ACME && a.status === "queued").length, 0);
+  assert.equal(github.dispatches.length, 0);
+});
+
+test("a delete is refused, and the analysis is kept, when its log entry cannot be written", async () => {
+  failActivityLog = true;
+  const res = await call(`/api/analyses/${AN_ACME}`, { as: "eng_a", method: "DELETE" });
+  assert.equal(res.status, 503);
+  assert.ok(state.analyses.some((a) => a.id === AN_ACME));
 });
