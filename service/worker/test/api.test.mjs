@@ -146,6 +146,8 @@ function seed() {
     file_deep_assessments: [],
     analysis_target_approvals: [],
     analysis_db_metadata: [],
+    screen_time: [],
+    engagement: [],
   };
 }
 
@@ -3129,4 +3131,45 @@ test("the links give the names each file defines and calls, from its approved ac
   assert.equal(res.body.links["src/C.java"], undefined, "a running file has no links yet");
   const denied = await call(`/api/analyses/${AN_ACME}/deep-files/links`, { as: "aud_a" });
   assert.equal(denied.status, 403);
+});
+
+test("time on the system adds up per screen, sets points and level, and names a clear favourite screen", async () => {
+  readyForBusiness();
+  for (let i = 0; i < 3; i += 1) {
+    const res = await call("/api/me/time", { method: "POST", body: { screen: "s-deeper", seconds: 60 }, as: "eng_a" });
+    assert.equal(res.status, 200);
+  }
+  const once = await call("/api/me/time", { method: "POST", body: { screen: "s-files", seconds: 30 }, as: "eng_a" });
+  assert.equal(once.status, 200);
+  const summary = await call("/api/me/engagement", { as: "eng_a" });
+  assert.equal(summary.status, 200);
+  assert.equal(summary.body.total_seconds, 210);
+  assert.equal(summary.body.level.points, 3, "one point per minute");
+  assert.equal(summary.body.level.name, "Starter");
+  assert.equal(summary.body.favourite.screen, "s-deeper");
+  assert.deepEqual(summary.body.badges, []);
+});
+
+test("a screen is named a favourite only when it is clearly ahead, and a long gap starts a new visit", async () => {
+  readyForBusiness();
+  await call("/api/me/time", { method: "POST", body: { screen: "s-home", seconds: 60 }, as: "eng_a" });
+  await call("/api/me/time", { method: "POST", body: { screen: "s-plan", seconds: 60 }, as: "eng_a" });
+  const tied = await call("/api/me/engagement", { as: "eng_a" });
+  assert.equal(tied.body.favourite, null, "two screens with equal time has no favourite");
+  const row = state.engagement.find((r) => r.user_id === PEOPLE.eng_a.id);
+  row.last_seen = new Date(Date.now() - 3 * 60 * 60 * 1000).toISOString();
+  await call("/api/me/time", { method: "POST", body: { screen: "s-plan", seconds: 60 }, as: "eng_a" });
+  const after = await call("/api/me/engagement", { as: "eng_a" });
+  assert.ok(after.body.last_visit, "the previous visit is remembered");
+  assert.equal(after.body.last_visit_seconds, 120, "the visit that ended had two minutes");
+});
+
+test("time on the system needs a sign-in and a valid screen and length", async () => {
+  readyForBusiness();
+  const anon = await call("/api/me/time", { method: "POST", body: { screen: "s-home", seconds: 30 } });
+  assert.equal(anon.status, 401);
+  const badScreen = await call("/api/me/time", { method: "POST", body: { screen: "home; drop", seconds: 30 }, as: "eng_a" });
+  assert.equal(badScreen.status, 400);
+  const tooLong = await call("/api/me/time", { method: "POST", body: { screen: "s-home", seconds: 600 }, as: "eng_a" });
+  assert.equal(tooLong.status, 400);
 });

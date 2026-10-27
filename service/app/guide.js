@@ -11,6 +11,7 @@
 window.CUTOVER_GUIDE = {
   updated: "2026-10-22",
   whatsNew: [
+    "2026-10-27: Time on the system is counted per screen while you are active. A card on the home screen greets you when you sign in: your total time, your last visit, your favourite page, and your level with points and badges. Points are for recognition only.",
     "2026-10-27: The confidence score for a deep assessment is a halo: a ring fills to the score while the number counts up, with a glow, a turning dashed ring and an orbiting dot. It shows how many names were checked against the code, how many rules have line numbers, and how many have a worked example.",
     "2026-10-27: Related files now use the functions each file calls and defines, so a file that calls a function from another file is suggested with the call as the reason. Those links come from deep assessments.",
     "2026-10-27: Choosing a file now suggests related files: those in the same folder or with a similar name, with the reason for each. Under them is the order to assess the files in, starting with the chosen file. Related files are found from file names for now.",
