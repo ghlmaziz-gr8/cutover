@@ -11,6 +11,7 @@
 window.CUTOVER_GUIDE = {
   updated: "2026-10-22",
   whatsNew: [
+    "2026-10-27: A deep file assessment shows a live card while it runs: a code scan, an elapsed clock, the lines and characters of the file, and about how long it should take. It refreshes by itself and shows the draft when it is ready.",
     "2026-10-27: The architecture overview and the systems section appear only after you open the deep system assessment.",
     "2026-10-27: The database structure card appears only after you open the deep data assessment. Before the assessment is ready, its run card stays visible so it can be started.",
     "2026-10-27: Deep view also opens from a file in Files for the business assessment, on the deeper assessment page. The file's deep view appears under its details.",

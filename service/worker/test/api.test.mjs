@@ -3029,3 +3029,27 @@ test("only a draft can be approved or discarded, and a discard removes the draft
   assert.ok(state.assessment_log.some((r) => r.action === "deep_file_discard"));
 });
 
+
+test("the runner reports the size of the file, and the portal shows the time it will take", async () => {
+  readyForBusiness();
+  await call(`/api/analyses/${AN_ACME}/deep-files/start`, { as: "eng_a", method: "POST", body: { path: "src/A.java" } });
+  const wrong = await call(`/api/runner/${AN_ACME}/deep-file-progress`, { method: "POST", body: { path: "src/A.java", lines: 100, chars: 900 }, secret: "wrong" });
+  assert.equal(wrong.status, 401);
+  const bad = await call(`/api/runner/${AN_ACME}/deep-file-progress`, { method: "POST", body: { path: "src/A.java", lines: -4, chars: 900 }, secret: env.RUNNER_SECRET });
+  assert.equal(bad.status, 400);
+  const res = await call(`/api/runner/${AN_ACME}/deep-file-progress`, { method: "POST", body: { path: "src/A.java", lines: 1000, chars: 30000 }, secret: env.RUNNER_SECRET });
+  assert.equal(res.status, 200);
+  assert.equal(res.body.estimate_seconds, 65);
+  const row = state.file_deep_assessments.find((r) => r.analysis_id === AN_ACME && r.file_path === "src/A.java" && r.status === "running");
+  assert.equal(row.content.progress.lines, 1000);
+  assert.equal(row.content.progress.chars, 30000);
+  assert.equal(row.content.progress.estimate_seconds, 65);
+});
+
+test("the time estimate grows with the lines and stays between 25 and 150 seconds", async () => {
+  const { deepEstimateSeconds } = await import("../src/index.mjs");
+  assert.equal(deepEstimateSeconds(0), 25);
+  assert.equal(deepEstimateSeconds(10), 25);
+  assert.equal(deepEstimateSeconds(1000), 65);
+  assert.equal(deepEstimateSeconds(1000000), 150);
+});

@@ -3254,6 +3254,38 @@ function dispatchDeepFile(env, inputs) {
   });
 }
 
+// The time a deep file assessment usually takes, from the file's line count. The model reads the file and writes
+// up to a fixed length of answer, so the time grows with the file and levels off. It is an estimate: the portal shows
+// it as a range, and the real time is what the draft records.
+export function deepEstimateSeconds(lines) {
+  const seconds = Math.round(25 + Math.max(0, lines) * 0.04);
+  return Math.min(150, Math.max(25, seconds));
+}
+
+// The runner reports the size of the file once it has read it, so the portal can show the time it will take.
+async function saveDeepProgress(request, env, id) {
+  if (!timingSafeEqual(request.headers.get("x-runner-secret") || "", env.RUNNER_SECRET || "")) {
+    return json({ error: "Unauthorized." }, 401);
+  }
+  const parsed = await readJson(request, 2000);
+  if (parsed.error) return json({ error: parsed.error }, 400);
+  const body = parsed.value || {};
+  const path = typeof body.path === "string" ? body.path : "";
+  const lines = body.lines;
+  const chars = body.chars;
+  if (!CONVERT_PATH.test(path)) return json({ error: "Choose a file." }, 400);
+  if (!Number.isInteger(lines) || lines < 0 || lines > 10000000) return json({ error: "lines must be a whole number." }, 400);
+  if (!Number.isInteger(chars) || chars < 0 || chars > 100000000) return json({ error: "chars must be a whole number." }, 400);
+  const progress = { lines, chars, estimate_seconds: deepEstimateSeconds(lines), reported_at: new Date().toISOString() };
+  const res = await serviceRest(env, `file_deep_assessments?analysis_id=eq.${id}&file_path=eq.${encodeURIComponent(path)}&status=eq.running`, {
+    method: "PATCH",
+    headers: { prefer: "return=minimal" },
+    body: JSON.stringify({ content: { progress } }),
+  });
+  if (!res.ok) return json({ error: "Could not save the progress." }, 502);
+  return json({ saved: true, estimate_seconds: progress.estimate_seconds }, 200);
+}
+
 async function saveDeepFile(request, env, id) {
   if (!timingSafeEqual(request.headers.get("x-runner-secret") || "", env.RUNNER_SECRET || "")) {
     return json({ error: "Unauthorized." }, 401);
@@ -4199,6 +4231,8 @@ async function route(request, env) {
     if (deepDiscard && UUID_PATTERN.test(deepDiscard[1]) && method === "POST") return discardDeepFile(request, env, deepDiscard[1]);
     const deepStart = path.match(/^\/api\/analyses\/([^/]+)\/deep-files\/start$/);
     if (deepStart && UUID_PATTERN.test(deepStart[1]) && method === "POST") return startDeepFile(request, env, deepStart[1]);
+    const deepProgress = path.match(/^\/api\/runner\/([^/]+)\/deep-file-progress$/);
+    if (deepProgress && UUID_PATTERN.test(deepProgress[1]) && method === "POST") return saveDeepProgress(request, env, deepProgress[1]);
     const deepSave = path.match(/^\/api\/runner\/([^/]+)\/deep-file$/);
     if (deepSave && UUID_PATTERN.test(deepSave[1]) && method === "POST") return saveDeepFile(request, env, deepSave[1]);
     const businessSave = path.match(/^\/api\/runner\/([^/]+)\/business$/);

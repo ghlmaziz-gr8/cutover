@@ -53,13 +53,39 @@ def post_result(callback: str, analysis_id: str, secret: str, payload: dict,
         return 0
 
 
-def run(path: str, source: Path, ask) -> dict:
-    """Reads the one file and assesses it. Returns the result, without any key in it."""
+def progress_payload(path: str, code: str) -> dict:
+    """The size of the file, sent before the model is called, so the portal can show how long it will take."""
+    return {"path": path, "lines": code.count("\n") + 1 if code else 0, "chars": len(code)}
+
+
+def post_progress(callback: str, analysis_id: str, secret: str, payload: dict,
+                  opener=urllib.request.urlopen) -> int:
+    """Sends the file's size to the API. A failure here does not stop the assessment, so it returns the status only."""
+    url = f"{callback.rstrip('/')}/api/runner/{analysis_id}/deep-file-progress"
+    req = urllib.request.Request(url, data=json.dumps(payload).encode("utf-8"), method="POST", headers={
+        "content-type": "application/json",
+        "x-runner-secret": secret,
+        "user-agent": "cutover-runner",
+    })
+    try:
+        with opener(req, timeout=30) as res:
+            return res.status
+    except urllib.error.HTTPError as err:
+        return err.code
+    except (urllib.error.URLError, OSError):
+        return 0
+
+
+def run(path: str, source: Path, ask, report=None) -> dict:
+    """Reads the one file and assesses it. Returns the result, without any key in it.
+    `report`, when given, receives the file's size once the file is read."""
     if not SAFE_PATH.match(path) or ".." in path.split("/"):
         return {"path": path, "status": "refused", "reason": "The file name is not allowed."}
     code = make_source_reader(source)(path)
     if code is None:
         return {"path": path, "status": "refused", "reason": "The file could not be read."}
+    if report is not None:
+        report(progress_payload(path, code))
     return assess_file(path, code, ask)
 
 
@@ -94,7 +120,9 @@ def main(argv=None, opener=urllib.request.urlopen) -> int:
     try:
         result = run(args.path, source,
                      lambda text: call_provider(provider, model, api_key, text, opener=opener,
-                                                base_url=base_url, token_field=token_field, max_tokens=MAX_TOKENS))
+                                                base_url=base_url, token_field=token_field, max_tokens=MAX_TOKENS),
+                     report=lambda payload: post_progress(args.callback, args.analysis_id, secret, payload,
+                                                          opener=opener))
     except (ProviderStopped, ProviderError):
         result = {"path": args.path, "status": "failed", "reason": "The language model did not answer. Nothing was kept."}
     status = post_result(args.callback, args.analysis_id, secret, result_payload(args.path, commit, result),
