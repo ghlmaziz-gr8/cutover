@@ -43,6 +43,10 @@ jobs:
         working-directory: engine
         run: python -m unittest test_model_grouping.py -v
 
+      - name: Run the deep file assessment tests (every name must appear in the file, personal-data stops)
+        working-directory: engine
+        run: python -m unittest test_model_deep_file.py -v
+
   worker-tests:
     runs-on: ubuntu-latest
     steps:
