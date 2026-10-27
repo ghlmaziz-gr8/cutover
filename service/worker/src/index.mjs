@@ -43,6 +43,10 @@ import { validateDbMetadata } from "./db-metadata.mjs";
 //   DELETE /api/contingencies/:id                         remove a contingency (platform engineers)
 //   GET    /api/analyses/:id/files                        file-level results, a page at a time (platform engineers)
 //   POST   /api/analyses/:id/files/approve-all            approve every file still in draft (platform engineers)
+//   GET    /api/analyses/:id/business?path=               business assessments of one file (platform engineers)
+//   POST   /api/analyses/:id/business/approve             approve a draft; the earlier approved one is superseded (platform engineers)
+//   POST   /api/analyses/:id/business/discard             discard a draft (platform engineers)
+//   POST   /api/runner/:id/business                       one draft business assessment (shared secret)
 //   PATCH  /api/file-findings/:id                         approve or edit one file's purpose and suggestions (platform engineers)
 //   POST   /api/runner/:id/files                          one chunk of file-level results, up to 200 files (shared secret)
 //   POST   /api/runner/:id/result                         runner callback with findings (shared secret)
@@ -2925,6 +2929,110 @@ async function approveAllFiles(request, env, id) {
   return json({ approved: true });
 }
 
+// ---- Business assessment of one file: a draft from the workspace's model, approved by a platform engineer ----
+// Only one approved result per file. An earlier approved result is superseded and kept as history.
+// Every change is written to the action log first; if the log cannot be written, nothing changes.
+const BUSINESS_MAX_CHARS = 20000;
+
+async function listBusiness(request, env, id) {
+  const access = await analysisAccess(env, request, id);
+  if (access.response) return access.response;
+  if (!canStart(access.member)) return json({ error: "Only platform engineers can see business assessments." }, 403);
+  const path = new URL(request.url).searchParams.get("path") || "";
+  if (!CONVERT_PATH.test(path)) return json({ error: "Choose a file." }, 400);
+  const res = await serviceRest(env, `file_business_assessments?analysis_id=eq.${id}&path=eq.${encodeURIComponent(path)}&select=id,path,commit_sha,content,review_status,created_by_email,created_at,reviewed_by_email,reviewed_at&order=created_at.desc&limit=50`);
+  if (!res.ok) return json({ error: "Could not load the business assessments." }, 502);
+  return json({ path, assessments: await res.json() });
+}
+
+async function approveBusiness(request, env, id) {
+  const access = await analysisAccess(env, request, id);
+  if (access.response) return access.response;
+  if (!canStart(access.member)) return json({ error: "Only platform engineers can approve business assessments." }, 403);
+  const parsed = await readJson(request);
+  if (parsed.error) return json({ error: parsed.error }, 400);
+  const assessmentId = String(parsed.value?.assessment_id || "");
+  if (!UUID_PATTERN.test(assessmentId)) return json({ error: "Choose an assessment." }, 400);
+  const found = await serviceRest(env, `file_business_assessments?id=eq.${assessmentId}&analysis_id=eq.${id}&select=id,path,review_status`);
+  if (!found.ok) return json({ error: "Could not load the assessment." }, 502);
+  const [item] = await found.json();
+  if (!item) return json({ error: "Not found." }, 404);
+  if (item.review_status !== "draft") return json({ error: "Only a draft can be approved." }, 409);
+  const current = await serviceRest(env, `file_business_assessments?analysis_id=eq.${id}&path=eq.${encodeURIComponent(item.path)}&review_status=eq.approved&select=id`);
+  if (!current.ok) return json({ error: "Could not check the earlier approved result." }, 502);
+  const [earlier] = await current.json();
+  const refusedApprove = await logFirst(env, { workspace_id: access.row.workspace_id, user: access.user, action: "business_approve", analysis_id: id, repo: access.row.repo, detail: item.path });
+  if (refusedApprove) return refusedApprove;
+  if (earlier) {
+    const refusedSupersede = await logFirst(env, { workspace_id: access.row.workspace_id, user: access.user, action: "business_supersede", analysis_id: id, repo: access.row.repo, detail: item.path });
+    if (refusedSupersede) return refusedSupersede;
+    const superseded = await serviceRest(env, `file_business_assessments?id=eq.${earlier.id}`, {
+      method: "PATCH", headers: { prefer: "return=minimal" }, body: JSON.stringify({ review_status: "superseded" }),
+    });
+    if (!superseded.ok) return json({ error: "Could not replace the earlier approved result." }, 502);
+  }
+  const approved = await serviceRest(env, `file_business_assessments?id=eq.${assessmentId}`, {
+    method: "PATCH",
+    headers: { prefer: "return=minimal" },
+    body: JSON.stringify({ review_status: "approved", reviewed_by_email: normalizeEmail(access.user.email), reviewed_at: new Date().toISOString() }),
+  });
+  if (!approved.ok) return json({ error: "Could not approve the assessment." }, 502);
+  return json({ approved: true, path: item.path });
+}
+
+async function discardBusiness(request, env, id) {
+  const access = await analysisAccess(env, request, id);
+  if (access.response) return access.response;
+  if (!canStart(access.member)) return json({ error: "Only platform engineers can discard business assessments." }, 403);
+  const parsed = await readJson(request);
+  if (parsed.error) return json({ error: parsed.error }, 400);
+  const assessmentId = String(parsed.value?.assessment_id || "");
+  if (!UUID_PATTERN.test(assessmentId)) return json({ error: "Choose an assessment." }, 400);
+  const found = await serviceRest(env, `file_business_assessments?id=eq.${assessmentId}&analysis_id=eq.${id}&select=id,path,review_status`);
+  if (!found.ok) return json({ error: "Could not load the assessment." }, 502);
+  const [item] = await found.json();
+  if (!item) return json({ error: "Not found." }, 404);
+  if (item.review_status !== "draft") return json({ error: "Only a draft can be discarded. An approved result is replaced by approving another." }, 409);
+  const refused = await logFirst(env, { workspace_id: access.row.workspace_id, user: access.user, action: "business_discard", analysis_id: id, repo: access.row.repo, detail: item.path });
+  if (refused) return refused;
+  const res = await serviceRest(env, `file_business_assessments?id=eq.${assessmentId}&review_status=eq.draft`, { method: "DELETE", headers: { prefer: "return=minimal" } });
+  if (!res.ok) return json({ error: "Could not discard the draft." }, 502);
+  return json({ discarded: true, path: item.path });
+}
+
+// The runner saves one draft. The analysis may already be complete: the draft is not part of its run.
+async function saveBusiness(request, env, id) {
+  if (!timingSafeEqual(request.headers.get("x-runner-secret") || "", env.RUNNER_SECRET || "")) {
+    return json({ error: "Unauthorized." }, 401);
+  }
+  const found = await serviceRest(env, `analyses?id=eq.${id}&select=id,workspace_id,repo`);
+  if (!found.ok) return json({ error: "Could not load the analysis." }, 502);
+  const [analysis] = await found.json();
+  if (!analysis) return json({ error: "Not found." }, 404);
+  const parsed = await readJson(request, BUSINESS_MAX_CHARS + 2000);
+  if (parsed.error) return json({ error: parsed.error }, 400);
+  const body = parsed.value || {};
+  const path = typeof body.path === "string" ? body.path : "";
+  if (!CONVERT_PATH.test(path)) return json({ error: "Choose a file." }, 400);
+  const commitSha = typeof body.commit_sha === "string" && body.commit_sha.length <= 64 ? body.commit_sha : null;
+  const content = body.content;
+  if (!content || typeof content !== "object" || Array.isArray(content)) return json({ error: "content must be an object." }, 400);
+  if (JSON.stringify(content).length > BUSINESS_MAX_CHARS) return json({ error: "The assessment is too large to save." }, 400);
+  const known = await serviceRest(env, `file_findings?analysis_id=eq.${id}&path=eq.${encodeURIComponent(path)}&select=id&limit=1`);
+  if (!known.ok) return json({ error: "Could not check the file." }, 502);
+  if (!(await known.json()).length) return json({ error: "That file is not in this analysis." }, 400);
+  const refused = await logFirst(env, { workspace_id: analysis.workspace_id, user: null, action: "business_finish", analysis_id: id, repo: analysis.repo, detail: path });
+  if (refused) return refused;
+  const res = await serviceRest(env, "file_business_assessments", {
+    method: "POST",
+    headers: { prefer: "return=representation" },
+    body: JSON.stringify({ analysis_id: id, path, commit_sha: commitSha, content, review_status: "draft" }),
+  });
+  if (!res.ok) return json({ error: "Could not save the assessment." }, 502);
+  const [saved] = await res.json();
+  return json({ saved: true, id: saved ? saved.id : null }, 201);
+}
+
 // Checks one file record. Only the fields we store are kept.
 function fileRecord(value) {
   if (!value || typeof value !== "object" || Array.isArray(value)) return { error: "Each file must be an object." };
@@ -3466,6 +3574,15 @@ async function route(request, env) {
 
     const fileApprove = path.match(/^\/api\/analyses\/([^/]+)\/files\/approve-all$/);
     if (fileApprove && UUID_PATTERN.test(fileApprove[1]) && method === "POST") return approveAllFiles(request, env, fileApprove[1]);
+
+    const businessList = path.match(/^\/api\/analyses\/([^/]+)\/business$/);
+    if (businessList && UUID_PATTERN.test(businessList[1]) && method === "GET") return listBusiness(request, env, businessList[1]);
+    const businessApprove = path.match(/^\/api\/analyses\/([^/]+)\/business\/approve$/);
+    if (businessApprove && UUID_PATTERN.test(businessApprove[1]) && method === "POST") return approveBusiness(request, env, businessApprove[1]);
+    const businessDiscard = path.match(/^\/api\/analyses\/([^/]+)\/business\/discard$/);
+    if (businessDiscard && UUID_PATTERN.test(businessDiscard[1]) && method === "POST") return discardBusiness(request, env, businessDiscard[1]);
+    const businessSave = path.match(/^\/api\/runner\/([^/]+)\/business$/);
+    if (businessSave && UUID_PATTERN.test(businessSave[1]) && method === "POST") return saveBusiness(request, env, businessSave[1]);
 
     const oneFile = path.match(/^\/api\/file-findings\/([^/]+)$/);
     if (oneFile && UUID_PATTERN.test(oneFile[1]) && method === "PATCH") return editFile(request, env, oneFile[1]);
