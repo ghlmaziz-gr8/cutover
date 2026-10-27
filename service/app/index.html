@@ -1268,6 +1268,21 @@ button:not(:disabled):active{transform:scale(.965)}
     .dw-facts span{font-size:12px;padding:4px 10px;border-radius:999px;background:rgba(123,47,247,.1);color:#4b3f63}
     .dw-note{font-size:12px;color:#6b5b8a;margin:10px 0 0}
     @media (prefers-reduced-motion: reduce){.dw-card,.dw-card *{animation:none!important;transition:none!important}.dw-orb i{display:none}}
+    /* Deep file assessment: the job header on each run. Colour shows the status. */
+    .dj-head{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin-bottom:4px}
+    .dj-status{display:inline-flex;align-items:center;gap:7px;font-size:12px;font-weight:700;padding:4px 11px;border-radius:999px;border:1px solid}
+    .dj-dot{width:8px;height:8px;border-radius:50%;background:currentColor;flex:0 0 8px}
+    .dj-running{color:#1d4ed8;background:#dbeafe;border-color:#93c5fd}
+    .dj-running .dj-dot{animation:djPulse 1.2s ease-in-out infinite}
+    .dj-passed{color:#166534;background:#dcfce7;border-color:#86efac}
+    .dj-approved{color:#14532d;background:#bbf7d0;border-color:#4ade80}
+    .dj-superseded{color:#475569;background:#e2e8f0;border-color:#cbd5e1}
+    .dj-failed{color:#991b1b;background:#fee2e2;border-color:#fca5a5}
+    .dj-job{font-family:ui-monospace,Consolas,monospace;font-size:12px;padding:3px 9px;border-radius:8px;background:#f1f5f9;color:#334155;border:1px solid #e2e8f0}
+    .dj-times{font-size:12px;color:#64748b;margin:2px 0 8px}
+    .dj-took{display:inline-block;margin-left:6px;padding:1px 7px;border-radius:999px;background:#f1f5f9;color:#334155;font-weight:600}
+    @keyframes djPulse{0%,100%{box-shadow:0 0 0 0 rgba(29,78,216,.5);transform:scale(1)}50%{box-shadow:0 0 0 6px rgba(29,78,216,0);transform:scale(1.15)}}
+    @media (prefers-reduced-motion: reduce){.dj-running .dj-dot{animation:none}}
 </style>
 </head>
 <body>
@@ -8815,6 +8830,34 @@ const REGION_OPTS = {
     return panel;
   }
 
+  // The job header on a deep file run: its status (colour-coded), its job id, and when it started, finished and how long it took.
+  const DJ_STATUS = { running: ["In progress", "dj-running"], draft: ["Passed, to review", "dj-passed"], approved: ["Approved", "dj-approved"], superseded: ["Replaced", "dj-superseded"], failed: ["Failed", "dj-failed"] };
+  function deepJobHead(a) {
+    const [label, cls] = DJ_STATUS[a.status] || [a.status, "dj-superseded"];
+    const head = el("div", null, "dj-head");
+    const pill = el("span", null, `dj-status ${cls}`);
+    pill.append(el("span", null, "dj-dot"), el("span", label));
+    const job = el("span", `Job ${String(a.id || "").slice(0, 8)}`, "dj-job");
+    job.title = a.id || "";
+    head.append(pill, job);
+    const nodes = [head];
+    const started = Date.parse(a.created_at);
+    if (!Number.isNaN(started)) {
+      const failedAt = a.content && a.content.failure && a.content.failure.at ? Date.parse(a.content.failure.at) : NaN;
+      const finishedRaw = a.finished_at ? Date.parse(a.finished_at) : failedAt;
+      const fmt = (t) => new Date(t).toLocaleString(undefined, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
+      const times = el("div", null, "dj-times");
+      times.append(`Started ${fmt(started)}`);
+      if (!Number.isNaN(finishedRaw)) {
+        times.append(` · Finished ${fmt(finishedRaw)}`);
+        times.append(el("span", `took ${deepFmt((finishedRaw - started) / 1000)}`, "dj-took"));
+      } else if (a.status === "running") {
+        times.append(" · still running");
+      }
+      nodes.push(times);
+    }
+    return nodes;
+  }
   // The live card shown while a deep file assessment runs: a code scan, an elapsed clock and the time it should take.
   // The stages follow the estimate, so they show how far along the work should be, not a measured step.
   const DW_STAGES = [["Reading the file", 0], ["Working out what it does", 0.15], ["Tracing its functions and calls", 0.4], ["Writing the user stories", 0.7], ["Checking the draft", 0.9]];
@@ -8824,6 +8867,7 @@ const REGION_OPTS = {
   }
   function deepWait(a) {
     const card = el("div", null, "dw-card");
+    const jobNodes = deepJobHead(a);
     const head = el("div", null, "dw-head");
     const orb = el("div", null, "dw-orb");
     orb.append(el("i"), el("i"), el("i"), el("b"));
@@ -8856,7 +8900,7 @@ const REGION_OPTS = {
     const stageItems = DW_STAGES.map(([label]) => { const li = el("li", label); stages.appendChild(li); return li; });
     const facts = el("div", null, "dw-facts");
     const note = el("p", "", "dw-note");
-    card.append(head, scan, time, track, stages, facts, note);
+    card.append(...jobNodes, head, scan, time, track, stages, facts, note);
     let data = a;
     function paint() {
       const progress = (data.content || {}).progress || null;
@@ -8906,6 +8950,7 @@ const REGION_OPTS = {
     c.style.paddingTop = "8px";
     c.style.marginTop = "8px";
     const commit = a.commit_sha ? ` · commit ${String(a.commit_sha).slice(0, 7)}` : "";
+    c.append(...deepJobHead(a));
     c.append(el("div", `${DEEP_STATUS[a.status] || a.status}${commit}`, "muted small"));
     if (a.status === "failed") {
       // The reason the run ended, from the runner. A new run can be started from the panel above.
