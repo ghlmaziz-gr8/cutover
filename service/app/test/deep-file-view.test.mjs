@@ -35,9 +35,10 @@ test("the change is listed in What's new, with the lower-confidence note", () =>
   assert.match(html, /Read by the model, so its confidence is lower than a rule-based result/);
 });
 
-test("the Deep view also opens from the business file detail, and closes back to its button", () => {
+test("choosing a file opens its deep view under it by itself, with an entrance, and closing removes the panel", () => {
   const detail = html.slice(html.indexOf("  function showBusinessFile(path) {"), html.indexOf("  // Next steps opens only when"));
-  assert.match(detail, /const open = el\("button", "Deep view", "small-btn"\);/);
-  assert.match(detail, /const panel = deepPanel\(box, f, \(\) => \{\s*panel\.remove\(\);\s*open\.hidden = false;/);
+  assert.match(detail, /box\.classList\.add\("dp-enter"\);/);
+  assert.match(detail, /const panel = deepPanel\(box, f, \(\) => panel\.remove\(\)\);/);
+  assert.ok(!detail.includes('"Deep view", "small-btn"'));
 });
 

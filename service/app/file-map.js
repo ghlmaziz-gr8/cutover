@@ -15,6 +15,17 @@
     return { tone: "fit", text: "Needs attention" };
   }
 
+  // The deep assessment of a file, when it has one. It takes the place of the conversion status on the map.
+  function deepStatusOf(d) {
+    if (!d) return null;
+    if (d.state === "running") return { tone: "possible", text: "Assessing" };
+    if (d.state === "draft") return { tone: "pro", text: "Draft ready" };
+    if (d.state === "approved") return { tone: "pro", text: "Approved" };
+    if (d.state === "failed") return { tone: "con", text: "Failed" };
+    if (d.state === "superseded") return { tone: "plain", text: "Replaced" };
+    return null;
+  }
+
   function newFolder(name) {
     return { name, folders: new Map(), files: [] };
   }
@@ -23,6 +34,7 @@
   function tree(input) {
     const all = (input && input.files ? input.files : []).map((f) => f.path).filter(Boolean);
     const byPath = new Map(((input && input.conversions) || []).map((c) => [c.path, c]));
+    const deepBy = (input && input.deep) || {};
     const shown = all.slice(0, LIMIT);
     const counts = { pro: 0, possible: 0, con: 0, fit: 0, plain: 0 };
 
@@ -43,7 +55,7 @@
       const children = [
         ...folders.map(toNode),
         ...files.map((path) => {
-          const s = statusOf(byPath.get(path));
+          const s = deepStatusOf(deepBy[path]) || statusOf(byPath.get(path));
           counts[s.tone] += 1;
           const base = path.split("/").pop();
           return { kind: "leaf", tone: s.tone, path, label: `${base} · ${s.text}` };
@@ -65,5 +77,5 @@
     };
   }
 
-  root.FileMap = { tree, statusOf, LIMIT };
+  root.FileMap = { tree, statusOf, deepStatusOf, LIMIT };
 })(typeof globalThis !== "undefined" ? globalThis : this);
