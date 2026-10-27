@@ -57,22 +57,47 @@ def _stories(value, limit_count: int) -> list[str]:
     return [item for item in out if item][:limit_count]
 
 
+def parse_object(text: str) -> dict | None:
+    """The JSON object in a reply. A reply may put a sentence before or after the object; the object is still used."""
+    try:
+        data = json.loads(text)
+    except ValueError:
+        start, end = text.find("{"), text.rfind("}")
+        if start == -1 or end <= start:
+            return None
+        try:
+            data = json.loads(text[start:end + 1])
+        except ValueError:
+            return None
+    return data if isinstance(data, dict) else None
+
+
+def reply_shape(reply) -> str:
+    """What a reply looks like, without its text: its length and where a JSON object starts. Written to the log
+    so a reply that could not be read can be explained, without copying the file's code or the reply into the log."""
+    if not isinstance(reply, str):
+        return f"not text ({type(reply).__name__})"
+    stripped = reply.strip()
+    first = stripped[:1] or "(empty)"
+    return f"chars={len(reply)} first={first!r} has_object={'{' in stripped and '}' in stripped}"
+
+
 def clean_reply(reply, code: str) -> tuple[dict, int] | None:
     """The account with only the names the code contains, and how many names were dropped. None when the reply
     does not have the form needed."""
     if not isinstance(reply, str):
         return None
     text = FENCE.sub("", reply.strip()).strip()
-    try:
-        data = json.loads(text)
-    except ValueError:
-        return None
-    if not isinstance(data, dict):
+    data = parse_object(text)
+    if data is None:
         return None
     purpose = data.get("file_purpose")
     if not isinstance(purpose, str) or not purpose.strip():
         return None
-    raw = data.get("functions")
+    # A file with no functions may leave the list out or send it empty.
+    raw = data.get("functions", [])
+    if raw is None:
+        raw = []
     if not isinstance(raw, list):
         return None
 
@@ -126,7 +151,8 @@ def assess_file(path: str, code: str, ask: Callable[[str], str]) -> dict:
         return {**base, "status": "failed", "reason": "The language model did not answer. Nothing was kept."}
     cleaned = clean_reply(reply, code)
     if cleaned is None:
-        return {**base, "status": "unusable", "reason": "The model did not reply in the form needed, so nothing was kept."}
+        return {**base, "status": "unusable", "reason": "The model did not reply in the form needed, so nothing was kept.",
+                "shape": reply_shape(reply)}
     content, dropped = cleaned
     kinds = scan(json.dumps(content, ensure_ascii=False))
     if kinds:

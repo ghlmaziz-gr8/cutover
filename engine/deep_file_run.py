@@ -143,7 +143,8 @@ def main(argv=None, opener=urllib.request.urlopen) -> int:
                          opener=opener)
     del api_key, release
     reason = f" {result['reason']}" if result.get("reason") and result.get("status") != "ok" else ""
-    print(f"Deep assessment of {args.path}: {result.get('status')}.{reason} Saved: HTTP {status}.")
+    shape = f" ({result['shape']})" if result.get("shape") else ""
+    print(f"Deep assessment of {args.path}: {result.get('status')}.{reason}{shape} Saved: HTTP {status}.")
     return 0 if status in (200, 201) else 1
 
 

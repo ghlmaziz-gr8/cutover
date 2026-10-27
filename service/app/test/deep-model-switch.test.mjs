@@ -14,7 +14,14 @@ test("the panel lists the workspace's active model keys", () => {
   assert.ok(panel.includes("loadModels();"));
 });
 
-test("Use this model sends the chosen key to the analysis, and the result is shown", () => {
+test("choosing a model in the list applies it, with no separate button", () => {
+  assert.ok(panel.includes('modelPick.addEventListener("change"'));
   assert.ok(panel.includes("api(`/api/analyses/${cur.id}/model`, { method: \"PATCH\", body: JSON.stringify({ model_key_id: modelPick.value }) })"));
-  assert.ok(panel.includes("Model changed to ${res.label}. You can run the assessment now."));
+  assert.ok(panel.includes("Model set to ${res.label}. You can run the assessment now."));
+  assert.ok(!panel.includes("Use this model"));
+});
+
+test("the list shows the analysis's own key, and asks for a choice when that key is no longer set up", () => {
+  assert.ok(panel.includes("modelPick.value = cur.model_key_id || \"\";"));
+  assert.ok(panel.includes('appendChild(el("option", "Choose a model"))'));
 });

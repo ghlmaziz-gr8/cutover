@@ -103,3 +103,27 @@ class AssessFile(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+from model_deep_file import clean_reply, reply_shape
+
+
+class TolerantReply(unittest.TestCase):
+    CODE = "Public Sub TakeOrder()\nEnd Sub\n"
+
+    def test_a_reply_with_a_sentence_before_the_object_is_still_read(self):
+        reply = 'Here is the assessment: {"file_purpose": "Takes orders.", "functions": []}'
+        content, dropped = clean_reply(reply, self.CODE)
+        self.assertEqual(content["file_purpose"], "Takes orders.")
+
+    def test_a_file_with_no_functions_may_leave_the_list_out(self):
+        content, dropped = clean_reply('{"file_purpose": "Takes orders."}', self.CODE)
+        self.assertEqual(content["functions"], [])
+
+    def test_a_reply_with_no_object_is_still_not_kept(self):
+        self.assertIsNone(clean_reply("I could not read this file.", self.CODE))
+
+    def test_the_shape_of_a_bad_reply_has_no_text_in_it(self):
+        shape = reply_shape("secret customer code here")
+        self.assertIn("chars=", shape)
+        self.assertNotIn("secret", shape)

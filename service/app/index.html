@@ -8731,32 +8731,37 @@ const REGION_OPTS = {
     modelRow.style.flexWrap = "wrap";
     const modelPick = el("select", null, "small-btn");
     modelPick.setAttribute("aria-label", "Model for this analysis");
-    const modelUse = el("button", "Use this model", "ghost small-btn");
-    modelUse.type = "button";
     const modelNote = el("span", "Model for this analysis", "muted small");
-    modelRow.append(modelNote, modelPick, modelUse);
+    modelRow.append(modelNote, modelPick);
     async function loadModels() {
       try {
         const data = await api(`/api/workspaces/${ws.id}/model-keys`);
         modelPick.replaceChildren();
-        for (const k of data.keys || []) {
+        const keys = data.keys || [];
+        // The analysis's own key is selected. If that key is no longer set up, the list asks for a choice.
+        if (!keys.some((k) => k.id === cur.model_key_id)) modelPick.appendChild(el("option", "Choose a model"));
+        for (const k of keys) {
           const opt = el("option", `${k.label || k.provider} · ${k.model || ""} · …${k.last4}`);
           opt.value = k.id;
           modelPick.appendChild(opt);
         }
+        modelPick.value = cur.model_key_id || "";
         if (!modelPick.options.length) modelPick.appendChild(el("option", "No model key set up"));
       } catch (err) {
         modelNote.textContent = err.message;
       }
     }
-    modelUse.addEventListener("click", async () => {
+    // Choosing a model applies it straight away. The analysis must be finished.
+    modelPick.addEventListener("change", async () => {
       if (!modelPick.value) return;
       msg.textContent = "";
       try {
         const res = await api(`/api/analyses/${cur.id}/model`, { method: "PATCH", body: JSON.stringify({ model_key_id: modelPick.value }) });
-        msg.textContent = `Model changed to ${res.label}. You can run the assessment now.`;
+        cur.model_key_id = res.model_key_id;
+        msg.textContent = `Model set to ${res.label}. You can run the assessment now.`;
       } catch (err) {
         msg.textContent = err.message;
+        loadModels();
       }
     });
     let waitCard = null;
