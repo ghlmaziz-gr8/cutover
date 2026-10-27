@@ -23,6 +23,11 @@ MAX_STORIES = 8
 MAX_NAME = 120
 MAX_STORY = 300
 MAX_PURPOSE = 600
+MAX_RULES = 60
+MAX_EXAMPLES = 120
+MAX_DATA_ITEMS = 40
+MAX_VALUES = 30
+MAX_RULE_TEXT = 300
 
 INSTRUCTIONS = (
     "You describe one source file of a legacy application, in plain language for a non-engineer. "
@@ -31,12 +36,122 @@ INSTRUCTIONS = (
     "file_user_stories (short user stories, as 'As a <role> I can <action> so that <result>'), "
     "functions (a list; each item has: name, the function or procedure name exactly as the code writes it, "
     "purpose (one sentence), user_stories (short user stories for this function), "
-    "calls (names of the functions, procedures or programs it calls, exactly as the code writes them)). "
-    "Use only names that appear in the code. Never include code, names of people, or real values such as IDs, "
-    "addresses or keys."
+    "calls (names of the functions, procedures or programs it calls, exactly as the code writes them)), "
+    "rules (the business rules the code decides or enforces; each has: id 'R1', 'R2' and so on; statement (one sentence "
+    "in plain words); condition (when it applies); outcome (what happens); values (literal values the rule uses, such as "
+    "allowed file types, exactly as the code writes them); data (table or field names the rule reads or writes, exactly "
+    "as the code writes them); function (the function it is in, exactly as the code writes it, or empty); lines (the "
+    "first and last line numbers of the code for this rule, counted from 1)), "
+    "examples (for each rule, up to two cases; each has: rule (the rule's id), given (the input or state), expect (the "
+    "result)), "
+    "data_access (for each function that reads or writes data; each has: function, reads (names), writes (names), "
+    "exactly as the code writes them). "
+    "Use only names and values that appear in the code. Never include code, names of people, or real values such as "
+    "IDs, addresses or keys."
 )
 
 FENCE = re.compile(r"^```[A-Za-z]*\s*\n|\n?```\s*$")
+
+
+def _names(value, code: str, limit_count: int) -> tuple[list[str], int]:
+    """The names in a list that the code contains, and how many were dropped."""
+    if not isinstance(value, list):
+        return [], 0
+    kept: list[str] = []
+    dropped = 0
+    for item in value[:limit_count * 2]:
+        name = str(item or "").strip()[:MAX_NAME] if isinstance(item, str) else ""
+        if not name:
+            continue
+        if appears_in(name, code) and name not in kept:
+            kept.append(name)
+        else:
+            dropped += 1
+    return kept[:limit_count], dropped
+
+
+def _rules(value, code: str, function_names: set[str]) -> tuple[list[dict], int]:
+    """The business rules, with values and data names the code contains, and line ranges inside the file."""
+    if not isinstance(value, list):
+        return [], 0
+    line_count = code.count("\n") + 1
+    rules: list[dict] = []
+    dropped = 0
+    for item in value[:MAX_RULES * 2]:
+        if not isinstance(item, dict):
+            dropped += 1
+            continue
+        statement = str(item.get("statement") or "").strip()[:MAX_RULE_TEXT]
+        if not statement:
+            dropped += 1
+            continue
+        rule_id = str(item.get("id") or f"R{len(rules) + 1}").strip()[:12] or f"R{len(rules) + 1}"
+        values, dropped_values = _names(item.get("values"), code, MAX_VALUES)
+        data, dropped_data = _names(item.get("data"), code, MAX_DATA_ITEMS)
+        dropped += dropped_values + dropped_data
+        function = str(item.get("function") or "").strip()[:MAX_NAME]
+        if function and not appears_in(function, code):
+            function = ""
+            dropped += 1
+        lines = None
+        raw_lines = item.get("lines")
+        if isinstance(raw_lines, list) and len(raw_lines) == 2 and all(isinstance(n, int) for n in raw_lines):
+            first, last = raw_lines
+            if 1 <= first <= last <= line_count:
+                lines = [first, last]
+        rules.append({
+            "id": rule_id,
+            "statement": statement,
+            "condition": str(item.get("condition") or "").strip()[:MAX_RULE_TEXT],
+            "outcome": str(item.get("outcome") or "").strip()[:MAX_RULE_TEXT],
+            "values": values,
+            "data": data,
+            "function": function,
+            "lines": lines,
+        })
+    return rules[:MAX_RULES], dropped
+
+
+def _examples(value, rule_ids: set[str]) -> tuple[list[dict], int]:
+    """The worked cases, kept only for rules that exist."""
+    if not isinstance(value, list):
+        return [], 0
+    kept: list[dict] = []
+    dropped = 0
+    for item in value[:MAX_EXAMPLES * 2]:
+        if not isinstance(item, dict):
+            dropped += 1
+            continue
+        rule = str(item.get("rule") or "").strip()
+        given = str(item.get("given") or "").strip()[:MAX_RULE_TEXT]
+        expect = str(item.get("expect") or "").strip()[:MAX_RULE_TEXT]
+        if rule in rule_ids and given and expect:
+            kept.append({"rule": rule, "given": given, "expect": expect})
+        else:
+            dropped += 1
+    return kept[:MAX_EXAMPLES], dropped
+
+
+def _data_access(value, code: str, function_names: set[str]) -> tuple[list[dict], int]:
+    """What each function reads and writes, with only the names the code contains."""
+    if not isinstance(value, list):
+        return [], 0
+    kept: list[dict] = []
+    dropped = 0
+    for item in value[:MAX_FUNCTIONS]:
+        if not isinstance(item, dict):
+            dropped += 1
+            continue
+        function = str(item.get("function") or "").strip()[:MAX_NAME]
+        if not function or not appears_in(function, code):
+            dropped += 1
+            continue
+        reads, dropped_reads = _names(item.get("reads"), code, MAX_DATA_ITEMS)
+        writes, dropped_writes = _names(item.get("writes"), code, MAX_DATA_ITEMS)
+        dropped += dropped_reads + dropped_writes
+        if reads or writes:
+            kept.append({"function": function, "reads": reads, "writes": writes})
+    return kept, dropped
 
 
 def build_user_text(path: str, code: str) -> str:
@@ -128,10 +243,20 @@ def clean_reply(reply, code: str) -> tuple[dict, int] | None:
             "calls": calls,
         })
 
+    function_names = {f["name"] for f in functions}
+    rules, dropped_rules = _rules(data.get("rules"), code, function_names)
+    rule_ids = {r["id"] for r in rules}
+    examples, dropped_examples = _examples(data.get("examples"), rule_ids)
+    data_access, dropped_access = _data_access(data.get("data_access"), code, function_names)
+    dropped += dropped_rules + dropped_examples + dropped_access
+
     return {
         "file_purpose": purpose.strip()[:MAX_PURPOSE],
         "file_user_stories": _stories(data.get("file_user_stories"), MAX_STORIES),
         "functions": functions,
+        "rules": rules,
+        "examples": examples,
+        "data_access": data_access,
     }, dropped
 
 
