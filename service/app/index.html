@@ -1396,7 +1396,7 @@ button:not(:disabled):active{transform:scale(.965)}
 
   <!-- 3. Name the application -->
   <section id="s-name" class="screen wiz" hidden>
-    <p class="eyebrow">Step 1 of 6</p>
+    <p class="eyebrow">Step 1 of 7</p>
     <h2 style="margin:8px 0 6px">Name the application</h2>
     <p class="muted">Use a name your team will recognise. It appears on the analysis list.</p>
     <div class="card">
@@ -1441,7 +1441,7 @@ button:not(:disabled):active{transform:scale(.965)}
 
   <!-- 4. Connect the code -->
   <section id="s-connect" class="screen wiz" hidden>
-    <p class="eyebrow">Step 2 of 6</p>
+    <p class="eyebrow">Step 2 of 7</p>
     <h2 style="margin:8px 0 6px">Connect the code</h2>
     <p class="muted">Choose where the code is. Use GitHub, or upload a zip of the code from this computer if you do not use GitHub.</p>
     <p class="muted" style="margin-top:6px">Unsure how access works? <button type="button" class="ghost small-btn" id="connectGuide">Open the guide on repository access</button></p>
@@ -1476,7 +1476,7 @@ button:not(:disabled):active{transform:scale(.965)}
 
   <!-- 5. Confirm the data rules -->
   <section id="s-rules" class="screen wiz" hidden>
-    <p class="eyebrow">Step 3 of 6</p>
+    <p class="eyebrow">Step 3 of 7</p>
     <h2 style="margin:8px 0 6px">Confirm the data rules</h2>
     <p class="muted" id="repoSummary"></p>
     <div class="card">
@@ -1496,7 +1496,7 @@ button:not(:disabled):active{transform:scale(.965)}
 
   <!-- 6. Run the analysis -->
   <section id="s-run" class="screen wiz" hidden>
-    <p class="eyebrow">Step 4 of 6</p>
+    <p class="eyebrow">Step 4 of 7</p>
     <h2 style="margin:8px 0 6px" id="runTitle">Analyzing</h2>
     <p class="muted" id="runStatus"></p>
     <div class="runWait" id="runWait" hidden>
@@ -1531,7 +1531,7 @@ button:not(:disabled):active{transform:scale(.965)}
 
   <!-- 7. Review findings -->
   <section id="s-review" class="screen" hidden>
-    <p class="eyebrow">Step 5 of 6</p>
+    <p class="eyebrow">Step 5 of 7</p>
     <h2 style="margin:8px 0 6px" id="reviewTitle"></h2>
     <p class="muted small" id="reviewMeta"></p>
     <div class="row wzNav" style="margin:14px 0 4px">
@@ -1539,7 +1539,7 @@ button:not(:disabled):active{transform:scale(.965)}
       <button type="button" class="ghost" id="exportPdfTop">Export PDF</button>
       <button type="button" class="ghost" id="exportHtmlTop">Export HTML</button>
       <button type="button" class="ghost" id="reviewFilesTop" hidden>Review file results</button>
-      <button type="button" id="toNextTop">Next steps</button>
+      <button type="button" id="toNextTop">Deeper assessment</button>
     </div>
     <div class="card" id="reviewBody"></div>
 
@@ -1564,7 +1564,7 @@ button:not(:disabled):active{transform:scale(.965)}
 
     <div class="row wzNav">
       <button type="button" class="ghost" id="reviewBack">Back to analyses</button>
-      <button type="button" id="toNext">Next steps</button>
+      <button type="button" id="toNext">Deeper assessment</button>
     </div>
   </section>
 
@@ -1575,7 +1575,7 @@ button:not(:disabled):active{transform:scale(.965)}
       <div><b id="runBannerTitle">Analysis running</b><span class="stage" id="runBannerStage"></span></div>
       <div class="run-bar" aria-hidden="true"><i></i></div>
     </div>
-    <p class="eyebrow">Step 6 of 6</p>
+    <p class="eyebrow">Step 7 of 7</p>
     <h2 style="margin:8px 0 6px">What next?</h2>
     <p class="muted">Choose one. You can come back to the findings at any time.</p>
     <div class="row wzNav" style="margin:14px 0 4px">
@@ -1590,6 +1590,7 @@ button:not(:disabled):active{transform:scale(.965)}
       <p class="muted small" id="scopeNote" style="margin:0"></p>
       <div class="scope-opts" id="scopeOpts"></div>
       <p class="small hint" id="scopeMsg" role="status"></p>
+      <div class="row" id="scopeLockBox" hidden style="margin-top:10px"><button type="button" class="ghost" id="scopeToDeeper">Open the deeper assessment</button></div>
       <div class="migrate-box" id="migrateBox" hidden>
         <h3 style="margin:0 0 6px">Migrate: target cloud</h3>
         <p class="muted small" id="migrateNote"></p>
@@ -1640,11 +1641,6 @@ button:not(:disabled):active{transform:scale(.965)}
       <div id="approachGrid"></div>
       <p class="small hint" id="approachMsg" role="status"></p>
     </div>
-    <div class="card" id="targetCard" hidden style="margin-top:18px"><div id="targetBody"></div></div>
-    <details class="card fold-card" id="effortCard" hidden style="margin-top:18px">
-      <summary class="fold-sum"><span id="effortSum">Effort, resources and project plan</span></summary>
-      <div id="effortBody"></div>
-    </details>
     <div class="next-group" id="groupNext"><span>3</span>Next steps<em>Conversion and the path ahead</em></div>
     <div class="card" id="conversionCardNext" hidden style="margin-top:18px">
       <h3 style="margin-top:0">Convert files to the chosen language</h3>
@@ -1819,11 +1815,12 @@ button:not(:disabled):active{transform:scale(.965)}
   </section>
 
   <section id="s-deeper" class="screen" hidden>
-    <p class="eyebrow">Next stage</p>
+    <p class="eyebrow">Step 6 of 7</p>
     <h2 style="margin:8px 0 6px">Deeper assessment</h2>
     <p class="muted small" id="deeperMeta"></p>
     <div class="row wzNav" style="margin:14px 0 4px">
-      <button type="button" class="ghost" id="deeperBack">Back to next steps</button>
+      <button type="button" class="ghost" id="deeperBack">Back to findings</button>
+      <button type="button" id="deeperNext" disabled>Go to next steps</button>
     </div>
     <div class="card fr-intro">
       <svg class="fr-art" viewBox="0 0 96 80" aria-hidden="true">
@@ -1871,12 +1868,27 @@ button:not(:disabled):active{transform:scale(.965)}
       </div>
       <p class="small hint" id="deeperRunMsg" role="status"></p>
     </div>
+    <div class="card" id="lensCard" style="margin-top:20px">
+      <h2>The three deeper assessments</h2>
+      <p class="muted small" id="lensNote" style="margin-top:6px"></p>
+      <div class="scope-opts" id="lensOpts"></div>
+      <div class="row" style="margin-top:12px"><button type="button" class="ghost small-btn" id="lensAll" hidden>Show everything</button></div>
+      <p class="small hint" id="lensMsg" role="status"></p>
+    </div>
     <div class="card" id="deeperArch"></div>
     <div id="deeperSections"></div>
     <div id="deeperModern"></div>
     <div class="card" id="deeperLimits"></div>
+    <h2 style="margin:28px 0 4px">Target language and effort plan</h2>
+    <p class="muted small" style="margin:0">Built from this assessment. The approach is chosen on Next steps; the language and plan then follow it.</p>
+    <div class="card" id="targetCard" hidden style="margin-top:18px"><div id="targetBody"></div></div>
+    <details class="card fold-card" id="effortCard" hidden style="margin-top:18px">
+      <summary class="fold-sum"><span id="effortSum">Effort, resources and project plan</span></summary>
+      <div id="effortBody"></div>
+    </details>
     <div class="row wzNav">
-      <button type="button" class="ghost" id="deeperBackBottom">Back to next steps</button>
+      <button type="button" class="ghost" id="deeperBackBottom">Back to findings</button>
+      <button type="button" id="deeperNextBottom" disabled>Go to next steps</button>
     </div>
   </section>
 
@@ -1945,8 +1957,9 @@ button:not(:disabled):active{transform:scale(.965)}
     { id: "s-connect", name: "Connect the code", w: 15, min: 1 },
     { id: "s-rules", name: "Confirm the data rules", w: 5, min: 0.5 },
     { id: "s-run", name: "Run the analysis", w: 40, min: 4 },
-    { id: "s-review", name: "Review findings", w: 20, min: 2 },
-    { id: "s-next", name: "Next steps", w: 10, min: 0.5 },
+    { id: "s-review", name: "Review findings", w: 15, min: 2 },
+    { id: "s-deeper", name: "Deeper assessment", w: 10, min: 1 },
+    { id: "s-next", name: "Next steps", w: 5, min: 0.5 },
   ];
   const ETA_FROM = "s-run";
   // Screens after the assessment. Each is its own task, shown by name only.
@@ -4602,10 +4615,10 @@ a{color:#6d28d9;font-weight:600}`;
       ? "Modernize is the next stage. The approach is chosen on the next steps page."
       : "To choose an approach, first choose Modernize as the next stage.";
     wrap.appendChild(el("p", note, "small"));
-    const next = el("button", "Go to next steps");
+    const next = el("button", "Deeper assessment");
     next.type = "button";
     next.className = "ghost";
-    next.addEventListener("click", () => showNext());
+    next.addEventListener("click", () => showDeeper());
     wrap.appendChild(next);
     wrap.appendChild(templateGrid(shown, row, false));
     return wrap;
@@ -6424,7 +6437,7 @@ a{color:#6d28d9;font-weight:600}`;
     if (!chosen) {
       input.disabled = true;
       go.disabled = true;
-      const why = el("p", "Choose the target language first. Files can be converted once a language is chosen above.", "small");
+      const why = el("p", "Choose the target language first. Files can be converted once a language is chosen on the deeper assessment page.", "small");
       why.setAttribute("role", "status");
       form.insertBefore(why, input);
     }
@@ -6860,7 +6873,7 @@ a{color:#6d28d9;font-weight:600}`;
   });
 
   $("reviewBack").addEventListener("click", () => showHome());
-  $("toNext").addEventListener("click", () => showNext());
+  $("toNext").addEventListener("click", () => showDeeper());
 
   // ---- Step 8: next steps ----
 
@@ -6893,9 +6906,71 @@ a{color:#6d28d9;font-weight:600}`;
 
   const LAYER_COLOR = { Users: "var(--accent)", Screens: "var(--accent2)", Services: "var(--accent3)", Data: "var(--ok)", Hosting: "var(--warn)" };
 
+  // The three deeper assessments are three views of the one deeper report. Opening one is the step
+  // that lets the user go on to Next steps. The view is kept per analysis on this page visit only.
+  const LENSES = [
+    { key: "data", title: "Deep data assessment", body: "What is stored: the data the application keeps and how it is used.", sections: ["data"], arch: false },
+    { key: "business", title: "Deep business assessment", body: "What the application does for its users: its purpose, screens and workflows.", sections: ["business", "workflows"], arch: false },
+    { key: "system", title: "Deep system assessment", body: "The technology, the delivery and the architecture of the application.", sections: ["systems"], arch: true },
+  ];
+  let lensState = { analysis: null, key: null, opened: false };
+  function currentLens() {
+    if (!cur || lensState.analysis !== cur.id) return null;
+    return LENSES.find((l) => l.key === lensState.key) || null;
+  }
+  function renderLensCards() {
+    if (lensState.analysis !== cur.id) lensState = { analysis: cur.id, key: null, opened: false };
+    const list = $("lensOpts");
+    list.replaceChildren();
+    const ready = cur.deeper_done === true;
+    const active = currentLens();
+    for (const lens of LENSES) {
+      const selected = !!active && active.key === lens.key;
+      const card = el("div", null, "scope-opt" + (selected ? " selected" : "") + (ready ? "" : " locked"));
+      card.appendChild(el("b", lens.title));
+      card.appendChild(el("div", lens.body, "small muted"));
+      card.appendChild(el("span", selected ? "Showing" : ready ? "Available" : "Not ready yet", selected ? "tag ai" : "tag"));
+      if (ready && !selected) {
+        const b = el("button", "Open this assessment", "ghost small-btn");
+        b.type = "button";
+        b.addEventListener("click", () => openLens(lens.key));
+        card.appendChild(b);
+      }
+      list.appendChild(card);
+    }
+    $("lensAll").hidden = !active;
+    $("lensNote").textContent = ready
+      ? "Open one of the three to read it. Opening one lets you continue to Next steps."
+      : "The deeper assessment is not finished yet. Run it above, and the three open when it is ready.";
+  }
+  function openLens(key) {
+    lensState = { analysis: cur.id, key, opened: true };
+    renderDeeper();
+    renderLensCards();
+    renderDeeperNext();
+  }
+  function showAllLenses() {
+    lensState = { analysis: cur.id, key: null, opened: lensState.opened };
+    renderDeeper();
+    renderLensCards();
+    renderDeeperNext();
+  }
+  // Next steps opens only when the deeper assessment is finished and one of its three views has been opened.
+  function renderDeeperNext() {
+    const ready = cur.deeper_done === true;
+    const opened = lensState.analysis === cur.id && lensState.opened;
+    $("deeperNext").disabled = !(ready && opened);
+    $("deeperNextBottom").disabled = !(ready && opened);
+    setMsg("lensMsg", ready && !opened ? "Open one of the three assessments to continue to Next steps." : "", false);
+  }
+
   function showDeeper() {
     show("s-deeper");
     renderDeeper();
+    renderLensCards();
+    renderDeeperNext();
+    renderTarget(cur);
+    renderEffort(cur);
     renderDbCard();
     renderDeeperRun();
     updateRunBanner();
@@ -6912,10 +6987,12 @@ a{color:#6d28d9;font-weight:600}`;
     arch.replaceChildren();
     sections.replaceChildren();
     limits.replaceChildren();
+    const lens = currentLens();
     if (!deeper) {
       sections.appendChild(el("p", "The deeper assessment is not in this analysis. Run a new analysis to create it.", "card muted"));
       return;
     }
+    arch.hidden = !!lens && !lens.arch;
     arch.appendChild(el("h3", "Architecture overview", null));
     arch.firstChild.style.marginTop = "0";
     const layers = (deeper.architecture && deeper.architecture.layers) || [];
@@ -6928,7 +7005,7 @@ a{color:#6d28d9;font-weight:600}`;
       arch.appendChild(row);
       if (i < layers.length - 1) arch.appendChild(el("div", "▼", "arch-arrow"));
     });
-    for (const section of deeper.sections || []) {
+    for (const section of (deeper.sections || []).filter((x) => !lens || lens.sections.includes(x.id))) {
       const card = el("div", null, "card deeper-sec");
       card.appendChild(el("h3", section.title, null));
       card.firstChild.style.marginTop = "0";
@@ -7066,10 +7143,14 @@ a{color:#6d28d9;font-weight:600}`;
   }
 
   $("deeperOpen").addEventListener("click", showDeeper);
-  $("deeperBack").addEventListener("click", () => showNext());
+  $("deeperBack").addEventListener("click", () => showReview());
   $("conversionOpen").addEventListener("click", showConvert);
   $("convertBack").addEventListener("click", () => showNext());
-  $("deeperBackBottom").addEventListener("click", () => showNext());
+  $("deeperBackBottom").addEventListener("click", () => showReview());
+  $("deeperNext").addEventListener("click", () => showNext());
+  $("deeperNextBottom").addEventListener("click", () => showNext());
+  $("scopeToDeeper").addEventListener("click", () => showDeeper());
+  $("lensAll").addEventListener("click", () => showAllLenses());
 
   const SCOPE_OPTIONS = [
     { key: "deeper", title: "Deeper assessment", body: "A purpose and suggestions for every file, plus business, systems and data documents, workflows and an architecture diagram.", needsDeeper: false },
@@ -7090,24 +7171,22 @@ a{color:#6d28d9;font-weight:600}`;
     $("scopeNote").textContent = canChoose
       ? `${note} Choose the next stage for this analysis.`
       : `${note} A platform engineer chooses the scope.`;
+    if (!deeperDone) $("scopeNote").textContent += " Modernize and Migrate appear once the deeper assessment is complete.";
+    $("scopeLockBox").hidden = deeperDone;
     for (const o of SCOPE_OPTIONS) {
-      const locked = o.needsDeeper && !deeperDone;
+      // Modernize and Migrate are not offered at all until the deeper assessment is done.
+      if (o.needsDeeper && !deeperDone) continue;
       const selected = cur.scope === o.key;
-      const card = el("div", null, "scope-opt" + (selected ? " selected" : "") + (locked ? " locked" : ""));
+      const card = el("div", null, "scope-opt" + (selected ? " selected" : ""));
       card.dataset.key = o.key;
       const head = el("div", null, "row");
       head.style.justifyContent = "space-between";
       head.style.alignItems = "center";
       head.appendChild(el("b", o.title));
-      if (locked) {
-        head.appendChild(lockIcon());
-      }
       card.appendChild(head);
       card.appendChild(el("div", o.body, "small muted"));
       if (o.note && !locked) card.appendChild(el("div", o.note, "small"));
-      if (locked) {
-        card.appendChild(el("span", "Locked until the deeper assessment is complete", "tag"));
-      } else if (selected) {
+      if (selected) {
         card.appendChild(el("span", "Selected", "tag ai"));
       } else {
         card.appendChild(el("span", "Available", "tag"));
@@ -7117,19 +7196,6 @@ a{color:#6d28d9;font-weight:600}`;
         b.type = "button";
         b.addEventListener("click", () => setScope(o.key));
         card.appendChild(b);
-      }
-      if (canChoose && locked) {
-        // A locked option explains itself when pressed, and shakes so it is clearly not available yet.
-        card.setAttribute("role", "button");
-        card.tabIndex = 0;
-        const explain = () => {
-          card.classList.remove("shake");
-          void card.offsetWidth;
-          card.classList.add("shake");
-          setMsg("scopeMsg", `${o.title} unlocks after the deeper assessment is complete.`, true);
-        };
-        card.addEventListener("click", explain);
-        card.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") explain(); });
       }
       list.appendChild(card);
     }

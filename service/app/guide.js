@@ -11,6 +11,7 @@
 window.CUTOVER_GUIDE = {
   updated: "2026-10-22",
   whatsNew: [
+    "2026-10-27: After Review findings comes the deeper assessment, in six steps out of seven. It offers three views: data, business and system. Opening one lets you go on to Next steps, where Modernize and Migrate now appear. The target language and effort plan are on this page.",
     "2026-10-26: Conversion has its own page, opened from Next steps. Rejected files leave the list and are marked Rejected in the file list. Accepted files are kept in a collapsed list.",
     "2026-10-26: A file that is converting shows its language, the model, how long it has run, the usual time and the steps. A finished proposal shows its language, model and size.",
     "2026-10-26: Each converted file shows the original and the proposal side by side, with the changed lines shaded. The original is read at the analysed commit and is not stored.",
