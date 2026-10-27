@@ -47,6 +47,10 @@ jobs:
         working-directory: engine
         run: python -m unittest test_model_deep_file.py -v
 
+      - name: Run the deep file runner tests (the posted result, the key never printed)
+        working-directory: engine
+        run: python -m unittest test_deep_file_run.py -v
+
   worker-tests:
     runs-on: ubuntu-latest
     steps:

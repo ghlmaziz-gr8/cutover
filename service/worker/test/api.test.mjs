@@ -143,6 +143,7 @@ function seed() {
     file_business_assessments: [],
     feature_groupings: [],
     ui_clicks: [],
+    file_deep_assessments: [],
     analysis_target_approvals: [],
     analysis_db_metadata: [],
   };
@@ -295,7 +296,7 @@ function handleGithub(url, init) {
     return j({ id: 99 });
   }
   if (path.endsWith("/app/installations/99/access_tokens")) return j({ token: "ghs_test" }, 201);
-  if (path.endsWith("/actions/workflows/analyze.yml/dispatches") || path.endsWith("/actions/workflows/convert.yml/dispatches") || path.endsWith("/actions/workflows/business.yml/dispatches") || path.endsWith("/actions/workflows/grouping.yml/dispatches")) {
+  if (path.endsWith("/actions/workflows/analyze.yml/dispatches") || path.endsWith("/actions/workflows/convert.yml/dispatches") || path.endsWith("/actions/workflows/business.yml/dispatches") || path.endsWith("/actions/workflows/grouping.yml/dispatches") || path.endsWith("/actions/workflows/deep-file.yml/dispatches")) {
     github.dispatches.push(JSON.parse(init.body));
     return github.dispatchOk ? new Response(null, { status: 204 }) : j({ message: "failed" }, 500);
   }
@@ -2913,5 +2914,65 @@ test("the heat map counts the clicks of one screen in one workspace over the cho
 test("the heat map asks for a known screen", async () => {
   const res = await call(`/api/workspaces/${W_ACME}/heatmap?screen=../../etc`, { as: "admin_a" });
   assert.equal(res.status, 400);
+});
+
+// ---- Deep file assessment of one file (slice 2) ----
+
+test("a deep file assessment starts only for a platform engineer, a file in the analysis, and a model with the sign-off", async () => {
+  readyForBusiness();
+  const auditor = await call(`/api/analyses/${AN_ACME}/deep-files/start`, { as: "aud_a", method: "POST", body: { path: "src/A.java" } });
+  assert.equal(auditor.status, 403);
+  const traversal = await call(`/api/analyses/${AN_ACME}/deep-files/start`, { as: "eng_a", method: "POST", body: { path: "../secret.txt" } });
+  assert.equal(traversal.status, 400);
+  const unknown = await call(`/api/analyses/${AN_ACME}/deep-files/start`, { as: "eng_a", method: "POST", body: { path: "nope/Missing.java" } });
+  assert.equal(unknown.status, 400);
+  state.privacy_signoffs.length = 0;
+  const unsigned = await call(`/api/analyses/${AN_ACME}/deep-files/start`, { as: "eng_a", method: "POST", body: { path: "src/A.java" } });
+  assert.equal(unsigned.status, 409);
+});
+
+test("starting a deep file assessment marks it running and dispatches the deep-file workflow", async () => {
+  readyForBusiness();
+  const before = github.dispatches.length;
+  const res = await call(`/api/analyses/${AN_ACME}/deep-files/start`, { as: "eng_a", method: "POST", body: { path: "src/A.java" } });
+  assert.equal(res.status, 202);
+  const rows = state.file_deep_assessments.filter((r) => r.analysis_id === AN_ACME);
+  assert.equal(rows.length, 1);
+  assert.equal(rows[0].status, "running");
+  assert.equal(github.dispatches.length, before + 1);
+  assert.equal(github.dispatches.at(-1).inputs.path, "src/A.java");
+  assert.ok(state.assessment_log.some((r) => r.action === "deep_file_start"));
+});
+
+test("a deep file assessment cannot start while another run is going in the workspace", async () => {
+  readyForBusiness();
+  state.file_deep_assessments.push({ id: uid(990), analysis_id: AN_ACME, file_path: "src/Other.java", status: "running", created_at: new Date().toISOString(), content: {} });
+  const res = await call(`/api/analyses/${AN_ACME}/deep-files/start`, { as: "eng_a", method: "POST", body: { path: "src/A.java" } });
+  assert.equal(res.status, 409);
+});
+
+test("the runner saves a deep draft only with the shared secret, keeps the dropped count, and logs the finish", async () => {
+  const body = { status: "ok", path: "src/A.java", commit_sha: "abc123", dropped: 2, content: { file_purpose: "Takes orders.", functions: [] } };
+  const wrong = await call(`/api/runner/${AN_ACME}/deep-file`, { method: "POST", body, secret: "wrong" });
+  assert.equal(wrong.status, 401);
+  const unknown = await call(`/api/runner/${AN_ACME}/deep-file`, { method: "POST", body: { ...body, path: "nope.java" }, secret: env.RUNNER_SECRET });
+  assert.equal(unknown.status, 400);
+  const res = await call(`/api/runner/${AN_ACME}/deep-file`, { method: "POST", body, secret: env.RUNNER_SECRET });
+  assert.equal(res.status, 201);
+  const rows = state.file_deep_assessments.filter((r) => r.analysis_id === AN_ACME && r.file_path === "src/A.java");
+  assert.equal(rows.length, 1);
+  assert.equal(rows[0].status, "draft");
+  assert.equal(rows[0].dropped, 2);
+  assert.equal(rows[0].confidence, "model_read");
+  assert.ok(state.assessment_log.some((r) => r.action === "deep_file_finish"));
+});
+
+test("a failed deep run keeps nothing and clears its running row", async () => {
+  state.file_deep_assessments.push({ id: uid(991), analysis_id: AN_ACME, file_path: "src/B.java", status: "running", created_at: new Date().toISOString(), content: {} });
+  const res = await call(`/api/runner/${AN_ACME}/deep-file`, { method: "POST", body: { status: "failed", path: "src/B.java", reason: "no answer" }, secret: env.RUNNER_SECRET });
+  assert.equal(res.status, 200);
+  assert.equal(res.body.saved, false);
+  assert.equal(state.file_deep_assessments.filter((r) => r.file_path === "src/B.java").length, 0);
+  assert.ok(state.assessment_log.some((r) => r.action === "deep_file_fail"));
 });
 
