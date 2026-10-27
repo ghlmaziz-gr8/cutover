@@ -48,6 +48,9 @@ import { validateDbMetadata } from "./db-metadata.mjs";
 //   GET    /api/analyses/:id/files                        file-level results, a page at a time (platform engineers)
 //   POST   /api/analyses/:id/files/approve-all            approve every file still in draft (platform engineers)
 //   GET    /api/analyses/:id/business?path=               business assessments of one file (platform engineers)
+//   GET    /api/analyses/:id/deep-files?path=...           deep file assessments of one file (platform engineers)
+//   POST   /api/analyses/:id/deep-files/approve             approve a draft; replaces the earlier approved account
+//   POST   /api/analyses/:id/deep-files/discard             discard a draft (platform engineers)
 //   POST   /api/analyses/:id/deep-files/start           start a deep file assessment of one file (platform engineers)
 //   POST   /api/runner/:id/deep-file                       one deep file assessment (shared secret)
 //   POST   /api/analyses/:id/business/start               start a business assessment of one file (platform engineers)
@@ -3126,6 +3129,73 @@ function dispatchBusiness(env, inputs) {
   });
 }
 
+// ---- Deep file assessments: list, approve and discard (platform engineers). Approving replaces the earlier approved one. ----
+async function listDeepFiles(request, env, id) {
+  const access = await analysisAccess(env, request, id);
+  if (access.response) return access.response;
+  if (!canStart(access.member)) return json({ error: "Only platform engineers can see deep file assessments." }, 403);
+  const path = new URL(request.url).searchParams.get("path") || "";
+  if (!CONVERT_PATH.test(path)) return json({ error: "Choose a file." }, 400);
+  const res = await serviceRest(env, `file_deep_assessments?analysis_id=eq.${id}&file_path=eq.${encodeURIComponent(path)}&select=id,file_path,status,content,confidence,dropped,commit_sha,created_by_email,created_at,reviewed_by_email,reviewed_at&order=created_at.desc&limit=50`);
+  if (!res.ok) return json({ error: "Could not load the deep file assessments." }, 502);
+  return json({ path, assessments: await res.json() });
+}
+
+async function approveDeepFile(request, env, id) {
+  const access = await analysisAccess(env, request, id);
+  if (access.response) return access.response;
+  if (!canStart(access.member)) return json({ error: "Only platform engineers can approve deep file assessments." }, 403);
+  const parsed = await readJson(request);
+  if (parsed.error) return json({ error: parsed.error }, 400);
+  const assessmentId = String(parsed.value?.assessment_id || "");
+  if (!UUID_PATTERN.test(assessmentId)) return json({ error: "Choose an assessment." }, 400);
+  const found = await serviceRest(env, `file_deep_assessments?id=eq.${assessmentId}&analysis_id=eq.${id}&select=id,file_path,status`);
+  if (!found.ok) return json({ error: "Could not load the assessment." }, 502);
+  const [item] = await found.json();
+  if (!item) return json({ error: "Not found." }, 404);
+  if (item.status !== "draft") return json({ error: "Only a draft can be approved." }, 409);
+  const current = await serviceRest(env, `file_deep_assessments?analysis_id=eq.${id}&file_path=eq.${encodeURIComponent(item.file_path)}&status=eq.approved&select=id`);
+  if (!current.ok) return json({ error: "Could not check the earlier approved account." }, 502);
+  const [earlier] = await current.json();
+  const refusedApprove = await logFirst(env, { workspace_id: access.row.workspace_id, user: access.user, action: "deep_file_approve", analysis_id: id, repo: access.row.repo, detail: item.file_path });
+  if (refusedApprove) return refusedApprove;
+  if (earlier) {
+    const refusedSupersede = await logFirst(env, { workspace_id: access.row.workspace_id, user: access.user, action: "deep_file_supersede", analysis_id: id, repo: access.row.repo, detail: item.file_path });
+    if (refusedSupersede) return refusedSupersede;
+    const superseded = await serviceRest(env, `file_deep_assessments?id=eq.${earlier.id}`, {
+      method: "PATCH", headers: { prefer: "return=minimal" }, body: JSON.stringify({ status: "superseded" }),
+    });
+    if (!superseded.ok) return json({ error: "Could not replace the earlier approved account." }, 502);
+  }
+  const approved = await serviceRest(env, `file_deep_assessments?id=eq.${assessmentId}`, {
+    method: "PATCH",
+    headers: { prefer: "return=minimal" },
+    body: JSON.stringify({ status: "approved", reviewed_by_email: normalizeEmail(access.user.email), reviewed_at: new Date().toISOString() }),
+  });
+  if (!approved.ok) return json({ error: "Could not approve the account." }, 502);
+  return json({ approved: true, path: item.file_path });
+}
+
+async function discardDeepFile(request, env, id) {
+  const access = await analysisAccess(env, request, id);
+  if (access.response) return access.response;
+  if (!canStart(access.member)) return json({ error: "Only platform engineers can discard deep file assessments." }, 403);
+  const parsed = await readJson(request);
+  if (parsed.error) return json({ error: parsed.error }, 400);
+  const assessmentId = String(parsed.value?.assessment_id || "");
+  if (!UUID_PATTERN.test(assessmentId)) return json({ error: "Choose an assessment." }, 400);
+  const found = await serviceRest(env, `file_deep_assessments?id=eq.${assessmentId}&analysis_id=eq.${id}&select=id,file_path,status`);
+  if (!found.ok) return json({ error: "Could not load the assessment." }, 502);
+  const [item] = await found.json();
+  if (!item) return json({ error: "Not found." }, 404);
+  if (item.status !== "draft") return json({ error: "Only a draft can be discarded. An approved account is replaced by approving another." }, 409);
+  const refused = await logFirst(env, { workspace_id: access.row.workspace_id, user: access.user, action: "deep_file_discard", analysis_id: id, repo: access.row.repo, detail: item.file_path });
+  if (refused) return refused;
+  const res = await serviceRest(env, `file_deep_assessments?id=eq.${assessmentId}&status=eq.draft`, { method: "DELETE", headers: { prefer: "return=minimal" } });
+  if (!res.ok) return json({ error: "Could not discard the draft." }, 502);
+  return json({ discarded: true, path: item.file_path });
+}
+
 // ---- Deep file assessment: one file's purpose, functions, calls and user stories (slice 2) ----
 // Same flow as the business assessment of one file. A row is 'running' until the runner answers. Every name in the
 // account must appear in the file; the runner drops any that do not, and the count is kept with the draft.
@@ -4121,6 +4191,12 @@ async function route(request, env) {
     if (businessStart && UUID_PATTERN.test(businessStart[1]) && method === "POST") return startBusiness(request, env, businessStart[1]);
     const businessDiscard = path.match(/^\/api\/analyses\/([^/]+)\/business\/discard$/);
     if (businessDiscard && UUID_PATTERN.test(businessDiscard[1]) && method === "POST") return discardBusiness(request, env, businessDiscard[1]);
+    const deepList = path.match(/^\/api\/analyses\/([^/]+)\/deep-files$/);
+    if (deepList && UUID_PATTERN.test(deepList[1]) && method === "GET") return listDeepFiles(request, env, deepList[1]);
+    const deepApprove = path.match(/^\/api\/analyses\/([^/]+)\/deep-files\/approve$/);
+    if (deepApprove && UUID_PATTERN.test(deepApprove[1]) && method === "POST") return approveDeepFile(request, env, deepApprove[1]);
+    const deepDiscard = path.match(/^\/api\/analyses\/([^/]+)\/deep-files\/discard$/);
+    if (deepDiscard && UUID_PATTERN.test(deepDiscard[1]) && method === "POST") return discardDeepFile(request, env, deepDiscard[1]);
     const deepStart = path.match(/^\/api\/analyses\/([^/]+)\/deep-files\/start$/);
     if (deepStart && UUID_PATTERN.test(deepStart[1]) && method === "POST") return startDeepFile(request, env, deepStart[1]);
     const deepSave = path.match(/^\/api\/runner\/([^/]+)\/deep-file$/);

@@ -11,6 +11,7 @@
 window.CUTOVER_GUIDE = {
   updated: "2026-10-22",
   whatsNew: [
+    "2026-10-27: Deep view, on a file in the business assessment list, shows that file's purpose, user stories, its functions and what they call. A platform engineer runs it, approves the draft, or discards it. Names that the file does not contain are left out and counted.",
     "2026-10-27: The bell is hidden during an assessment on every screen except the home list: while an analysis is started or opened, and while it is queued or running. It returns when the analysis finishes.",
     "2026-10-27: The bell is hidden from the moment an analysis is started, not only once the progress screen opens. If starting fails, it returns.",
     "2026-10-27: The database structure upload and the run button now sit under the three deeper assessments, in the deep data assessment. The run button reads Run deep data assessment. Before a report exists, they show on the page so the first run can start.",
