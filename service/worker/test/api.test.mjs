@@ -2460,6 +2460,9 @@ test("an assessment not opened for 90 days is deleted, its deletion is recorded 
   assert.equal(state.analyses.some((a) => a.id === fresh), true, "the one opened recently is kept");
   assert.ok(state.deletion_log.some((d) => d.analysis_id === old && d.reason === "unopened"));
   assert.ok(state.assessment_log.some((l) => l.action === "retention_delete" && l.analysis_id === old));
+  const told = state.notifications.filter((n) => n.kind === "retention_deleted");
+  assert.ok(told.some((n) => n.user_id === PEOPLE.eng_a.id), "the owner is told in the portal");
+  assert.ok(told.some((n) => n.user_id === PEOPLE.admin_a.id), "the workspace admin is told in the portal");
 });
 
 test("opening an assessment notes the time, so it is not deleted as unopened", async () => {

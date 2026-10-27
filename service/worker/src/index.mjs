@@ -1033,7 +1033,7 @@ async function listAnalyses(request, env) {
 const NOTIFY_TONES = ["info", "success", "warning", "danger", "ai"];
 const NOTIFY_KINDS = [
   "analysis_started", "analysis_complete", "analysis_failed", "privacy_signed_off", "privacy_withdrawn",
-  "model_key_added", "model_key_removed", "comment_added", "action_added", "action_done",
+  "model_key_added", "model_key_removed", "comment_added", "action_added", "action_done", "retention_deleted",
   "scope_chosen", "deeper_ready", "plan_accepted", "plan_rejected", "purposes_approved",
   "cloud_chosen", "intake_confirmed", "terraform_drafted", "cost_users_set",
 ];
@@ -3112,7 +3112,7 @@ async function noteOpened(env, row) {
 // Each one is logged, and the deletion record is saved, before anything is removed. If either cannot be saved, nothing is removed.
 async function purgeUnopened(env) {
   const cutoff = encodeURIComponent(new Date(Date.now() - UNOPENED_MS).toISOString());
-  const cols = "id,repo,workspace_id,source_path,source_kind";
+  const cols = "id,repo,workspace_id,owner_id,app_name,source_path,source_kind";
   const opened = await serviceRest(env, `analyses?last_opened_at=lt.${cutoff}&select=${cols}`);
   const never = await serviceRest(env, `analyses?last_opened_at=is.null&created_at=lt.${cutoff}&select=${cols}`);
   if (!opened.ok || !never.ok) throw new Error("Unopened lookup failed.");
@@ -3132,6 +3132,16 @@ async function purgeUnopened(env) {
   const ids = rows.map((r) => r.id).join(",");
   const res = await serviceRest(env, `analyses?id=in.(${ids})`, { method: "DELETE", headers: { prefer: "return=minimal" } });
   if (!res.ok) throw new Error(`Unopened purge failed with status ${res.status}`);
+  // Tell the owner and the workspace admins, in the portal. The deletion is also in the log.
+  for (const r of rows) {
+    const admins = await adminIdsExcept(env, r.workspace_id, SYSTEM_WORKSPACE);
+    await notifyPeople(env, r.workspace_id, [r.owner_id, ...admins], {
+      kind: "retention_deleted",
+      tone: "warning",
+      title: `Deleted after 90 days unopened: ${r.app_name || r.repo}`,
+      body: "Nobody opened this assessment for 90 days, so its results were removed. The deletion is recorded in the action log.",
+    });
+  }
 }
 
 // Trims the action log once the database passes 70% of its limit: the oldest 20% of entries go, once per run.

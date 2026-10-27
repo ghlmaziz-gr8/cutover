@@ -67,9 +67,9 @@ button.danger{background:transparent;color:var(--bad);box-shadow:none;border:1.5
 .dots i.done{background:var(--ok)} .dots i.now{background:var(--accent2)}
 .top-in{padding-right:52px}
 /* Notifications: the bell, its panel, and toasts. Colors carry the tone; motion only confirms what changed. */
-.bell{position:absolute;right:14px;top:50%;transform:translateY(-50%);width:42px;height:42px;padding:0;border-radius:14px;display:grid;place-items:center;background:var(--card);color:var(--fg);border:1.5px solid var(--line);box-shadow:0 6px 18px -10px #1e1b4b66}
-.bell:hover:not(:disabled){transform:translateY(-52%);box-shadow:0 12px 24px -12px #1e1b4b77}
-.bell svg{width:20px;height:20px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round;transform-origin:50% 0}
+.bell{position:absolute;right:16px;top:12px;width:34px;height:34px;padding:0;border-radius:11px;display:grid;place-items:center;background:var(--card);color:var(--fg);border:1.5px solid var(--line);box-shadow:0 6px 18px -10px #1e1b4b66}
+.bell:hover:not(:disabled){box-shadow:0 8px 18px -12px #1e1b4b77}
+.bell svg{width:16px;height:16px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round;transform-origin:50% 0}
 .bell.ring svg{animation:bellRing .9s ease}
 .bell-count{position:absolute;top:-7px;right:-7px;min-width:21px;height:21px;padding:0 6px;border-radius:99px;display:grid;place-items:center;background:linear-gradient(135deg,#e11d48,#f59e0b);color:#fff;font:800 11px system-ui;box-shadow:0 0 0 3px var(--bg);animation:countPop .5s cubic-bezier(.2,1.6,.4,1)}
 .bell-count[hidden]{display:none}
@@ -79,6 +79,7 @@ button.danger{background:transparent;color:var(--bad);box-shadow:none;border:1.5
 .notif-panel[hidden]{display:none}
 @keyframes panelIn{from{opacity:0;transform:translateY(-10px) scale(.98)}to{opacity:1;transform:none}}
 .notif-head{display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:10px}
+.notif-head strong{font:600 13px var(--body);letter-spacing:.005em}
 .notif-list{list-style:none;margin:0;padding:0;display:grid;gap:8px}
 .notif,.toast{--tone:#6366f1;--soft:#eef2ff;--ink:#3730a3}
 .notif.success,.toast.success{--tone:#10b981;--soft:#ecfdf5;--ink:#065f46}
@@ -91,9 +92,9 @@ button.danger{background:transparent;color:var(--bad);box-shadow:none;border:1.5
 .notif.ai{border-left:2px solid transparent;background:linear-gradient(var(--soft),var(--soft)) padding-box,linear-gradient(90deg,#7c3aed,#ec4899,#f59e0b,#7c3aed) border-box;background-size:auto,300% 100%;animation:itemIn .45s cubic-bezier(.2,.8,.2,1) calc(var(--i,0) * 60ms) forwards,aiBorder 3s linear infinite}
 @keyframes itemIn{to{opacity:1;transform:none}}
 @keyframes aiBorder{0%{background-position:0 0,0% 50%}100%{background-position:0 0,300% 50%}}
-.notif .t,.toast .t{font:800 13.5px system-ui;color:var(--ink)}
-.notif .b,.toast .b{font:500 12.5px system-ui;color:#3f3f46;margin-top:3px;word-break:break-word}
-.notif .meta{font:600 11px system-ui;color:#71717a;margin-top:7px;display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.notif .t,.toast .t{font:600 12.5px var(--body);letter-spacing:.005em;color:var(--ink)}
+.notif .b,.toast .b{font:400 12px var(--body);line-height:1.45;color:#52525b;margin-top:2px;word-break:break-word}
+.notif .meta{font:500 10.5px var(--body);color:#71717a;margin-top:6px;display:flex;gap:8px;align-items:center;flex-wrap:wrap}
 .notif .unread-dot{width:8px;height:8px;border-radius:50%;background:var(--tone);animation:dotPulse 1.6s infinite}
 @keyframes dotPulse{0%{box-shadow:0 0 0 0 color-mix(in srgb,var(--tone) 60%,transparent)}70%{box-shadow:0 0 0 8px transparent}100%{box-shadow:0 0 0 0 transparent}}
 .toasts{position:fixed;right:16px;bottom:16px;display:grid;gap:10px;z-index:60;width:min(360px,calc(100vw - 32px))}
