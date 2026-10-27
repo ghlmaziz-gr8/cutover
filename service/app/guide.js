@@ -11,6 +11,7 @@
 window.CUTOVER_GUIDE = {
   updated: "2026-10-22",
   whatsNew: [
+    "2026-10-27: The architecture overview and the systems section appear only after you open the deep system assessment.",
     "2026-10-27: The database structure card appears only after you open the deep data assessment. Before the assessment is ready, its run card stays visible so it can be started.",
     "2026-10-27: Deep view also opens from a file in Files for the business assessment, on the deeper assessment page. The file's deep view appears under its details.",
     "2026-10-27: Deep view, on a file in the business assessment list, shows that file's purpose, user stories, its functions and what they call. A platform engineer runs it, approves the draft, or discards it. Names that the file does not contain are left out and counted.",

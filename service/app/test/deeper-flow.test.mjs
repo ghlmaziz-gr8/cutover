@@ -23,7 +23,7 @@ test("the three deeper assessments are data, business and system, each showing i
   assert.ok(block.includes('key: "data"') && block.includes('sections: ["data"]'));
   assert.ok(block.includes('key: "business"') && block.includes('sections: ["business", "workflows"]'));
   assert.ok(block.includes('key: "system"') && block.includes('sections: ["systems"], arch: true'));
-  assert.ok(html.includes("(deeper.sections || []).filter((x) => !lens || lens.sections.includes(x.id))"));
+  assert.ok(html.includes("(deeper.sections || []).filter((x) => !!lens && lens.sections.includes(x.id))") && html.includes("arch.hidden = !(lens && lens.arch);"));
 });
 
 test("Modernize and Migrate are not drawn until the deeper assessment is done", () => {
