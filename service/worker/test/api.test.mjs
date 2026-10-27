@@ -3078,3 +3078,23 @@ test("the model of an analysis that is still running cannot be changed", async (
   const res = await call(`/api/analyses/${AN_ACME}/model`, { as: "eng_a", method: "PATCH", body: { model_key_id: MODEL_KEY_UUID } });
   assert.equal(res.status, 409);
 });
+
+test("a finished run keeps the job it started with, and records when it finished", async () => {
+  readyForBusiness();
+  const started = await call(`/api/analyses/${AN_ACME}/deep-files/start`, { as: "eng_a", method: "POST", body: { path: "src/A.java" } });
+  assert.equal(started.status, 202);
+  const running = state.file_deep_assessments.find((r) => r.analysis_id === AN_ACME && r.file_path === "src/A.java" && r.status === "running");
+  const jobId = running.id;
+  const startedAt = running.created_at;
+  const res = await call(`/api/runner/${AN_ACME}/deep-file`, {
+    method: "POST",
+    body: { status: "ok", path: "src/A.java", commit_sha: "abc123", dropped: 0, content: { file_purpose: "Takes orders.", functions: [] } },
+    secret: env.RUNNER_SECRET,
+  });
+  assert.equal(res.status, 201);
+  assert.equal(res.body.id, jobId, "the draft keeps the job id of the run");
+  const row = state.file_deep_assessments.find((r) => r.id === jobId);
+  assert.equal(row.status, "draft");
+  assert.equal(row.created_at, startedAt, "the draft keeps the time the run started");
+  assert.ok(row.finished_at, "the draft records when the run finished");
+});

@@ -3136,7 +3136,7 @@ async function listDeepFiles(request, env, id) {
   if (!canStart(access.member)) return json({ error: "Only platform engineers can see deep file assessments." }, 403);
   const path = new URL(request.url).searchParams.get("path") || "";
   if (!CONVERT_PATH.test(path)) return json({ error: "Choose a file." }, 400);
-  const res = await serviceRest(env, `file_deep_assessments?analysis_id=eq.${id}&file_path=eq.${encodeURIComponent(path)}&select=id,file_path,status,content,confidence,dropped,commit_sha,created_by_email,created_at,reviewed_by_email,reviewed_at&order=created_at.desc&limit=50`);
+  const res = await serviceRest(env, `file_deep_assessments?analysis_id=eq.${id}&file_path=eq.${encodeURIComponent(path)}&select=id,file_path,status,content,confidence,dropped,commit_sha,created_by_email,created_at,finished_at,reviewed_by_email,reviewed_at&order=created_at.desc&limit=50`);
   if (!res.ok) return json({ error: "Could not load the deep file assessments." }, 502);
   return json({ path, assessments: await res.json() });
 }
@@ -3329,7 +3329,7 @@ async function saveDeepFile(request, env, id) {
     const marked = await serviceRest(env, `file_deep_assessments?${runningFilter}`, {
       method: "PATCH",
       headers: { prefer: "return=minimal" },
-      body: JSON.stringify({ status: "failed", content: { failure: { reason, at: new Date().toISOString() } } }),
+      body: JSON.stringify({ status: "failed", content: { failure: { reason, at: new Date().toISOString() } }, finished_at: new Date().toISOString() }),
     });
     if (!marked.ok) await serviceRest(env, `file_deep_assessments?${runningFilter}`, { method: "DELETE", headers: { prefer: "return=minimal" } });
     return json({ saved: false, reason });
@@ -3343,11 +3343,21 @@ async function saveDeepFile(request, env, id) {
   if (!(await known.json()).length) return json({ error: "That file is not in this analysis." }, 400);
   const refused = await logFirst(env, { workspace_id: analysis.workspace_id, user: null, action: "deep_file_finish", analysis_id: id, repo: analysis.repo, detail: path });
   if (refused) return refused;
-  await serviceRest(env, `file_deep_assessments?${runningFilter}`, { method: "DELETE", headers: { prefer: "return=minimal" } });
+  const finishedAt = new Date().toISOString();
+  // The running row becomes the draft: it keeps the time the run started and its job id.
+  const claimed = await serviceRest(env, `file_deep_assessments?${runningFilter}`, {
+    method: "PATCH",
+    headers: { prefer: "return=representation" },
+    body: JSON.stringify({ status: "draft", content, confidence: "model_read", dropped, commit_sha: commitSha, finished_at: finishedAt }),
+  });
+  if (claimed.ok) {
+    const [kept] = await claimed.json();
+    if (kept) return json({ saved: true, id: kept.id }, 201);
+  }
   const res = await serviceRest(env, "file_deep_assessments", {
     method: "POST",
     headers: { prefer: "return=representation" },
-    body: JSON.stringify({ analysis_id: id, file_path: path, commit_sha: commitSha, content, confidence: "model_read", dropped, status: "draft" }),
+    body: JSON.stringify({ analysis_id: id, file_path: path, commit_sha: commitSha, content, confidence: "model_read", dropped, status: "draft", finished_at: finishedAt }),
   });
   if (!res.ok) return json({ error: "Could not save the deep assessment." }, 502);
   const [saved] = await res.json();

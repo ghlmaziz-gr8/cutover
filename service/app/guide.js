@@ -11,6 +11,8 @@
 window.CUTOVER_GUIDE = {
   updated: "2026-10-22",
   whatsNew: [
+    "2026-10-27: Each deep file run shows a job header: a colour-coded status (in progress, passed, approved, replaced or failed), its job id, and when it started, finished and how long it took.",
+    "2026-10-27: Each deep file run shows a job header: a colour-coded status (in progress, passed, approved, replaced or failed), its job id, and when it started, finished and how long it took.",
     "2026-10-27: The model for an analysis is chosen from its list in the Deep view. Choosing a model applies it straight away. A model reply with extra words around its answer is now read as well.",
     "2026-10-27: The search and filters on the Analyses list are hidden. Press Find an assessment to show them.",
     "2026-10-27: The Deep view shows the model for the analysis, and a platform engineer can switch it to an active model key once the analysis has finished. Use this when the key the analysis was made with has been replaced.",
