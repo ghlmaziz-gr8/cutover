@@ -9013,6 +9013,8 @@ const REGION_OPTS = {
   $("dataRules").addEventListener("change", () => { $("startNow").disabled = !$("dataRules").checked; });
 
   $("startNow").addEventListener("click", async () => {
+    // The bell is hidden from the moment the analysis is being started, not only once the run screen opens.
+    document.body.classList.add("no-bell");
     $("startNow").disabled = true;
     setMsg("rulesMsg", "Starting analysis...", false);
     try {
@@ -9031,6 +9033,7 @@ const REGION_OPTS = {
       cur = await api(`/api/analyses/${res.id}`);
       showRun();
     } catch (err) {
+      updateBellVisibility();
       setMsg("rulesMsg", err.message, true);
       $("startNow").disabled = !$("dataRules").checked;
     }
