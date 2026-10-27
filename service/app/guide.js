@@ -11,6 +11,7 @@
 window.CUTOVER_GUIDE = {
   updated: "2026-10-22",
   whatsNew: [
+    "2026-10-27: The database structure upload and the run button now sit under the three deeper assessments, in the deep data assessment. The run button reads Run deep data assessment. Before a report exists, they show on the page so the first run can start.",
     "2026-10-27: The bell is hidden on the deeper assessment page while a deeper run is queued or running, as it already is on the progress screen. It returns when the run finishes.",
     "2026-10-27: The notice at the foot of the portal now says what clicks record: a position on the screen and a button id, never who clicked or any text. Long web addresses in the Links and domains card wrap inside the card.",
     "2026-10-27: Where people click, on the Workspaces tab, shows workspace admins a heat map of clicks on each screen for the last 7 or 30 days. It records only where a click landed on the screen and the id of the button used. Records are removed after 30 days.",
