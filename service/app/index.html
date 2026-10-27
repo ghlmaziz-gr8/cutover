@@ -1877,6 +1877,12 @@ button:not(:disabled):active{transform:scale(.965)}
     </div>
     <div class="card" id="deeperArch"></div>
     <div id="deeperSections"></div>
+    <div class="card" id="deeperFiles" hidden style="margin-top:18px">
+      <h2>Files for the business assessment</h2>
+      <p class="muted small" id="deeperFilesNote" style="margin-top:6px"></p>
+      <div class="mmap file-map" id="deeperFilesMap" aria-label="Map of the files in this application"></div>
+      <div class="card" id="deeperFileDetail" hidden style="margin-top:14px"></div>
+    </div>
     <div id="deeperModern"></div>
     <div class="card" id="deeperLimits"></div>
     <h2 style="margin:28px 0 4px">Target language and effort plan</h2>
@@ -6955,6 +6961,54 @@ a{color:#6d28d9;font-weight:600}`;
     renderLensCards();
     renderDeeperNext();
   }
+  // The business view shows every file as a tree, the same map as the conversion page. Choosing a file shows what it does.
+  let businessFiles = { analysis: null, rows: [] };
+  async function renderBusinessFiles() {
+    const box = $("deeperFilesMap");
+    if (businessFiles.analysis !== cur.id) {
+      box.replaceChildren(el("p", "Loading the files…", "muted small"));
+      try {
+        businessFiles = { analysis: cur.id, rows: await loadFiles() };
+      } catch (err) {
+        box.replaceChildren(el("p", `Could not load the files: ${err.message}`, "small"));
+        return;
+      }
+    }
+    const rows = businessFiles.rows;
+    $("deeperFilesNote").textContent = rows.length
+      ? `${rows.length} file${rows.length === 1 ? "" : "s"} in this application. Choose a file to see what it does. Each purpose is a draft until an engineer approves it.`
+      : "No files yet. They appear here once the analysis sends them.";
+    box.replaceChildren();
+    if (!rows.length) return;
+    drawMap(window.FileMap.tree({ label: "Files in the application", files: rows, conversions: cur.conversions || [] }), box, {
+      title: "Files in the application",
+      toolbar: true,
+      legend: {
+        tones: [["pro", "Accepted"], ["possible", "Proposed, to review"], ["con", "Rejected"], ["fit", "Needs attention"], ["plain", "Not started"]],
+        icons: [],
+      },
+      onLeaf: (node) => showBusinessFile(node.path),
+    });
+  }
+  function showBusinessFile(path) {
+    const f = (businessFiles.rows || []).find((x) => x.path === path);
+    const box = $("deeperFileDetail");
+    box.hidden = false;
+    box.replaceChildren();
+    if (!f) return;
+    box.appendChild(el("h3", f.path, null));
+    box.firstChild.style.marginTop = "0";
+    box.appendChild(el("div", `${f.category} · ${FILE_STATUS[f.review_status] || f.review_status}`, "muted small"));
+    box.appendChild(el("p", f.purpose || "No purpose written yet.", "small"));
+    if (f.suggestions && f.suggestions.length) {
+      const ul = el("ul", null, null);
+      ul.style.paddingLeft = "18px";
+      for (const sug of f.suggestions) ul.appendChild(el("li", `${sug.severity ? sug.severity + ": " : ""}${sug.text}`, "small muted"));
+      box.appendChild(ul);
+    }
+    box.appendChild(el("p", "The business need and the user stories for this file are the next step. They will be built from this file's code.", "small hint"));
+  }
+
   // Next steps opens only when the deeper assessment is finished and one of its three views has been opened.
   function renderDeeperNext() {
     const ready = cur.deeper_done === true;
@@ -6988,6 +7042,9 @@ a{color:#6d28d9;font-weight:600}`;
     sections.replaceChildren();
     limits.replaceChildren();
     const lens = currentLens();
+    const businessView = !!lens && lens.key === "business";
+    $("deeperFiles").hidden = !businessView;
+    if (businessView) renderBusinessFiles();
     if (!deeper) {
       sections.appendChild(el("p", "The deeper assessment is not in this analysis. Run a new analysis to create it.", "card muted"));
       return;
