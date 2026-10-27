@@ -1309,6 +1309,8 @@ button:not(:disabled):active{transform:scale(.965)}
     .wc-badges{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px}
     .wc-badge{font-size:12px;padding:3px 10px;border-radius:99px;border:1px solid var(--line,#ddd)}
     .wc-close{position:absolute;top:8px;right:10px}
+    .wc-label{margin-top:6px;font-weight:600}
+    .wc-badge-level{font-weight:700;background:linear-gradient(90deg,rgba(29,78,216,.12),rgba(47,158,107,.14))}
     @keyframes wcIn{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
     @media (prefers-reduced-motion: reduce){.welcome-card{animation:none}.wc-fill{transition:none}}
     /* The deep view under a file: it rises in when the file is chosen. */
@@ -2318,7 +2320,8 @@ button:not(:disabled):active{transform:scale(.965)}
   setInterval(() => {
     if (!me || !timeScreen || timeScreen === "s-login" || document.hidden) return;
     if (Date.now() - lastActivity > 120000) return;
-    api("/api/me/time", { method: "POST", body: JSON.stringify({ screen: timeScreen, seconds: 30 }) }).catch(() => {});
+    const body = { screen: timeScreen, seconds: 30, workspace_id: ws && ws.id ? ws.id : null };
+    api("/api/me/time", { method: "POST", body: JSON.stringify(body) }).catch(() => {});
   }, 30000);
   function fmtDuration(seconds) {
     const mins = Math.round(seconds / 60);
@@ -2356,6 +2359,10 @@ button:not(:disabled):active{transform:scale(.965)}
       const label = SCREEN_LABELS[data.favourite.screen] || "this page";
       card.append(el("div", `This seems to be your favourite page: ${label}. You have spent the most time here.`, "small"));
     }
+    if (data.workspaces && data.workspaces.length) {
+      card.append(el("div", "Time in each workspace", "small wc-label"));
+      for (const w of data.workspaces) card.append(el("div", `${w.name}: ${fmtDuration(w.seconds)}`, "small"));
+    }
     const lvl = data.level;
     const span = lvl.next_at ? lvl.next_at - lvl.at : 1;
     const pct = lvl.next_at ? Math.min(100, Math.round(((lvl.points - lvl.at) / span) * 100)) : 100;
@@ -2367,7 +2374,7 @@ button:not(:disabled):active{transform:scale(.965)}
     requestAnimationFrame(() => requestAnimationFrame(() => { fill.style.width = `${pct}%`; }));
     if (data.badges && data.badges.length) {
       const row = el("div", null, "wc-badges");
-      for (const b of data.badges) row.append(el("span", b.name, "wc-badge"));
+      for (const b of data.badges) row.append(el("span", b.name, b.kind === "level" ? "wc-badge wc-badge-level" : "wc-badge"));
       card.append(row);
     }
     card.hidden = false;

@@ -32,6 +32,12 @@ test("the progress bar and the card respect reduced motion", () => {
   assert.match(html, /@media \(prefers-reduced-motion: reduce\)\{\.welcome-card\{animation:none\}\.wc-fill\{transition:none\}\}/);
 });
 
+test("the card shows time per workspace, and the portal sends the workspace with each heartbeat", () => {
+  assert.match(html, /Time in each workspace/);
+  assert.match(html, /workspace_id: ws && ws\.id \? ws\.id : null/);
+  assert.match(html, /wc-badge-level/);
+});
+
 test("the change is listed in What's new", () => {
   assert.match(guide, /A card on the home screen greets you when you sign in/);
 });
