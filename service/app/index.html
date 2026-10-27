@@ -1811,6 +1811,13 @@ button:not(:disabled):active{transform:scale(.965)}
       <p class="muted small" id="filesNote" style="margin:0"></p>
       <p class="small" id="filesCounts" style="margin:10px 0 0"></p>
     </div>
+    <div class="card" id="groupCard" hidden style="margin-top:14px">
+      <h3 style="margin:0 0 6px">Feature groups</h3>
+      <p class="muted small" style="margin:0">Groups the approved file summaries into product features. A grouping is a draft until a platform engineer approves it.</p>
+      <div class="row" style="margin-top:10px"><button type="button" id="groupStart">Propose feature groups</button></div>
+      <div id="groupList"></div>
+      <p class="small hint" id="groupMsg"></p>
+    </div>
     <ul id="filesList" style="list-style:none;padding:0;margin:14px 0 0"></ul>
     <p id="filesMsg" class="err small hint" role="status"></p>
     <div class="row wzNav">
@@ -8210,6 +8217,67 @@ const REGION_OPTS = {
       setMsg("filesMsg", err.message, true);
     }
     renderFiles();
+    loadGroupings();
+  }
+
+  // Feature groups: platform engineers propose them from the approved summaries, then approve or discard the draft.
+  const GROUP_STATUS = { running: "Running", draft: "Draft to review", approved: "Approved", superseded: "Replaced by a later approval" };
+
+  async function loadGroupings() {
+    const card = $("groupCard");
+    card.hidden = !(ws && ws.role === "platform_engineer");
+    if (card.hidden) return;
+    try {
+      const data = await api(`/api/analyses/${cur.id}/groupings`);
+      renderGroupings(data.groupings || []);
+    } catch (err) {
+      setMsg("groupMsg", err.message, true);
+    }
+  }
+
+  function renderGroupings(rows) {
+    const list = $("groupList");
+    list.innerHTML = "";
+    if (!rows.length) {
+      list.append(el("p", "No feature groups proposed yet.", "muted small"));
+      return;
+    }
+    for (const g of rows) {
+      const box = el("div", null, "biz-card");
+      box.style.borderTop = "1px solid var(--line, #ddd)";
+      box.style.paddingTop = "8px";
+      box.style.marginTop = "8px";
+      const when = g.created_at ? ` · ${new Date(g.created_at).toLocaleDateString()}` : "";
+      box.append(el("div", `${GROUP_STATUS[g.status] || g.status} · ${g.source_count || 0} approved files${when}`, "muted small"));
+      for (const item of Array.isArray(g.groups) ? g.groups : []) {
+        const count = Array.isArray(item.paths) ? item.paths.length : 0;
+        box.append(el("div", `${item.name} (${count} file${count === 1 ? "" : "s"})`, "small"));
+        if (item.summary) box.append(el("div", item.summary, "muted small"));
+      }
+      if (g.status === "draft") {
+        const row = el("div", null, "row");
+        row.style.gap = "8px";
+        const approve = el("button", "Approve this grouping", "small-btn");
+        approve.type = "button";
+        approve.addEventListener("click", () => groupAction("approve", g.id));
+        const discard = el("button", "Discard", "ghost small-btn");
+        discard.type = "button";
+        discard.addEventListener("click", () => groupAction("discard", g.id));
+        row.append(approve, discard);
+        box.append(row);
+      }
+      list.append(box);
+    }
+  }
+
+  async function groupAction(action, groupingId) {
+    setMsg("groupMsg", "", false);
+    try {
+      await api(`/api/analyses/${cur.id}/groupings/${action}`, { method: "POST", body: JSON.stringify({ grouping_id: groupingId }) });
+      await loadGroupings();
+    } catch (err) {
+      setMsg("groupMsg", err.message, true);
+    }
   }
 
   function renderFiles() {
@@ -8424,6 +8492,16 @@ const REGION_OPTS = {
     row.append(cancel, save);
     li.append(box, row);
   }
+
+  $("groupStart").addEventListener("click", async () => {
+    setMsg("groupMsg", "", false);
+    try {
+      await api(`/api/analyses/${cur.id}/groupings/start`, { method: "POST" });
+      setMsg("groupMsg", "Grouping started. It takes a few minutes; reload this list to see the draft.", false);
+    } catch (err) {
+      setMsg("groupMsg", err.message, true);
+    }
+  });
 
   $("filesApproveAll").addEventListener("click", async () => {
     try {
