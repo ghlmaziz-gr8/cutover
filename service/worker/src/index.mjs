@@ -49,6 +49,7 @@ import { validateDbMetadata } from "./db-metadata.mjs";
 //   POST   /api/analyses/:id/files/approve-all            approve every file still in draft (platform engineers)
 //   GET    /api/analyses/:id/business?path=               business assessments of one file (platform engineers)
 //   GET    /api/analyses/:id/deep-files?path=...           deep file assessments of one file (platform engineers)
+//   GET    /api/analyses/:id/deep-files/links              function names each file defines and calls (platform engineers)
 //   POST   /api/analyses/:id/deep-files/approve             approve a draft; replaces the earlier approved account
 //   POST   /api/analyses/:id/deep-files/discard             discard a draft (platform engineers)
 //   POST   /api/analyses/:id/deep-files/start           start a deep file assessment of one file (platform engineers)
@@ -3149,6 +3150,37 @@ async function deepSummary(request, env, id) {
   return json({ files: { ...files, ...approved } });
 }
 
+// The function names each file defines and calls, from its approved assessment, or its latest draft when none is
+// approved. Only names are returned, never the purposes or stories, so the file map can link files that call each other.
+const DEEP_LINK_NAMES = 300;
+async function deepLinks(request, env, id) {
+  const access = await analysisAccess(env, request, id);
+  if (access.response) return access.response;
+  if (!canStart(access.member)) return json({ error: "Only platform engineers can see the deep assessments." }, 403);
+  const res = await serviceRest(env, `file_deep_assessments?analysis_id=eq.${id}&status=in.(draft,approved)&select=file_path,status,content,created_at&order=created_at.desc&limit=2000`);
+  if (!res.ok) return json({ error: "Could not load the deep assessment links." }, 502);
+  const chosen = {};
+  for (const r of await res.json()) {
+    const current = chosen[r.file_path];
+    if (current && (current.status === "approved" || r.status === "draft")) continue;
+    chosen[r.file_path] = r;
+  }
+  const links = {};
+  for (const [path, r] of Object.entries(chosen)) {
+    const content = r.content || {};
+    const defines = [];
+    const calls = [];
+    for (const fn of Array.isArray(content.functions) ? content.functions : []) {
+      if (typeof fn?.name === "string" && defines.length < DEEP_LINK_NAMES) defines.push(fn.name);
+      for (const c of Array.isArray(fn?.calls) ? fn.calls : []) {
+        if (typeof c === "string" && calls.length < DEEP_LINK_NAMES && !calls.includes(c)) calls.push(c);
+      }
+    }
+    links[path] = { defines, calls, status: r.status };
+  }
+  return json({ links });
+}
+
 async function listDeepFiles(request, env, id) {
   const access = await analysisAccess(env, request, id);
   if (access.response) return access.response;
@@ -4279,6 +4311,8 @@ async function route(request, env) {
     if (businessStart && UUID_PATTERN.test(businessStart[1]) && method === "POST") return startBusiness(request, env, businessStart[1]);
     const businessDiscard = path.match(/^\/api\/analyses\/([^/]+)\/business\/discard$/);
     if (businessDiscard && UUID_PATTERN.test(businessDiscard[1]) && method === "POST") return discardBusiness(request, env, businessDiscard[1]);
+    const deepLinksRoute = path.match(/^\/api\/analyses\/([^/]+)\/deep-files\/links$/);
+    if (deepLinksRoute && UUID_PATTERN.test(deepLinksRoute[1]) && method === "GET") return deepLinks(request, env, deepLinksRoute[1]);
     const deepSummaryRoute = path.match(/^\/api\/analyses\/([^/]+)\/deep-files\/summary$/);
     if (deepSummaryRoute && UUID_PATTERN.test(deepSummaryRoute[1]) && method === "GET") return deepSummary(request, env, deepSummaryRoute[1]);
     const deepList = path.match(/^\/api\/analyses\/([^/]+)\/deep-files$/);

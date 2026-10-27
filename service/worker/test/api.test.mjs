@@ -3113,3 +3113,20 @@ test("the file map gets the latest deep state of each file, and an approved acco
   const denied = await call(`/api/analyses/${AN_ACME}/deep-files/summary`, { as: "aud_a" });
   assert.equal(denied.status, 403);
 });
+
+test("the links give the names each file defines and calls, from its approved account or latest draft, to engineers only", async () => {
+  readyForBusiness();
+  state.file_deep_assessments.push(
+    { id: uid(1101), analysis_id: AN_ACME, file_path: "src/A.java", status: "approved", created_at: "2026-10-27T10:00:00Z", content: { functions: [{ name: "Save", calls: ["Check"] }] } },
+    { id: uid(1102), analysis_id: AN_ACME, file_path: "src/A.java", status: "draft", created_at: "2026-10-27T11:00:00Z", content: { functions: [{ name: "Other", calls: [] }] } },
+    { id: uid(1103), analysis_id: AN_ACME, file_path: "src/B.java", status: "draft", created_at: "2026-10-27T12:00:00Z", content: { functions: [{ name: "Check", calls: ["Save", "Save"] }] } },
+    { id: uid(1104), analysis_id: AN_ACME, file_path: "src/C.java", status: "running", created_at: "2026-10-27T13:00:00Z", content: {} },
+  );
+  const res = await call(`/api/analyses/${AN_ACME}/deep-files/links`, { as: "eng_a" });
+  assert.equal(res.status, 200);
+  assert.deepEqual(res.body.links["src/A.java"], { defines: ["Save"], calls: ["Check"], status: "approved" });
+  assert.deepEqual(res.body.links["src/B.java"].calls, ["Save"], "a name called twice is listed once");
+  assert.equal(res.body.links["src/C.java"], undefined, "a running file has no links yet");
+  const denied = await call(`/api/analyses/${AN_ACME}/deep-files/links`, { as: "aud_a" });
+  assert.equal(denied.status, 403);
+});

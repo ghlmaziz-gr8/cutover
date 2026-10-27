@@ -43,13 +43,26 @@ test("the chosen file comes first, then related files, then the rest in path ord
   assert.deepEqual([...order].sort(), [...paths].sort());
 });
 
+test("a file that calls a function another file defines is related, with the call as the reason", () => {
+  const links = {
+    "src/uploadimage.asp": { defines: ["SaveImage"], calls: ["CheckSize"] },
+    "src/AJAX/gethint.asp": { defines: ["Hint"], calls: [] },
+    "src/other.asp": { defines: ["CheckSize"], calls: ["Hint"] },
+  };
+  const found = related("src/uploadimage.asp", paths, 6, links);
+  const other = found.find((r) => r.path === "src/other.asp");
+  assert.match(other.reason, /calls CheckSize/);
+  const hint = related("src/uploadimage.asp", paths, 6, links).find((r) => r.path === "src/AJAX/gethint.asp");
+  assert.equal(hint, undefined, "no link to gethint without a shared name or folder");
+});
+
 test("the limit caps the suggestions", () => {
   assert.equal(related("src/uploadimage.asp", paths, 1).length, 1);
 });
 
 test("the file view shows related files and the suggested order", () => {
   assert.match(html, /"Related files"/);
-  assert.match(html, /window\.FileMap\.related\(f\.path, paths, 6\)/);
+  assert.match(html, /window\.FileMap\.related\(f\.path, paths, 6, links\)/);
   assert.match(html, /Suggested order:/);
 });
 

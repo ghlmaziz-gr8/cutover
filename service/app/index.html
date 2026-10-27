@@ -1283,6 +1283,24 @@ button:not(:disabled):active{transform:scale(.965)}
     .dj-took{display:inline-block;margin-left:6px;padding:1px 7px;border-radius:999px;background:#f1f5f9;color:#334155;font-weight:600}
     @keyframes djPulse{0%,100%{box-shadow:0 0 0 0 rgba(29,78,216,.5);transform:scale(1)}50%{box-shadow:0 0 0 6px rgba(29,78,216,0);transform:scale(1.15)}}
     @media (prefers-reduced-motion: reduce){.dj-running .dj-dot{animation:none}}
+    /* The confidence halo: a ring fills to the score, a glow pulses behind it, a dashed ring turns and a dot orbits. */
+    .dh-row{display:flex;gap:18px;align-items:center;flex-wrap:wrap;margin:10px 0 6px}
+    .dh-wrap{position:relative;width:132px;height:132px;display:grid;place-items:center;flex:none;--dh-c:#d89a1c}
+    .dh-wrap.dh-high{--dh-c:#2f9e6b}
+    .dh-wrap.dh-medium{--dh-c:#d89a1c}
+    .dh-wrap.dh-low{--dh-c:#d0524a}
+    .dh-glow{position:absolute;inset:0;border-radius:50%;background:radial-gradient(circle,var(--dh-c) 0%,transparent 68%);opacity:.35;filter:blur(8px);animation:dhPulse 2.8s ease-in-out infinite}
+    .dh-svg{position:absolute;inset:0;width:100%;height:100%;transform:rotate(-90deg);overflow:visible}
+    .dh-track{fill:none;stroke:var(--line,#e2e2e2);stroke-width:8}
+    .dh-arc{fill:none;stroke:var(--dh-c);stroke-width:8;stroke-linecap:round;transition:stroke-dashoffset 1.4s cubic-bezier(.2,.8,.2,1);filter:drop-shadow(0 0 6px var(--dh-c))}
+    .dh-dash{position:absolute;inset:6px;border-radius:50%;border:1px dashed var(--dh-c);opacity:.5;animation:dhSpin 14s linear infinite}
+    .dh-orbit{position:absolute;inset:0;animation:dhSpin 4s linear infinite}
+    .dh-orbit::after{content:"";position:absolute;top:-3px;left:50%;width:8px;height:8px;margin-left:-4px;border-radius:50%;background:var(--dh-c);box-shadow:0 0 10px var(--dh-c)}
+    .dh-num{position:relative;font-size:30px;font-weight:700;font-variant-numeric:tabular-nums;color:var(--dh-c)}
+    .dh-text{min-width:170px}
+    @keyframes dhPulse{0%,100%{transform:scale(.9);opacity:.25}50%{transform:scale(1.12);opacity:.55}}
+    @keyframes dhSpin{to{transform:rotate(360deg)}}
+    @media (prefers-reduced-motion: reduce){.dh-glow,.dh-dash,.dh-orbit{animation:none}.dh-arc{transition:none}}
     /* The deep view under a file: it rises in when the file is chosen. */
     .dp-enter{animation:dpEnter .5s cubic-bezier(.2,.8,.2,1) both}
     @keyframes dpEnter{from{opacity:0;transform:translateY(16px)}to{opacity:1;transform:none}}
@@ -2099,6 +2117,7 @@ button:not(:disabled):active{transform:scale(.965)}
 <script src="mindmap.js"></script>
 <script src="findings-map.js"></script>
 <script src="file-map.js"></script>
+<script src="confidence.js"></script>
 <script src="radial.js"></script>
 <script src="architecture.js"></script>
 <script src="plan.js"></script>
@@ -7385,6 +7404,14 @@ a{color:#6d28d9;font-weight:600}`;
   // The business view shows every file as a tree, the same map as the conversion page. Choosing a file shows what it does.
   let businessFiles = { analysis: null, rows: [] };
   // The deep state of each file, for the map. An engineer sees them; anyone else sees none.
+  async function loadDeepLinks() {
+    try {
+      const res = await api(`/api/analyses/${cur.id}/deep-files/links`);
+      return res.links || {};
+    } catch (err) {
+      return {};
+    }
+  }
   async function loadDeepStates() {
     try {
       const res = await api(`/api/analyses/${cur.id}/deep-files/summary`);
@@ -7411,6 +7438,7 @@ a{color:#6d28d9;font-weight:600}`;
     box.replaceChildren();
     if (!rows.length) return;
     const deep = await loadDeepStates();
+    businessFiles.links = await loadDeepLinks();
     drawMap(window.FileMap.tree({ label: "Files in the application", files: rows, conversions: cur.conversions || [], deep }), box, {
       title: "Files in the application",
       toolbar: true,
@@ -7439,7 +7467,8 @@ a{color:#6d28d9;font-weight:600}`;
     }
     // Files that probably go with this one, and the order to assess them in. Choosing one opens it.
     const paths = (businessFiles.rows || []).map((x) => x.path);
-    const near = window.FileMap.related(f.path, paths, 6);
+    const links = businessFiles.links || {};
+    const near = window.FileMap.related(f.path, paths, 6, links);
     if (near.length) {
       box.appendChild(el("div", "Related files", "small"));
       const list = el("div", null, "small");
@@ -7455,7 +7484,7 @@ a{color:#6d28d9;font-weight:600}`;
         list.appendChild(el("br"));
       }
       box.appendChild(list);
-      const order = window.FileMap.processingOrder(f.path, paths).slice(0, 8);
+      const order = window.FileMap.processingOrder(f.path, paths, links).slice(0, 8);
       box.appendChild(el("div", `Suggested order: ${order.map((p, i) => `${i + 1}. ${p}`).join("  ")}${paths.length > order.length ? " …" : ""}`, "muted small"));
     }
     // The deep view: the purpose, user stories, functions and what they call, opened inline on this file.
@@ -8979,6 +9008,40 @@ const REGION_OPTS = {
     return card;
   }
 
+  // The confidence halo: the score counts up inside a ring that fills to it, with a glow behind it.
+  function deepHalo(score, band) {
+    const reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    const NS = "http://www.w3.org/2000/svg";
+    const svgEl = (name, attrs) => {
+      const node = document.createElementNS(NS, name);
+      for (const [k, v] of Object.entries(attrs)) node.setAttribute(k, String(v));
+      return node;
+    };
+    const wrap = el("div", null, `dh-wrap dh-${band}`);
+    wrap.setAttribute("role", "img");
+    wrap.setAttribute("aria-label", `Confidence ${score} out of 100`);
+    const circumference = 2 * Math.PI * 58;
+    const target = circumference * (1 - score / 100);
+    const svg = svgEl("svg", { class: "dh-svg", viewBox: "0 0 132 132" });
+    svg.append(svgEl("circle", { class: "dh-track", cx: 66, cy: 66, r: 58 }));
+    const arc = svgEl("circle", { class: "dh-arc", cx: 66, cy: 66, r: 58 });
+    arc.style.strokeDasharray = String(circumference);
+    arc.style.strokeDashoffset = reduce ? String(target) : String(circumference);
+    svg.append(arc);
+    const num = el("div", reduce ? String(score) : "0", "dh-num");
+    wrap.append(el("div", null, "dh-glow"), el("div", null, "dh-dash"), el("div", null, "dh-orbit"), svg, num);
+    if (!reduce) {
+      requestAnimationFrame(() => requestAnimationFrame(() => { arc.style.strokeDashoffset = String(target); }));
+      const started = performance.now();
+      const tick = (now) => {
+        const t = Math.min(1, (now - started) / 1400);
+        num.textContent = String(Math.round(score * (1 - Math.pow(1 - t, 3))));
+        if (t < 1) requestAnimationFrame(tick);
+      };
+      requestAnimationFrame(tick);
+    }
+    return wrap;
+  }
   function deepCard(a, reload, msg) {
     const c = el("div", null, "biz-card");
     c.style.borderTop = "1px solid var(--line, #ddd)";
@@ -8995,6 +9058,18 @@ const REGION_OPTS = {
       return c;
     }
     const content = a.content || {};
+    if (content.file_purpose || content.functions || content.rules) {
+      const conf = Confidence.confidenceOf(content, a.dropped);
+      const row = el("div", null, "dh-row");
+      const band = { high: "High", medium: "Medium", low: "Low" }[conf.band];
+      const text = el("div", null, "dh-text");
+      text.append(el("b", `Confidence: ${band}`));
+      text.append(el("div", `Names checked against the code: ${conf.parts.names}%`, "muted small"));
+      text.append(el("div", `Rules with line numbers: ${conf.parts.lines}%`, "muted small"));
+      text.append(el("div", `Rules with a worked example: ${conf.parts.examples}%`, "muted small"));
+      row.append(deepHalo(conf.score, conf.band), text);
+      c.append(row);
+    }
     if (content.file_purpose) c.append(el("div", content.file_purpose, "small"));
     for (const story of content.file_user_stories || []) c.append(el("div", `• ${story}`, "small"));
     for (const fn of content.functions || []) {
