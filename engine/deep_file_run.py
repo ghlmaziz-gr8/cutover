@@ -20,7 +20,8 @@ from model_deep_file import assess_file
 from model_purposes import ReleaseError, call_provider, exchange_token, make_source_reader
 from model_purposes import ProviderError, ProviderStopped
 
-MAX_TOKENS = 3000
+# Some models spend part of this budget on reasoning before they write the answer, so it leaves room for both.
+MAX_TOKENS = 8000
 
 
 def result_payload(path: str, commit_sha: str | None, result: dict) -> dict:
@@ -55,7 +56,16 @@ def post_result(callback: str, analysis_id: str, secret: str, payload: dict,
 
 def explain(err: Exception) -> str:
     """A reason an engineer can act on, from a provider error. The provider's messages carry no key, only a status."""
-    text = str(err)
+    status = getattr(err, "status", None)  # a stopped provider carries its HTTP status here
+    text = str(status) if status is not None else str(err)
+    if text == "reply cut off":
+        return "The model ran out of room before it finished the answer. Nothing was kept."
+    if text in ("401", "403"):
+        return f"The model provider refused the key (HTTP {text}). Check the key for this workspace."
+    if text == "429":
+        return "The model provider is rate-limiting or out of quota (HTTP 429). Check the quota, or try again later."
+    if text == "request failed":
+        return "The model provider could not be reached. Try again in a minute."
     if "HTTP 402" in text:
         return "The model provider asked for payment (HTTP 402). Check the billing for this workspace's model key."
     if "HTTP 401" in text or "HTTP 403" in text:
@@ -136,10 +146,8 @@ def main(argv=None, opener=urllib.request.urlopen) -> int:
                                                 json_reply=True),
                      report=lambda payload: post_progress(args.callback, args.analysis_id, secret, payload,
                                                           opener=opener))
-    except ProviderError as err:
+    except (ProviderError, ProviderStopped) as err:
         result = {"path": args.path, "status": "failed", "reason": explain(err)}
-    except ProviderStopped:
-        result = {"path": args.path, "status": "failed", "reason": "The language model did not answer. Nothing was kept."}
     status = post_result(args.callback, args.analysis_id, secret, result_payload(args.path, commit, result),
                          opener=opener)
     del api_key, release
