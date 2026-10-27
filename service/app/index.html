@@ -2201,14 +2201,21 @@ button:not(:disabled):active{transform:scale(.965)}
     $("eta").textContent = !done && idx >= etaStart ? etaFrom(idx) : "";
   }
 
+  // The bell is hidden while an analysis runs: on the progress screen, and on the deeper assessment page while its run is queued or running.
+  function updateBellVisibility() {
+    const running = !!cur && (cur.status === "queued" || cur.status === "running");
+    const hide = !$("s-run").hidden || (!$("s-deeper").hidden && running);
+    document.body.classList.toggle("no-bell", hide);
+  }
+
   function show(id) {
     $("askFab").hidden = !me || id === "s-login" || id === "s-denied";
     if ($("askFab").hidden) closeAsk();
     if (id !== "s-run") clearTimeout(runTimer);
-    document.body.classList.toggle("no-bell", id === "s-run");
     if (id !== "s-home") clearTimeout(homeTimer);
     for (const s of SCREENS) $(s).hidden = s !== id;
     renderHeader(id);
+    updateBellVisibility();
     window.scrollTo({ top: 0, behavior: "smooth" });
   }
 
@@ -7887,6 +7894,7 @@ const REGION_OPTS = {
   // The deeper assessment runs the analysis again, with the database structure if one is saved.
   function renderDeeperRun() {
     const busy = cur.status === "queued" || cur.status === "running";
+    updateBellVisibility();
     const finished = cur.status === "complete" || cur.status === "failed";
     $("deeperRun").disabled = busy || !finished || !cur.can_plan;
     setMsg("deeperRunMsg", busy ? "A run is already going. Wait for it to finish." : "", false);
