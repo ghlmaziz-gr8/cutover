@@ -91,8 +91,9 @@ def build_user_text(path: str, code: str) -> str:
 
 def build_request(provider: str, model: str, api_key: str, user_text: str,
                   system: str = SYSTEM, max_tokens: int = 160, base_url: str | None = None,
-                  token_field: str = "max_tokens") -> tuple[str, dict, bytes]:
-    """Returns the URL, headers and body for one request. The key only ever goes in a header."""
+                  token_field: str = "max_tokens", json_reply: bool = False) -> tuple[str, dict, bytes]:
+    """Returns the URL, headers and body for one request. The key only ever goes in a header.
+    `json_reply` asks the provider to return a JSON object, so a reply is not wrapped in prose."""
     if provider == "openai":
         if not base_url or not BASE_URL.match(base_url):
             raise ProviderError("no secure address for this provider")
@@ -102,6 +103,8 @@ def build_request(provider: str, model: str, api_key: str, user_text: str,
         headers = {"content-type": "application/json", "authorization": f"Bearer {api_key}"}
         body = {"model": model, token_field: max_tokens,
                 "messages": [{"role": "system", "content": system}, {"role": "user", "content": user_text}]}
+        if json_reply:
+            body["response_format"] = {"type": "json_object"}
     elif provider == "anthropic":
         url = "https://api.anthropic.com/v1/messages"
         headers = {"content-type": "application/json", "x-api-key": api_key, "anthropic-version": "2023-06-01"}
@@ -113,6 +116,8 @@ def build_request(provider: str, model: str, api_key: str, user_text: str,
         body = {"systemInstruction": {"parts": [{"text": system}]},
                 "contents": [{"role": "user", "parts": [{"text": user_text}]}],
                 "generationConfig": {"maxOutputTokens": max(max_tokens, GOOGLE_MIN_OUTPUT_TOKENS)}}
+        if json_reply:
+            body["generationConfig"]["responseMimeType"] = "application/json"
     else:
         raise ProviderError(f"unknown provider {provider}")
     return url, {**headers, "user-agent": "cutover-runner"}, json.dumps(body).encode("utf-8")
@@ -176,9 +181,9 @@ def accept_purpose(reply: str, code: str) -> str | None:
 
 def call_provider(provider: str, model: str, api_key: str, user_text: str, opener=urllib.request.urlopen,
                   system: str = SYSTEM, max_tokens: int = 160, base_url: str | None = None,
-                  token_field: str = "max_tokens") -> str:
+                  token_field: str = "max_tokens", json_reply: bool = False) -> str:
     url, headers, body = build_request(provider, model, api_key, user_text, system=system, max_tokens=max_tokens,
-                                       base_url=base_url, token_field=token_field)
+                                       base_url=base_url, token_field=token_field, json_reply=json_reply)
     req = urllib.request.Request(url, data=body, method="POST", headers=headers)
     try:
         with opener(req, timeout=60) as res:
