@@ -60,10 +60,17 @@ test("the limit caps the suggestions", () => {
   assert.equal(related("src/uploadimage.asp", paths, 1).length, 1);
 });
 
-test("the file view shows related files and the suggested order", () => {
-  assert.match(html, /"Related files"/);
+test("the file view shows related files as a chord diagram and the order as a tree", () => {
   assert.match(html, /window\.FileMap\.related\(f\.path, paths, 6, links\)/);
-  assert.match(html, /Suggested order:/);
+  assert.match(html, /function relatedView\(f, near, paths, links\)/);
+  assert.match(html, /Order to assess/);
+  assert.match(html, /\.rel-tree\.is-on \.rel-row/);
+  assert.match(html, /\.rc-link\{[^}]*stroke-dashoffset:1/);
+});
+
+test("the chord diagram and tree stop animating under reduced motion, and the tree is one step at a time", () => {
+  assert.match(html, /@media \(prefers-reduced-motion: reduce\)\{\.rc-link,\.rc-node,\.rel-row,\.rel-more\{transition:none!important\}\}/);
+  assert.match(html, /row\.style\.setProperty\("--d", `\$\{i \* 110\}ms`\);/);
 });
 
 test("the change is listed in What's new", () => {
