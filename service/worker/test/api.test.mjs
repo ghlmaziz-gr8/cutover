@@ -1213,7 +1213,7 @@ test("operators see the database size against the free-tier limit", async () => 
   const res = await call("/api/admin/database", { as: "operator" });
   assert.equal(res.status, 200);
   assert.equal(res.body.bytes, DATABASE_BYTES);
-  assert.equal(res.body.limit_bytes, 500 * 1024 * 1024);
+  assert.equal(res.body.limit_bytes, 490 * 1024 * 1024);
   assert.equal(res.body.percent, 25);
 });
 
