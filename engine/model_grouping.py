@@ -22,7 +22,7 @@ INSTRUCTIONS = (
     "You group approved business descriptions of source files into product features, for a non-engineer. "
     "Reply with JSON only and no other text, in this form: "
     '{"groups": [{"name": "short feature name", "summary": "one sentence", "paths": ["file path", "..."]}]}. '
-    "Use only the file paths you are given, each file in at most one group, and no more than 30 groups. "
+    "Use only the file paths you are given. A file may appear in more than one group when it does more than one job. No more than 30 groups. "
     "Never include names of people, real values such as IDs, addresses or keys, or any code."
 )
 
@@ -45,7 +45,7 @@ def build_user_text(sources: list[dict]) -> str:
 
 
 def clean_grouping_reply(reply, allowed: set[str]) -> list[dict] | None:
-    """The groups, with only the allowed files, each in one group. None when the reply has no usable groups."""
+    """The groups, with only the allowed files. A file may be in more than one group, and is listed once in each. None when the reply has no usable groups."""
     if not isinstance(reply, str):
         return None
     text = FENCE.sub("", reply.strip()).strip()
@@ -56,17 +56,15 @@ def clean_grouping_reply(reply, allowed: set[str]) -> list[dict] | None:
     raw = data.get("groups") if isinstance(data, dict) else None
     if not isinstance(raw, list):
         return None
-    seen: set[str] = set()
     groups: list[dict] = []
     for item in raw[:MAX_GROUPS]:
         if not isinstance(item, dict):
             continue
         name = str(item.get("name") or "").strip()[:MAX_GROUP_NAME]
         summary = str(item.get("summary") or "").strip()[:MAX_SUMMARY]
-        paths = []
+        paths: list[str] = []
         for path in item.get("paths") or []:
-            if isinstance(path, str) and path in allowed and path not in seen:
-                seen.add(path)
+            if isinstance(path, str) and path in allowed and path not in paths:
                 paths.append(path)
         if name and paths:
             groups.append({"name": name, "summary": summary, "paths": paths})

@@ -14,14 +14,14 @@ ALLOWED = {"src/Orders.py", "src/Refunds.py"}
 
 
 class Reply(unittest.TestCase):
-    def test_a_good_grouping_keeps_only_allowed_files_once(self):
+    def test_a_good_grouping_keeps_only_allowed_files_and_lists_each_once_per_group(self):
         reply = json.dumps({"groups": [
             {"name": "Ordering", "summary": "Places orders.", "paths": ["src/Orders.py", "src/Unknown.py"]},
             {"name": "Money back", "summary": "Refunds.", "paths": ["src/Orders.py", "src/Refunds.py"]},
         ]})
         got = mg.clean_grouping_reply(reply, ALLOWED)
         self.assertEqual(got[0]["paths"], ["src/Orders.py"])
-        self.assertEqual(got[1]["paths"], ["src/Refunds.py"])
+        self.assertEqual(got[1]["paths"], ["src/Orders.py", "src/Refunds.py"])
 
     def test_a_fenced_reply_is_read(self):
         reply = "```json\n" + json.dumps({"groups": [{"name": "A", "summary": "", "paths": ["src/Orders.py"]}]}) + "\n```"
@@ -107,3 +107,16 @@ class RunnerStep(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class OverlappingGroups(unittest.TestCase):
+    def test_a_file_may_be_in_more_than_one_group_but_is_listed_once_in_each(self):
+        import json as _json
+        from model_grouping import clean_grouping_reply
+        reply = _json.dumps({"groups": [
+            {"name": "Ordering", "summary": "", "paths": ["a.asp", "a.asp"]},
+            {"name": "Login", "summary": "", "paths": ["a.asp", "b.asp"]},
+        ]})
+        groups = clean_grouping_reply(reply, {"a.asp", "b.asp"})
+        self.assertEqual(groups[0]["paths"], ["a.asp"])
+        self.assertEqual(groups[1]["paths"], ["a.asp", "b.asp"])

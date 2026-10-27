@@ -1409,12 +1409,13 @@ test("the runner saves a draft grouping only when every file is one with an appr
   state.file_business_assessments.push(businessRow(1061, "approved"));
   const bad = await call(`/api/runner/${AN_ACME}/grouping`, { method: "POST", secret: env.RUNNER_SECRET, body: { status: "ok", groups: [{ name: "X", summary: "", paths: ["src/Unknown.java"] }] } });
   assert.equal(bad.status, 400);
-  const twice = await call(`/api/runner/${AN_ACME}/grouping`, { method: "POST", secret: env.RUNNER_SECRET, body: { status: "ok", groups: [{ name: "A", summary: "", paths: ["src/A.java"] }, { name: "B", summary: "", paths: ["src/A.java"] }] } });
-  assert.equal(twice.status, 400);
-  const res = await call(`/api/runner/${AN_ACME}/grouping`, { method: "POST", secret: env.RUNNER_SECRET, body: { status: "ok", groups: [{ name: "Ordering", summary: "Places orders.", paths: ["src/A.java"] }] } });
-  assert.equal(res.status, 201);
+  // A file may sit in more than one feature, and is listed once within a feature.
+  const overlap = await call(`/api/runner/${AN_ACME}/grouping`, { method: "POST", secret: env.RUNNER_SECRET, body: { status: "ok", groups: [{ name: "A", summary: "", paths: ["src/A.java", "src/A.java"] }, { name: "B", summary: "", paths: ["src/A.java"] }] } });
+  assert.equal(overlap.status, 201);
   const draft = state.feature_groupings.find((g) => g.analysis_id === AN_ACME && g.status === "draft");
-  assert.equal(draft.groups[0].name, "Ordering");
+  assert.equal(draft.groups.length, 2);
+  assert.deepEqual(draft.groups[0].paths, ["src/A.java"]);
+  assert.deepEqual(draft.groups[1].paths, ["src/A.java"]);
   assert.ok(state.assessment_log.some((e) => e.action === "grouping_finish"));
 });
 
@@ -1429,7 +1430,10 @@ test("a failed grouping clears its running row and is logged", async () => {
 
 test("approving a grouping supersedes the earlier one, and only a draft can be discarded", async () => {
   state.feature_groupings.push(groupingRow(1070, "approved"), groupingRow(1071, "draft"), groupingRow(1072, "draft"));
-  const approve = await call(`/api/analyses/${AN_ACME}/groupings/approve`, { as: "eng_a", method: "POST", body: { grouping_id: uid(1071) } });
+  state.analyses.find((a) => a.id === AN_ACME).target_owner_email = PEOPLE.inf_a.email;
+  const engineer = await call(`/api/analyses/${AN_ACME}/groupings/approve`, { as: "eng_a", method: "POST", body: { grouping_id: uid(1071) } });
+  assert.equal(engineer.status, 403, "an engineer cannot approve the grouping");
+  const approve = await call(`/api/analyses/${AN_ACME}/groupings/approve`, { as: "inf_a", method: "POST", body: { grouping_id: uid(1071) } });
   assert.equal(approve.status, 200);
   assert.equal(state.feature_groupings.find((g) => g.id === uid(1070)).status, "superseded");
   assert.equal(state.feature_groupings.find((g) => g.id === uid(1071)).status, "approved");
@@ -3187,4 +3191,32 @@ test("time is also counted per workspace the person belongs to, and the level ba
   assert.equal(acme.seconds, 60);
   assert.equal(summary.body.workspaces.some((w) => w.id === uid(999)), false);
   assert.deepEqual(summary.body.badges.map((b) => b.name), ["Starter badge"], "the starter badge is there from zero points");
+});
+
+test("the application owner sends a grouping back with a note, and the engineer changes the draft and sends it again", async () => {
+  state.feature_groupings.push(groupingRow(1090, "draft"));
+  state.analyses.find((a) => a.id === AN_ACME).target_owner_email = PEOPLE.inf_a.email;
+  state.file_business_assessments.push(businessRow(1091, "approved"));
+  const notOwner = await call(`/api/analyses/${AN_ACME}/groupings/reject`, { as: "eng_a", method: "POST", body: { grouping_id: uid(1090), note: "Split it." } });
+  assert.equal(notOwner.status, 403);
+  const blank = await call(`/api/analyses/${AN_ACME}/groupings/reject`, { as: "inf_a", method: "POST", body: { grouping_id: uid(1090), note: "  " } });
+  assert.equal(blank.status, 400);
+  const sent = await call(`/api/analyses/${AN_ACME}/groupings/reject`, { as: "inf_a", method: "POST", body: { grouping_id: uid(1090), note: "Split the ordering feature." } });
+  assert.equal(sent.status, 200);
+  const row = state.feature_groupings.find((g) => g.id === uid(1090));
+  assert.equal(row.status, "draft", "a sent-back grouping stays a draft");
+  assert.equal(row.review_note, "Split the ordering feature.");
+  const edited = await call(`/api/analyses/${AN_ACME}/groupings/edit`, { as: "eng_a", method: "POST", body: { grouping_id: uid(1090), groups: [{ name: "Ordering", summary: "", paths: ["src/A.java"] }] } });
+  assert.equal(edited.status, 200);
+  assert.equal(row.groups[0].name, "Ordering");
+  assert.ok(row.edited_by_email, "the edit is recorded");
+  assert.ok(state.assessment_log.some((e) => e.action === "grouping_reject"));
+  assert.ok(state.assessment_log.some((e) => e.action === "grouping_edit"));
+  const owned = await call(`/api/analyses/${AN_ACME}/groupings`, { as: "inf_a" });
+  assert.equal(owned.status, 200, "the application owner can see the groupings");
+  const other = await call(`/api/analyses/${AN_ACME}/groupings`, { as: "sec_a" });
+  assert.equal(other.status, 403);
+  row.status = "approved";
+  const refused = await call(`/api/analyses/${AN_ACME}/groupings/edit`, { as: "eng_a", method: "POST", body: { grouping_id: uid(1090), groups: [{ name: "X", summary: "", paths: ["src/A.java"] }] } });
+  assert.equal(refused.status, 409, "an approved grouping cannot be edited");
 });

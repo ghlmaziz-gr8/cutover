@@ -3598,7 +3598,7 @@ async function runCleanup(request, env, workspaceId) {
 }
 
 // ---- Feature grouping: the model proposes feature groups from the approved business results; an engineer approves ----
-// Only files with an approved business assessment can be grouped. A file can be in only one feature.
+// Only files with an approved business assessment can be grouped. A file may be in more than one feature.
 const GROUP_MAX = 30;
 const GROUP_FILES_MAX = 200;
 
@@ -3610,7 +3610,6 @@ async function approvedBusinessPaths(env, id) {
 
 function checkGroups(value, allowed) {
   if (!Array.isArray(value) || value.length < 1 || value.length > GROUP_MAX) return { error: `A grouping holds 1 to ${GROUP_MAX} features.` };
-  const seen = new Set();
   const groups = [];
   for (const item of value) {
     if (!item || typeof item !== "object" || Array.isArray(item)) return { error: "Each feature must be an object." };
@@ -3621,9 +3620,7 @@ function checkGroups(value, allowed) {
     const paths = [];
     for (const path of item.paths) {
       if (typeof path !== "string" || !allowed.has(path)) return { error: "A feature names a file that has no approved business assessment." };
-      if (seen.has(path)) return { error: "A file can be in only one feature." };
-      seen.add(path);
-      paths.push(path);
+      if (!paths.includes(path)) paths.push(path);
     }
     groups.push({ name, summary, paths });
   }
@@ -3633,8 +3630,8 @@ function checkGroups(value, allowed) {
 async function listGroupings(request, env, id) {
   const access = await analysisAccess(env, request, id);
   if (access.response) return access.response;
-  if (!canStart(access.member)) return json({ error: "Only platform engineers can see feature groupings." }, 403);
-  const res = await serviceRest(env, `feature_groupings?analysis_id=eq.${id}&select=id,status,groups,source_count,created_by_email,created_at,reviewed_by_email,reviewed_at&order=created_at.desc&limit=20`);
+  if (!canStart(access.member) && !canReviewGrouping(access.row, access.member, access.user)) return json({ error: "Only platform engineers, the application owner, or a CIO or CTO can see feature groupings." }, 403);
+  const res = await serviceRest(env, `feature_groupings?analysis_id=eq.${id}&select=id,status,groups,source_count,created_by_email,created_at,reviewed_by_email,reviewed_at,review_note,review_note_by_email,review_note_at,edited_by_email,edited_at&order=created_at.desc&limit=20`);
   if (!res.ok) return json({ error: "Could not load the feature groupings." }, 502);
   return json({ groupings: await res.json() });
 }
@@ -3735,10 +3732,17 @@ async function groupingSources(request, env, id) {
   return json({ files: (await res.json()).map((r) => ({ path: r.path, content: r.content })) });
 }
 
+// Who may approve or send back a grouping: the named application owner, or a CIO or CTO in the workspace.
+function canReviewGrouping(row, member, user) {
+  return canApproveTarget(row, member, user);
+}
+
 async function approveGrouping(request, env, id) {
   const access = await analysisAccess(env, request, id);
   if (access.response) return access.response;
-  if (!canStart(access.member)) return json({ error: "Only platform engineers can approve a grouping." }, 403);
+  if (!canReviewGrouping(access.row, access.member, access.user)) {
+    return json({ error: "Only the application owner, or a CIO or CTO, can approve the feature grouping. Name the owner on the next steps page first." }, 403);
+  }
   const parsed = await readJson(request);
   if (parsed.error) return json({ error: parsed.error }, 400);
   const groupingId = String(parsed.value?.grouping_id || "");
@@ -3766,6 +3770,66 @@ async function approveGrouping(request, env, id) {
   });
   if (!approved.ok) return json({ error: "Could not approve the grouping." }, 502);
   return json({ approved: true });
+}
+
+// The application owner sends a draft back with a note. It stays a draft for the engineer to change and send again.
+async function rejectGrouping(request, env, id) {
+  const access = await analysisAccess(env, request, id);
+  if (access.response) return access.response;
+  if (!canReviewGrouping(access.row, access.member, access.user)) {
+    return json({ error: "Only the application owner, or a CIO or CTO, can send a grouping back." }, 403);
+  }
+  const parsed = await readJson(request);
+  if (parsed.error) return json({ error: parsed.error }, 400);
+  const groupingId = String(parsed.value?.grouping_id || "");
+  if (!UUID_PATTERN.test(groupingId)) return json({ error: "Choose a grouping." }, 400);
+  const note = typeof parsed.value?.note === "string" ? parsed.value.note.trim() : "";
+  if (!note || note.length > 1000) return json({ error: "Say what should change, in up to 1000 characters." }, 400);
+  const found = await serviceRest(env, `feature_groupings?id=eq.${groupingId}&analysis_id=eq.${id}&select=id,status`);
+  if (!found.ok) return json({ error: "Could not load the grouping." }, 502);
+  const [item] = await found.json();
+  if (!item) return json({ error: "Not found." }, 404);
+  if (item.status !== "draft") return json({ error: "Only a draft grouping can be sent back." }, 409);
+  const refused = await logFirst(env, { workspace_id: access.row.workspace_id, user: access.user, action: "grouping_reject", analysis_id: id, repo: access.row.repo, detail: "features" });
+  if (refused) return refused;
+  const res = await serviceRest(env, `feature_groupings?id=eq.${groupingId}&status=eq.draft`, {
+    method: "PATCH",
+    headers: { prefer: "return=minimal" },
+    body: JSON.stringify({ review_note: note, review_note_by_email: normalizeEmail(access.user.email), review_note_at: new Date().toISOString() }),
+  });
+  if (!res.ok) return json({ error: "Could not send the grouping back." }, 502);
+  return json({ sent_back: true });
+}
+
+// A platform engineer changes the groups of a draft before it goes to the owner. Overlap is allowed.
+async function editGrouping(request, env, id) {
+  const access = await analysisAccess(env, request, id);
+  if (access.response) return access.response;
+  if (!canStart(access.member)) return json({ error: "Only platform engineers can change a feature grouping." }, 403);
+  const parsed = await readJson(request, 60000);
+  if (parsed.error) return json({ error: parsed.error }, 400);
+  const groupingId = String(parsed.value?.grouping_id || "");
+  if (!UUID_PATTERN.test(groupingId)) return json({ error: "Choose a grouping." }, 400);
+  const found = await serviceRest(env, `feature_groupings?id=eq.${groupingId}&analysis_id=eq.${id}&select=id,status`);
+  if (!found.ok) return json({ error: "Could not load the grouping." }, 502);
+  const [item] = await found.json();
+  if (!item) return json({ error: "Not found." }, 404);
+  if (item.status !== "draft") return json({ error: "Only a draft grouping can be changed." }, 409);
+  const approved = await approvedBusinessPaths(env, id);
+  if (approved.failed) return json({ error: "Could not check the approved results. Try again in a minute." }, 502);
+  const checked = checkGroups(parsed.value?.groups, new Set(approved.paths));
+  if (checked.error) return json({ error: checked.error }, 400);
+  const serialised = JSON.stringify(checked.groups);
+  if (serialised.length > 40000) return json({ error: "The grouping is too large to save." }, 400);
+  const refused = await logFirst(env, { workspace_id: access.row.workspace_id, user: access.user, action: "grouping_edit", analysis_id: id, repo: access.row.repo, detail: `${checked.groups.length} features` });
+  if (refused) return refused;
+  const res = await serviceRest(env, `feature_groupings?id=eq.${groupingId}&status=eq.draft`, {
+    method: "PATCH",
+    headers: { prefer: "return=minimal" },
+    body: JSON.stringify({ groups: checked.groups, edited_by_email: normalizeEmail(access.user.email), edited_at: new Date().toISOString() }),
+  });
+  if (!res.ok) return json({ error: "Could not save the changes." }, 502);
+  return json({ saved: true });
 }
 
 async function discardGrouping(request, env, id) {
@@ -4435,6 +4499,10 @@ async function route(request, env) {
     if (groupingStart && UUID_PATTERN.test(groupingStart[1]) && method === "POST") return startGrouping(request, env, groupingStart[1]);
     const groupingApprove = path.match(/^\/api\/analyses\/([^/]+)\/groupings\/approve$/);
     if (groupingApprove && UUID_PATTERN.test(groupingApprove[1]) && method === "POST") return approveGrouping(request, env, groupingApprove[1]);
+    const groupingReject = path.match(/^\/api\/analyses\/([^/]+)\/groupings\/reject$/);
+    if (groupingReject && UUID_PATTERN.test(groupingReject[1]) && method === "POST") return rejectGrouping(request, env, groupingReject[1]);
+    const groupingEdit = path.match(/^\/api\/analyses\/([^/]+)\/groupings\/edit$/);
+    if (groupingEdit && UUID_PATTERN.test(groupingEdit[1]) && method === "POST") return editGrouping(request, env, groupingEdit[1]);
     const groupingDiscard = path.match(/^\/api\/analyses\/([^/]+)\/groupings\/discard$/);
     if (groupingDiscard && UUID_PATTERN.test(groupingDiscard[1]) && method === "POST") return discardGrouping(request, env, groupingDiscard[1]);
     const groupingSave = path.match(/^\/api\/runner\/([^/]+)\/grouping$/);

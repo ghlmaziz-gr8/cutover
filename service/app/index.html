@@ -1319,6 +1319,14 @@ button:not(:disabled):active{transform:scale(.965)}
     .dp-title-row{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap}
     .dp-title-row h3{margin:0}
     .dp-actions{display:flex;gap:8px;flex-wrap:wrap}
+    .gr-note{margin-top:6px;padding:8px 10px;border-radius:10px;background:var(--soft,#f1f0fb)}
+    .gr-feature{margin-top:8px}
+    .gr-name{font:600 13.5px var(--body);padding:4px 8px;border-radius:8px;border:1px solid var(--line,#ddd);width:100%;max-width:340px}
+    .gr-file{display:inline-flex;align-items:center;gap:4px;margin:4px 6px 0 0;padding:2px 8px;border-radius:99px;border:1px solid var(--line,#ddd);font-size:12px}
+    .gr-off{all:unset;cursor:pointer;color:var(--muted);padding:0 2px}
+    .gr-off:hover,.gr-off:focus-visible{color:#d0524a}
+    .gr-send{display:flex;gap:8px;align-items:flex-start;margin-top:8px;flex-wrap:wrap}
+    .gr-text{flex:1 1 260px;min-height:44px;font:13px var(--body);padding:8px;border-radius:8px;border:1px solid var(--line,#ddd)}
     /* Related files: the chord diagram draws its lines in turn, and the order tree grows one step at a time. */
     .rel-wrap{display:grid;grid-template-columns:minmax(260px,400px) minmax(0,1fr);gap:22px;align-items:center;margin:14px 0 10px}
     @media (max-width:700px){.rel-wrap{grid-template-columns:1fr}}
@@ -8738,10 +8746,19 @@ const REGION_OPTS = {
   // Feature groups: platform engineers propose them from the approved summaries, then approve or discard the draft.
   const GROUP_STATUS = { running: "Running", draft: "Draft to review", approved: "Approved", superseded: "Replaced by a later approval" };
 
+  // Feature groupings. Platform engineers propose and edit a draft; the application owner (or a CIO or CTO) approves it
+  // or sends it back with a note. The server checks every action.
+  function canReviewGrouping() {
+    if (!me || !ws) return false;
+    const owner = cur && cur.target_owner_email;
+    return (!!owner && owner === me.email) || ws.role === "cio_cto";
+  }
   async function loadGroupings() {
     const card = $("groupCard");
-    card.hidden = !(ws && ws.role === "platform_engineer");
+    const isEngineer = !!ws && ws.role === "platform_engineer";
+    card.hidden = !(isEngineer || canReviewGrouping());
     if (card.hidden) return;
+    $("groupStart").hidden = !isEngineer;
     try {
       const data = await api(`/api/analyses/${cur.id}/groupings`);
       renderGroupings(data.groupings || []);
@@ -8757,38 +8774,100 @@ const REGION_OPTS = {
       list.append(el("p", "No feature groups proposed yet.", "muted small"));
       return;
     }
-    for (const g of rows) {
-      const box = el("div", null, "biz-card");
-      box.style.borderTop = "1px solid var(--line, #ddd)";
-      box.style.paddingTop = "8px";
-      box.style.marginTop = "8px";
-      const when = g.created_at ? ` · ${new Date(g.created_at).toLocaleDateString()}` : "";
-      box.append(el("div", `${GROUP_STATUS[g.status] || g.status} · ${g.source_count || 0} approved files${when}`, "muted small"));
-      for (const item of Array.isArray(g.groups) ? g.groups : []) {
-        const count = Array.isArray(item.paths) ? item.paths.length : 0;
-        box.append(el("div", `${item.name} (${count} file${count === 1 ? "" : "s"})`, "small"));
-        if (item.summary) box.append(el("div", item.summary, "muted small"));
-      }
-      if (g.status === "draft") {
-        const row = el("div", null, "row");
-        row.style.gap = "8px";
-        const approve = el("button", "Approve this grouping", "small-btn");
-        approve.type = "button";
-        approve.addEventListener("click", () => groupAction("approve", g.id));
-        const discard = el("button", "Discard", "ghost small-btn");
-        discard.type = "button";
-        discard.addEventListener("click", () => groupAction("discard", g.id));
-        row.append(approve, discard);
-        box.append(row);
-      }
-      list.append(box);
-    }
+    for (const g of rows) list.append(groupingBox(g));
   }
 
-  async function groupAction(action, groupingId) {
+  // One grouping. A draft is editable by a platform engineer: rename a feature, or take a file out of it.
+  function groupingBox(g) {
+    const isEngineer = !!ws && ws.role === "platform_engineer";
+    const draft = g.status === "draft";
+    const editable = draft && isEngineer;
+    const reviewer = draft && canReviewGrouping();
+    const box = el("div", null, "biz-card gr-card");
+    box.style.borderTop = "1px solid var(--line, #ddd)";
+    box.style.paddingTop = "8px";
+    box.style.marginTop = "8px";
+    const when = g.created_at ? ` · ${new Date(g.created_at).toLocaleDateString()}` : "";
+    box.append(el("div", `${GROUP_STATUS[g.status] || g.status} · ${g.source_count || 0} approved files${when}`, "muted small"));
+    if (draft && g.review_note) {
+      const note = el("div", `Sent back: ${g.review_note}`, "gr-note small");
+      box.append(note);
+    }
+    // A working copy, so an engineer can change it before saving.
+    const groups = (Array.isArray(g.groups) ? g.groups : []).map((x) => ({ name: x.name, summary: x.summary || "", paths: [...(x.paths || [])] }));
+    const drawGroups = () => {
+      box.querySelectorAll(".gr-feature").forEach((n) => n.remove());
+      groups.forEach((item) => {
+        const wrap = el("div", null, "gr-feature");
+        if (editable) {
+          const name = el("input", null, "gr-name");
+          name.value = item.name;
+          name.maxLength = 80;
+          name.setAttribute("aria-label", "Feature name");
+          name.addEventListener("input", () => { item.name = name.value; });
+          wrap.append(name);
+        } else {
+          wrap.append(el("div", `${item.name} (${item.paths.length} file${item.paths.length === 1 ? "" : "s"})`, "small"));
+        }
+        if (item.summary) wrap.append(el("div", item.summary, "muted small"));
+        for (const path of item.paths) {
+          const chip = el("span", null, "gr-file");
+          chip.append(el("span", path));
+          if (editable && item.paths.length > 1) {
+            const off = el("button", "×", "gr-off");
+            off.type = "button";
+            off.setAttribute("aria-label", `Take ${path} out of ${item.name}`);
+            off.addEventListener("click", () => { item.paths = item.paths.filter((p) => p !== path); drawGroups(); });
+            chip.append(off);
+          }
+          wrap.append(chip);
+        }
+        box.insertBefore(wrap, actions);
+      });
+    };
+    const actions = el("div", null, "row");
+    actions.style.gap = "8px";
+    actions.style.marginTop = "10px";
+    actions.style.flexWrap = "wrap";
+    box.append(actions);
+    if (editable) {
+      const save = el("button", "Save changes", "small-btn");
+      save.type = "button";
+      save.addEventListener("click", () => groupAction("edit", g.id, { groups }));
+      const discard = el("button", "Discard", "ghost small-btn");
+      discard.type = "button";
+      discard.addEventListener("click", () => groupAction("discard", g.id));
+      actions.append(save, discard);
+    }
+    if (reviewer) {
+      const approve = el("button", "Approve this grouping", "small-btn");
+      approve.type = "button";
+      approve.addEventListener("click", () => groupAction("approve", g.id));
+      const back = el("button", "Send back with a note", "ghost small-btn");
+      back.type = "button";
+      const noteBox = el("div", null, "gr-send");
+      noteBox.hidden = true;
+      const text = el("textarea", null, "gr-text");
+      text.rows = 2;
+      text.maxLength = 1000;
+      text.placeholder = "What should change?";
+      text.setAttribute("aria-label", "What should change");
+      const sendNow = el("button", "Send it back", "small-btn");
+      sendNow.type = "button";
+      sendNow.addEventListener("click", () => groupAction("reject", g.id, { note: text.value }));
+      noteBox.append(text, sendNow);
+      back.addEventListener("click", () => { noteBox.hidden = !noteBox.hidden; });
+      actions.append(approve, back);
+      box.append(noteBox);
+    }
+    drawGroups();
+    return box;
+  }
+
+  async function groupAction(action, groupingId, extra = {}) {
     setMsg("groupMsg", "", false);
     try {
-      await api(`/api/analyses/${cur.id}/groupings/${action}`, { method: "POST", body: JSON.stringify({ grouping_id: groupingId }) });
+      await api(`/api/analyses/${cur.id}/groupings/${action}`, { method: "POST", body: JSON.stringify({ grouping_id: groupingId, ...extra }) });
       await loadGroupings();
     } catch (err) {
       setMsg("groupMsg", err.message, true);
