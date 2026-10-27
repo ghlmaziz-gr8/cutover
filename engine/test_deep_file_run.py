@@ -112,7 +112,7 @@ class FailureReason(unittest.TestCase):
         self.assertEqual(dr.explain(dr.ProviderError("HTTP 500")), "The model provider answered HTTP 500. Nothing was kept.")
 
     def test_any_other_error_is_generic(self):
-        self.assertEqual(dr.explain(dr.ProviderError("request failed")), "The language model did not answer. Nothing was kept.")
+        self.assertEqual(dr.explain(dr.ProviderError("something new")), "The language model did not answer. Nothing was kept.")
 
 
 class JsonReply(unittest.TestCase):
@@ -134,3 +134,17 @@ class JsonReply(unittest.TestCase):
     def test_the_deep_file_run_asks_for_json(self):
         src = Path(dr.__file__).read_text(encoding="utf-8")
         self.assertIn("json_reply=True", src)
+
+
+class StoppedAndCutOff(unittest.TestCase):
+    def test_a_cut_off_reply_says_the_model_ran_out_of_room(self):
+        self.assertIn("ran out of room", dr.explain(dr.ProviderError("reply cut off")))
+
+    def test_a_refused_key_says_so(self):
+        self.assertIn("refused the key (HTTP 401)", dr.explain(dr.ProviderStopped(401)))
+
+    def test_a_rate_limit_says_so(self):
+        self.assertIn("rate-limiting or out of quota (HTTP 429)", dr.explain(dr.ProviderStopped(429)))
+
+    def test_the_budget_leaves_room_for_reasoning_models(self):
+        self.assertGreaterEqual(dr.MAX_TOKENS, 8000)
