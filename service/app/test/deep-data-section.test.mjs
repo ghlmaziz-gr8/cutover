@@ -19,7 +19,9 @@ test("the database and run cards sit in a box after the three cards, before the 
 });
 
 test("the box shows for the data view, before any report, and when showing everything", () => {
-  assert.match(html, /\$\("deeperDataBox"\)\.hidden = ready && !!active && active\.key !== "data";/);
+  assert.match(html, /\$\("deeperDataBox"\)\.hidden = ready && !dataOpen;/);
+  assert.match(html, /\$\("dbCard"\)\.hidden = !dataOpen;/);
+  assert.match(html, /\$\("deepDataLabel"\)\.hidden = !dataOpen;/);
 });
 
 test("the run card uses the new wording", () => {
