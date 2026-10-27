@@ -7420,7 +7420,8 @@ a{color:#6d28d9;font-weight:600}`;
       sections.appendChild(el("p", "The deeper assessment is not in this analysis. Run a new analysis to create it.", "card muted"));
       return;
     }
-    arch.hidden = !!lens && !lens.arch;
+    // The architecture and the sections show only when their deep assessment is opened.
+    arch.hidden = !(lens && lens.arch);
     arch.appendChild(el("h3", "Architecture overview", null));
     arch.firstChild.style.marginTop = "0";
     const layers = (deeper.architecture && deeper.architecture.layers) || [];
@@ -7433,7 +7434,7 @@ a{color:#6d28d9;font-weight:600}`;
       arch.appendChild(row);
       if (i < layers.length - 1) arch.appendChild(el("div", "▼", "arch-arrow"));
     });
-    for (const section of (deeper.sections || []).filter((x) => !lens || lens.sections.includes(x.id))) {
+    for (const section of (deeper.sections || []).filter((x) => !!lens && lens.sections.includes(x.id))) {
       const card = el("div", null, "card deeper-sec");
       card.appendChild(el("h3", section.title, null));
       card.firstChild.style.marginTop = "0";
