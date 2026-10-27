@@ -445,6 +445,7 @@ label.check input[type="checkbox"]{flex:0 0 auto;width:18px;height:18px;margin:3
 .finding h4{margin:0 0 6px;font:700 16px var(--display)}
 .finding p{margin:4px 0}
 .finding.sev-high{border-color:var(--bad)}
+.finding,.finding .fvalue,.finding li{min-width:0;overflow-wrap:anywhere;word-break:break-word}
 details{margin:8px 0}
 details summary{cursor:pointer;color:var(--muted);font-weight:700}
 .mono{font-family:ui-monospace,Consolas,monospace;font-size:13px;word-break:break-all}
@@ -2005,7 +2006,7 @@ button:not(:disabled):active{transform:scale(.965)}
     </div>
   </section>
 
-  <p class="muted small" style="text-align:center;margin-top:40px">Cutover reads code only. Source code is not stored. Visible text and page layouts are kept for this review, and results are deleted after the retention period.</p>
+  <p class="muted small" style="text-align:center;margin-top:40px">Cutover reads code only. Source code is not stored. Visible text and page layouts are kept for this review, and results are deleted after the retention period. Clicks in the portal are recorded only as a position on the screen and the id of the button used, for workspace admins' heat maps. They are deleted after 30 days. Cutover does not record who clicked, or any text or values.</p>
 </main>
 
 <!-- Pinned to an exact version. Only the browser client is loaded here. -->
