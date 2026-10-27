@@ -8,7 +8,7 @@ import { fileURLToPath } from "node:url";
 const here = dirname(fileURLToPath(import.meta.url));
 const html = readFileSync(join(here, "..", "index.html"), "utf8");
 const guide = readFileSync(join(here, "..", "guide.js"), "utf8");
-const panel = html.slice(html.indexOf("  function deepPanel(li, f) {"), html.indexOf("  function businessPanel(li, f) {"));
+const panel = html.slice(html.indexOf("  function deepPanel(li, f, onClose"), html.indexOf("  function businessPanel(li, f) {"));
 
 test("the Deep view button sits beside the Business view button on a file", () => {
   assert.match(html, /button\("Business view", \(\) => businessPanel\(li, f\)\);\s*button\("Deep view", \(\) => deepPanel\(li, f\)\);/);
@@ -34,3 +34,10 @@ test("the change is listed in What's new, with the lower-confidence note", () =>
   assert.match(guide, /Deep view, on a file in the business assessment list/);
   assert.match(html, /Read by the model, so its confidence is lower than a rule-based result/);
 });
+
+test("the Deep view also opens from the business file detail, and closes back to its button", () => {
+  const detail = html.slice(html.indexOf("  function showBusinessFile(path) {"), html.indexOf("  // Next steps opens only when"));
+  assert.match(detail, /const open = el\("button", "Deep view", "small-btn"\);/);
+  assert.match(detail, /const panel = deepPanel\(box, f, \(\) => \{\s*panel\.remove\(\);\s*open\.hidden = false;/);
+});
+

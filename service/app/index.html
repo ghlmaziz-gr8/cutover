@@ -7361,7 +7361,18 @@ a{color:#6d28d9;font-weight:600}`;
       for (const sug of f.suggestions) ul.appendChild(el("li", `${sug.severity ? sug.severity + ": " : ""}${sug.text}`, "small muted"));
       box.appendChild(ul);
     }
-    box.appendChild(el("p", "The business need and the user stories for this file are the next step. They will be built from this file's code.", "small hint"));
+    // The deep view: the purpose, user stories, functions and what they call, opened inline on this file.
+    const open = el("button", "Deep view", "small-btn");
+    open.type = "button";
+    open.style.marginTop = "10px";
+    open.addEventListener("click", () => {
+      open.hidden = true;
+      const panel = deepPanel(box, f, () => {
+        panel.remove();
+        open.hidden = false;
+      });
+    });
+    box.appendChild(open);
   }
 
   // Next steps opens only when the deeper assessment is finished and one of its three views has been opened.
@@ -8650,7 +8661,7 @@ const REGION_OPTS = {
   // ---- Deep file view: one file's purpose, user stories, functions, what they call. Drafts are approved here. ----
   const DEEP_STATUS = { running: "Running", draft: "Draft to review", approved: "Approved", superseded: "Replaced by a later approval" };
 
-  function deepPanel(li, f) {
+  function deepPanel(li, f, onClose = () => renderFiles()) {
     const panel = el("div", null, "biz-panel");
     panel.style.marginTop = "10px";
     const msg = el("p", null, "muted small");
@@ -8664,7 +8675,7 @@ const REGION_OPTS = {
     refresh.type = "button";
     const close = el("button", "Close", "ghost small-btn");
     close.type = "button";
-    close.addEventListener("click", () => renderFiles());
+    close.addEventListener("click", onClose);
     async function load() {
       list.innerHTML = "";
       try {
@@ -8690,6 +8701,7 @@ const REGION_OPTS = {
     panel.append(top, msg, list);
     li.appendChild(panel);
     load();
+    return panel;
   }
 
   function deepCard(a, reload, msg) {
