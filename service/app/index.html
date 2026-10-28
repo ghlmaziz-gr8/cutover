@@ -10328,22 +10328,39 @@ const REGION_OPTS = {
     c.append(...deepJobHead({ ...a, status: a.review_status }));
     c.append(el("div", `${BIZ_STATUS[a.review_status] || a.review_status}${commit}`, "muted small"));
     const content = a.content || {};
-    // The halo, as on the deep result. An older draft, made before the run gave its functions, has none.
-    if (Array.isArray(content.functions)) {
-      const conf = Confidence.businessConfidenceOf(content);
+    // The same halo and checks as the deep result, from the rules, their line numbers and their worked examples.
+    // A draft made before the run gave its rules has none, so it shows no halo.
+    const hasRules = Array.isArray(content.rules) && content.rules.length > 0;
+    if (Array.isArray(content.rules)) {
+      const conf = Confidence.confidenceOf(content, content.dropped);
       const row = el("div", null, "dh-row");
       const band = { high: "High", medium: "Medium", low: "Low" }[conf.band];
       const text = el("div", null, "dh-text");
       text.append(el("b", `Confidence: ${band}`));
-      text.append(el("div", `Function names checked against the code: ${conf.parts.names}%`, conf.parts.names < 100 ? "attn small" : "muted small"));
-      text.append(el("div", `Functions with line numbers: ${conf.parts.lines}%`, "muted small"));
+      text.append(el("div", `Names checked against the code: ${conf.parts.names}%`, conf.parts.names < 100 ? "attn small" : "muted small"));
+      text.append(el("div", `Rules with line numbers: ${conf.parts.lines}%`, "muted small"));
+      text.append(el("div", `Rules with a worked example: ${conf.parts.examples}%`, "muted small"));
       row.append(deepHalo(conf.score, conf.band), text);
       c.append(row);
     }
-    if (a.content && a.content.dropped) c.append(el("div", `${a.content.dropped} ${a.content.dropped === 1 ? "name was" : "names were"} not found in the file and left out.`, "attn small"));
+    if (content.dropped) c.append(el("div", `${content.dropped} ${content.dropped === 1 ? "name was" : "names were"} not found in the file and left out.`, "attn small"));
     if (content.purpose) c.append(el("div", content.purpose, "small"));
+    if (hasRules) {
+      c.append(el("div", "Business rules", "small"));
+      for (const rule of content.rules) {
+        const box = el("div", null, "small");
+        box.style.marginTop = "6px";
+        box.append(el("b", `${rule.id} · ${rule.statement}`));
+        const where = [rule.function, rule.lines ? `lines ${rule.lines[0]}–${rule.lines[1]}` : ""].filter(Boolean).join(", ");
+        if (where) box.append(el("div", where, "muted small"));
+        for (const ex of (content.examples || []).filter((e) => e.rule === rule.id)) {
+          box.append(el("div", `Given ${ex.given} → expect ${ex.expect}`, "muted small"));
+        }
+        c.append(box);
+      }
+    }
     for (const [key, label] of BIZ_FIELDS) {
-      if (key === "purpose") continue;
+      if (key === "purpose" || (key === "business_rules" && hasRules)) continue;
       const value = content[key];
       if (value === undefined || value === null || value === "" || (Array.isArray(value) && !value.length)) continue;
       const box = el("div", null, "small");

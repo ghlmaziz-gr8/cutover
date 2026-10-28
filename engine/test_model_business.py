@@ -39,26 +39,45 @@ class CleanReply(unittest.TestCase):
         self.assertIsNone(mb.clean_reply(None))
 
 
-class Functions(unittest.TestCase):
-    def test_a_function_the_code_does_not_contain_is_dropped_and_counted(self):
-        reply = dict(GOOD, functions=[{"name": "cancel", "lines": [2, 3]}, {"name": "invented", "lines": [1, 1]}])
+RULE = {"id": "R1", "statement": "A cancelled visit frees its slot.", "function": "cancel", "lines": [2, 3]}
+
+
+class Rules(unittest.TestCase):
+    def test_a_rule_whose_function_the_code_does_not_contain_is_dropped_and_counted(self):
+        reply = dict(GOOD, rules=[RULE, {"id": "R2", "statement": "Made up.", "function": "invented", "lines": [1, 1]}])
         got = mb.clean_reply(json.dumps(reply), CODE)
-        self.assertEqual(got["functions"], [{"name": "cancel", "lines": [2, 3]}])
+        self.assertEqual([r["id"] for r in got["rules"]], ["R1"])
         self.assertEqual(got["dropped"], 1)
+        self.assertEqual(got["functions"], [{"name": "cancel", "lines": [2, 3]}])
 
     def test_line_numbers_are_kept_only_when_they_make_sense(self):
-        reply = dict(GOOD, functions=[{"name": "cancel", "lines": [3, 2]}, {"name": "Booking", "lines": "2-3"}])
+        reply = dict(GOOD, rules=[dict(RULE, lines=[3, 2])])
         got = mb.clean_reply(json.dumps(reply), CODE)
-        self.assertEqual(got["functions"], [{"name": "cancel", "lines": None}, {"name": "Booking", "lines": None}])
+        self.assertIsNone(got["rules"][0]["lines"])
         self.assertEqual(got["dropped"], 0)
 
-    def test_a_reply_without_functions_is_still_kept(self):
+    def test_examples_are_kept_only_for_a_kept_rule(self):
+        reply = dict(GOOD, rules=[RULE], examples=[
+            {"rule": "R1", "given": "A visit is cancelled.", "expect": "Its slot is free again."},
+            {"rule": "R9", "given": "Orphan.", "expect": "Dropped."},
+        ])
+        got = mb.clean_reply(json.dumps(reply), CODE)
+        self.assertEqual(got["examples"], [{"rule": "R1", "given": "A visit is cancelled.", "expect": "Its slot is free again."}])
+
+    def test_a_reply_without_rules_is_still_kept(self):
         got = mb.clean_reply(json.dumps(GOOD), CODE)
-        self.assertEqual(got["functions"], [])
+        self.assertEqual(got["rules"], [])
+        self.assertEqual(got["examples"], [])
         self.assertEqual(got["dropped"], 0)
 
 
 class AssessFile(unittest.TestCase):
+    def test_the_form_asks_for_rules_and_examples_with_names(self):
+        sent = []
+        mb.assess_file("src/Booking.py", CODE, lambda text: sent.append(text) or json.dumps(GOOD))
+        self.assertIn("rules", sent[0])
+        self.assertIn("examples", sent[0])
+
     def test_a_good_reply_is_ok_and_the_model_gets_the_file_and_the_form(self):
         sent = []
         got = mb.assess_file("src/Booking.py", CODE, lambda text: sent.append(text) or json.dumps(GOOD))
