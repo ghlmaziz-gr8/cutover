@@ -35,8 +35,9 @@ INSTRUCTIONS = (
     "risks (things a modernization must keep safe), "
     "questions (things this file alone does not show), "
     "rules (the rules the code enforces, each an object: id (R1, R2 and so on), statement (one plain sentence), "
-    "function (the function that enforces it, exactly as the code writes it), lines (the first and last line numbers of "
-    "that code in the file)). "
+    "condition (when it applies, in plain words), outcome (what then happens, in plain words), values (the fixed values "
+    "the rule uses, exactly as the code writes them, or an empty list), function (the function that enforces it, exactly "
+    "as the code writes it), lines (the first and last line numbers of that code in the file)). "
     "examples (up to two per rule, each an object: rule (the rule's id), given (a plain input or state, never a real value), "
     "expect (the plain result)). "
     "Never include code, file contents, names of people, or real values such as IDs, addresses or keys."
@@ -44,6 +45,7 @@ INSTRUCTIONS = (
 
 # The rules the statements rest on, and the worked examples for them. Each function name must occur in the file.
 MAX_RULES = 10
+MAX_VALUES = 12
 MAX_EXAMPLES = 20
 RULE_TEXT = 240
 EXAMPLE_TEXT = 160
@@ -89,7 +91,20 @@ def _rules(value, code: str) -> tuple[list[dict], int, list[dict]]:
             continue
         seen_ids.add(rule_id)
         lines = _lines(item.get("lines"))
-        kept.append({"id": rule_id, "statement": statement, "function": function, "lines": lines})
+        condition = str(item.get("condition") or "").strip()[:RULE_TEXT]
+        outcome = str(item.get("outcome") or "").strip()[:RULE_TEXT]
+        values = []
+        raw_values = item.get("values") if isinstance(item.get("values"), list) else []
+        for value in raw_values[:MAX_VALUES]:
+            text = str(value).strip()[:FUNCTION_NAME]
+            if not text:
+                continue
+            if appears_in(text, code):
+                values.append(text)
+            else:
+                dropped += 1
+        kept.append({"id": rule_id, "statement": statement, "condition": condition, "outcome": outcome,
+                     "values": values, "function": function, "lines": lines})
         if function not in seen_functions:
             seen_functions.add(function)
             functions.append({"name": function, "lines": lines})

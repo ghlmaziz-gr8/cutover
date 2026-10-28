@@ -52,7 +52,8 @@ test("the score ends in one of three bands", () => {
 });
 
 test("the deep card shows the score with a halo that animates, and respects reduced motion", () => {
-  assert.match(html, /Confidence\.confidenceOf\(content, a\.dropped\)/);
+  assert.match(html, /Confidence\.confidenceOf\(content, dropped\)/);
+  assert.match(html, /appendHalo\(c, content, a\.dropped\);/);
   assert.match(html, /function deepHalo\(/);
   assert.match(html, /\.dh-arc\s*\{[^}]*transition:\s*stroke-dashoffset/);
   assert.match(html, /@keyframes dhPulse/);

@@ -10124,6 +10124,39 @@ const REGION_OPTS = {
     return note;
   }
 
+  // The halo and the checks, and the rules with their worked examples: the same for the deep card and the business card.
+  function appendHalo(c, content, dropped) {
+    if (!(content.file_purpose || content.functions || content.rules)) return;
+    const conf = Confidence.confidenceOf(content, dropped);
+    const row = el("div", null, "dh-row");
+    const band = { high: "High", medium: "Medium", low: "Low" }[conf.band];
+    const text = el("div", null, "dh-text");
+    text.append(el("b", `Confidence: ${band}`));
+    text.append(el("div", `Names checked against the code: ${conf.parts.names}%`, conf.parts.names < 100 ? "attn small" : "muted small"));
+    text.append(el("div", `Rules with line numbers: ${conf.parts.lines}%`, "muted small"));
+    text.append(el("div", `Rules with a worked example: ${conf.parts.examples}%`, "muted small"));
+    row.append(deepHalo(conf.score, conf.band), text);
+    c.append(row);
+  }
+  function appendRules(c, content) {
+    const rules = content.rules || [];
+    if (!rules.length) return;
+    c.append(el("div", "Business rules", "small"));
+    for (const rule of rules) {
+      const box = el("div", null, "small");
+      box.style.marginTop = "6px";
+      box.append(el("b", `${rule.id} · ${rule.statement}`));
+      if (rule.condition) box.append(el("div", `When: ${rule.condition}`, "muted small"));
+      if (rule.outcome) box.append(el("div", `Then: ${rule.outcome}`, "muted small"));
+      if (rule.values && rule.values.length) box.append(el("div", `Values: ${rule.values.join(", ")}`, "muted small"));
+      const where = [rule.function, rule.lines ? `lines ${rule.lines[0]}–${rule.lines[1]}` : ""].filter(Boolean).join(", ");
+      if (where) box.append(el("div", where, "muted small"));
+      for (const ex of (content.examples || []).filter((e) => e.rule === rule.id)) {
+        box.append(el("div", `Given ${ex.given} → expect ${ex.expect}`, "muted small"));
+      }
+      c.append(box);
+    }
+  }
   function deepCard(a, reload, msg, path) {
     const c = el("div", null, "biz-card");
     c.style.borderTop = "1px solid var(--line, #ddd)";
@@ -10141,18 +10174,7 @@ const REGION_OPTS = {
       return c;
     }
     const content = a.content || {};
-    if (content.file_purpose || content.functions || content.rules) {
-      const conf = Confidence.confidenceOf(content, a.dropped);
-      const row = el("div", null, "dh-row");
-      const band = { high: "High", medium: "Medium", low: "Low" }[conf.band];
-      const text = el("div", null, "dh-text");
-      text.append(el("b", `Confidence: ${band}`));
-      text.append(el("div", `Names checked against the code: ${conf.parts.names}%`, conf.parts.names < 100 ? "attn small" : "muted small"));
-      text.append(el("div", `Rules with line numbers: ${conf.parts.lines}%`, "muted small"));
-      text.append(el("div", `Rules with a worked example: ${conf.parts.examples}%`, "muted small"));
-      row.append(deepHalo(conf.score, conf.band), text);
-      c.append(row);
-    }
+    appendHalo(c, content, a.dropped);
     if (content.file_purpose) c.append(el("div", content.file_purpose, "small"));
     for (const story of content.file_user_stories || []) c.append(el("div", `• ${story}`, "small"));
     for (const fn of content.functions || []) {
@@ -10164,25 +10186,7 @@ const REGION_OPTS = {
       if ((fn.calls || []).length) box.append(el("div", `Calls: ${fn.calls.join(", ")}`, "muted small"));
       c.append(box);
     }
-    const rules = content.rules || [];
-    if (rules.length) {
-      // Each business rule with its values, the lines it comes from, and worked examples for it.
-      c.append(el("div", "Business rules", "small"));
-      for (const rule of rules) {
-        const box = el("div", null, "small");
-        box.style.marginTop = "6px";
-        box.append(el("b", `${rule.id} · ${rule.statement}`));
-        if (rule.condition) box.append(el("div", `When: ${rule.condition}`, "muted small"));
-        if (rule.outcome) box.append(el("div", `Then: ${rule.outcome}`, "muted small"));
-        if (rule.values && rule.values.length) box.append(el("div", `Values: ${rule.values.join(", ")}`, "muted small"));
-        const where = [rule.function, rule.lines ? `lines ${rule.lines[0]}–${rule.lines[1]}` : ""].filter(Boolean).join(", ");
-        if (where) box.append(el("div", where, "muted small"));
-        for (const ex of (content.examples || []).filter((e) => e.rule === rule.id)) {
-          box.append(el("div", `Given ${ex.given} → expect ${ex.expect}`, "muted small"));
-        }
-        c.append(box);
-      }
-    }
+    appendRules(c, content);
     if ((content.data_access || []).length) {
       c.append(el("div", "Data and interfaces", "small"));
       for (const row of content.data_access) {
@@ -10333,39 +10337,12 @@ const REGION_OPTS = {
     c.append(...deepJobHead({ ...a, status: a.review_status }));
     c.append(el("div", `${BIZ_STATUS[a.review_status] || a.review_status}${commit}`, "muted small"));
     const content = a.content || {};
-    // The same halo and checks as the deep result, from the rules, their line numbers and their worked examples.
-    // A draft made before the run gave its rules has none, so it shows no halo.
-    const hasRules = Array.isArray(content.rules) && content.rules.length > 0;
-    if (Array.isArray(content.rules)) {
-      const conf = Confidence.confidenceOf(content, content.dropped);
-      const row = el("div", null, "dh-row");
-      const band = { high: "High", medium: "Medium", low: "Low" }[conf.band];
-      const text = el("div", null, "dh-text");
-      text.append(el("b", `Confidence: ${band}`));
-      text.append(el("div", `Names checked against the code: ${conf.parts.names}%`, conf.parts.names < 100 ? "attn small" : "muted small"));
-      text.append(el("div", `Rules with line numbers: ${conf.parts.lines}%`, "muted small"));
-      text.append(el("div", `Rules with a worked example: ${conf.parts.examples}%`, "muted small"));
-      row.append(deepHalo(conf.score, conf.band), text);
-      c.append(row);
-    }
+    appendHalo(c, content, content.dropped);
     if (content.dropped) c.append(el("div", `${content.dropped} ${content.dropped === 1 ? "name was" : "names were"} not found in the file and left out.`, "attn small"));
     if (content.purpose) c.append(el("div", content.purpose, "small"));
-    if (hasRules) {
-      c.append(el("div", "Business rules", "small"));
-      for (const rule of content.rules) {
-        const box = el("div", null, "small");
-        box.style.marginTop = "6px";
-        box.append(el("b", `${rule.id} · ${rule.statement}`));
-        const where = [rule.function, rule.lines ? `lines ${rule.lines[0]}–${rule.lines[1]}` : ""].filter(Boolean).join(", ");
-        if (where) box.append(el("div", where, "muted small"));
-        for (const ex of (content.examples || []).filter((e) => e.rule === rule.id)) {
-          box.append(el("div", `Given ${ex.given} → expect ${ex.expect}`, "muted small"));
-        }
-        c.append(box);
-      }
-    }
+    appendRules(c, content);
     for (const [key, label] of BIZ_FIELDS) {
-      if (key === "purpose" || (key === "business_rules" && hasRules)) continue;
+      if (key === "purpose" || (key === "business_rules" && Array.isArray(content.rules) && content.rules.length)) continue;
       const value = content[key];
       if (value === undefined || value === null || value === "" || (Array.isArray(value) && !value.length)) continue;
       const box = el("div", null, "small");
