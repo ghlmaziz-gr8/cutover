@@ -1399,6 +1399,11 @@ button:not(:disabled):active{transform:scale(.965)}
     .rel-title{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
     button.ghost.small-btn.is-active{background:#7c3aed;border-color:#7c3aed;color:#fff}
     li.is-biz-open{box-shadow:inset 4px 0 0 #7c3aed}
+    .biz-compare{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:16px;align-items:start}
+    .biz-compare>*{min-width:0}
+    .biz-head{font:600 13px var(--body);margin:8px 0 6px}
+    .biz-panel.is-enlarged{position:fixed;inset:12px;z-index:60;overflow:auto;background:var(--card);padding:16px;border-radius:14px;box-shadow:0 20px 60px rgba(0,0,0,.35);margin:0}
+    @media (max-width:820px){.biz-compare{grid-template-columns:1fr}}
     .biz-code{margin:8px 0 12px}
     .biz-code>summary{cursor:pointer;font:600 13px var(--body);margin-bottom:6px}
     .rel-state{font:600 11px var(--body);padding:2px 8px;border-radius:99px;border:1px solid currentColor;white-space:nowrap;background:color-mix(in srgb,currentColor 10%,transparent)}
@@ -10573,7 +10578,17 @@ const REGION_OPTS = {
     });
     refresh.addEventListener("click", load);
     if (!canActOnResults()) start.hidden = true;
-    top.append(start, refresh, close);
+    // Enlarge extends the panel to the window, so the code view and the business view can be read at full size.
+    const enlarge = el("button", "Enlarge", "ghost small-btn");
+    enlarge.type = "button";
+    enlarge.setAttribute("aria-pressed", "false");
+    enlarge.addEventListener("click", () => {
+      const on = !panel.classList.contains("is-enlarged");
+      panel.classList.toggle("is-enlarged", on);
+      enlarge.textContent = on ? "Shrink" : "Enlarge";
+      enlarge.setAttribute("aria-pressed", on ? "true" : "false");
+    });
+    top.append(start, refresh, enlarge, close);
     if (!canActOnResults()) panel.append(el("p", RESULTS_READ_ONLY_NOTE, "muted small"));
     const { modelRow, loadModels } = analysisModelRow(msg);
     // The code view: the file's deep assessment, the same card as on the Deeper screen, so the reader sees what the code does.
@@ -10598,7 +10613,12 @@ const REGION_OPTS = {
         codeBox.append(el("p", err.message, "muted small"));
       }
     }
-    panel.append(top, modelRow, msg, codeBox, list);
+    // Side by side: the code view on the left, the business assessment on the right. They stack on a narrow screen.
+    const compare = el("div", null, "biz-compare");
+    const side = el("div", null, "biz-side");
+    side.append(el("div", "Business assessment", "biz-head"), list);
+    compare.append(codeBox, side);
+    panel.append(top, modelRow, msg, compare);
     li.appendChild(panel);
     loadModels();
     load();
