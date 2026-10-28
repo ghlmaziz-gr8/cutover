@@ -2232,6 +2232,7 @@ button:not(:disabled):active{transform:scale(.965)}
 <script src="feature-map.js"></script>
 <script src="treemap.js"></script>
 <script src="module-spec.js"></script>
+<script src="package-builder.js"></script>
 <script src="radial.js"></script>
 <script src="architecture.js"></script>
 <script src="plan.js"></script>
@@ -8974,6 +8975,35 @@ const REGION_OPTS = {
     return button;
   }
 
+  // The agent package for every approved feature: a manifest, a shared brief and one module file per feature, as a zip.
+  function packageButton(data) {
+    const button = el("button", "Download package", "ghost small-btn");
+    button.id = "packageBtn";
+    button.type = "button";
+    button.addEventListener("click", () => {
+      const pkg = window.PackageBuilder.build(data, {
+        app: cur.app_name || cur.repo,
+        approach: cur.modern_template ? TEMPLATE_NAME[cur.modern_template] || cur.modern_template : null,
+        scope: cur.scope,
+        targetLanguage: cur.target_language ? (((cur.target_options || []).find((o) => o.id === cur.target_language) || {}).label || cur.target_language) : null,
+        targetChosenBy: cur.target_language_set_by_email || null,
+        confidenceOf: window.Confidence.confidenceOf,
+        ModuleSpec: window.ModuleSpec,
+      });
+      if (!pkg) return;
+      const bytes = window.PackageBuilder.zip(pkg.files);
+      const url = URL.createObjectURL(new Blob([bytes], { type: "application/zip" }));
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = pkg.file;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+    });
+    return button;
+  }
+
   function renderFeatureView(data) {
     const card = $("featureCard");
     const list = $("featureList");
@@ -8986,6 +9016,9 @@ const REGION_OPTS = {
     card.hidden = false;
     const when = data.grouping.approved_at ? ` on ${new Date(data.grouping.approved_at).toLocaleDateString()}` : "";
     $("featureMeta").textContent = `Approved by ${data.grouping.approved_by_email || "the application owner"}${when}.`;
+    const oldPackage = $("packageBtn");
+    if (oldPackage) oldPackage.remove();
+    $("featureMeta").after(packageButton(data));
     data.features.forEach((f, index) => {
       const wrap = el("section", null, "fv-feature");
       wrap.style.setProperty("--d", `${index * 90}ms`);
