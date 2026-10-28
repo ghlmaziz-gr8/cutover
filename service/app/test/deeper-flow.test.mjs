@@ -70,3 +70,9 @@ test("the files are loaded once per analysis, through the existing files list", 
   assert.ok(html.includes("if (businessFiles.analysis !== cur.id) {"));
   assert.ok(html.includes("businessFiles = { analysis: cur.id, rows: await loadFiles() };"));
 });
+
+test("What next opens from the Review screen, so the scope is chosen before the deeper assessment", () => {
+  const review = html.slice(html.indexOf('<section id="s-review"'), html.indexOf('<section id="s-deeper"') > 0 ? html.indexOf('<section id="s-deeper"') : html.length);
+  assert.ok(review.includes('id="toWhatNext"') && review.includes('id="toWhatNextTop"'));
+  assert.ok(html.includes('$("toWhatNext").addEventListener("click", () => showNext());'));
+});
