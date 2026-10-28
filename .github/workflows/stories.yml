@@ -1,0 +1,60 @@
+# Drafts user stories for each feature of a draft grouping, from the approved rules of its files, with the workspace's own model. Posts them to the Cutover API.
+# Started by the API through workflow_dispatch. No repository is cloned and no source code is read: the summaries are read from the API.
+# Nothing from the run is executed, and nothing is merged here.
+
+name: stories
+
+on:
+  workflow_dispatch:
+    inputs:
+      analysis_id:
+        description: "Analysis UUID created by the API"
+        required: true
+        type: string
+      grouping_id:
+        description: "Draft grouping UUID created by the API"
+        required: true
+        type: string
+      model_token:
+        description: "One-time token for the workspace's own model key (set by the API)"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  stories:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      ANALYSIS_ID: ${{ inputs.analysis_id }}
+      GROUPING_ID: ${{ inputs.grouping_id }}
+    steps:
+      # The token is one-time and lasts ten minutes. Hide it from the log before any other step runs.
+      - name: Hide the model token
+        env:
+          MODEL_TOKEN: ${{ inputs.model_token }}
+        run: |
+          if [ -n "$MODEL_TOKEN" ]; then echo "::add-mask::$MODEL_TOKEN"; fi
+
+      - name: Check out the Cutover engine
+        uses: actions/checkout@v4
+        with:
+          path: cutover
+
+      - name: Validate inputs
+        run: |
+          set -euo pipefail
+          [[ "$ANALYSIS_ID" =~ ^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$ ]] || { echo "Bad analysis id"; exit 1; }
+          [[ "$GROUPING_ID" =~ ^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$ ]] || { echo "Bad grouping id"; exit 1; }
+
+      - name: Draft the stories
+        env:
+          MODEL_TOKEN: ${{ inputs.model_token }}
+          RUNNER_SECRET: ${{ secrets.RUNNER_SECRET }}
+          CALLBACK_URL: ${{ secrets.CUTOVER_API_URL }}
+        run: |
+          set -euo pipefail
+          python3 cutover/engine/stories_run.py \
+            --callback "$CALLBACK_URL" --analysis-id "$ANALYSIS_ID" --grouping-id "$GROUPING_ID"

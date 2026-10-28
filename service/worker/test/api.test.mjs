@@ -177,7 +177,8 @@ function matches(row, key, value) {
   if (value.startsWith("gte.")) return String(row[key]) >= decodeURIComponent(value.slice(4));
   if (value.startsWith("gt.")) return String(row[key]) > value.slice(3);
   if (value.startsWith("eq.")) return String(row[key]) === decodeURIComponent(value.slice(3));
-  if (value.startsWith("in.(")) return value.slice(4, -1).split(",").includes(String(row[key]));
+  // PostgREST accepts quoted values in a list, for values with commas or spaces; the quotes are not part of the value.
+  if (value.startsWith("in.(")) return value.slice(4, -1).split(",").map((v) => v.replace(/^"|"$/g, "")).includes(String(row[key]));
   if (value.startsWith("lt.")) return String(row[key]) < value.slice(3);
   if (value === "is.null") return row[key] === null || row[key] === undefined;
   throw new Error(`Unsupported filter ${value}`);
@@ -299,7 +300,7 @@ function handleGithub(url, init) {
     return j({ id: 99 });
   }
   if (path.endsWith("/app/installations/99/access_tokens")) return j({ token: "ghs_test" }, 201);
-  if (path.endsWith("/actions/workflows/analyze.yml/dispatches") || path.endsWith("/actions/workflows/convert.yml/dispatches") || path.endsWith("/actions/workflows/business.yml/dispatches") || path.endsWith("/actions/workflows/grouping.yml/dispatches") || path.endsWith("/actions/workflows/deep-file.yml/dispatches")) {
+  if (path.endsWith("/actions/workflows/analyze.yml/dispatches") || path.endsWith("/actions/workflows/convert.yml/dispatches") || path.endsWith("/actions/workflows/business.yml/dispatches") || path.endsWith("/actions/workflows/grouping.yml/dispatches") || path.endsWith("/actions/workflows/deep-file.yml/dispatches") || path.endsWith("/actions/workflows/stories.yml/dispatches")) {
     github.dispatches.push(JSON.parse(init.body));
     return github.dispatchOk ? new Response(null, { status: 204 }) : j({ message: "failed" }, 500);
   }
@@ -3219,4 +3220,83 @@ test("the application owner sends a grouping back with a note, and the engineer 
   row.status = "approved";
   const refused = await call(`/api/analyses/${AN_ACME}/groupings/edit`, { as: "eng_a", method: "POST", body: { grouping_id: uid(1090), groups: [{ name: "X", summary: "", paths: ["src/A.java"] }] } });
   assert.equal(refused.status, 409, "an approved grouping cannot be edited");
+});
+
+// ---- Feature user stories ----
+
+function storyDeepRow(idN, path, content, status = "approved") {
+  return { id: uid(idN), analysis_id: AN_ACME, file_path: path, status, content, confidence: "model_read", dropped: 0, commit_sha: "abc", created_by_email: "eng@acme.test", created_at: NOW, finished_at: NOW, reviewed_by_email: null, reviewed_at: null };
+}
+const ORDER_RULES = { file_purpose: "Takes orders.", rules: [{ id: "R1", statement: "An order needs a customer.", condition: "", outcome: "", lines: [4, 9] }] };
+
+test("the stories run reads the features of a draft grouping and only the approved rules of their files", async () => {
+  readyForBusiness();
+  state.feature_groupings.push(groupingRow(1100, "draft", [{ name: "Ordering", summary: "x", paths: ["src/Orders.asp", "src/Unapproved.asp"] }]));
+  state.file_deep_assessments.push(storyDeepRow(1101, "src/Orders.asp", ORDER_RULES), storyDeepRow(1102, "src/Unapproved.asp", ORDER_RULES, "draft"));
+  const res = await call(`/api/runner/${AN_ACME}/story-sources?grouping_id=${uid(1100)}`, { method: "GET", secret: env.RUNNER_SECRET });
+  assert.equal(res.status, 200);
+  const [feature] = res.body.features;
+  assert.equal(feature.name, "Ordering");
+  assert.deepEqual(feature.files.map((f) => f.path), ["src/Orders.asp"]);
+  assert.equal(feature.missing_files, 1);
+  assert.equal(feature.files[0].content.rules[0].id, "R1");
+});
+
+test("the runner saves stories only when each cited rule exists, and takes the lines from the stored rule", async () => {
+  readyForBusiness();
+  state.feature_groupings.push(groupingRow(1110, "draft", [{ name: "Ordering", summary: "x", paths: ["src/Orders.asp"] }]));
+  state.file_deep_assessments.push(storyDeepRow(1111, "src/Orders.asp", ORDER_RULES));
+  const made = (rules) => ({ grouping_id: uid(1110), status: "ok", features: [{ index: 0, name: "Ordering", stories: [
+    { story: "As a clerk I can place an order so that it is checked.", rules } ] }] });
+  const invented = await call(`/api/runner/${AN_ACME}/stories`, { method: "POST", secret: env.RUNNER_SECRET, body: made([{ file: "src/Orders.asp", id: "R9" }]) });
+  assert.equal(invented.status, 400);
+  const notInFeature = await call(`/api/runner/${AN_ACME}/stories`, { method: "POST", secret: env.RUNNER_SECRET, body: made([{ file: "src/Other.asp", id: "R1" }]) });
+  assert.equal(notInFeature.status, 400);
+  const saved = await call(`/api/runner/${AN_ACME}/stories`, { method: "POST", secret: env.RUNNER_SECRET, body: made([{ file: "src/Orders.asp", id: "R1", lines: [1, 1] }]) });
+  assert.equal(saved.status, 201);
+  const row = state.feature_groupings.find((g) => g.id === uid(1110));
+  assert.equal(row.groups[0].stories.length, 1);
+  assert.equal(row.groups[0].stories[0].id, "S1");
+  assert.deepEqual(row.groups[0].stories[0].rules[0].lines, [4, 9], "the lines come from the stored rule, not the runner");
+  assert.ok(state.assessment_log.some((e) => e.action === "stories_finish"));
+});
+
+test("stories are refused when the feature was renamed since the draft started, and a failed run is logged", async () => {
+  readyForBusiness();
+  state.feature_groupings.push(groupingRow(1120, "draft", [{ name: "Ordering", summary: "x", paths: ["src/Orders.asp"] }]));
+  state.file_deep_assessments.push(storyDeepRow(1121, "src/Orders.asp", ORDER_RULES));
+  const renamed = await call(`/api/runner/${AN_ACME}/stories`, { method: "POST", secret: env.RUNNER_SECRET, body: { grouping_id: uid(1120), status: "ok", features: [{ index: 0, name: "Checkout", stories: [] }] } });
+  assert.equal(renamed.status, 409);
+  const failed = await call(`/api/runner/${AN_ACME}/stories`, { method: "POST", secret: env.RUNNER_SECRET, body: { grouping_id: uid(1120), status: "failed", reason: "The model did not answer." } });
+  assert.equal(failed.status, 200);
+  assert.equal(failed.body.saved, false);
+  assert.ok(state.assessment_log.some((e) => e.action === "stories_fail"));
+});
+
+test("only an engineer starts the stories, on a draft grouping, and the workflow is dispatched", async () => {
+  readyForBusiness();
+  state.feature_groupings.push(groupingRow(1130, "draft"), groupingRow(1131, "approved"));
+  const aud = await call(`/api/analyses/${AN_ACME}/groupings/stories`, { as: "aud_a", method: "POST", body: { grouping_id: uid(1130) } });
+  assert.equal(aud.status, 403);
+  const approved = await call(`/api/analyses/${AN_ACME}/groupings/stories`, { as: "eng_a", method: "POST", body: { grouping_id: uid(1131) } });
+  assert.equal(approved.status, 409);
+  const before = github.dispatches.length;
+  const started = await call(`/api/analyses/${AN_ACME}/groupings/stories`, { as: "eng_a", method: "POST", body: { grouping_id: uid(1130) } });
+  assert.equal(started.status, 202);
+  assert.equal(github.dispatches.length, before + 1);
+  assert.ok(state.assessment_log.some((e) => e.action === "stories_start"));
+});
+
+test("editing a draft keeps a feature's stories while their files stay in it, and drops a story whose file was taken out", async () => {
+  readyForBusiness();
+  const stories = [
+    { id: "S1", story: "As a clerk I can place an order so that it is checked.", rules: [{ file: "src/A.java", id: "R1", lines: [1, 2] }], status: "draft" },
+    { id: "S2", story: "As a clerk I can cancel an order so that it is freed.", rules: [{ file: "src/B.java", id: "R1", lines: [1, 2] }], status: "draft" },
+  ];
+  state.feature_groupings.push(groupingRow(1140, "draft", [{ name: "Ordering", summary: "x", paths: ["src/A.java", "src/B.java"], stories }]));
+  state.file_business_assessments.push(businessRow(1141, "approved", "src/A.java"), businessRow(1142, "approved", "src/B.java"));
+  const res = await call(`/api/analyses/${AN_ACME}/groupings/edit`, { as: "eng_a", method: "POST", body: { grouping_id: uid(1140), groups: [{ name: "Ordering", summary: "x", paths: ["src/A.java"] }] } });
+  assert.equal(res.status, 200);
+  const row = state.feature_groupings.find((g) => g.id === uid(1140));
+  assert.deepEqual(row.groups[0].stories.map((s) => s.id), ["S1"]);
 });

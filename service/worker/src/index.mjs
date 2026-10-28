@@ -3810,23 +3810,30 @@ async function editGrouping(request, env, id) {
   if (parsed.error) return json({ error: parsed.error }, 400);
   const groupingId = String(parsed.value?.grouping_id || "");
   if (!UUID_PATTERN.test(groupingId)) return json({ error: "Choose a grouping." }, 400);
-  const found = await serviceRest(env, `feature_groupings?id=eq.${groupingId}&analysis_id=eq.${id}&select=id,status`);
+  const found = await serviceRest(env, `feature_groupings?id=eq.${groupingId}&analysis_id=eq.${id}&select=id,status,groups`);
   if (!found.ok) return json({ error: "Could not load the grouping." }, 502);
   const [item] = await found.json();
   if (!item) return json({ error: "Not found." }, 404);
   if (item.status !== "draft") return json({ error: "Only a draft grouping can be changed." }, 409);
+  const earlier = Array.isArray(item.groups) ? item.groups : [];
   const approved = await approvedBusinessPaths(env, id);
   if (approved.failed) return json({ error: "Could not check the approved results. Try again in a minute." }, 502);
   const checked = checkGroups(parsed.value?.groups, new Set(approved.paths));
   if (checked.error) return json({ error: checked.error }, 400);
   const serialised = JSON.stringify(checked.groups);
   if (serialised.length > 40000) return json({ error: "The grouping is too large to save." }, 400);
+  // A feature keeps its stories while every file they cite is still in it; a story that cites a file taken out is dropped.
+  const kept = checked.groups.map((g, index) => {
+    const old = earlier[index];
+    const stories = old && Array.isArray(old.stories) ? old.stories.filter((st) => (st.rules || []).every((r) => g.paths.includes(r.file))) : [];
+    return stories.length ? { ...g, stories } : g;
+  });
   const refused = await logFirst(env, { workspace_id: access.row.workspace_id, user: access.user, action: "grouping_edit", analysis_id: id, repo: access.row.repo, detail: `${checked.groups.length} features` });
   if (refused) return refused;
   const res = await serviceRest(env, `feature_groupings?id=eq.${groupingId}&status=eq.draft`, {
     method: "PATCH",
     headers: { prefer: "return=minimal" },
-    body: JSON.stringify({ groups: checked.groups, edited_by_email: normalizeEmail(access.user.email), edited_at: new Date().toISOString() }),
+    body: JSON.stringify({ groups: kept, edited_by_email: normalizeEmail(access.user.email), edited_at: new Date().toISOString() }),
   });
   if (!res.ok) return json({ error: "Could not save the changes." }, 502);
   return json({ saved: true });
@@ -3850,6 +3857,177 @@ async function discardGrouping(request, env, id) {
   const res = await serviceRest(env, `feature_groupings?id=eq.${groupingId}&status=eq.draft`, { method: "DELETE", headers: { prefer: "return=minimal" } });
   if (!res.ok) return json({ error: "Could not discard the grouping." }, 502);
   return json({ discarded: true });
+}
+
+// ---- Feature user stories: drafted per feature from the approved rules of its files. The engineer checks them, and
+// they are final only when the application owner approves the grouping. Every rule a story cites must exist. ----
+const STORY_MAX = 12;
+const STORY_TEXT_MAX = 300;
+const STORY_CITES_MAX = 20;
+const STORY_SHAPE = /^As an? .+ I can .+ so that .+/i;
+
+// The approved rules of the given files, with what the story drafting reads. Only approved assessments count.
+async function approvedRulesFor(env, id, paths) {
+  const found = new Map();
+  const unique = [...new Set(paths)];
+  for (let i = 0; i < unique.length; i += 50) {
+    const batch = unique.slice(i, i + 50).map((p) => `"${p.replace(/"/g, "")}"`).join(",");
+    const res = await serviceRest(env, `file_deep_assessments?analysis_id=eq.${id}&status=eq.approved&file_path=in.(${encodeURIComponent(batch)})&select=file_path,content&limit=10000`);
+    if (!res.ok) return { failed: true };
+    for (const r of await res.json()) {
+      const content = r.content || {};
+      const rules = (Array.isArray(content.rules) ? content.rules : []).slice(0, 60).filter((x) => x && typeof x.id === "string").map((x) => ({
+        id: x.id, statement: x.statement || "", condition: x.condition || "", outcome: x.outcome || "",
+        lines: Array.isArray(x.lines) && x.lines.length === 2 ? x.lines : null,
+      }));
+      found.set(r.file_path, {
+        file_purpose: content.file_purpose || "",
+        file_user_stories: (Array.isArray(content.file_user_stories) ? content.file_user_stories : []).slice(0, 5),
+        rules,
+      });
+    }
+  }
+  return { found };
+}
+
+// The story checks. A story must be in the story form, cite at least one rule, and every cited rule must exist in a
+// file of its feature. The line numbers come from the stored rule, never from the runner.
+function checkStories(value, featurePaths, approved) {
+  if (!Array.isArray(value) || value.length > STORY_MAX) return { error: `A feature holds up to ${STORY_MAX} stories.` };
+  const allowedPaths = new Set(featurePaths);
+  const stories = [];
+  for (const item of value) {
+    const text = item && typeof item.story === "string" ? item.story.trim() : "";
+    if (!text || text.length > STORY_TEXT_MAX || !STORY_SHAPE.test(text)) return { error: "Each story must read: As a <role> I can <action> so that <result>." };
+    if (!Array.isArray(item.rules) || item.rules.length < 1 || item.rules.length > STORY_CITES_MAX) return { error: "Each story must cite 1 to 20 rules." };
+    const cites = [];
+    for (const cite of item.rules) {
+      const file = cite && typeof cite.file === "string" ? cite.file : "";
+      const ruleId = cite && typeof cite.id === "string" ? cite.id : "";
+      if (!allowedPaths.has(file)) return { error: "A story cites a file that is not in its feature." };
+      const rule = (approved.get(file) || { rules: [] }).rules.find((r) => r.id === ruleId);
+      if (!rule) return { error: "A story cites a rule that does not exist in the approved assessment." };
+      if (!cites.some((c) => c.file === file && c.id === ruleId)) cites.push({ file, id: ruleId, lines: rule.lines });
+    }
+    stories.push({ id: `S${stories.length + 1}`, story: text, rules: cites, status: "draft" });
+  }
+  return { stories };
+}
+
+async function startStories(request, env, id) {
+  const access = await analysisAccess(env, request, id);
+  if (access.response) return access.response;
+  if (!canStart(access.member)) return json({ error: "Only platform engineers can draft the user stories." }, 403);
+  const parsed = await readJson(request);
+  if (parsed.error) return json({ error: parsed.error }, 400);
+  const groupingId = String(parsed.value?.grouping_id || "");
+  if (!UUID_PATTERN.test(groupingId)) return json({ error: "Choose a grouping." }, 400);
+  const row = access.row;
+  if (row.status !== "complete") return json({ error: "Finish the assessment first." }, 409);
+  if (!row.model_key_id) return json({ error: "Choose a language model for this analysis first." }, 409);
+  const found = await serviceRest(env, `feature_groupings?id=eq.${groupingId}&analysis_id=eq.${id}&select=id,status,groups`);
+  if (!found.ok) return json({ error: "Could not load the grouping." }, 502);
+  const [grouping] = await found.json();
+  if (!grouping) return json({ error: "Not found." }, 404);
+  if (grouping.status !== "draft") return json({ error: "The stories are drafted on a draft grouping. Send it back or edit it first." }, 409);
+  const chosen = await chooseAnalysisModel(env, row.workspace_id, row.model_key_id);
+  if (chosen.response) return chosen.response;
+  const busyResp = await refuseIfBusy(env, access.user, row.workspace_id, row.repo);
+  if (busyResp) return busyResp;
+  const modelToken = (await issueModelToken(env, id, row.model_key_id)) || "";
+  if (!modelToken) return json({ error: "Could not prepare the model. Try again in a minute." }, 502);
+  const refusedStart = await logFirst(env, { workspace_id: row.workspace_id, user: access.user, action: "stories_start", analysis_id: id, repo: row.repo, detail: `${(grouping.groups || []).length} features` });
+  if (refusedStart) return refusedStart;
+  const dispatch = await dispatchStories(env, { analysis_id: id, grouping_id: groupingId, model_token: modelToken });
+  if (!dispatch.ok) return json({ error: "The runner could not be started. Try again in a minute." }, 502);
+  return json({ queued: true }, 202);
+}
+
+function dispatchStories(env, inputs) {
+  return fetch(`https://api.github.com/repos/${env.RUNNER_REPO}/actions/workflows/stories.yml/dispatches`, {
+    method: "POST",
+    headers: {
+      authorization: `Bearer ${env.GITHUB_DISPATCH_TOKEN}`,
+      accept: "application/vnd.github+json",
+      "x-github-api-version": "2022-11-28",
+      "content-type": "application/json",
+      "user-agent": "cutover-api",
+    },
+    body: JSON.stringify({ ref: "main", inputs }),
+  });
+}
+
+// The runner reads the features of a draft grouping and the approved rules of their files. Read only, with the secret.
+async function storySources(request, env, id) {
+  if (!timingSafeEqual(request.headers.get("x-runner-secret") || "", env.RUNNER_SECRET || "")) {
+    return json({ error: "Unauthorized." }, 401);
+  }
+  const groupingId = new URL(request.url).searchParams.get("grouping_id") || "";
+  if (!UUID_PATTERN.test(groupingId)) return json({ error: "Choose a grouping." }, 400);
+  const found = await serviceRest(env, `feature_groupings?id=eq.${groupingId}&analysis_id=eq.${id}&select=id,status,groups`);
+  if (!found.ok) return json({ error: "Could not load the grouping." }, 502);
+  const [grouping] = await found.json();
+  if (!grouping || grouping.status !== "draft") return json({ error: "Not found." }, 404);
+  const groups = Array.isArray(grouping.groups) ? grouping.groups : [];
+  const approved = await approvedRulesFor(env, id, groups.flatMap((g) => g.paths || []));
+  if (approved.failed) return json({ error: "Could not load the approved rules." }, 502);
+  const features = groups.map((g, index) => {
+    const files = (g.paths || []).filter((p) => approved.found.has(p)).map((p) => ({ path: p, content: approved.found.get(p) }));
+    return { index, name: g.name, summary: g.summary || "", files, missing_files: (g.paths || []).length - files.length };
+  });
+  return json({ features });
+}
+
+// The runner posts the stories of each feature. Each rule is checked against the approved assessment; a feature whose
+// name has changed since the draft was started is refused, so stories are never put on the wrong feature.
+async function saveStories(request, env, id) {
+  if (!timingSafeEqual(request.headers.get("x-runner-secret") || "", env.RUNNER_SECRET || "")) {
+    return json({ error: "Unauthorized." }, 401);
+  }
+  const found = await serviceRest(env, `analyses?id=eq.${id}&select=id,workspace_id,repo`);
+  if (!found.ok) return json({ error: "Could not load the analysis." }, 502);
+  const [analysis] = await found.json();
+  if (!analysis) return json({ error: "Not found." }, 404);
+  const parsed = await readJson(request, 120000);
+  if (parsed.error) return json({ error: parsed.error }, 400);
+  const body = parsed.value || {};
+  const groupingId = typeof body.grouping_id === "string" ? body.grouping_id : "";
+  if (!UUID_PATTERN.test(groupingId)) return json({ error: "Choose a grouping." }, 400);
+  const current = await serviceRest(env, `feature_groupings?id=eq.${groupingId}&analysis_id=eq.${id}&select=id,status,groups`);
+  if (!current.ok) return json({ error: "Could not load the grouping." }, 502);
+  const [grouping] = await current.json();
+  if (!grouping || grouping.status !== "draft") return json({ error: "Not found." }, 404);
+  if (body.status !== "ok") {
+    const refusedFail = await logFirst(env, { workspace_id: analysis.workspace_id, user: null, action: "stories_fail", analysis_id: id, repo: analysis.repo, detail: typeof body.reason === "string" ? body.reason.slice(0, 200) : null });
+    if (refusedFail) return refusedFail;
+    return json({ saved: false, reason: typeof body.reason === "string" ? body.reason.slice(0, 300) : "The stories were not drafted." });
+  }
+  const groups = Array.isArray(grouping.groups) ? grouping.groups : [];
+  const incoming = Array.isArray(body.features) ? body.features : [];
+  const approved = await approvedRulesFor(env, id, groups.flatMap((g) => g.paths || []));
+  if (approved.failed) return json({ error: "Could not load the approved rules." }, 502);
+  const next = groups.map((g, index) => ({ ...g }));
+  let count = 0;
+  for (const item of incoming) {
+    const index = Number(item && item.index);
+    if (!Number.isInteger(index) || index < 0 || index >= groups.length) return json({ error: "A feature does not match the grouping." }, 409);
+    if (String(item.name || "") !== groups[index].name) return json({ error: "The features changed while the stories were drafted. Draft them again." }, 409);
+    const checked = checkStories(item.stories, groups[index].paths || [], approved.found);
+    if (checked.error) return json({ error: checked.error }, 400);
+    next[index].stories = checked.stories;
+    count += checked.stories.length;
+  }
+  const serialised = JSON.stringify(next);
+  if (serialised.length > 40000) return json({ error: "The stories are too large to save." }, 400);
+  const refused = await logFirst(env, { workspace_id: analysis.workspace_id, user: null, action: "stories_finish", analysis_id: id, repo: analysis.repo, detail: `${count} stories` });
+  if (refused) return refused;
+  const res = await serviceRest(env, `feature_groupings?id=eq.${groupingId}&status=eq.draft`, {
+    method: "PATCH",
+    headers: { prefer: "return=minimal" },
+    body: JSON.stringify({ groups: next }),
+  });
+  if (!res.ok) return json({ error: "Could not save the stories." }, 502);
+  return json({ saved: true, stories: count }, 201);
 }
 
 // Checks one file record. Only the fields we store are kept.
@@ -4505,6 +4683,12 @@ async function route(request, env) {
     if (groupingEdit && UUID_PATTERN.test(groupingEdit[1]) && method === "POST") return editGrouping(request, env, groupingEdit[1]);
     const groupingDiscard = path.match(/^\/api\/analyses\/([^/]+)\/groupings\/discard$/);
     if (groupingDiscard && UUID_PATTERN.test(groupingDiscard[1]) && method === "POST") return discardGrouping(request, env, groupingDiscard[1]);
+    const storiesStart = path.match(/^\/api\/analyses\/([^/]+)\/groupings\/stories$/);
+    if (storiesStart && UUID_PATTERN.test(storiesStart[1]) && method === "POST") return startStories(request, env, storiesStart[1]);
+    const storiesSources = path.match(/^\/api\/runner\/([^/]+)\/story-sources$/);
+    if (storiesSources && UUID_PATTERN.test(storiesSources[1]) && method === "GET") return storySources(request, env, storiesSources[1]);
+    const storiesSave = path.match(/^\/api\/runner\/([^/]+)\/stories$/);
+    if (storiesSave && UUID_PATTERN.test(storiesSave[1]) && method === "POST") return saveStories(request, env, storiesSave[1]);
     const groupingSave = path.match(/^\/api\/runner\/([^/]+)\/grouping$/);
     if (groupingSave && UUID_PATTERN.test(groupingSave[1]) && method === "POST") return saveGrouping(request, env, groupingSave[1]);
     const groupingInputs = path.match(/^\/api\/runner\/([^/]+)\/grouping-sources$/);
