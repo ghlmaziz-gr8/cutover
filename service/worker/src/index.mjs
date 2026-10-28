@@ -2669,10 +2669,8 @@ function scopeIncludes(scope, stage) {
 async function setScope(request, env, id) {
   const access = await analysisAccess(env, request, id);
   if (access.response) return access.response;
-  // The direction is the owner's or a CIO's or CTO's decision; the engineer carries it out.
-  if (!canApproveTarget(access.row, access.member, access.user)) {
-    return json({ error: "Only the application owner, or a CIO or CTO, can choose the scope." }, 403);
-  }
+  // Open to every member of the workspace for now, while the scope is decided. Limiting it to the application
+  // owner, a CIO or a CTO is to be decided later.
   const parsed = await readJson(request);
   if (parsed.error) return json({ error: parsed.error }, 400);
   const scope = parsed.value && parsed.value.scope;
