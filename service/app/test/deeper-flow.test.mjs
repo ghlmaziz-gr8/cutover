@@ -33,12 +33,19 @@ test("the four scope options are offered before the deeper assessment runs, and 
   assert.ok(!html.includes("Locked until the deeper assessment is complete"));
 });
 
-test("the tech stack (target language) is chosen on What next, and the effort plan stays on the deeper assessment page", () => {
+test("the tech stack and the estimate and plan are chosen on What next, not on the deeper assessment page", () => {
   const deeper = html.slice(html.indexOf('<section id="s-deeper"'), html.indexOf('<script', html.indexOf('<section id="s-deeper"')));
-  assert.ok(deeper.includes('id="effortCard"'));
-  assert.ok(!deeper.includes('id="targetCard"'));
+  assert.ok(!deeper.includes('id="targetCard"') && !deeper.includes('id="effortCard"'));
   const next = html.slice(html.indexOf('id="s-next"'), html.indexOf('<!-- 9. Contingency planning -->'));
-  assert.ok(next.includes('id="targetCard"') && !next.includes('id="effortCard"'));
+  assert.ok(next.includes('id="targetCard"') && next.includes('id="effortCard"'));
+  assert.ok(next.indexOf('id="targetCard"') < next.indexOf('id="effortCard"'), "the tech stack comes before the estimate");
+});
+
+test("the same estimate and plan follow every scope: the approach's rates with Modernize, lift and contain otherwise", () => {
+  assert.ok(html.includes("function effortTemplateOf(row)"));
+  assert.ok(html.includes('return "lift-contain";'));
+  assert.ok(html.includes("const show = !!row && !!row.scope && !!window.Effort;"));
+  assert.ok(html.includes("template: effortTemplateOf(row),"));
 });
 
 test("the header counts the deeper assessment as its own step and the weights still add up to 100", () => {
