@@ -189,6 +189,12 @@ class BusinessRunAsksForJson(unittest.TestCase):
         src = (pathlib.Path(__file__).parent / "business_run.py").read_text(encoding="utf-8")
         self.assertIn("json_reply=True", src)
 
+    def test_the_business_answer_has_the_same_room_as_the_deep_assessment(self):
+        # A model that reasons first can run out of room and cut its JSON short: the business run needs the same room.
+        import business_run
+        import deep_file_run
+        self.assertEqual(business_run.MAX_TOKENS, deep_file_run.MAX_TOKENS)
+
 
 if __name__ == "__main__":
     unittest.main()
