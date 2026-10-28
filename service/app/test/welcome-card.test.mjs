@@ -72,3 +72,11 @@ test("the plate shows the level, the points, and the time on the system without 
   assert.match(html, /"Earned"/);
   assert.doesNotMatch(html, /function characterFor/);
 });
+
+test("each level has its own colours, and time badges keep the blue", () => {
+  assert.match(html, /const PLATE_COLOURS = \{/);
+  for (const n of [1, 2, 3, 4, 5]) assert.match(html, new RegExp(`\\n    ${n}: \\{ body: \\[`));
+  assert.match(html, /const colours = PLATE_COLOURS\[lvl \? lvl\[1\] : "time"\] \|\| PLATE_COLOURS\.time;/);
+  assert.match(html, /const k = lvl \? lvl\[1\] : "time";/);
+  assert.match(html, /url\(#bpBody-\$\{k\}\)/);
+});
