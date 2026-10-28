@@ -527,16 +527,18 @@ pre{white-space:pre-wrap;word-break:break-word;background:var(--soft);padding:12
 .panel{background:var(--card);border:1px solid var(--line);border-radius:20px;padding:18px}
 .eyebrow-sm{font-size:12px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:var(--accent)}
 .panel h3,.rcard h3{color:var(--accent);margin-top:6px}
-.tmap-wrap{margin-top:12px}
-.tmap{display:block;width:100%;height:auto;overflow:visible}
-.tm-tile{opacity:0;transform:scale(.7);transform-box:fill-box;transform-origin:center;animation:tmIn .7s cubic-bezier(.2,.8,.2,1) forwards;animation-delay:var(--d,0ms)}
-@keyframes tmIn{to{opacity:1;transform:scale(1)}}
-.tm-tile rect{transform-box:fill-box;transform-origin:center;transition:filter .2s ease,transform .25s cubic-bezier(.2,.8,.2,1)}
-.tm-tile:hover rect{filter:brightness(1.12) saturate(1.1);transform:translateY(-3px)}
-.tm-tile text{pointer-events:none}
-.tm-label{fill:#fff;font:600 13px var(--body);opacity:.92}
-.tm-count{fill:#fff;font:700 20px var(--body)}
-@media (prefers-reduced-motion: reduce){.tm-tile{animation:none;opacity:1;transform:none}.tm-tile:hover rect{transform:none}}
+.radar-wrap{margin-top:12px;border-radius:18px;background:radial-gradient(ellipse at 50% 40%,#1e1b4b 0%,#0b1024 70%);padding:6px 0 4px;box-shadow:0 10px 30px -12px rgba(76,29,149,.55)}
+.radar{display:block;width:100%;height:auto;overflow:visible}
+.radar-label{font:700 13px var(--body);opacity:0;animation:radarFade .6s ease forwards;animation-delay:1000ms}
+.radar-count{fill:#fff;font:800 15px var(--body);opacity:0;animation:radarFade .6s ease forwards;animation-delay:1100ms}
+.radar-point{opacity:0;animation:radarPop .6s cubic-bezier(.34,1.56,.64,1) forwards;animation-delay:var(--d,900ms);transform-box:fill-box;transform-origin:center}
+.radar-point circle{transition:r .2s ease}
+.radar-point:hover circle{r:8}
+.radar-sweep{transform-box:view-box;transform-origin:230px 172px;animation:radarSweep 7s linear infinite}
+@keyframes radarFade{to{opacity:1}}
+@keyframes radarPop{to{opacity:1}}
+@keyframes radarSweep{to{transform:rotate(360deg)}}
+@media (prefers-reduced-motion: reduce){.radar-label,.radar-count,.radar-point{animation:none;opacity:1}.radar-sweep{animation:none}}
 .hbar{display:grid;gap:10px;margin-top:12px}
 .hrow{display:grid;grid-template-columns:160px 1fr 34px;gap:8px;align-items:center;font-size:13px}
 .hrow i{height:12px;border-radius:99px;background:var(--soft);overflow:hidden;display:block}
@@ -4412,35 +4414,121 @@ button:not(:disabled):active{transform:scale(.965)}
     parent.appendChild(s);
   }
 
-  // Horizontal bars: one row per label.
-  // The findings by area, as a squarified treemap. Each tile's area is in proportion to its count. Tiles grow in turn,
-  // their counts rise as they appear, and a tile lifts under the pointer. The tooltip gives the exact count.
-  function treemap(rows) {
-    const W = 400;
-    const H = 220;
-    const wrap = el("div", null, "tmap-wrap");
-    const svg = svgEl("svg", { viewBox: `0 0 ${W} ${H}`, role: "img", class: "tmap", "aria-label": rows.map((r) => `${r.label}: ${r.value}`).join(", ") });
-    const pad = 3;
-    const inset = 12;
-    TreeMap.layout(rows, W, H).forEach((t, i) => {
-      const g = svgEl("g", { class: "tm-tile" });
-      g.style.setProperty("--d", `${i * 110}ms`);
-      const title = svgEl("title", {});
-      title.textContent = `${t.label}: ${t.value}`;
-      g.appendChild(title);
-      const rect = svgEl("rect", { x: t.x + pad, y: t.y + pad, width: Math.max(0, t.w - 2 * pad), height: Math.max(0, t.h - 2 * pad), rx: 10 });
-      rect.style.fill = t.color;
-      g.appendChild(rect);
-      if (t.w > 70 && t.h > 40) {
-        const room = Math.max(4, Math.floor((t.w - 2 * inset) / 7.5));
-        const label = t.label.length > room ? `${t.label.slice(0, room - 1)}…` : t.label;
-        g.appendChild(svgEl("text", { x: t.x + inset, y: t.y + inset + 12, class: "tm-label" })).textContent = label;
-      }
-      const count = svgEl("text", { x: t.x + inset, y: t.y + t.h - inset, class: "tm-count" });
-      g.appendChild(count);
-      countUp(count, t.value, "", i * 110 + 200);
-      svg.appendChild(g);
+  // Each category gets its own bright colour, from this palette in order.
+  const RADAR_HUES = ["#22d3ee", "#c084fc", "#f472b6", "#facc15", "#34d399", "#fb7185", "#60a5fa", "#fb923c", "#a3e635", "#2dd4bf"];
+  // The findings by area, as a radar chart. One axis per category, its length in proportion to its count. The shape
+  // grows from the centre, each point pops in, the counts count up, and a sweep line turns over the field.
+  // Reduced motion draws the finished chart at once.
+  function radarChart(rows) {
+    const W = 460;
+    const H = 340;
+    const cx = 230;
+    const cy = 172;
+    const R = 104;
+    const reduce = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    const wrap = el("div", null, "radar-wrap");
+    const svg = svgEl("svg", { viewBox: `0 0 ${W} ${H}`, role: "img", class: "radar", "aria-label": rows.map((r) => `${r.label}: ${r.value}`).join(", ") });
+    const defs = svgEl("defs", {});
+    const field = svgEl("radialGradient", { id: "radarField", cx: "50%", cy: "50%", r: "60%" });
+    field.appendChild(svgEl("stop", { offset: "0", "stop-color": "#312e81", "stop-opacity": "0.9" }));
+    field.appendChild(svgEl("stop", { offset: "1", "stop-color": "#0b1024", "stop-opacity": "1" }));
+    defs.appendChild(field);
+    const fill = svgEl("linearGradient", { id: "radarFill", x1: "0", y1: "0", x2: "1", y2: "1" });
+    fill.appendChild(svgEl("stop", { offset: "0", "stop-color": "#22d3ee", "stop-opacity": "0.55" }));
+    fill.appendChild(svgEl("stop", { offset: "0.5", "stop-color": "#c084fc", "stop-opacity": "0.5" }));
+    fill.appendChild(svgEl("stop", { offset: "1", "stop-color": "#f472b6", "stop-opacity": "0.55" }));
+    defs.appendChild(fill);
+    const stroke = svgEl("linearGradient", { id: "radarStroke", x1: "0", y1: "0", x2: "1", y2: "1" });
+    stroke.appendChild(svgEl("stop", { offset: "0", "stop-color": "#67e8f9" }));
+    stroke.appendChild(svgEl("stop", { offset: "1", "stop-color": "#f0abfc" }));
+    defs.appendChild(stroke);
+    const glow = svgEl("filter", { id: "radarGlow", x: "-30%", y: "-30%", width: "160%", height: "160%" });
+    glow.appendChild(svgEl("feGaussianBlur", { stdDeviation: "3", result: "blur" }));
+    const merge = svgEl("feMerge", {});
+    merge.appendChild(svgEl("feMergeNode", { in: "blur" }));
+    merge.appendChild(svgEl("feMergeNode", { in: "SourceGraphic" }));
+    glow.appendChild(merge);
+    defs.appendChild(glow);
+    svg.appendChild(defs);
+
+    // The field: a dark disc with rings at each quarter.
+    svg.appendChild(svgEl("circle", { cx, cy, r: R + 6, fill: "url(#radarField)", stroke: "#4338ca", "stroke-opacity": "0.5", "stroke-width": "1" }));
+    const n = rows.length;
+    const angle = (i) => -Math.PI / 2 + (i * 2 * Math.PI) / n;
+    const polyPoints = (scale) => rows.map((_, i) => `${(cx + Math.cos(angle(i)) * R * scale).toFixed(1)},${(cy + Math.sin(angle(i)) * R * scale).toFixed(1)}`).join(" ");
+    for (const q of [0.25, 0.5, 0.75, 1]) {
+      svg.appendChild(svgEl("polygon", { points: polyPoints(q), fill: "none", stroke: "#a5b4fc", "stroke-opacity": q === 1 ? "0.35" : "0.15", "stroke-width": "1", "stroke-dasharray": q === 1 ? "" : "3 4" }));
+    }
+
+    // The spokes, each in its category's colour.
+    rows.forEach((r, i) => {
+      const hue = RADAR_HUES[i % RADAR_HUES.length];
+      svg.appendChild(svgEl("line", { x1: cx, y1: cy, x2: cx + Math.cos(angle(i)) * R, y2: cy + Math.sin(angle(i)) * R, stroke: hue, "stroke-opacity": "0.45", "stroke-width": "1.2" }));
     });
+
+    // The sweep: a bright line turning over the field.
+    const sweep = svgEl("g", { class: "radar-sweep" });
+    sweep.appendChild(svgEl("line", { x1: cx, y1: cy, x2: cx, y2: cy - R, stroke: "#67e8f9", "stroke-width": "2", "stroke-opacity": "0.6" }));
+    sweep.appendChild(svgEl("circle", { cx, cy, r: "3", fill: "#67e8f9" }));
+    svg.appendChild(sweep);
+
+    // The shape. It starts at the centre and grows to its values.
+    const max = Math.max(1, ...rows.map((r) => r.value));
+    const shape = svgEl("polygon", { points: polyPoints(reduce ? 0 : 0), fill: "url(#radarFill)", stroke: "url(#radarStroke)", "stroke-width": "2.5", "stroke-linejoin": "round", filter: "url(#radarGlow)" });
+    svg.appendChild(shape);
+
+    // The points and the labels.
+    const pts = rows.map((r, i) => {
+      const hue = RADAR_HUES[i % RADAR_HUES.length];
+      const g = svgEl("g", { class: "radar-point" });
+      g.style.setProperty("--d", `${900 + i * 120}ms`);
+      const title = svgEl("title", {});
+      title.textContent = `${r.label}: ${r.value}`;
+      g.appendChild(title);
+      const dot = svgEl("circle", { cx, cy, r: 5, fill: hue, stroke: "#fff", "stroke-width": "1.5", filter: "url(#radarGlow)" });
+      g.appendChild(dot);
+      svg.appendChild(g);
+      // The label sits outside the ring; its count sits under it.
+      const lx = cx + Math.cos(angle(i)) * (R + 22);
+      const ly = cy + Math.sin(angle(i)) * (R + 22);
+      const anchor = Math.abs(Math.cos(angle(i))) < 0.2 ? "middle" : Math.cos(angle(i)) > 0 ? "start" : "end";
+      const label = svgEl("text", { x: lx.toFixed(1), y: ly.toFixed(1), "text-anchor": anchor, class: "radar-label", fill: hue });
+      label.textContent = r.label;
+      svg.appendChild(label);
+      const count = svgEl("text", { x: lx.toFixed(1), y: (ly + 15).toFixed(1), "text-anchor": anchor, class: "radar-count" });
+      svg.appendChild(count);
+      countUp(count, r.value, "", 900 + i * 120);
+      return { dot, target: (r.value / max) * R, i };
+    });
+
+    // Animate the shape and the points together, unless the reader asked for reduced motion.
+    const place = (k) => {
+      shape.setAttribute("points", rows.map((_, i) => {
+        const rad = pts[i].target * k;
+        return `${(cx + Math.cos(angle(i)) * rad).toFixed(1)},${(cy + Math.sin(angle(i)) * rad).toFixed(1)}`;
+      }).join(" "));
+      pts.forEach((p, i) => {
+        const rad = p.target * k;
+        p.dot.setAttribute("cx", (cx + Math.cos(angle(i)) * rad).toFixed(1));
+        p.dot.setAttribute("cy", (cy + Math.sin(angle(i)) * rad).toFixed(1));
+      });
+    };
+    if (reduce) {
+      place(1);
+    } else {
+      place(0);
+      const start = performance.now() + 150;
+      const dur = 1300;
+      const step = (now) => {
+        if (!svg.isConnected) return;
+        const t = Math.min(1, Math.max(0, (now - start) / dur));
+        const eased = 1 - Math.pow(1 - t, 4);
+        place(eased);
+        if (t < 1) requestAnimationFrame(step);
+      };
+      requestAnimationFrame(step);
+    }
+    svg.appendChild(svgEl("title", {})).textContent = "Findings by area";
     wrap.appendChild(svg);
     return wrap;
   }
@@ -7570,7 +7658,7 @@ a{color:#6d28d9;font-weight:600}`;
     const catRows = Object.keys(byCat).map((c) => ({ label: CAT_TITLE[c] || c, value: byCat[c], color: CAT_COLOR[c] || "var(--accent)" }));
     if (catRows.length) {
       const p = panel("Findings by area", "Overview");
-      p.appendChild(treemap(catRows));
+      p.appendChild(radarChart(catRows));
       charts.appendChild(p);
     }
     if (all.length) {
