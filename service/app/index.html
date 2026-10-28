@@ -660,6 +660,11 @@ pre{white-space:pre-wrap;word-break:break-word;background:var(--soft);padding:12
 .dp-tab.on{background:var(--grad);color:#fff;border-color:transparent}
 .dp-wrap{margin-top:10px;border:1px solid var(--line);border-radius:14px;overflow:hidden;background:#fff}
 .dp-frame{display:block;width:100%;height:520px;border:0;background:#fff}
+    .screen-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(100%,380px),1fr));gap:14px;margin-top:12px}
+    .screen-card{border:1px solid var(--line);border-radius:14px;overflow:hidden;background:var(--card);min-width:0}
+    .screen-head{display:flex;justify-content:space-between;align-items:center;gap:8px;padding:8px 10px;border-bottom:1px solid var(--line)}
+    .screen-name{overflow-wrap:anywhere;font-size:14px}
+    .screen-frame{display:block;width:100%;height:420px;border:0;background:#fff}
 .dp-shot{max-height:560px;overflow:auto;background:#fff}
 .dp-shot img{display:block;width:100%;height:auto}
 .dp-sizes{display:flex;gap:6px;padding:8px;position:sticky;top:0;background:#fff;z-index:1}
@@ -3644,6 +3649,65 @@ button:not(:disabled):active{transform:scale(.965)}
     }
   }
 
+  // A screen drawn by the model, as a PNG. The markup is read into a detached copy, with scripts, links, frames and
+  // remote images taken out, then drawn in a hidden shadow root so its own styles stay inside it. Nothing is fetched.
+  function saveBlob(blob, name) {
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = name;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  }
+  function screenPng(html) {
+    return new Promise((resolve, reject) => {
+      const doc = new DOMParser().parseFromString(String(html || ""), "text/html");
+      doc.querySelectorAll("script,link,iframe,object,embed,base,meta").forEach((n) => n.remove());
+      doc.querySelectorAll("*").forEach((n) => {
+        for (const attr of [...n.attributes]) if (/^on/i.test(attr.name)) n.removeAttribute(attr.name);
+      });
+      doc.querySelectorAll("img").forEach((img) => {
+        if (!/^data:image\//i.test(img.getAttribute("src") || "")) img.removeAttribute("src");
+      });
+      const css = [...doc.querySelectorAll("style")].map((st) => st.textContent.replace(/\b(body|html)\b/gi, ".screen-root")).join("\n");
+      const style = document.createElement("style");
+      style.textContent = css;
+      const wrap = document.createElement("div");
+      wrap.className = "screen-root";
+      wrap.style.cssText = "display:inline-block;vertical-align:top";
+      wrap.innerHTML = doc.body ? doc.body.innerHTML : "";
+      const host = document.createElement("div");
+      host.style.cssText = "position:fixed;left:-20000px;top:0;width:1024px;visibility:hidden;pointer-events:none";
+      document.body.appendChild(host);
+      const root = host.attachShadow({ mode: "open" });
+      root.append(style, wrap);
+      // The picture is the size of the drawn content, with a small minimum.
+      const width = Math.max(240, Math.ceil(wrap.offsetWidth));
+      const height = Math.max(120, Math.ceil(wrap.offsetHeight));
+      const holder = document.createElement("div");
+      holder.append(style.cloneNode(true), wrap.cloneNode(true));
+      const markup = new XMLSerializer().serializeToString(holder);
+      host.remove();
+      const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}"><foreignObject width="100%" height="100%"><div xmlns="http://www.w3.org/1999/xhtml">${markup}</div></foreignObject></svg>`;
+      const img = new Image();
+      img.onload = () => {
+        const scale = 2;
+        const canvas = document.createElement("canvas");
+        canvas.width = width * scale;
+        canvas.height = height * scale;
+        const ctx = canvas.getContext("2d");
+        ctx.fillStyle = "#fff";
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        ctx.scale(scale, scale);
+        ctx.drawImage(img, 0, 0, width, height);
+        canvas.toBlob((blob) => (blob ? resolve(blob) : reject(new Error("no image"))), "image/png");
+      };
+      img.onerror = () => reject(new Error("could not draw"));
+      img.src = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
+    });
+  }
   // Whether the workspace's own model may draw screens. Off by default; only a workspace admin can change it.
   function screensToggle(data) {
     const wrap = el("div", null, "screens-toggle");
@@ -5088,25 +5152,36 @@ button:not(:disabled):active{transform:scale(.965)}
         const c = shell("Deep AI assessment results", "Screens drawn from the code");
         c.style.gridColumn = "1 / -1";
         c.appendChild(el("span", "AI drew these screens from the code. Sample data only.", "tag ai"));
-        const tabs = el("div", null, "dp-tabs");
-        const frame = document.createElement("iframe");
-        frame.className = "dp-frame";
-        frame.setAttribute("sandbox", "");
-        frame.setAttribute("title", "Screen drawn by AI");
-        const show = (i) => {
-          [...tabs.children].forEach((b, j) => b.classList.toggle("on", j === i));
-          frame.srcdoc = screens[i].html;
-        };
-        screens.forEach((s, i) => {
-          const b = el("button", s.name, "dp-tab");
-          b.type = "button";
-          b.addEventListener("click", () => show(i));
-          tabs.appendChild(b);
-        });
-        const wrap = el("div", null, "dp-wrap");
-        wrap.appendChild(frame);
-        c.append(tabs, wrap);
-        show(0);
+        // Every screen is shown, each in its own frame with a button that saves it as a PNG.
+        const grid = el("div", null, "screen-grid");
+        for (const sc of screens) {
+          const card = el("div", null, "screen-card");
+          const head = el("div", null, "screen-head");
+          const title = el("b", sc.name, "screen-name");
+          const dl = el("button", "Download PNG", "ghost small-btn");
+          dl.type = "button";
+          dl.addEventListener("click", async () => {
+            dl.disabled = true;
+            try {
+              const blob = await screenPng(sc.html);
+              saveBlob(blob, `${String(sc.name || "screen").replace(/[^A-Za-z0-9_.-]+/g, "_")}.png`);
+            } catch (err) {
+              dl.textContent = "Could not save";
+              setTimeout(() => { dl.textContent = "Download PNG"; }, 2500);
+            } finally {
+              dl.disabled = false;
+            }
+          });
+          head.append(title, dl);
+          const frame = document.createElement("iframe");
+          frame.className = "screen-frame";
+          frame.setAttribute("sandbox", "");
+          frame.setAttribute("title", `Screen drawn by AI: ${sc.name}`);
+          frame.srcdoc = sc.html;
+          card.append(head, frame);
+          grid.appendChild(card);
+        }
+        c.appendChild(grid);
         out.push(c);
       } else if (sees(role, "ui_portal")) {
         const c = shell("Deep AI assessment results", "No screens drawn");
