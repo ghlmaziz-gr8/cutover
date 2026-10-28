@@ -80,3 +80,11 @@ test("each level has its own colours, and time badges keep the blue", () => {
   assert.match(html, /const k = lvl \? lvl\[1\] : "time";/);
   assert.match(html, /url\(#bpBody-\$\{k\}\)/);
 });
+
+test("the home badge shows the badge reached most recently; on the same day a time badge wins", () => {
+  assert.match(html, /function latestBadge\(badges\) \{/);
+  assert.match(html, /const latest = latestBadge\(data\.badges\);/);
+  assert.match(html, /badge\.replaceChildren\(badgeArt\(latest, 0, lvl\)\);/);
+  assert.match(html, /day === bestDay && b\.kind === "hours" && best\.kind !== "hours"/);
+});
+

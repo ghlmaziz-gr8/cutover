@@ -411,11 +411,12 @@ async function engagementSummary(request, env) {
   if (auth.response) return auth.response;
   const userId = auth.user.id;
   const since = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
-  const [totalsRes, screensRes] = await Promise.all([
+  const [totalsRes, screensRes, daysRes] = await Promise.all([
     serviceRest(env, `engagement?user_id=eq.${userId}&select=total_seconds,last_seen,previous_seen,previous_visit_seconds`),
     serviceRest(env, `screen_time?user_id=eq.${userId}&day=gte.${since}&select=screen,seconds`),
+    serviceRest(env, `screen_time?user_id=eq.${userId}&select=day,seconds`),
   ]);
-  const firstFailure = [["engagement", totalsRes], ["screen_time", screensRes]].find(([, r]) => !r.ok);
+  const firstFailure = [["engagement", totalsRes], ["screen_time", screensRes], ["screen_time", daysRes]].find(([, r]) => !r.ok);
   if (firstFailure) return json({ error: `Could not load your time on the system (${firstFailure[0]}, status ${firstFailure[1].status}).` }, 502);
   const [eng] = await totalsRes.json();
   const total = Number(eng?.total_seconds || 0);
@@ -439,6 +440,21 @@ async function engagementSummary(request, env) {
   const runnerUp = ranked[1] ? ranked[1][1] : 0;
   const favourite = topScreen && topSeconds > 0 && topSeconds >= runnerUp * FAVOURITE_MARGIN ? { screen: topScreen, seconds: topSeconds } : null;
   const points = Math.floor(total / 60) * POINTS_PER_MINUTE;
+  // The first day each badge was reached: the day the running total of time first passed its threshold.
+  const daily = {};
+  for (const r of await daysRes.json()) daily[r.day] = (daily[r.day] || 0) + Number(r.seconds || 0);
+  const days = Object.keys(daily).sort();
+  const reachedOn = (seconds) => {
+    let running = 0;
+    for (const d of days) {
+      running += daily[d];
+      if (running >= seconds) return d;
+    }
+    // The running total is short of the threshold but the total says it was reached: use the last day we have.
+    return total >= seconds && days.length ? days[days.length - 1] : null;
+  };
+  const level = levelFor(points);
+  const levelAt = LEVELS.find((l) => l.name === level.name).at;
   const previous = eng?.previous_seen || null;
   return json({
     total_seconds: total,
@@ -446,11 +462,11 @@ async function engagementSummary(request, env) {
     last_visit_seconds: previous ? Number(eng.previous_visit_seconds || 0) : 0,
     favourite,
     workspaces,
-    level: levelFor(points),
-    // The level badge is always shown, from the first point (Starter at zero).
+    level,
+    // The level badge is always shown, from the first point (Starter at zero). Each badge says the day it was reached.
     badges: [
-      { id: `level-${levelFor(points).number}`, name: `${levelFor(points).name} badge`, kind: "level" },
-      ...HOUR_BADGES.filter((h) => total >= h * 3600).map((h) => ({ id: `hours-${h}`, name: `${h} ${h === 1 ? "hour" : "hours"} on the system`, kind: "hours" })),
+      { id: `level-${level.number}`, name: `${level.name} badge`, kind: "level", earned_on: reachedOn(Math.ceil(levelAt / POINTS_PER_MINUTE) * 60) },
+      ...HOUR_BADGES.filter((h) => total >= h * 3600).map((h) => ({ id: `hours-${h}`, name: `${h} ${h === 1 ? "hour" : "hours"} on the system`, kind: "hours", earned_on: reachedOn(h * 3600) })),
     ],
   });
 }
