@@ -11,6 +11,8 @@
 window.CUTOVER_GUIDE = {
   updated: "2026-10-22",
   whatsNew: [
+    "2026-10-28: A failed business view can be skipped for now. The failure and its reason stay on the file, the file is left out of the feature groups, and Assess for the business does it again when you are ready.",
+    "2026-10-28: The feature groups step says how many approved files have an approved business view, and lists the files skipped for now with their reasons.",
     "2026-10-28: Badges are listed in the order you reached them, and time badges are grey so they do not look like a level.",
     "2026-10-28: Draw the screens again draws only the files that have no screen yet, so it is quicker and does not call the model for screens already on the card.",
     "2026-10-28: Draw the screens again keeps the screens already on the card and adds the new ones, so a redraw never removes a screen.",
@@ -511,6 +513,8 @@ window.CUTOVER_GUIDE = {
       a: "It lists every file with its kind and says what it could not identify. Files in a language with no reader are named as detected but not analysed, and nothing is guessed about their contents. The inventory file in each report holds one line per file, with its kind, language, age range and encoding." },
     { q: "Which models can I use for free?", step: "model",
       a: "Groq has free models, such as openai/gpt-oss-120b. OpenRouter has free models whose names end in :free, such as openai/gpt-oss-120b:free. Mistral's Experiment plan is free but needs a phone number, and its requests may be used for training, so do not use it for client code. Free models can be slow or removed, so check the name before you save." },
+    { q: "The business assessment of a file keeps failing. Can I move on?", step: "deeper",
+      a: "Yes. Press Skip for now under the failure. The file is left out of the feature groups, and the reason stays on the file. When the model works again, press Assess for the business to do it, and approve the draft. The feature step shows how many approved files have an approved business view." },
     { q: "A model test failed with HTTP 402 or 503. What does that mean?", step: "model",
       a: "HTTP 402 means the provider wants payment for the account behind the key. Turn on billing for that account, or create the key in a project that has it. HTTP 503 means the provider is overloaded. Wait a few minutes and try the analysis again, or choose another provider." },
     { q: "My provider is not in the list. What do I do?", step: "model",
