@@ -11,3 +11,6 @@ create table if not exists public.workspace_time (
 
 alter table public.workspace_time enable row level security;
 revoke all on public.workspace_time from anon, authenticated;
+
+-- Tell the database API about the new table, so it can be read straight away.
+notify pgrst, 'reload schema';
