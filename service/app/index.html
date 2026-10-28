@@ -1325,6 +1325,16 @@ button:not(:disabled):active{transform:scale(.965)}
     .fs-cites{display:flex;gap:6px;flex-wrap:wrap;margin-top:6px}
     .fs-cite{font-size:11px;padding:2px 8px;border-radius:99px;border:1px solid var(--line,#ddd);color:var(--muted)}
     .gr-feature{margin-top:8px}
+    .fv-feature{margin-top:14px;padding-top:12px;border-top:1px solid var(--line,#ddd);animation:fvIn .45s ease both;animation-delay:var(--d,0ms)}
+    .fv-feature h4{margin:0 0 4px;font:600 15px var(--body)}
+    .fv-file{display:inline-block;margin:4px 6px 0 0;padding:2px 8px;border-radius:99px;border:1px solid var(--line,#ddd);font-size:12px}
+    .fv-story{margin-top:8px}
+    .fv-rules{margin-top:6px;font-size:12.5px}
+    .fv-rules summary{cursor:pointer;color:var(--muted)}
+    .fv-rule{margin:8px 0 0 4px;padding-left:10px;border-left:2px solid var(--line,#ddd)}
+    .fv-where{font-size:11.5px;color:var(--muted)}
+    @keyframes fvIn{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
+    @media (prefers-reduced-motion:reduce){.fv-feature{animation:none}}
     .gr-name{font:600 13.5px var(--body);padding:4px 8px;border-radius:8px;border:1px solid var(--line,#ddd);width:100%;max-width:340px}
     .gr-file{display:inline-flex;align-items:center;gap:4px;margin:4px 6px 0 0;padding:2px 8px;border-radius:99px;border:1px solid var(--line,#ddd);font-size:12px}
     .gr-off{all:unset;cursor:pointer;color:var(--muted);padding:0 2px}
@@ -2035,6 +2045,13 @@ button:not(:disabled):active{transform:scale(.965)}
     <div class="card">
       <p class="muted small" id="filesNote" style="margin:0"></p>
       <p class="small" id="filesCounts" style="margin:10px 0 0"></p>
+    </div>
+    <div class="card" id="featureCard" hidden style="margin-top:14px">
+      <h3 style="margin:0 0 6px">Features</h3>
+      <p class="muted small" style="margin:0">The features the application owner approved. Read-only. Open a story's rules to see each business rule behind it and the lines of code it comes from.</p>
+      <p class="small hint" id="featureMeta" style="margin:8px 0 0"></p>
+      <div id="featureList"></div>
+      <p class="small hint" id="featureMsg"></p>
     </div>
     <div class="card" id="groupCard" hidden style="margin-top:14px">
       <h3 style="margin:0 0 6px">Feature groups</h3>
@@ -8745,10 +8762,70 @@ const REGION_OPTS = {
     }
     renderFiles();
     loadGroupings();
+    loadFeatureView();
   }
 
   // Feature groups: platform engineers propose them from the approved summaries, then approve or discard the draft.
   const GROUP_STATUS = { running: "Running", draft: "Draft to review", approved: "Approved", superseded: "Replaced by a later approval" };
+
+  // The feature view: the approved features, read-only, for everyone who may see the findings except auditors.
+  async function loadFeatureView() {
+    const card = $("featureCard");
+    card.hidden = true;
+    setMsg("featureMsg", "", false);
+    if (!cur || !ws || ws.role === "auditor") return;
+    try {
+      const data = await api(`/api/analyses/${cur.id}/features`);
+      renderFeatureView(data);
+    } catch (err) {
+      setMsg("featureMsg", err.message, true);
+    }
+  }
+
+  function renderFeatureView(data) {
+    const card = $("featureCard");
+    const list = $("featureList");
+    list.innerHTML = "";
+    if (!data.grouping) {
+      card.hidden = true;
+      return;
+    }
+    card.hidden = false;
+    const when = data.grouping.approved_at ? ` on ${new Date(data.grouping.approved_at).toLocaleDateString()}` : "";
+    $("featureMeta").textContent = `Approved by ${data.grouping.approved_by_email || "the application owner"}${when}.`;
+    data.features.forEach((f, index) => {
+      const wrap = el("section", null, "fv-feature");
+      wrap.style.setProperty("--d", `${index * 90}ms`);
+      wrap.append(el("h4", f.name));
+      if (f.summary) wrap.append(el("p", f.summary, "muted small"));
+      const files = el("div", null, "fv-files");
+      for (const file of f.files) {
+        const chip = el("span", file.path, "fv-file");
+        if (file.purpose) chip.title = file.purpose;
+        files.append(chip);
+      }
+      wrap.append(files);
+      if (!f.stories.length) wrap.append(el("p", "No user stories drafted for this feature yet.", "muted small"));
+      for (const st of f.stories) {
+        const row = el("div", null, "fv-story");
+        row.append(el("div", st.story, "small"));
+        const details = el("details", null, "fv-rules");
+        details.append(el("summary", `Rules behind this story (${st.rules.length})`));
+        for (const r of st.rules) {
+          const item = el("div", null, "fv-rule");
+          item.append(el("div", `${r.id} · ${r.file}${Array.isArray(r.lines) ? ` · lines ${r.lines[0]}–${r.lines[1]}` : ""}`, "fv-where"));
+          if (r.statement) item.append(el("div", r.statement, "small"));
+          if (r.condition) item.append(el("div", `When: ${r.condition}`, "muted small"));
+          if (r.outcome) item.append(el("div", `Then: ${r.outcome}`, "muted small"));
+          if (!r.current) item.append(el("div", "This rule is no longer in the approved assessment of its file.", "muted small"));
+          details.append(item);
+        }
+        row.append(details);
+        wrap.append(row);
+      }
+      list.append(wrap);
+    });
+  }
 
   // Feature groupings. Platform engineers propose and edit a draft; the application owner (or a CIO or CTO) approves it
   // or sends it back with a note. The server checks every action.

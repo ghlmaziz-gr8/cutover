@@ -11,6 +11,7 @@
 window.CUTOVER_GUIDE = {
   updated: "2026-10-22",
   whatsNew: [
+    "2026-10-27: The features the application owner approved now have a read-only view. Each feature lists its files and stories in plain language, and each story opens to the business rules it is written from, with their lines of code. Auditors do not see it.",
     "2026-10-27: An engineer can draft the user stories for each feature of a draft grouping. Each story cites the approved business rules it is written from, with their line numbers. The owner approves the features and their stories together.",
     "2026-10-27: The application owner approves the feature grouping, or sends it back with a note. A platform engineer can rename a feature and take files out of a draft before it goes to the owner. A file can be in more than one feature.",
     "2026-10-27: Related files now draw as a chord diagram: each line joins the chosen file to a related file and draws in turn. The order to assess files in is a tree that grows one step at a time.",
