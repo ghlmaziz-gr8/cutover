@@ -72,3 +72,9 @@ test("every role can open the file-level results; only engineers see Approve and
   assert.match(html, /button\("Edit purpose", \(\) => openFileEditor\(li, f\)\);\n    \}/);
 });
 
+test("file-level results can be reached from the Deeper assessment screen, and a blocked grouping says where to approve", () => {
+  assert.match(html, /<button type="button" class="ghost small-btn" id="deeperReviewFiles">Review file results<\/button>/);
+  assert.match(html, /\$\("deeperReviewFiles"\)\.addEventListener\("click", \(\) => showFiles\(\)\);/);
+  assert.match(html, /Approve them under Files for the business assessment on the Deeper assessment screen\./);
+});
+
