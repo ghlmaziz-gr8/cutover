@@ -11,6 +11,7 @@
 window.CUTOVER_GUIDE = {
   updated: "2026-10-22",
   whatsNew: [
+    "2026-10-28: Badges are listed in the order you reached them, and time badges are grey so they do not look like a level.",
     "2026-10-28: Draw the screens again draws only the files that have no screen yet, so it is quicker and does not call the model for screens already on the card.",
     "2026-10-28: Draw the screens again keeps the screens already on the card and adds the new ones, so a redraw never removes a screen.",
     "2026-10-28: Draw the screens again lets a platform engineer choose the model, shows the drawing while it runs, and shows the screens when they are ready. The assessment itself is not changed.",

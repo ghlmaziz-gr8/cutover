@@ -3520,6 +3520,8 @@ test("every level reached stays on the badge list, each with the day it was reac
   const summary = await call("/api/me/engagement", { as: "eng_a" });
   assert.equal(summary.body.level.name, "Explorer");
   assert.deepEqual(summary.body.badges.map((b) => b.name), ["Starter badge", "Explorer badge", "1 hour on the system"]);
+  const days = summary.body.badges.map((b) => b.earned_on || "9999");
+  assert.deepEqual(days, [...days].sort(), "badges are listed in the order they were reached");
   const byId = Object.fromEntries(summary.body.badges.map((b) => [b.id, b]));
   assert.equal(byId["level-1"].earned_on, "2026-10-20");
   assert.equal(byId["level-2"].earned_on, "2026-10-21");
