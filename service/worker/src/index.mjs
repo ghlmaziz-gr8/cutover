@@ -1355,7 +1355,7 @@ async function busyRun(env, workspaceId, exceptAnalysisId = null) {
   // A feature grouping counts as a run until the runner answers, or until it is stale.
   const groupingCutoff = new Date(Date.now() - STALE_RUN_MS).toISOString();
   const grouping = await serviceRest(env, `feature_groupings?status=eq.running&created_at=gt.${groupingCutoff}&select=created_at,analyses!inner(workspace_id,app_name,repo)&analyses.workspace_id=eq.${workspaceId}&limit=1`);
-  if (!grouping.ok) throw new Error("Could not check the feature groupings.");
+  if (!grouping.ok) throw new Error("Could not check the capability groupings.");
   const [grp] = await grouping.json();
   if (grp) return { kind: "grouping", name: grp.analyses.app_name || grp.analyses.repo, repo: grp.analyses.repo, started: grp.created_at };
   // A deep file assessment counts as a run until the runner answers, or until it is stale.
@@ -1373,7 +1373,7 @@ function busyResponse(busy) {
     : busy.kind === "business"
       ? `A business assessment of one file is running in this workspace: ${busy.path} in ${busy.name}.`
       : busy.kind === "grouping"
-        ? `A feature grouping is running in this workspace: ${busy.name}.`
+        ? `A capability grouping is running in this workspace: ${busy.name}.`
         : busy.kind === "deep"
           ? `A deep file assessment is running in this workspace: ${busy.path} in ${busy.name}.`
         : `Another assessment is running in this workspace: ${busy.name}${busy.repo && busy.repo !== busy.name ? ` (${busy.repo})` : ""}.`;
@@ -3830,18 +3830,18 @@ async function approvedBusinessPaths(env, id) {
 }
 
 function checkGroups(value, allowed) {
-  if (!Array.isArray(value) || value.length < 1 || value.length > GROUP_MAX) return { error: `A grouping holds 1 to ${GROUP_MAX} features.` };
+  if (!Array.isArray(value) || value.length < 1 || value.length > GROUP_MAX) return { error: `A grouping holds 1 to ${GROUP_MAX} capabilities.` };
   const groups = [];
   const missing = [];
   for (const item of value) {
-    if (!item || typeof item !== "object" || Array.isArray(item)) return { error: "Each feature must be an object." };
+    if (!item || typeof item !== "object" || Array.isArray(item)) return { error: "Each capability must be an object." };
     const name = typeof item.name === "string" ? item.name.trim() : "";
-    if (!name || name.length > 80) return { error: "Each feature needs a name of up to 80 characters." };
+    if (!name || name.length > 80) return { error: "Each capability needs a name of up to 80 characters." };
     const summary = typeof item.summary === "string" ? item.summary.trim().slice(0, 300) : "";
-    if (!Array.isArray(item.paths) || item.paths.length < 1 || item.paths.length > GROUP_FILES_MAX) return { error: "Each feature needs 1 to 200 files." };
+    if (!Array.isArray(item.paths) || item.paths.length < 1 || item.paths.length > GROUP_FILES_MAX) return { error: "Each capability needs 1 to 200 files." };
     const paths = [];
     for (const path of item.paths) {
-      if (typeof path !== "string") return { error: "Each file in a feature must be a file name." };
+      if (typeof path !== "string") return { error: "Each file in a capability must be a file name." };
       if (!allowed.has(path) && !missing.includes(path)) missing.push(path);
       if (!paths.includes(path)) paths.push(path);
     }
@@ -3849,7 +3849,7 @@ function checkGroups(value, allowed) {
   }
   // Every file that lacks an approved business view is named, so the engineer knows which one to approve or remove.
   if (missing.length) {
-    return { error: `These files have no approved business assessment: ${missing.join(", ")}. Approve their business view, or take them out of the features, then save again.`, missing };
+    return { error: `These files have no approved business assessment: ${missing.join(", ")}. Approve their business view, or take them out of the capabilities, then save again.`, missing };
   }
   return { groups };
 }
@@ -3868,7 +3868,7 @@ async function listFeatures(request, env, id) {
   const access = await analysisAccess(env, request, id);
   if (access.response) return access.response;
   const res = await serviceRest(env, `feature_groupings?analysis_id=eq.${id}&status=eq.approved&select=id,groups,reviewed_by_email,reviewed_at&order=reviewed_at.desc.nullslast&limit=1`);
-  if (!res.ok) return json({ error: "Could not load the features." }, 502);
+  if (!res.ok) return json({ error: "Could not load the capabilities." }, 502);
   const [grouping] = await res.json();
   if (!grouping) return json({ grouping: null, features: [] });
   const groups = Array.isArray(grouping.groups) ? grouping.groups : [];
@@ -3912,7 +3912,7 @@ async function listFeatures(request, env, id) {
 async function startGrouping(request, env, id) {
   const access = await analysisAccess(env, request, id);
   if (access.response) return access.response;
-  if (!canStart(access.member)) return json({ error: "Only platform engineers can group the features." }, 403);
+  if (!canStart(access.member)) return json({ error: "Only platform engineers can group the capabilities." }, 403);
   const row = access.row;
   if (row.status !== "complete") return json({ error: "Finish the assessment first." }, 409);
   if (!row.model_key_id) return json({ error: "Choose a language model for this analysis first." }, 409);
@@ -3920,7 +3920,7 @@ async function startGrouping(request, env, id) {
   if (chosen.response) return chosen.response;
   const approved = await approvedBusinessPaths(env, id);
   if (approved.failed) return json({ error: "Could not check the approved results. Try again in a minute." }, 502);
-  if (!approved.paths.length) return json({ error: "Approve some file business assessments first. The features are grouped from them." }, 409);
+  if (!approved.paths.length) return json({ error: "Approve some file business assessments first. The capabilities are grouped from them." }, 409);
 
   const busyResp = await refuseIfBusy(env, access.user, row.workspace_id, row.repo);
   if (busyResp) return busyResp;
@@ -3982,7 +3982,7 @@ async function saveGrouping(request, env, id) {
     const refusedFail = await logFirst(env, { workspace_id: analysis.workspace_id, user: null, action: "grouping_fail", analysis_id: id, repo: analysis.repo, detail: typeof body.reason === "string" ? body.reason.slice(0, 200) : null });
     if (refusedFail) return refusedFail;
     await serviceRest(env, runningOnly, { method: "DELETE", headers: { prefer: "return=minimal" } });
-    return json({ saved: false, reason: typeof body.reason === "string" ? body.reason.slice(0, 300) : "The features were not grouped." });
+    return json({ saved: false, reason: typeof body.reason === "string" ? body.reason.slice(0, 300) : "The capabilities were not grouped." });
   }
   const approved = await approvedBusinessPaths(env, id);
   if (approved.failed) return json({ error: "Could not check the approved results." }, 502);
@@ -4022,7 +4022,7 @@ async function approveGrouping(request, env, id) {
   const access = await analysisAccess(env, request, id);
   if (access.response) return access.response;
   if (!canReviewGrouping(access.row, access.member, access.user)) {
-    return json({ error: "Only the application owner, or a CIO or CTO, can approve the feature grouping. Name the owner on the next steps page first." }, 403);
+    return json({ error: "Only the application owner, or a CIO or CTO, can approve the capability grouping. Name the owner on the next steps page first." }, 403);
   }
   const parsed = await readJson(request);
   if (parsed.error) return json({ error: parsed.error }, 400);
@@ -4086,7 +4086,7 @@ async function rejectGrouping(request, env, id) {
 async function editGrouping(request, env, id) {
   const access = await analysisAccess(env, request, id);
   if (access.response) return access.response;
-  if (!canStart(access.member)) return json({ error: "Only platform engineers can change a feature grouping." }, 403);
+  if (!canStart(access.member)) return json({ error: "Only platform engineers can change a capability grouping." }, 403);
   const parsed = await readJson(request, 60000);
   if (parsed.error) return json({ error: parsed.error }, 400);
   const groupingId = String(parsed.value?.grouping_id || "");
@@ -4215,7 +4215,7 @@ async function approvedRulesFor(env, id, paths) {
 // The story checks. A story must be in the story form, cite at least one rule, and every cited rule must exist in a
 // file of its feature. The line numbers come from the stored rule, never from the runner.
 function checkStories(value, featurePaths, approved) {
-  if (!Array.isArray(value) || value.length > STORY_MAX) return { error: `A feature holds up to ${STORY_MAX} stories.` };
+  if (!Array.isArray(value) || value.length > STORY_MAX) return { error: `A capability holds up to ${STORY_MAX} stories.` };
   const allowedPaths = new Set(featurePaths);
   const stories = [];
   for (const item of value) {
@@ -4226,7 +4226,7 @@ function checkStories(value, featurePaths, approved) {
     for (const cite of item.rules) {
       const file = cite && typeof cite.file === "string" ? cite.file : "";
       const ruleId = cite && typeof cite.id === "string" ? cite.id : "";
-      if (!allowedPaths.has(file)) return { error: "A story cites a file that is not in its feature." };
+      if (!allowedPaths.has(file)) return { error: "A story cites a file that is not in its capability." };
       const rule = (approved.get(file) || { rules: [] }).rules.find((r) => r.id === ruleId);
       if (!rule) return { error: "A story cites a rule that does not exist in the approved assessment." };
       if (!cites.some((c) => c.file === file && c.id === ruleId)) cites.push({ file, id: ruleId, lines: rule.lines });
@@ -4332,8 +4332,8 @@ async function saveStories(request, env, id) {
   let count = 0;
   for (const item of incoming) {
     const index = Number(item && item.index);
-    if (!Number.isInteger(index) || index < 0 || index >= groups.length) return json({ error: "A feature does not match the grouping." }, 409);
-    if (String(item.name || "") !== groups[index].name) return json({ error: "The features changed while the stories were drafted. Draft them again." }, 409);
+    if (!Number.isInteger(index) || index < 0 || index >= groups.length) return json({ error: "A capability does not match the grouping." }, 409);
+    if (String(item.name || "") !== groups[index].name) return json({ error: "The capabilities changed while the stories were drafted. Draft them again." }, 409);
     const checked = checkStories(item.stories, groups[index].paths || [], approved.found);
     if (checked.error) return json({ error: checked.error }, 400);
     next[index].stories = checked.stories;

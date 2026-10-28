@@ -41,7 +41,7 @@ test("the map is the application, then the approved features, with files, functi
   const tree = FeatureTree.build(data, Confidence.confidenceOf, "ManageIT");
   assert.equal(tree.kind, "root");
   assert.equal(tree.label, "ManageIT");
-  assert.equal(tree.meta, "1 approved feature");
+  assert.equal(tree.meta, "1 approved capability");
   const feature = tree.children[0];
   assert.equal(feature.label, "Ordering");
   assert.ok(find(feature, (n) => n.label === "User stories"), "the stories branch is there");
@@ -82,5 +82,5 @@ test("the map is drawn in the feature card and only from the approved features",
   assert.match(html, /<script src="feature-map\.js"><\/script>/);
   assert.match(html, /<div class="mmap feature-map" id="featureMap"/);
   assert.match(html, /window\.FeatureTree\.build\(data, window\.Confidence\.confidenceOf, cur\.app_name \|\| cur\.repo\)/);
-  assert.match(html, /drawMap\(tree, box, \{\n\s+title: "Mind map of the approved features"/);
+  assert.match(html, /drawMap\(tree, box, \{\n\s+title: "Mind map of the approved capabilities"/);
 });

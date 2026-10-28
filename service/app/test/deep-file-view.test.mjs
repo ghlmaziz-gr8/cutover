@@ -46,8 +46,8 @@ test("choosing a file opens its deep view under it by itself, with an entrance, 
 test("an approved file says its next step: its feature, or grouping it", () => {
   assert.match(html, /list\.appendChild\(deepCard\(a, \(\) => refreshAfterChange\(f\.path\), msg, f\.path\)\);/);
   assert.match(html, /if \(a\.status === "approved" && path\) c\.append\(nextStepNote\(path\)\);/);
-  assert.match(html, /Next step: add this file to a feature in the draft on the Features card\./);
-  assert.match(html, /Next step: an engineer groups this file into a feature, and the owner approves it\./);
+  assert.match(html, /Next step: add this file to a capability in the draft on the Capabilities card\./);
+  assert.match(html, /Next step: an engineer groups this file into a capability, and the owner approves it\./);
   assert.match(html, /api\(`\/api\/analyses\/\$\{cur\.id\}\/features`\)/);
 });
 
@@ -63,7 +63,7 @@ test("an engineer can add an approved file that is not in the draft to one of it
   assert.match(html, /box\.insertBefore\(addFileRow\(groups, \(\) => drawGroups\(\)\), actions\);/);
   assert.match(html, /const free = approvedPaths\.filter\(\(p\) => !inDraft\.has\(p\)\);/);
   assert.match(html, /target\.paths\.push\(pick\.value\);/);
-  assert.match(html, /Add to feature/);
+  assert.match(html, /Add to capability/);
 });
 
 test("every role can open the file-level results; only engineers see Approve and Edit purpose on a file", () => {

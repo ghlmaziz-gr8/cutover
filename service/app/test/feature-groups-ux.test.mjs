@@ -21,7 +21,7 @@ test("the card shows three progress steps, and the step in progress pulses", () 
 test("while the AI groups the files, the card shows the scanning animation with how long it has run", () => {
   assert.match(html, /<div id="groupRunning"><\/div>|id="groupRunning"/);
   assert.match(html, /function paintRunning\(g\) \{/);
-  assert.match(html, /"The AI is grouping the approved files into features"/);
+  assert.match(html, /"The AI is grouping the approved files into capabilities"/);
   assert.match(html, /Started \$\{minutes < 1 \? "just now" : minutes \+ " min ago"\}/);
   assert.match(html, /const running = rows\.find\(\(g\) => g\.status === "running"\) \|\| null;/);
 });

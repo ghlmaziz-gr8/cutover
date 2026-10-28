@@ -2191,22 +2191,22 @@ button:not(:disabled):active{transform:scale(.965)}
       <p class="small" id="filesCounts" style="margin:10px 0 0"></p>
     </div>
     <div class="card" id="featureCard" hidden style="margin-top:14px">
-      <h3 style="margin:0 0 6px">Features</h3>
-      <p class="muted small" style="margin:0">The features the application owner approved. Read-only. Open a story's rules to see each business rule behind it and the lines of code it comes from.</p>
+      <h3 style="margin:0 0 6px">Capabilities</h3>
+      <p class="muted small" style="margin:0">The capabilities the application owner approved. Read-only. Open a story's rules to see each business rule behind it and the lines of code it comes from.</p>
       <p class="small hint" id="featureMeta" style="margin:8px 0 0"></p>
-      <div class="mmap feature-map" id="featureMap" aria-label="Mind map of the approved features"></div>
+      <div class="mmap feature-map" id="featureMap" aria-label="Mind map of the approved capabilities"></div>
       <div id="featureList"></div>
       <p class="small hint" id="featureMsg"></p>
     </div>
     <div class="card fg-card" id="groupCard" hidden style="margin-top:14px">
-      <h3 class="fg-title">Feature groups</h3>
+      <h3 class="fg-title">Capabilities</h3>
       <div id="groupReadiness"></div>
-      <p class="muted small fg-lede">Groups the approved business views into product features. The AI proposes the groups, a platform engineer reviews them, and the application owner approves them.</p>
+      <p class="muted small fg-lede">Groups the approved business views into capabilities. The AI proposes the groups, a platform engineer reviews them, and the application owner approves them.</p>
       <ol id="groupSteps" class="fg-steps" aria-label="Progress"></ol>
       <div id="groupSummary" class="fg-summary"></div>
       <div id="groupRunning"></div>
       <div class="fg-propose">
-        <button type="button" id="groupStart">Propose feature groups</button>
+        <button type="button" id="groupStart">Propose capabilities</button>
         <span class="muted small">The AI reads the approved business views only. Nothing is final until it is approved.</span>
       </div>
       <div id="groupList"></div>
@@ -2304,7 +2304,7 @@ button:not(:disabled):active{transform:scale(.965)}
         <button type="button" class="ghost small-btn" id="deeperReviewFiles">Review file results</button>
       </div>
       <p class="muted small" id="deeperFilesNote" style="margin-top:6px"></p>
-      <p class="muted small" style="margin:6px 0 0">Feature groups are made from the files whose business assessment you approve here. File results are reviewed on Review file results.</p>
+      <p class="muted small" style="margin:6px 0 0">Capabilities are made from the files whose business assessment you approve here. File results are reviewed on Review file results.</p>
       <div class="mmap file-map" id="deeperFilesMap" aria-label="Map of the files in this application"></div>
       <div class="card" id="deeperFileDetail" hidden style="margin-top:14px"></div>
     </div>
@@ -9426,7 +9426,7 @@ const REGION_OPTS = {
       return;
     }
     drawMap(tree, box, {
-      title: "Mind map of the approved features",
+      title: "Mind map of the approved capabilities",
       toolbar: true,
       legend: {
         tones: [["pro", "High confidence"], ["possible", "Medium confidence"], ["con", "Low confidence"], ["plain", "No approved assessment"]],
@@ -9519,7 +9519,7 @@ const REGION_OPTS = {
       }
       wrap.append(files);
       wrap.append(moduleSpecButton(f, data));
-      if (!f.stories.length) wrap.append(el("p", "No user stories drafted for this feature yet.", "muted small"));
+      if (!f.stories.length) wrap.append(el("p", "No user stories drafted for this capability yet.", "muted small"));
       for (const st of f.stories) {
         const row = el("div", null, "fv-story");
         row.append(el("div", st.story, "small"));
@@ -9555,7 +9555,7 @@ const REGION_OPTS = {
     document.querySelectorAll(".gr-file[data-path]").forEach((chip) => {
       const missing = groupNoView.has(chip.dataset.path);
       chip.classList.toggle("is-missing", missing);
-      chip.title = missing ? "No approved business view yet. Approve it, or take this file out of the feature." : "";
+      chip.title = missing ? "No approved business view yet. Approve it, or take this file out of the capability." : "";
     });
   }
   // How many approved files have an approved business view, the files still waiting for one, and the files skipped for now.
@@ -9583,7 +9583,7 @@ const REGION_OPTS = {
       if (s.without_view && s.without_view.length) {
         const note = el("div", null, "fg-notice");
         note.append(el("b", "Waiting for an approved business view"));
-        note.append(el("div", "Approve or skip each of these on the file results before you save the features:"));
+        note.append(el("div", "Approve or skip each of these on the file results before you save the capabilities:"));
         for (const p of s.without_view) note.append(el("span", p, "gr-file"));
         box.append(note);
       }
@@ -9633,7 +9633,7 @@ const REGION_OPTS = {
     if (!g) return;
     const minutes = g.created_at ? Math.max(0, Math.round((Date.now() - new Date(g.created_at)) / 60000)) : 0;
     const card = firstRunCard(
-      "The AI is grouping the approved files into features",
+      "The AI is grouping the approved files into capabilities",
       `Reading the approved business views of ${g.source_count || 0} files and proposing the groups.`,
       `Started ${minutes < 1 ? "just now" : minutes + " min ago"}. It usually takes a few minutes. This page checks for the draft every few seconds.`
     );
@@ -9669,7 +9669,7 @@ const REGION_OPTS = {
       await api(`/api/analyses/${cur.id}/groupings/stories`, { method: "POST", body: JSON.stringify({ grouping_id: g.id }) });
       storyDrafting = g.id;
       renderGroupings(groupRows);
-      setMsg("groupMsg", "The AI is drafting the user stories. They appear under each feature when they are ready.", false);
+      setMsg("groupMsg", "The AI is drafting the user stories. They appear under each capability when they are ready.", false);
       watchStories(g.id, before);
     } catch (err) {
       setMsg("groupMsg", err.message, true);
@@ -9681,7 +9681,7 @@ const REGION_OPTS = {
     note.setAttribute("role", "status");
     const dots = el("span", null, "fg-dots");
     dots.append(el("i"), el("i"), el("i"));
-    note.append(dots, el("span", "The AI is drafting the user stories for each feature. They appear here when they are ready.", "small"));
+    note.append(dots, el("span", "The AI is drafting the user stories for each capability. They appear here when they are ready.", "small"));
     return note;
   }
   // Checks every few seconds for up to four minutes, and stops when the stories change.
@@ -9719,15 +9719,15 @@ const REGION_OPTS = {
     const wrap = el("div", null, "fg-tree-wrap");
     const host = el("div", null, "fg-tree");
     wrap.append(host);
-    wrap.append(el("p", "Size: the user stories, the distinct rules they cite, and the files in each feature. Colour: each feature has its own colour, the same as its row above.", "muted small fg-tree-legend"));
-    const nameOf = (g, i) => g.name || `Feature ${i + 1}`;
+    wrap.append(el("p", "Size: the user stories, the distinct rules they cite, and the files in each capability. Colour: each capability has its own colour, the same as its row above.", "muted small fg-tree-legend"));
+    const nameOf = (g, i) => g.name || `Capability ${i + 1}`;
     const shortName = (t, max) => (t.length > max ? t.slice(0, max - 1) + "\u2026" : t);
     const items = groups.map((g, i) => ({ key: i, value: Math.max(1, T.complexityOf(g).total) }));
     const draw = () => {
       host.replaceChildren();
       const W = Math.max(240, host.clientWidth || 640);
       const H = Math.round(W * 0.6);
-      const svg = svgEl("svg", { viewBox: `0 0 ${W} ${H}`, role: "img", "aria-label": "Feature complexity map", class: "fg-svg" });
+      const svg = svgEl("svg", { viewBox: `0 0 ${W} ${H}`, role: "img", "aria-label": "Capability complexity map", class: "fg-svg" });
       for (const cell of T.convex(items, W, H)) {
         const g = groups[cell.key];
         const f = r.features[cell.key];
@@ -9806,7 +9806,7 @@ const REGION_OPTS = {
     if (running) groupPollTimer = setTimeout(() => loadGroupings(), 5000);
     const drafts = rows.filter((g) => g.status !== "running");
     if (!drafts.length && !running) {
-      list.append(el("div", "No features proposed yet. Propose them once every approved file has an approved business view.", "fg-empty"));
+      list.append(el("div", "No capabilities proposed yet. Propose them once every approved file has an approved business view.", "fg-empty"));
     }
     for (const g of drafts) list.append(groupingBox(g));
     paintGroupSteps();
@@ -9821,8 +9821,8 @@ const REGION_OPTS = {
     const pick = el("select", null, "small-btn");
     pick.setAttribute("aria-label", "Approved file to add");
     const into = el("select", null, "small-btn");
-    into.setAttribute("aria-label", "Feature to add it to");
-    const add = el("button", "Add to feature", "ghost small-btn");
+    into.setAttribute("aria-label", "Capability to add it to");
+    const add = el("button", "Add to capability", "ghost small-btn");
     add.type = "button";
     const note = el("span", "Loading the approved files…", "muted small");
     let approvedPaths = [];
@@ -9837,11 +9837,11 @@ const REGION_OPTS = {
           pick.appendChild(o);
         }
       } else {
-        pick.appendChild(el("option", "Every approved file is in a feature"));
+        pick.appendChild(el("option", "Every approved file is in a capability"));
       }
       into.replaceChildren();
       groups.forEach((x, i) => {
-        const o = el("option", x.name || `Feature ${i + 1}`);
+        const o = el("option", x.name || `Capability ${i + 1}`);
         o.value = String(i);
         into.appendChild(o);
       });
@@ -9863,7 +9863,7 @@ const REGION_OPTS = {
       redraw();
       fill();
     });
-    row.append(el("span", "Add an approved file to a feature:", "muted small"), pick, el("span", "→", "muted small"), into, add, note);
+    row.append(el("span", "Add an approved file to a capability:", "muted small"), pick, el("span", "→", "muted small"), into, add, note);
     return row;
   }
 
@@ -9890,7 +9890,7 @@ const REGION_OPTS = {
           const name = el("input", null, "gr-name");
           name.value = item.name;
           name.maxLength = 80;
-          name.setAttribute("aria-label", "Feature name");
+          name.setAttribute("aria-label", "Capability name");
           name.addEventListener("input", () => { item.name = name.value; });
           wrap.append(name);
         } else {
@@ -10158,7 +10158,7 @@ const REGION_OPTS = {
   function canActOnResults() {
     return !!ws && ws.role === "platform_engineer";
   }
-  const RESULTS_READ_ONLY_NOTE = "You can read every result here. Only platform engineers run, approve or discard file results, or change the model. Your part is the scope and the approach, and approving the features.";
+  const RESULTS_READ_ONLY_NOTE = "You can read every result here. Only platform engineers run, approve or discard file results, or change the model. Your part is the scope and the approach, and approving the capabilities.";
 
   // The model for this analysis, shown in the Business and Deep views. An engineer can switch it once the analysis has finished.
   function analysisModelRow(msg) {
@@ -10630,11 +10630,11 @@ const REGION_OPTS = {
       .then((data) => {
         const names = (data.features || []).filter((f) => (f.files || []).some((x) => x.path === path)).map((f) => f.name);
         if (names.length) {
-          note.textContent = `Next step: this file is in ${names.join(", ")}. Its rules feed those features' user stories, shown on the Features card.`;
+          note.textContent = `Next step: this file is in ${names.join(", ")}. Its rules feed those capabilities' user stories, shown on the Capabilities card.`;
         } else if (canActOnResults()) {
-          note.textContent = "Next step: add this file to a feature in the draft on the Features card. If there is no draft, propose the groups again. Then send it to the owner for approval.";
+          note.textContent = "Next step: add this file to a capability in the draft on the Capabilities card. If there is no draft, propose the groups again. Then send it to the owner for approval.";
         } else {
-          note.textContent = "Next step: an engineer groups this file into a feature, and the owner approves it.";
+          note.textContent = "Next step: an engineer groups this file into a capability, and the owner approves it.";
         }
       })
       .catch(() => {
@@ -10918,7 +10918,7 @@ const REGION_OPTS = {
     if (a.review_status === "skipped") {
       // Skipped for now: the reason stays visible, and the file is left out of the feature groups until it is assessed.
       const why = (a.content && a.content.skip && a.content.skip.reason) || (a.content && a.content.failure && a.content.failure.reason) || "The assessment did not finish.";
-      c.append(el("div", "Skipped for now. The feature groups go on without this file.", "small"));
+      c.append(el("div", "Skipped for now. The capabilities go on without this file.", "small"));
       c.append(el("div", why, "small"));
       c.append(el("div", "Press Assess for the business to do it now.", "muted small"));
       return c;
