@@ -11,6 +11,7 @@
 window.CUTOVER_GUIDE = {
   updated: "2026-10-22",
   whatsNew: [
+    "2026-10-28: Proposing feature groups again replaces the draft waiting for review, so only one draft is listed. An approved grouping is kept.",
     "2026-10-28: The feature groups card shows three steps and where each one stands. While the AI proposes the groups, the card shows it working, and the draft appears when it is ready. The draft is laid out as a set of tiles, with the file list and the actions below.",
     "2026-10-28: The feature step names each approved file that has no approved business view, and a feature that names one cannot be saved until it is approved or taken out. Those file chips are marked in red.",
     "2026-10-28: A platform engineer can delete one drawn screen, for example one that came out empty. The screens section folds, so its heading can be kept open or closed.",

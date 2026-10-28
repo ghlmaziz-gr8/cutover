@@ -1504,6 +1504,18 @@ test("only platform engineers see or start a grouping", async () => {
   assert.equal(audStart.status, 403);
 });
 
+test("a new proposal replaces the drafts still waiting for review, and keeps the approved grouping", async () => {
+  readyForBusiness();
+  state.file_business_assessments.push(businessRow(1070, "approved"));
+  state.feature_groupings.push(groupingRow(1070, "draft"), groupingRow(1071, "draft"), groupingRow(1072, "approved"));
+  const res = await call(`/api/analyses/${AN_ACME}/groupings/start`, { as: "eng_a", method: "POST" });
+  assert.equal(res.status, 202);
+  assert.equal(state.feature_groupings.some((g) => g.id === uid(1070)), false);
+  assert.equal(state.feature_groupings.some((g) => g.id === uid(1071)), false);
+  assert.equal(state.feature_groupings.some((g) => g.id === uid(1072)), true, "the approved grouping stays");
+  assert.ok(state.assessment_log.some((e) => e.action === "grouping_discard" && e.detail === "Replaced by a new proposal"));
+});
+
 test("a grouping cannot start until some files have an approved business assessment", async () => {
   readyForBusiness();
   const res = await call(`/api/analyses/${AN_ACME}/groupings/start`, { as: "eng_a", method: "POST" });
