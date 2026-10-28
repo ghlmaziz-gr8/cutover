@@ -3062,6 +3062,18 @@ test("the runner reports the size of the file, and the portal shows the time it 
   assert.equal(row.content.progress.lines, 1000);
   assert.equal(row.content.progress.chars, 30000);
   assert.equal(row.content.progress.estimate_seconds, 65);
+  assert.equal(row.content.progress.connected_at, undefined, "no connection is claimed without the runner saying so");
+});
+
+test("the runner says it has reached the model, and the portal keeps that time", async () => {
+  readyForBusiness();
+  await call(`/api/analyses/${AN_ACME}/deep-files/start`, { as: "eng_a", method: "POST", body: { path: "src/A.java" } });
+  const bad = await call(`/api/runner/${AN_ACME}/deep-file-progress`, { method: "POST", body: { path: "src/A.java", lines: 10, chars: 90, connected: "yes" }, secret: env.RUNNER_SECRET });
+  assert.equal(bad.status, 400);
+  const res = await call(`/api/runner/${AN_ACME}/deep-file-progress`, { method: "POST", body: { path: "src/A.java", lines: 10, chars: 90, connected: true }, secret: env.RUNNER_SECRET });
+  assert.equal(res.status, 200);
+  const row = state.file_deep_assessments.find((r) => r.analysis_id === AN_ACME && r.file_path === "src/A.java" && r.status === "running");
+  assert.ok(row.content.progress.connected_at);
 });
 
 test("the time estimate grows with the lines and stays between 25 and 150 seconds", async () => {

@@ -3497,7 +3497,10 @@ async function saveDeepProgress(request, env, id) {
   if (!CONVERT_PATH.test(path)) return json({ error: "Choose a file." }, 400);
   if (!Number.isInteger(lines) || lines < 0 || lines > 10000000) return json({ error: "lines must be a whole number." }, 400);
   if (!Number.isInteger(chars) || chars < 0 || chars > 100000000) return json({ error: "chars must be a whole number." }, 400);
-  const progress = { lines, chars, estimate_seconds: deepEstimateSeconds(lines), reported_at: new Date().toISOString() };
+  // connected is sent once the runner has reached the model. Only then does the portal tick the connection step.
+  if (body.connected !== undefined && typeof body.connected !== "boolean") return json({ error: "connected must be true or false." }, 400);
+  const now = new Date().toISOString();
+  const progress = { lines, chars, estimate_seconds: deepEstimateSeconds(lines), reported_at: now, ...(body.connected === true ? { connected_at: now } : {}) };
   const res = await serviceRest(env, `file_deep_assessments?analysis_id=eq.${id}&file_path=eq.${encodeURIComponent(path)}&status=eq.running`, {
     method: "PATCH",
     headers: { prefer: "return=minimal" },

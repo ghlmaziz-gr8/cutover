@@ -126,8 +126,9 @@ def main(argv=None, opener=urllib.request.urlopen) -> int:
                      lambda text: call_provider(provider, model, api_key, text, opener=opener,
                                                 base_url=base_url, token_field=token_field, max_tokens=MAX_TOKENS,
                                                 json_reply=True),
-                     report=lambda payload: post_progress(args.callback, args.analysis_id, secret, payload,
-                                                          opener=opener))
+                     # The model has been reached (the token was released), so the size report says so.
+                     report=lambda payload: post_progress(args.callback, args.analysis_id, secret,
+                                                          {**payload, "connected": True}, opener=opener))
     except (ProviderError, ProviderStopped) as err:
         result = {"path": args.path, "status": "failed", "reason": explain(err)}
     status = post_result(args.callback, args.analysis_id, secret, result_payload(args.path, commit, result),
