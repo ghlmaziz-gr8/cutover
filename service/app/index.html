@@ -2504,6 +2504,16 @@ button:not(:disabled):active{transform:scale(.965)}
     card.hidden = false;
   }
   // The level stays visible on the home screen. A click opens the rewards card again.
+  // The badge the home screen shows: the one reached most recently. On the same day a time badge wins over a level.
+  function latestBadge(badges) {
+    let best = null;
+    for (const b of badges || []) {
+      const day = b.earned_on || "";
+      const bestDay = best ? best.earned_on || "" : "";
+      if (!best || day > bestDay || (day === bestDay && b.kind === "hours" && best.kind !== "hours")) best = b;
+    }
+    return best;
+  }
   async function loadLevelBadge() {
     const badge = $("levelBadge");
     badge.hidden = true;
@@ -2511,8 +2521,13 @@ button:not(:disabled):active{transform:scale(.965)}
     try {
       const data = await api("/api/me/engagement");
       const lvl = data.level;
-      badge.replaceChildren(badgeArt({ id: `level-${lvl.number}`, name: `${lvl.name} badge`, kind: "level" }, 0, lvl));
-      badge.title = `Level ${lvl.number} · ${lvl.name} · ${lvl.points} points. Open your rewards`;
+      const latest = latestBadge(data.badges);
+      if (!latest) {
+        badge.hidden = true;
+        return;
+      }
+      badge.replaceChildren(badgeArt(latest, 0, lvl));
+      badge.title = `${latest.name}. Open your rewards`;
       badge.setAttribute("aria-label", badge.title);
       badge.onclick = () => showWelcome();
       badge.hidden = false;

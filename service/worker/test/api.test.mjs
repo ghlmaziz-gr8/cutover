@@ -3201,6 +3201,19 @@ test("time is also counted per workspace the person belongs to, and the level ba
   assert.deepEqual(summary.body.badges.map((b) => b.name), ["Starter badge"], "the starter badge is there from zero points");
 });
 
+test("each badge says the day it was first reached, from the running total of time", async () => {
+  state.engagement = [{ user_id: PEOPLE.eng_a.id, total_seconds: 3700, last_seen: null, previous_seen: null, previous_visit_seconds: 0 }];
+  state.screen_time = [
+    { user_id: PEOPLE.eng_a.id, day: "2026-10-20", screen: "s-home", seconds: 3000 },
+    { user_id: PEOPLE.eng_a.id, day: "2026-10-21", screen: "s-home", seconds: 700 },
+  ];
+  const summary = await call("/api/me/engagement", { as: "eng_a" });
+  assert.equal(summary.status, 200);
+  const byId = Object.fromEntries(summary.body.badges.map((b) => [b.id, b]));
+  assert.equal(byId["level-1"].earned_on, "2026-10-20", "the starter badge is earned on the first day");
+  assert.equal(byId["hours-1"].earned_on, "2026-10-21", "the first hour is reached on the day the total passes 3600 seconds");
+});
+
 test("the application owner sends a grouping back with a note, and the engineer changes the draft and sends it again", async () => {
   state.feature_groupings.push(groupingRow(1090, "draft"));
   state.analyses.find((a) => a.id === AN_ACME).target_owner_email = PEOPLE.inf_a.email;
