@@ -831,14 +831,14 @@ body.zoom-open{overflow:hidden}
 .mm-kids{padding:0 0 0 0}
 .mm-kids > li::before{top:12px}
 .mm-group{--gc:var(--accent,#6d28d9);margin-top:6px}
-.mm-group.tone-pro{--gc:#15803d}.mm-group.tone-con{--gc:#b91c1c}.mm-group.tone-fit{--gc:#0369a1}.mm-group.tone-evidence{--gc:#6d28d9}.mm-group.tone-plan{--gc:#6d28d9}
+.mm-group.tone-pro{--gc:#15803d}.mm-group.tone-draft{--gc:#4f46e5}.mm-group.tone-con{--gc:#b91c1c}.mm-group.tone-fit{--gc:#0369a1}.mm-group.tone-evidence{--gc:#6d28d9}.mm-group.tone-plan{--gc:#6d28d9}
 .mm-group-title{margin:0 0 2px;font-size:13px;font-weight:700;color:var(--gc);display:flex;gap:8px;align-items:center}
 .mm-ico{display:inline-grid;place-items:center;width:20px;height:20px;border-radius:50%;background:color-mix(in srgb,var(--gc) 16%,transparent);font-size:11px}
 .mm-group > ul{border-left:2px solid color-mix(in srgb,var(--gc) 35%,transparent);margin-left:9px}
 .mm-leaf{font-size:14px;line-height:1.45;color:inherit}
 .mmap .mm-leaf::before{top:12px;width:10px}
 .mm-leaf .mm-dot{display:inline-block;width:7px;height:7px;border-radius:50%;background:var(--gc,var(--accent,#6d28d9));margin-right:9px;vertical-align:middle}
-.mm-leaf.tone-con .mm-dot{background:#b91c1c}.mm-leaf.tone-pro .mm-dot{background:#15803d}.mm-leaf.tone-possible .mm-dot{background:#b45309}
+.mm-leaf.tone-con .mm-dot{background:#b91c1c}.mm-leaf.tone-pro .mm-dot{background:#15803d}.mm-leaf.tone-draft .mm-dot{background:#4f46e5}.mm-leaf.tone-possible .mm-dot{background:#b45309}
 .mm-go{margin:6px 0 0;background:none;border:0;padding:4px 0;color:var(--accent,#6d28d9);font-weight:700;cursor:pointer;font-size:14px}
 .mm-go:hover{text-decoration:underline}
 .radial-wide{display:none}
@@ -1049,7 +1049,7 @@ body.zoom-open{overflow:hidden}
 .mm-leaf.tone-plain .mm-dot{background:#9ca3af}
 .mm-leaf.tone-fit .mm-dot{background:#0369a1}
 .mm-leaf.tone-possible .mm-dot{background:#b45309}
-.mm-key.tone-pro{--tc:#15803d}.mm-key.tone-con{--tc:#b91c1c}.mm-key.tone-fit{--tc:#0369a1}.mm-key.tone-plain{--tc:#9ca3af}.mm-key.tone-possible{--tc:#b45309}
+.mm-key.tone-pro{--tc:#15803d}.mm-key.tone-draft{--tc:#4f46e5}.mm-key.tone-con{--tc:#b91c1c}.mm-key.tone-fit{--tc:#0369a1}.mm-key.tone-plain{--tc:#9ca3af}.mm-key.tone-possible{--tc:#b45309}
 .mm-go:focus-visible,.mm-head:focus-visible,.mm-btn:focus-visible{outline:3px solid var(--accent,#6d28d9);outline-offset:2px;border-radius:8px}
 @keyframes mmIn{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
 @media (max-width:600px){.mmap ul{padding-left:12px}.mm-title{font-size:15px}.mm-branch > details{padding:0 12px 10px}}
@@ -7052,7 +7052,7 @@ a{color:#6d28d9;font-weight:600}`;
       title: "Files in the repository",
           toolbar: true,
           legend: {
-            tones: [["pro", "Accepted"], ["possible", "Proposed, to review"], ["con", "Rejected"], ["fit", "Needs attention"], ["plain", "Not started"]],
+            tones: [["pro", "Accepted or approved"], ["draft", "Draft ready"], ["possible", "Proposed, to review"], ["con", "Rejected"], ["fit", "Needs attention"], ["plain", "Not started"]],
             icons: [],
           },
           onLeaf: (node) => {
@@ -7616,7 +7616,7 @@ a{color:#6d28d9;font-weight:600}`;
       title: "Files in the application",
       toolbar: true,
       legend: {
-        tones: [["pro", "Accepted"], ["possible", "Proposed, to review"], ["con", "Rejected"], ["fit", "Needs attention"], ["plain", "Not started"]],
+        tones: [["pro", "Accepted or approved"], ["draft", "Draft ready"], ["possible", "Proposed, to review"], ["con", "Rejected"], ["fit", "Needs attention"], ["plain", "Not started"]],
         icons: [],
       },
       onLeaf: (node) => showBusinessFile(node.path),

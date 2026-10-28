@@ -59,3 +59,11 @@ test("the conversion card shows the file map and picks a file into the input", (
   assert.ok(html.includes("function drawNode("));
   assert.ok(html.includes('className = "mm-pick"') || html.includes('"mm-pick"'));
 });
+
+test("on the map, a draft ready file has its own tone, not the approved green", () => {
+  const { deepStatusOf } = sandbox.FileMap;
+  assert.equal(deepStatusOf({ state: "draft" }).tone, "draft");
+  assert.equal(deepStatusOf({ state: "approved" }).tone, "pro");
+  assert.match(html, /\.mm-leaf\.tone-draft \.mm-dot\{background:#4f46e5\}/);
+  assert.match(html, /tones: \[\["pro", "Accepted or approved"\], \["draft", "Draft ready"\]/);
+});

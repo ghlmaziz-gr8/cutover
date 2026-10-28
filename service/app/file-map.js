@@ -19,7 +19,7 @@
   function deepStatusOf(d) {
     if (!d) return null;
     if (d.state === "running") return { tone: "possible", text: "Assessing" };
-    if (d.state === "draft") return { tone: "pro", text: "Draft ready" };
+    if (d.state === "draft") return { tone: "draft", text: "Draft ready" };
     if (d.state === "approved") return { tone: "pro", text: "Approved" };
     if (d.state === "failed") return { tone: "con", text: "Failed" };
     if (d.state === "superseded") return { tone: "plain", text: "Replaced" };
@@ -36,7 +36,7 @@
     const byPath = new Map(((input && input.conversions) || []).map((c) => [c.path, c]));
     const deepBy = (input && input.deep) || {};
     const shown = all.slice(0, LIMIT);
-    const counts = { pro: 0, possible: 0, con: 0, fit: 0, plain: 0 };
+    const counts = { pro: 0, draft: 0, possible: 0, con: 0, fit: 0, plain: 0 };
 
     const top = newFolder("");
     for (const path of shown) {
@@ -72,7 +72,7 @@
     return {
       kind: "root",
       label: (input && input.label) || "Files in the repository",
-      meta: `${counts.pro} accepted · ${counts.possible} to review · ${counts.con} rejected · ${counts.fit} need attention · ${counts.plain} not started.${note}`,
+      meta: `${counts.pro} accepted · ${counts.draft} draft ready · ${counts.possible} to review · ${counts.con} rejected · ${counts.fit} need attention · ${counts.plain} not started.${note}`,
       children,
     };
   }
