@@ -1350,7 +1350,35 @@ button:not(:disabled):active{transform:scale(.965)}
     .fs-story{padding:8px 10px;border-radius:10px;border-left:3px solid #1d4ed8;background:var(--soft,#f1f0fb)}
     .fs-cites{display:flex;gap:6px;flex-wrap:wrap;margin-top:6px}
     .fs-cite{font-size:11px;padding:2px 8px;border-radius:99px;border:1px solid var(--line,#ddd);color:var(--muted)}
-    .gr-feature{margin-top:8px}
+    .gr-feature{margin-top:10px;padding:12px 14px;border:1px solid var(--line,#ddd);border-radius:14px;background:var(--card)}
+    .fg-card{padding:20px}
+    .fg-title{margin:0 0 4px}
+    .fg-lede{margin:0;max-width:64ch}
+    .fg-steps{list-style:none;margin:16px 0 0;padding:0;display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:8px}
+    .fg-step{display:flex;gap:10px;align-items:flex-start;padding:10px 12px;border-radius:14px;border:1px solid var(--line,#ddd);background:var(--card)}
+    .fg-step.done{border-color:color-mix(in srgb,#10b981 45%,var(--line,#ddd))}
+    .fg-step.now{border-color:var(--accent,#6d28d9);background:color-mix(in srgb,var(--accent,#6d28d9) 6%,var(--card))}
+    .fg-dot{flex:none;width:26px;height:26px;border-radius:50%;display:grid;place-items:center;font:700 12px var(--body);background:var(--soft,#f1f0fb);color:var(--muted)}
+    .fg-step.done .fg-dot{background:#10b981;color:#fff}
+    .fg-step.now .fg-dot{background:var(--accent,#6d28d9);color:#fff;animation:fgPulse 1.6s ease-in-out infinite}
+    .fg-step-label{display:block;font:700 13px var(--body)}
+    .fg-step-detail{display:block;margin-top:2px;font:500 12px var(--body);color:var(--muted)}
+    @keyframes fgPulse{0%,100%{box-shadow:0 0 0 0 color-mix(in srgb,var(--accent,#6d28d9) 45%,transparent)}50%{box-shadow:0 0 0 8px transparent}}
+    @media (prefers-reduced-motion: reduce){.fg-step.now .fg-dot{animation:none}}
+    .fg-summary{margin-top:16px;display:grid;gap:10px}
+    .fg-sum-line{font:600 13.5px var(--body)}
+    .fg-bar{height:8px;border-radius:99px;background:var(--soft,#f1f0fb);overflow:hidden}
+    .fg-bar>span{display:block;height:100%;border-radius:99px;background:linear-gradient(90deg,var(--accent,#6d28d9),#f59e0b);transition:width .6s ease}
+    .fg-notice{padding:10px 12px;border-radius:12px;background:#fef9c3;color:#713f12;font:500 12.5px/1.45 var(--body)}
+    .fg-notice.soft{background:var(--soft,#f1f0fb);color:var(--muted)}
+    .fg-notice b{display:block;margin-bottom:4px}
+    .fg-notice .gr-file{background:var(--card);margin-top:6px}
+    .fg-propose{display:flex;gap:12px;align-items:center;flex-wrap:wrap;margin-top:18px}
+    .fg-running{margin-top:16px}
+    .fg-empty{margin-top:16px;padding:14px;border-radius:14px;border:1px dashed var(--line,#ddd);color:var(--muted);font:500 13px/1.45 var(--body)}
+    .gr-card{margin-top:18px;padding:16px;border:1px solid var(--line,#ddd);border-radius:16px;background:var(--card)}
+    .fg-meta{display:flex;flex-wrap:wrap;gap:8px;align-items:center;font:600 12.5px var(--body);color:var(--muted)}
+    .fg-foot{margin-top:14px;padding-top:12px;border-top:1px solid var(--line,#ddd)}
     .fv-feature{margin-top:14px;padding-top:12px;border-top:1px solid var(--line,#ddd);animation:fvIn .45s ease both;animation-delay:var(--d,0ms)}
     .fv-feature h4{margin:0 0 4px;font:600 15px var(--body)}
     .fv-file{display:inline-block;margin:4px 6px 0 0;padding:2px 8px;border-radius:99px;border:1px solid var(--line,#ddd);font-size:12px}
@@ -2131,11 +2159,16 @@ button:not(:disabled):active{transform:scale(.965)}
       <div id="featureList"></div>
       <p class="small hint" id="featureMsg"></p>
     </div>
-    <div class="card" id="groupCard" hidden style="margin-top:14px">
-      <h3 style="margin:0 0 6px">Feature groups</h3>
-      <p class="muted small" style="margin:0">Groups the approved file summaries into product features. A grouping is a draft until a platform engineer approves it.</p>
-      <div id="groupSummary" class="small" style="margin-top:10px"></div>
-      <div class="row" style="margin-top:10px"><button type="button" id="groupStart">Propose feature groups</button></div>
+    <div class="card fg-card" id="groupCard" hidden style="margin-top:14px">
+      <h3 class="fg-title">Feature groups</h3>
+      <p class="muted small fg-lede">Groups the approved business views into product features. The AI proposes the groups, a platform engineer reviews them, and the application owner approves them.</p>
+      <ol id="groupSteps" class="fg-steps" aria-label="Progress"></ol>
+      <div id="groupSummary" class="fg-summary"></div>
+      <div id="groupRunning"></div>
+      <div class="fg-propose">
+        <button type="button" id="groupStart">Propose feature groups</button>
+        <span class="muted small">The AI reads the approved business views only. Nothing is final until it is approved.</span>
+      </div>
       <div id="groupList"></div>
       <p class="small hint" id="groupMsg"></p>
     </div>
@@ -9479,30 +9512,87 @@ const REGION_OPTS = {
       chip.title = missing ? "No approved business view yet. Approve it, or take this file out of the feature." : "";
     });
   }
-  // How many approved files have an approved business view, and the approved files skipped for now, with their reasons.
+  // How many approved files have an approved business view, the files still waiting for one, and the files skipped for now.
+  let groupSummaryData = null;
+  let groupRows = [];
+  let groupPollTimer = null;
   async function loadGroupSummary() {
     const box = $("groupSummary");
     try {
       const s = await api(`/api/analyses/${cur.id}/business-summary`);
-      box.innerHTML = "";
+      groupSummaryData = s;
       groupNoView = new Set(s.without_view || []);
       markMissingFiles();
+      box.replaceChildren();
       if (!s.files) {
-        box.append(el("p", "No file results are approved yet. Approve them on the file results first.", "muted small"));
+        box.append(el("div", "No file results are approved yet. Approve them on the file results first.", "fg-empty"));
       } else {
-        box.append(el("p", `${s.with_view} of ${s.files} approved files have an approved business view.`, "small"));
+        const pct = Math.round((100 * s.with_view) / s.files);
+        const bar = el("div", null, "fg-bar");
+        const fill = el("span");
+        fill.style.width = `${pct}%`;
+        bar.append(fill);
+        box.append(el("div", `${s.with_view} of ${s.files} approved files have an approved business view.`, "fg-sum-line"), bar);
       }
       if (s.without_view && s.without_view.length) {
-        box.append(el("p", `No approved business view yet: ${s.without_view.join(", ")}. Approve or skip each one on the file results before you save the features.`, "attn small"));
+        const note = el("div", null, "fg-notice");
+        note.append(el("b", "Waiting for an approved business view"));
+        note.append(el("div", "Approve or skip each of these on the file results before you save the features:"));
+        for (const p of s.without_view) note.append(el("span", p, "gr-file"));
+        box.append(note);
       }
       if (s.skipped.length) {
-        box.append(el("p", `Skipped for now (${s.skipped.length}). These files are left out until their business view is assessed and approved.`, "attn small"));
-        for (const item of s.skipped) box.append(el("div", `${item.path}: ${item.reason}`, "small"));
+        const note = el("div", null, "fg-notice soft");
+        note.append(el("b", `Skipped for now (${s.skipped.length})`));
+        note.append(el("div", "These files are left out until their business view is assessed and approved."));
+        for (const item of s.skipped) note.append(el("div", `${item.path}: ${item.reason}`, "small"));
+        box.append(note);
       }
+      paintGroupSteps();
     } catch (err) {
-      box.innerHTML = "";
-      box.append(el("p", err.message, "small"));
+      box.replaceChildren(el("div", err.message, "fg-notice"));
     }
+  }
+
+  // The three steps of the feature groups, with the step in progress pulsing.
+  function paintGroupSteps() {
+    const list = $("groupSteps");
+    if (!list) return;
+    const s = groupSummaryData || { files: 0, with_view: 0 };
+    const rows = groupRows || [];
+    const running = rows.some((g) => g.status === "running");
+    const viewsDone = s.files > 0 && s.with_view === s.files;
+    const proposed = rows.some((g) => g.status !== "running");
+    const signed = rows.some((g) => g.status === "approved");
+    const steps = [
+      { label: "Business views approved", detail: s.files ? `${s.with_view} of ${s.files} files` : "Waiting for file results", done: viewsDone },
+      { label: "AI proposes the groups", detail: running ? "Working now" : proposed ? "Draft ready to review" : "Not proposed yet", done: proposed && !running },
+      { label: "Owner approves", detail: signed ? "Approved" : "Waiting for the owner", done: signed },
+    ];
+    const now = steps.findIndex((x) => !x.done);
+    list.replaceChildren();
+    steps.forEach((x, i) => {
+      const li = el("li", null, `fg-step${x.done ? " done" : ""}${i === now ? " now" : ""}`);
+      const text = el("span");
+      text.append(el("span", x.label, "fg-step-label"), el("span", x.detail, "fg-step-detail"));
+      li.append(el("span", x.done ? "✓" : String(i + 1), "fg-dot"), text);
+      list.append(li);
+    });
+  }
+
+  // While the AI is grouping, the card shows it working: the scanning animation, and how long it has run.
+  function paintRunning(g) {
+    const box = $("groupRunning");
+    box.replaceChildren();
+    if (!g) return;
+    const minutes = g.created_at ? Math.max(0, Math.round((Date.now() - new Date(g.created_at)) / 60000)) : 0;
+    const card = firstRunCard(
+      "The AI is grouping the approved files into features",
+      `Reading the approved business views of ${g.source_count || 0} files and proposing the groups.`,
+      `Started ${minutes < 1 ? "just now" : minutes + " min ago"}. It usually takes a few minutes. This page checks for the draft every few seconds.`
+    );
+    card.classList.add("fg-running");
+    box.append(card);
   }
 
   async function loadGroupings() {
@@ -9510,7 +9600,6 @@ const REGION_OPTS = {
     const isEngineer = !!ws && ws.role === "platform_engineer";
     // Every role sees the groupings. Only an engineer can propose or edit, and only the owner or a CIO or CTO can approve.
     card.hidden = false;
-    if (card.hidden) return [];
     $("groupStart").hidden = !isEngineer;
     loadGroupSummary();
     try {
@@ -9553,20 +9642,26 @@ const REGION_OPTS = {
   }
 
   function renderGroupings(rows) {
+    groupRows = rows;
     const list = $("groupList");
-    list.innerHTML = "";
-    if (!rows.length) {
-      list.append(el("p", "No feature groups proposed yet.", "muted small"));
-      return;
+    list.replaceChildren();
+    const running = rows.find((g) => g.status === "running") || null;
+    paintRunning(running);
+    clearTimeout(groupPollTimer);
+    if (running) groupPollTimer = setTimeout(() => loadGroupings(), 5000);
+    const drafts = rows.filter((g) => g.status !== "running");
+    if (!drafts.length && !running) {
+      list.append(el("div", "No features proposed yet. Propose them once every approved file has an approved business view.", "fg-empty"));
     }
-    for (const g of rows) list.append(groupingBox(g));
+    for (const g of drafts) list.append(groupingBox(g));
+    paintGroupSteps();
   }
 
   // Adds an approved file that is not in the draft to one of its features. Saving the draft checks the file is approved.
   function addFileRow(groups, redraw) {
     const row = el("div", null, "gr-add row");
     row.style.gap = "8px";
-    row.style.marginTop = "8px";
+
     row.style.flexWrap = "wrap";
     const pick = el("select", null, "small-btn");
     pick.setAttribute("aria-label", "Approved file to add");
@@ -9623,12 +9718,9 @@ const REGION_OPTS = {
     const draft = g.status === "draft";
     const editable = draft && isEngineer;
     const reviewer = draft && canReviewGrouping();
-    const box = el("div", null, "biz-card gr-card");
-    box.style.borderTop = "1px solid var(--line, #ddd)";
-    box.style.paddingTop = "8px";
-    box.style.marginTop = "8px";
+    const box = el("div", null, "gr-card");
     const when = g.created_at ? ` · ${new Date(g.created_at).toLocaleDateString()}` : "";
-    box.append(el("div", `${GROUP_STATUS[g.status] || g.status} · ${g.source_count || 0} approved files${when}`, "muted small"));
+    box.append(el("div", `${GROUP_STATUS[g.status] || g.status} · ${g.source_count || 0} approved files${when}`, "fg-meta"));
     if (draft && g.review_note) {
       const note = el("div", `Sent back: ${g.review_note}`, "gr-note small");
       box.append(note);
@@ -9682,9 +9774,8 @@ const REGION_OPTS = {
       });
       markMissingFiles();
     };
-    const actions = el("div", null, "row");
+    const actions = el("div", null, "row fg-foot");
     actions.style.gap = "8px";
-    actions.style.marginTop = "10px";
     actions.style.flexWrap = "wrap";
     box.append(actions);
     if (editable) {
@@ -10750,7 +10841,8 @@ const REGION_OPTS = {
     setMsg("groupMsg", "", false);
     try {
       await api(`/api/analyses/${cur.id}/groupings/start`, { method: "POST" });
-      setMsg("groupMsg", "Grouping started. It takes a few minutes; reload this list to see the draft.", false);
+      setMsg("groupMsg", "The AI is grouping the files. The draft appears here when it is ready.", false);
+      await loadGroupings();
     } catch (err) {
       const blocked = /Approve some file business assessments first/.test(err.message);
       setMsg("groupMsg", blocked ? `${err.message} Approve them under Files for the business assessment on the Deeper assessment screen.` : err.message, true);

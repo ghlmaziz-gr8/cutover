@@ -11,7 +11,8 @@ const guide = readFileSync(join(here, "..", "guide.js"), "utf8");
 
 test("the feature step names the approved files with no approved business view, and says what to do", () => {
   assert.match(html, /groupNoView = new Set\(s\.without_view \|\| \[\]\);/);
-  assert.match(html, /No approved business view yet: \$\{s\.without_view\.join\(", "\)\}\. Approve or skip each one/);
+  assert.match(html, /Waiting for an approved business view/);
+  assert.match(html, /Approve or skip each of these on the file results/);
 });
 
 test("each file chip carries its path, and a file with no approved view is marked red", () => {
