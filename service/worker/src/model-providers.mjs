@@ -12,15 +12,16 @@
 // in the Worker (testModelKey) and in the analysis runner (engine/model_purposes.py).
 // Checked 2026-10-21 against each provider's own documentation.
 
-const OPENAI_QUEST = (name, keyPage, keyPageLabel) => ({
+// notes (optional) add a sentence to the gate, the model or the vault chapter for that provider.
+const OPENAI_QUEST = (name, keyPage, keyPageLabel, notes = {}) => ({
   title: `The ${name} Key`,
   prologue: `Every model needs a key. Forge one at ${name}, guard it, and bring it back here.`,
   epilogue: "Quest complete. Paste your key in the box below.",
   chapters: [
-    { icon: "⚑", name: "The gate", text: `Open the ${name} key page and sign in to the account that should own the key.`, url: keyPage, cta: keyPageLabel },
+    { icon: "⚑", name: "The gate", text: `Open the ${name} key page and sign in to the account that should own the key.${notes.gate ? ` ${notes.gate}` : ""}`, url: keyPage, cta: keyPageLabel },
     { icon: "✦", name: "The forging", text: "Create a new API key and copy it straight away. Most providers show the whole key only once.", url: keyPage, cta: keyPageLabel },
-    { icon: "❖", name: "The model", text: "Check the model name in the box below. Cutover checks the key and the model together with one tiny request." },
-    { icon: "◈", name: "The vault", text: "Paste the whole key in the box below. Treat it like a password: never share it or paste it into chat or email. Cutover tests it before saving and shows only its last four characters." },
+    { icon: "❖", name: "The model", text: `${notes.model || "Check the model name in the box below."} Cutover checks the key and the model together with one tiny request.` },
+    { icon: "◈", name: "The vault", text: `Paste the whole key in the box below. Treat it like a password: never share it or paste it into chat or email. Cutover tests it before saving and shows only its last four characters.${notes.vault ? ` ${notes.vault}` : ""}` },
   ],
 });
 
@@ -30,8 +31,8 @@ const CUSTOM_QUEST = {
   epilogue: "Quest complete. Paste your key in the box below.",
   chapters: [
     { icon: "⚑", name: "The gate", text: "Get an API key from the provider you want to use. It must offer a chat API that follows the OpenAI chat-completions shape." },
-    { icon: "❖", name: "The address", text: "Find the provider's API address. It starts with https:// and is the part before /chat/completions. Cutover adds /chat/completions to it." },
-    { icon: "✦", name: "The model", text: "Copy the exact model name the provider gives you for the model you want, and type it in the box below." },
+    { icon: "❖", name: "The address", text: "Find the provider's API address. It starts with https:// and is the part before /chat/completions. Cutover adds /chat/completions to it. Examples: Gemini https://generativelanguage.googleapis.com/v1beta/openai, Groq https://api.groq.com/openai/v1, OpenRouter https://openrouter.ai/api/v1. Use the OpenAI-compatible address, not the provider's native one." },
+    { icon: "✦", name: "The model", text: "Copy the exact model name the provider gives you for the model you want, and type it in the box below. A name is the model's own name, such as gpt-oss-120b or gemini-3.5-flash. The name you give a key on the provider's page is only a label." },
     { icon: "◈", name: "The vault", text: "Paste the whole key in the box below. Only send code to a provider you trust. Cutover tests the address, the key and the model before saving." },
   ],
 };
@@ -64,7 +65,7 @@ export const MODEL_PROVIDERS = {
       chapters: [
         { icon: "⚑", name: "The gate", text: "Open Google AI Studio and sign in with the Google account that should own the key.", url: "https://aistudio.google.com/apikey", cta: "Open AI Studio" },
         { icon: "❖", name: "The project", text: "New accounts get a project when they accept the terms. If you already use Google Cloud, open Dashboard, choose Projects, then Import projects, and pick the one you want." },
-        { icon: "✦", name: "The forging", text: "On the API Keys page, press Create API key.", url: "https://aistudio.google.com/apikey", cta: "Go to the API Keys page" },
+        { icon: "✦", name: "The forging", text: "On the API Keys page, press Create API key. Create it in the same project as your billing account, or it will be refused for billing. A listed provider is saved once, so for a second Gemini key choose Your own provider with the address https://generativelanguage.googleapis.com/v1beta/openai.", url: "https://aistudio.google.com/apikey", cta: "Go to the API Keys page" },
         { icon: "◈", name: "The vault", text: "Copy the key now. Treat it like a password: never share it or paste it into chat or email. Paste it in the box below. Cutover tests it before saving and shows only its last four characters." },
       ],
     },
@@ -81,7 +82,9 @@ export const MODEL_PROVIDERS = {
     baseUrl: "https://api.mistral.ai/v1",
     keyPage: "https://console.mistral.ai", keyPageLabel: "Open the Mistral console",
     defaultModel: "mistral-large-latest",
-    quest: OPENAI_QUEST("Mistral", "https://console.mistral.ai", "Open the Mistral console"),
+    quest: OPENAI_QUEST("Mistral", "https://console.mistral.ai", "Open the Mistral console", {
+      gate: "The Experiment plan is free but needs a verified phone number. Mistral may use requests from it to train its models, so do not use it for client code.",
+    }),
   },
   xai: {
     name: "xAI", label: "xAI (Grok)", protocol: "openai",
@@ -102,14 +105,19 @@ export const MODEL_PROVIDERS = {
     baseUrl: "https://api.groq.com/openai/v1",
     keyPage: "https://console.groq.com/keys", keyPageLabel: "Open the Groq keys page",
     defaultModel: null,
-    quest: OPENAI_QUEST("Groq", "https://console.groq.com/keys", "Open the Groq keys page"),
+    quest: OPENAI_QUEST("Groq", "https://console.groq.com/keys", "Open the Groq keys page", {
+      model: "Type the model name exactly as Groq lists it, with the slash, for example openai/gpt-oss-120b. Groq's console lists its free models.",
+    }),
   },
   openrouter: {
     name: "OpenRouter", label: "OpenRouter (many models)", protocol: "openai",
     baseUrl: "https://openrouter.ai/api/v1",
     keyPage: "https://openrouter.ai/keys", keyPageLabel: "Open the OpenRouter keys page",
     defaultModel: null,
-    quest: OPENAI_QUEST("OpenRouter", "https://openrouter.ai/keys", "Open the OpenRouter keys page"),
+    quest: OPENAI_QUEST("OpenRouter", "https://openrouter.ai/keys", "Open the OpenRouter keys page", {
+      model: "Type the model name exactly as OpenRouter lists it. Free models end in :free, for example openai/gpt-oss-120b:free. Free models can be changed or removed, so check the name on OpenRouter's models page.",
+      vault: "If the test reports HTTP 402, add a small balance, about $5, on OpenRouter before free models will answer.",
+    }),
   },
   together: {
     name: "Together", label: "Together AI", protocol: "openai",
