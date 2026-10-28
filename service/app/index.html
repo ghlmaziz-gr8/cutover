@@ -2056,6 +2056,7 @@ button:not(:disabled):active{transform:scale(.965)}
       <div id="approachGrid"></div>
       <p class="small hint" id="approachMsg" role="status"></p>
     </div>
+    <div class="card" id="targetCard" hidden style="margin-top:18px"><div id="targetBody"></div></div>
     <div class="next-group" id="groupNext"><span>3</span>Next steps<em>Conversion and the path ahead</em></div>
     <div class="card" id="conversionCardNext" hidden style="margin-top:18px">
       <h3 style="margin-top:0">Convert files to the chosen language</h3>
@@ -2330,9 +2331,8 @@ button:not(:disabled):active{transform:scale(.965)}
     </div>
     <div id="deeperModern"></div>
     <div class="card" id="deeperLimits"></div>
-    <h2 style="margin:28px 0 4px">Target language and effort plan</h2>
-    <p class="muted small" style="margin:0">Built from this assessment. The approach is chosen on Next steps; the language and plan then follow it.</p>
-    <div class="card" id="targetCard" hidden style="margin-top:18px"><div id="targetBody"></div></div>
+    <h2 style="margin:28px 0 4px">Effort and plan</h2>
+    <p class="muted small" style="margin:0">Built from this assessment. The approach and the tech stack are chosen on What next; the plan then follows them.</p>
     <details class="card fold-card" id="effortCard" hidden style="margin-top:18px">
       <summary class="fold-sum"><span id="effortSum">Effort, resources and project plan</span></summary>
       <div id="effortBody"></div>
@@ -7260,7 +7260,7 @@ a{color:#6d28d9;font-weight:600}`;
     if (card.hidden) return;
     const options = (row.target_options || []).filter((o) => o.approaches.includes(row.modern_template));
     const name = (id) => (options.find((o) => o.id === id) || (row.target_options || []).find((o) => o.id === id) || {}).label || id;
-    box.appendChild(el("p", "Target language", "eyebrow-sm"));
+    box.appendChild(el("p", "Tech stack", "eyebrow-sm"));
     box.appendChild(el("h3", "Which language should the modernized application use?"));
     const legacy = legacyLanguagesOf(row);
     const legacyNames = legacy.map((l) => l.name);
