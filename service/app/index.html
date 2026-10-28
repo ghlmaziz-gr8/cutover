@@ -1395,6 +1395,7 @@ button:not(:disabled):active{transform:scale(.965)}
     .rel-reason::before{content:"";display:inline-block;width:7px;height:7px;border-radius:50%;background:var(--k,var(--muted));margin-right:6px;vertical-align:middle}
     .rel-title{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
     button.ghost.small-btn.is-active{background:#7c3aed;border-color:#7c3aed;color:#fff}
+    .gr-file.is-missing{background:#fee2e2;color:#991b1b;border-color:#fca5a5}
     .biz-panel>.row{flex-wrap:wrap}
     .file-biz-view{min-width:0;overflow-wrap:anywhere}
     .biz-compare{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:16px;align-items:start;margin-top:12px}
@@ -9468,16 +9469,31 @@ const REGION_OPTS = {
     const owner = cur && cur.target_owner_email;
     return (!!owner && owner === me.email) || ws.role === "cio_cto";
   }
+  // The approved files that have no approved business view yet. A feature that names one of them cannot be saved.
+  let groupNoView = new Set();
+  // Marks the file chips of the draft that have no approved business view, in red.
+  function markMissingFiles() {
+    document.querySelectorAll(".gr-file[data-path]").forEach((chip) => {
+      const missing = groupNoView.has(chip.dataset.path);
+      chip.classList.toggle("is-missing", missing);
+      chip.title = missing ? "No approved business view yet. Approve it, or take this file out of the feature." : "";
+    });
+  }
   // How many approved files have an approved business view, and the approved files skipped for now, with their reasons.
   async function loadGroupSummary() {
     const box = $("groupSummary");
     try {
       const s = await api(`/api/analyses/${cur.id}/business-summary`);
       box.innerHTML = "";
+      groupNoView = new Set(s.without_view || []);
+      markMissingFiles();
       if (!s.files) {
         box.append(el("p", "No file results are approved yet. Approve them on the file results first.", "muted small"));
       } else {
         box.append(el("p", `${s.with_view} of ${s.files} approved files have an approved business view.`, "small"));
+      }
+      if (s.without_view && s.without_view.length) {
+        box.append(el("p", `No approved business view yet: ${s.without_view.join(", ")}. Approve or skip each one on the file results before you save the features.`, "attn small"));
       }
       if (s.skipped.length) {
         box.append(el("p", `Skipped for now (${s.skipped.length}). These files are left out until their business view is assessed and approved.`, "attn small"));
@@ -9651,6 +9667,7 @@ const REGION_OPTS = {
         }
         for (const path of item.paths) {
           const chip = el("span", null, "gr-file");
+          chip.dataset.path = path;
           chip.append(el("span", path));
           if (editable && item.paths.length > 1) {
             const off = el("button", "×", "gr-off");
@@ -9663,6 +9680,7 @@ const REGION_OPTS = {
         }
         box.insertBefore(wrap, actions);
       });
+      markMissingFiles();
     };
     const actions = el("div", null, "row");
     actions.style.gap = "8px";

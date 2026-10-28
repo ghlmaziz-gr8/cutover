@@ -3355,6 +3355,7 @@ async function businessSummary(request, env, id) {
   return json({
     files: approvedFiles.length,
     with_view: approvedFiles.filter((p) => withView.has(p)).length,
+    without_view: approvedFiles.filter((p) => !withView.has(p)).sort((a, b) => a.localeCompare(b)),
     skipped,
   });
 }
@@ -3831,6 +3832,7 @@ async function approvedBusinessPaths(env, id) {
 function checkGroups(value, allowed) {
   if (!Array.isArray(value) || value.length < 1 || value.length > GROUP_MAX) return { error: `A grouping holds 1 to ${GROUP_MAX} features.` };
   const groups = [];
+  const missing = [];
   for (const item of value) {
     if (!item || typeof item !== "object" || Array.isArray(item)) return { error: "Each feature must be an object." };
     const name = typeof item.name === "string" ? item.name.trim() : "";
@@ -3839,10 +3841,15 @@ function checkGroups(value, allowed) {
     if (!Array.isArray(item.paths) || item.paths.length < 1 || item.paths.length > GROUP_FILES_MAX) return { error: "Each feature needs 1 to 200 files." };
     const paths = [];
     for (const path of item.paths) {
-      if (typeof path !== "string" || !allowed.has(path)) return { error: "A feature names a file that has no approved business assessment." };
+      if (typeof path !== "string") return { error: "Each file in a feature must be a file name." };
+      if (!allowed.has(path) && !missing.includes(path)) missing.push(path);
       if (!paths.includes(path)) paths.push(path);
     }
     groups.push({ name, summary, paths });
+  }
+  // Every file that lacks an approved business view is named, so the engineer knows which one to approve or remove.
+  if (missing.length) {
+    return { error: `These files have no approved business assessment: ${missing.join(", ")}. Approve their business view, or take them out of the features, then save again.`, missing };
   }
   return { groups };
 }

@@ -1474,6 +1474,23 @@ test("the feature step counts the approved files that have an approved business 
   assert.deepEqual(res.body.skipped, [{ path: "src/Skip.java", reason: "The model did not answer." }], "only approved files are listed as skipped");
 });
 
+test("a grouping that names files without an approved business view is refused, and names each of them", async () => {
+  state.file_findings.push({ id: uid(1150), analysis_id: AN_ACME, path: "src/Missing.java", category: "source", purpose: "x", suggestions: [], sample_only: true, review_status: "approved", commit_sha: null, created_at: NOW });
+  state.feature_groupings.push(groupingRow(1150, "draft", [{ name: "Ordering", summary: "x", paths: ["src/A.java"] }]));
+  state.file_business_assessments.push(businessRow(1151, "approved", "src/A.java"));
+  const res = await call(`/api/analyses/${AN_ACME}/groupings/edit`, { as: "eng_a", method: "POST", body: { grouping_id: uid(1150), groups: [{ name: "Ordering", summary: "x", paths: ["src/A.java", "src/Missing.java", "src/Other.java"] }] } });
+  assert.equal(res.status, 400);
+  assert.match(res.body.error, /src\/Missing\.java/);
+  assert.match(res.body.error, /src\/Other\.java/);
+});
+
+test("the feature step lists the approved files that have no approved business view", async () => {
+  state.file_findings.push({ id: uid(1160), analysis_id: AN_ACME, path: "src/Waiting.java", category: "source", purpose: "x", suggestions: [], sample_only: true, review_status: "approved", commit_sha: null, created_at: NOW });
+  state.file_business_assessments.push(businessRow(1161, "approved", "src/A.java"));
+  const res = await call(`/api/analyses/${AN_ACME}/business-summary`, { as: "aud_a" });
+  assert.deepEqual(res.body.without_view, ["src/Waiting.java"]);
+});
+
 // ---- Feature grouping from the approved business results ----
 
 function groupingRow(idN, status, groups = [{ name: "Ordering", summary: "x", paths: ["src/A.java"] }]) {
