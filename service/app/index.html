@@ -5847,7 +5847,7 @@ a{color:#6d28d9;font-weight:600}`;
       { id: "approachCard", label: "Approach", done: !!row.modern_template, show: modern },
       { id: "targetCard", label: "Language", done: !!row.target_language, show: modern },
       { id: "targetCard", label: "Owner approval", done: !!row.target_approval, show: modern },
-      { id: "effortCard", label: "Effort and plan", done: !!row.target_approval, show: modern },
+      { id: "effortCard", label: "Effort and plan", done: !!row.target_approval, show: !!row.scope },
       { id: "conversionCard", label: "Conversion", done: false, show: modern },
     ].filter((x) => x.show);
     const firstOpen = steps.findIndex((x) => !x.done);
@@ -6577,6 +6577,13 @@ a{color:#6d28d9;font-weight:600}`;
     "java-spring": /\bjava\b|spring|\bjsp\b/i,
   };
   // The facts the effort estimate reads from this analysis: its findings, and what the review could not read.
+  // The estimate uses the rates of the approach. Without Modernize there is no approach, so it uses lift and contain.
+  function effortTemplateOf(row) {
+    if (!row || !row.scope) return null;
+    if (scopeHas(row.scope, "modernize")) return row.modern_template || null;
+    return "lift-contain";
+  }
+
   function effortFactsOf(row) {
     const shown = (row.findings && row.findings.findings) || {};
     const val = (id) => (shown[id] ? shown[id].value : undefined);
@@ -6596,7 +6603,7 @@ a{color:#6d28d9;font-weight:600}`;
     const legacyNames = legacyRows.map((l) => l.name);
     const matches = target ? (target.id === "current" ? row.modern_template === "lift-contain" : !!LEGACY_LANGUAGE_MATCH[target.id] && legacyNames.some((n) => LEGACY_LANGUAGE_MATCH[target.id].test(n))) : undefined;
     return {
-      template: row.modern_template,
+      template: effortTemplateOf(row),
       screens,
       endpoints: num(endpoints.endpoint_annotations),
       controllers: num(endpoints.controllers),
@@ -6847,7 +6854,7 @@ a{color:#6d28d9;font-weight:600}`;
     const card = $("effortCard");
     const box = $("effortBody");
     box.replaceChildren();
-    const show = !!row && scopeHas(row.scope, "modernize") && !!row.modern_template && !!window.Effort;
+    const show = !!row && !!row.scope && !!window.Effort;
     card.hidden = !show;
     if (!show) return;
     if (!effortState || effortState.analysis !== row.id) {
@@ -6858,11 +6865,12 @@ a{color:#6d28d9;font-weight:600}`;
     const est = E.build(effortFactsOf(row), { scenario: st.scenario, shares: st.shares, excluded: st.excluded, teamSize: st.teamSize });
     const fmt = (v) => (Math.round(v * 10) / 10).toLocaleString("en-US");
     const pct = (t) => `${Math.round(t * 100)}%`;
+    const tpl = effortTemplateOf(row);
     planExport = {
       est,
       title: planTitle(),
       app: cur.app_name || cur.repo || "Application",
-      approach: TEMPLATE_NAME[row.modern_template] || row.modern_template,
+      approach: TEMPLATE_NAME[tpl] || "No approach in this scope",
       language: row.target_language ? ((row.target_options || []).find((o) => o.id === row.target_language) || {}).label || row.target_language : "Language not chosen yet",
       owner: row.target_owner_email || "Not named yet",
       approved: row.target_approval ? `Approved${row.target_approval.by ? ` by ${row.target_approval.by}` : ""}` : "Awaiting approval",

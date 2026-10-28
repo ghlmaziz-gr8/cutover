@@ -41,6 +41,13 @@ test("the tech stack and the estimate and plan are chosen on What next, not on t
   assert.ok(next.indexOf('id="targetCard"') < next.indexOf('id="effortCard"'), "the tech stack comes before the estimate");
 });
 
+test("the same estimate and plan follow every scope: the approach's rates with Modernize, lift and contain otherwise", () => {
+  assert.ok(html.includes("function effortTemplateOf(row)"));
+  assert.ok(html.includes('return "lift-contain";'));
+  assert.ok(html.includes("const show = !!row && !!row.scope && !!window.Effort;"));
+  assert.ok(html.includes("template: effortTemplateOf(row),"));
+});
+
 test("the header counts the deeper assessment as its own step and the weights still add up to 100", () => {
   const block = html.slice(html.indexOf("const STAGES = ["), html.indexOf("];", html.indexOf("const STAGES = [")));
   const weights = [...block.matchAll(/w: (\d+)/g)].map((m) => Number(m[1]));
