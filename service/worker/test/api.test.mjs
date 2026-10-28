@@ -303,8 +303,8 @@ function handleGithub(url, init) {
     return j({ id: 99 });
   }
   if (path.endsWith("/app/installations/99/access_tokens")) return j({ token: "ghs_test" }, 201);
-  if (path.endsWith("/actions/workflows/analyze.yml/dispatches") || path.endsWith("/actions/workflows/convert.yml/dispatches") || path.endsWith("/actions/workflows/business.yml/dispatches") || path.endsWith("/actions/workflows/grouping.yml/dispatches") || path.endsWith("/actions/workflows/deep-file.yml/dispatches") || path.endsWith("/actions/workflows/stories.yml/dispatches")) {
-    github.dispatches.push(JSON.parse(init.body));
+  if (path.endsWith("/actions/workflows/analyze.yml/dispatches") || path.endsWith("/actions/workflows/convert.yml/dispatches") || path.endsWith("/actions/workflows/business.yml/dispatches") || path.endsWith("/actions/workflows/grouping.yml/dispatches") || path.endsWith("/actions/workflows/deep-file.yml/dispatches") || path.endsWith("/actions/workflows/stories.yml/dispatches") || path.endsWith("/actions/workflows/screens.yml/dispatches")) {
+    github.dispatches.push({ ...JSON.parse(init.body), workflow: path.split("/").at(-2) });
     return github.dispatchOk ? new Response(null, { status: 204 }) : j({ message: "failed" }, 500);
   }
   if (path.includes("/git/trees/")) return j({ tree: [{ type: "blob" }, { type: "blob" }, { type: "tree" }], truncated: false });
@@ -2159,12 +2159,13 @@ test("the file list tells the app which purposes the model wrote", async () => {
 const SCREEN_HTML = "<!doctype html><html><body><h1>Appointments</h1><p>Sample visit: 10:30, Room 4</p></body></html>";
 const screen = (path, extra = {}) => ({ path, name: `Screen ${path}`, html: SCREEN_HTML, ...extra });
 
-test("the runner needs the shared secret, and screens are refused once the analysis is finished", async () => {
+test("the runner needs the shared secret, and a finished analysis takes screens from a screens run", async () => {
   runningAnalysis();
   const wrong = await call(`/api/runner/${AN_RUNNING}/screens`, { method: "POST", body: { screens: [screen("a.html")] }, secret: "wrong" });
   assert.equal(wrong.status, 401);
+  // A finished analysis keeps its status while its screens are drawn again (see /api/analyses/:id/screens/redraw).
   const finished = await call(`/api/runner/${AN_ACME}/screens`, { method: "POST", body: { screens: [screen("a.html")] }, secret: env.RUNNER_SECRET });
-  assert.equal(finished.status, 409);
+  assert.equal(finished.status, 201);
   const missing = await call(`/api/runner/${uid(999)}/screens`, { method: "POST", body: { screens: [screen("a.html")] }, secret: env.RUNNER_SECRET });
   assert.equal(missing.status, 404);
 });
@@ -2661,6 +2662,46 @@ test("a platform engineer runs a finished analysis again; the earlier results ar
   assert.equal(github.dispatches.at(-1).inputs.repo, row.repo);
   assert.equal(state.analysis_db_metadata.filter((m) => m.analysis_id === AN_ACME).length, 1, "the saved structure is kept");
   assert.equal(state.analysis_screens.filter((s) => s.analysis_id === AN_ACME).length, 0);
+});
+
+// ---- Drawing the screens again, without a new assessment ----
+
+test("a platform engineer draws the screens again: the screens run starts, and the findings and status stay as they were", async () => {
+  await call(`/api/workspaces/${W_ACME}/model-screens`, { as: "admin_a", method: "PUT", body: { enabled: true } });
+  const row = state.analyses.find((a) => a.id === AN_ACME);
+  row.model_key_id = await addGoogleKey();
+  const findingsBefore = JSON.stringify(row.findings);
+  const before = github.dispatches.length;
+  const res = await call(`/api/analyses/${AN_ACME}/screens/redraw`, { as: "eng_a", method: "POST" });
+  assert.equal(res.status, 202);
+  assert.equal(github.dispatches.length, before + 1, "one run is started");
+  const started = github.dispatches.at(-1);
+  assert.equal(started.workflow, "screens.yml", "the screens workflow runs, not the assessment");
+  assert.equal(started.inputs.analysis_id, AN_ACME);
+  assert.equal(started.inputs.draw_screens, true);
+  assert.ok(started.inputs.model_token, "a one-time model token is sent");
+  assert.equal(row.status, "complete", "the status is not changed");
+  assert.equal(JSON.stringify(row.findings), findingsBefore, "the findings are not changed");
+});
+
+test("drawing the screens again is refused for auditors, while the analysis runs, with screens off, and without a model", async () => {
+  const keyId = await addGoogleKey();
+  state.analyses.find((a) => a.id === AN_ACME).model_key_id = keyId;
+  const auditor = await call(`/api/analyses/${AN_ACME}/screens/redraw`, { as: "aud_a", method: "POST" });
+  assert.equal(auditor.status, 403);
+  runningAnalysis();
+  const busy = await call(`/api/analyses/${AN_RUNNING}/screens/redraw`, { as: "eng_a", method: "POST" });
+  assert.equal(busy.status, 409);
+  await call(`/api/workspaces/${W_ACME}/model-screens`, { as: "admin_a", method: "PUT", body: { enabled: false } });
+  const off = await call(`/api/analyses/${AN_ACME}/screens/redraw`, { as: "eng_a", method: "POST" });
+  assert.equal(off.status, 409);
+  assert.match(off.body.error, /Turn on screens/);
+  await call(`/api/workspaces/${W_ACME}/model-screens`, { as: "admin_a", method: "PUT", body: { enabled: true } });
+  state.analyses.find((a) => a.id === AN_ACME).model_key_id = null;
+  const noModel = await call(`/api/analyses/${AN_ACME}/screens/redraw`, { as: "eng_a", method: "POST" });
+  assert.equal(noModel.status, 409);
+  assert.match(noModel.body.error, /without a model/);
+  state.analyses.find((a) => a.id === AN_ACME).model_key_id = keyId;
 });
 
 test("only platform engineers can run again, and a running analysis is not started a second time", async () => {

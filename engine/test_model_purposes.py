@@ -253,14 +253,15 @@ class SourceReaderTests(unittest.TestCase):
 
 
 class MainTests(unittest.TestCase):
-    def run_main(self, env, opener):
+    def run_main(self, env, opener, extra=(), spec=(("A.java", "source"),)):
         out = io.StringIO()
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
-            (root / "A.java").write_text("public class A { void run() {} }", encoding="utf-8")
+            for path, _ in spec:
+                (root / path).write_text("public class A { void run() {} }", encoding="utf-8")
             recs_path = root / "files.json"
-            recs_path.write_text(json.dumps(records(("A.java", "source"))), encoding="utf-8")
-            argv = ["--records", str(recs_path), "--source", str(root), "--callback", "https://api.test", "--analysis-id", ID]
+            recs_path.write_text(json.dumps(records(*spec)), encoding="utf-8")
+            argv = ["--records", str(recs_path), "--source", str(root), "--callback", "https://api.test", "--analysis-id", ID, *extra]
             with mock.patch.dict(os.environ, env, clear=True), redirect_stdout(out):
                 code = mp.main(argv, opener=opener)
             return code, out.getvalue(), json.loads(recs_path.read_text(encoding="utf-8"))
@@ -292,6 +293,42 @@ class MainTests(unittest.TestCase):
         self.assertEqual(code, 0)
         self.assertIn("could not be released (HTTP 401)", out)
         self.assertEqual(recs[0]["purpose"], "Rule-based purpose.")
+
+    def test_screens_only_draws_the_screens_and_leaves_the_purposes_alone(self):
+        html = "<!doctype html><html><body>" + "<div>Orders</div>" * 60 + "</body></html>"
+        provider_calls = []
+
+        class Created(FakeResponse):
+            status = 201
+
+        def opener(req, timeout):
+            if "/model-key" in req.full_url:
+                return FakeResponse(json.dumps({"provider": "google", "model": "gemini-3.5-flash", "api_key": KEY}).encode())
+            if req.full_url.endswith("/screens"):
+                return Created(b"{}")
+            provider_calls.append(req.full_url)
+            return FakeResponse(json.dumps({"candidates": [{"content": {"parts": [{"text": html}]}}]}).encode())
+
+        code, out, recs = self.run_main({"MODEL_TOKEN": TOKEN, "RUNNER_SECRET": "s", "DRAW_SCREENS": "true"}, opener,
+                                        extra=["--screens-only"], spec=(("Orders.html", "template"),))
+        self.assertEqual(code, 0)
+        self.assertEqual(len(provider_calls), 1, "only the screen is drawn; no file purposes are asked for")
+        self.assertIn("1 screens drawn from the code and saved", out)
+        self.assertEqual(recs[0]["purpose"], "Rule-based purpose.")
+        self.assertNotIn(KEY, out)
+
+    def test_screens_only_with_screens_off_draws_nothing(self):
+        calls = []
+
+        def opener(req, timeout):
+            calls.append(req.full_url)
+            return FakeResponse(json.dumps({"provider": "google", "model": "gemini-3.5-flash", "api_key": KEY}).encode())
+
+        code, out, recs = self.run_main({"MODEL_TOKEN": TOKEN, "RUNNER_SECRET": "s"}, opener,
+                                        extra=["--screens-only"], spec=(("Orders.html", "template"),))
+        self.assertEqual(code, 0)
+        self.assertIn("Screens are off for this workspace", out)
+        self.assertFalse(any("generativelanguage" in u or "/screens" in u for u in calls))
 
     def test_the_secret_is_required_when_a_token_is_given(self):
         code, out, recs = self.run_main({"MODEL_TOKEN": TOKEN}, lambda req, timeout: FakeResponse(b"{}"))
