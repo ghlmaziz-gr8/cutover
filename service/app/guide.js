@@ -11,6 +11,7 @@
 window.CUTOVER_GUIDE = {
   updated: "2026-10-22",
   whatsNew: [
+    "2026-10-27: After you approve or discard a deep assessment, the order to assess and the file map update at once, so an approved file no longer shows as draft ready.",
     "2026-10-27: Your level stays on the workspace home as a chip, so you can see it without waiting for the login card. Click it to open your rewards. If your rewards cannot load, the card now says so.",
     "2026-10-27: The order to assess shows where each file stands. Approved files are green, draft ready files are indigo, and assessing, failed or replaced files have their own colours, so you can skip the files already worked on.",
     "2026-10-27: The features the application owner approved now have a read-only view. Each feature lists its files and stories in plain language, and each story opens to the business rules it is written from, with their lines of code. Auditors do not see it.",

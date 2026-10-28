@@ -7644,6 +7644,11 @@ a{color:#6d28d9;font-weight:600}`;
       onLeaf: (node) => showBusinessFile(node.path),
     });
   }
+  // After an approve or discard: the file states come from the server again, so the order and the map show the change.
+  async function refreshAfterChange(path) {
+    businessFiles.deep = await loadDeepStates();
+    showBusinessFile(path);
+  }
   function showBusinessFile(path) {
     const f = (businessFiles.rows || []).find((x) => x.path === path);
     const box = $("deeperFileDetail");
@@ -9212,7 +9217,7 @@ const REGION_OPTS = {
           waitCard = deepWait(a);
           list.appendChild(waitCard);
         } else {
-          list.appendChild(deepCard(a, load, msg));
+          list.appendChild(deepCard(a, () => refreshAfterChange(f.path), msg));
         }
       }
     }
