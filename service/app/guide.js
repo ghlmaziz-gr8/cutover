@@ -202,7 +202,7 @@ window.CUTOVER_GUIDE = {
       title: "Roles and what each person sees",
       who: "everyone",
       body: [
-        "Platform engineers start analyses. Security officers see security and privacy findings. Informatics leads see data and healthcare standards. CIOs and CTOs see the stack, screens, containers, delivery and infrastructure.",
+        "Platform engineers start analyses. Security officers see security and privacy findings. Application owners approve the target language, and choose the scope and approach. CIOs and CTOs see the stack, screens, containers, delivery and infrastructure.",
         "Auditors see the summary and can comment, but not finding details. Anything you cannot see is marked 'Not shown for your role'.",
         "For classic ASP code, roles are read from the session and login checks in the code, such as the admin flag. Cutover reads the checks, not any assignment to them.",
       ],
