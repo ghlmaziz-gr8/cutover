@@ -51,6 +51,7 @@ import { validateDbMetadata } from "./db-metadata.mjs";
 //   POST   /api/analyses/:id/files/approve-all            approve every file still in draft (platform engineers)
 //   GET    /api/analyses/:id/business?path=               business assessments of one file (platform engineers)
 //   GET    /api/analyses/:id/deep-files?path=...           deep file assessments of one file (platform engineers)
+//   GET    /api/analyses/:id/features                      the approved features with their stories and cited rules (not auditors, read-only)
 //   GET    /api/analyses/:id/deep-files/links              function names each file defines and calls (platform engineers)
 //   POST   /api/analyses/:id/deep-files/approve             approve a draft; replaces the earlier approved account
 //   POST   /api/analyses/:id/deep-files/discard             discard a draft (platform engineers)
@@ -3636,6 +3637,46 @@ async function listGroupings(request, env, id) {
   return json({ groupings: await res.json() });
 }
 
+// The feature view: the approved grouping only, with each story and the approved rules it cites. Every workspace member
+// who may see the findings reads it, except auditors, who see no findings. Only approved features are returned.
+async function listFeatures(request, env, id) {
+  const access = await analysisAccess(env, request, id);
+  if (access.response) return access.response;
+  if (access.member.role === "auditor") return json({ error: "Auditors do not see the feature view." }, 403);
+  const res = await serviceRest(env, `feature_groupings?analysis_id=eq.${id}&status=eq.approved&select=id,groups,reviewed_by_email,reviewed_at&order=reviewed_at.desc.nullslast&limit=1`);
+  if (!res.ok) return json({ error: "Could not load the features." }, 502);
+  const [grouping] = await res.json();
+  if (!grouping) return json({ grouping: null, features: [] });
+  const groups = Array.isArray(grouping.groups) ? grouping.groups : [];
+  const approved = await approvedRulesFor(env, id, groups.flatMap((g) => g.paths || []));
+  if (approved.failed) return json({ error: "Could not load the approved rules." }, 502);
+  const features = groups.map((g) => ({
+    name: g.name || "",
+    summary: g.summary || "",
+    files: [...new Set(g.paths || [])].map((path) => ({ path, purpose: (approved.found.get(path) || {}).file_purpose || "" })),
+    stories: (Array.isArray(g.stories) ? g.stories : []).map((st) => ({
+      id: st.id,
+      story: st.story,
+      rules: (Array.isArray(st.rules) ? st.rules : []).map((cite) => {
+        const current = ((approved.found.get(cite.file) || {}).rules || []).find((r) => r.id === cite.id);
+        return {
+          file: cite.file,
+          id: cite.id,
+          lines: current ? current.lines : (cite.lines || null),
+          statement: current ? current.statement : "",
+          condition: current ? current.condition : "",
+          outcome: current ? current.outcome : "",
+          current: !!current,
+        };
+      }),
+    })),
+  }));
+  return json({
+    grouping: { id: grouping.id, approved_by_email: grouping.reviewed_by_email || null, approved_at: grouping.reviewed_at || null },
+    features,
+  });
+}
+
 async function startGrouping(request, env, id) {
   const access = await analysisAccess(env, request, id);
   if (access.response) return access.response;
@@ -4673,6 +4714,8 @@ async function route(request, env) {
     if (businessApprove && UUID_PATTERN.test(businessApprove[1]) && method === "POST") return approveBusiness(request, env, businessApprove[1]);
     const groupings = path.match(/^\/api\/analyses\/([^/]+)\/groupings$/);
     if (groupings && UUID_PATTERN.test(groupings[1]) && method === "GET") return listGroupings(request, env, groupings[1]);
+    const features = path.match(/^\/api\/analyses\/([^/]+)\/features$/);
+    if (features && UUID_PATTERN.test(features[1]) && method === "GET") return listFeatures(request, env, features[1]);
     const groupingStart = path.match(/^\/api\/analyses\/([^/]+)\/groupings\/start$/);
     if (groupingStart && UUID_PATTERN.test(groupingStart[1]) && method === "POST") return startGrouping(request, env, groupingStart[1]);
     const groupingApprove = path.match(/^\/api\/analyses\/([^/]+)\/groupings\/approve$/);

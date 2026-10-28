@@ -3300,3 +3300,36 @@ test("editing a draft keeps a feature's stories while their files stay in it, an
   const row = state.feature_groupings.find((g) => g.id === uid(1140));
   assert.deepEqual(row.groups[0].stories.map((s) => s.id), ["S1"]);
 });
+
+test("the feature view shows only the approved grouping, with each story's cited rules read from the approved assessment", async () => {
+  readyForBusiness();
+  const stories = [{ id: "S1", story: "As a clerk I can place an order so that it is checked.", status: "draft", rules: [{ file: "src/Orders.asp", id: "R1", lines: [4, 9] }, { file: "src/Orders.asp", id: "R7", lines: [20, 30] }] }];
+  const approvedGrouping = { ...groupingRow(1140, "approved", [{ name: "Ordering", summary: "Takes orders.", paths: ["src/Orders.asp"], stories }]), reviewed_by_email: "cio@acme.test", reviewed_at: NOW };
+  state.feature_groupings.push(groupingRow(1141, "draft", [{ name: "Draft only", summary: "x", paths: ["src/Orders.asp"] }]), approvedGrouping);
+  state.file_deep_assessments.push(storyDeepRow(1142, "src/Orders.asp", ORDER_RULES));
+  const res = await call(`/api/analyses/${AN_ACME}/features`, { as: "eng_a" });
+  assert.equal(res.status, 200);
+  assert.equal(res.body.grouping.approved_by_email, "cio@acme.test");
+  assert.deepEqual(res.body.features.map((f) => f.name), ["Ordering"], "a draft grouping is never shown");
+  const [feature] = res.body.features;
+  assert.equal(feature.summary, "Takes orders.");
+  assert.deepEqual(feature.files.map((f) => f.path), ["src/Orders.asp"]);
+  const [story] = feature.stories;
+  assert.equal(story.story, "As a clerk I can place an order so that it is checked.");
+  const [cited, gone] = story.rules;
+  assert.equal(cited.statement, "An order needs a customer.");
+  assert.deepEqual(cited.lines, [4, 9], "the lines come from the approved rule");
+  assert.equal(cited.current, true);
+  assert.equal(gone.current, false, "a cited rule no longer in the approved assessment is marked, not hidden");
+  assert.deepEqual(gone.lines, [20, 30]);
+});
+
+test("the feature view is empty until a grouping is approved, and auditors are refused", async () => {
+  readyForBusiness();
+  const empty = await call(`/api/analyses/${AN_ACME}/features`, { as: "cio_a" });
+  assert.equal(empty.status, 200);
+  assert.equal(empty.body.grouping, null);
+  assert.deepEqual(empty.body.features, []);
+  const aud = await call(`/api/analyses/${AN_ACME}/features`, { as: "aud_a" });
+  assert.equal(aud.status, 403);
+});
