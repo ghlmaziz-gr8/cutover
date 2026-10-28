@@ -391,7 +391,7 @@ const visibleIds = (findings) => Object.keys(findings || {}).sort();
 // ---- Choosing the modernized template ----
 
 test("the owner or a CIO or CTO chooses the modernized template, from the three there are; an engineer does not", async () => {
-  state.analyses.find((a) => a.id === AN_ACME).scope = "modernize";
+  state.analyses.find((a) => a.id === AN_ACME).scope = "deeper_modernize";
   const auditor = await call(`/api/analyses/${AN_ACME}/template`, { as: "aud_a", method: "PUT", body: { template: "web-modern" } });
   assert.equal(auditor.status, 403);
   const engineer = await call(`/api/analyses/${AN_ACME}/template`, { as: "eng_a", method: "PUT", body: { template: "web-modern" } });
@@ -406,11 +406,11 @@ test("the approach can only be chosen once Modernize is the next stage", async (
   const early = await call(`/api/analyses/${AN_ACME}/template`, { as: "cio_a", method: "PUT", body: { template: "web-modern" } });
   assert.equal(early.status, 409);
   assert.match(early.body.error, /Choose Modernize/);
-  analysis.scope = "modernize";
+  analysis.scope = "deeper_modernize";
 });
 
 test("the CIO's choice is saved with who chose it and when, and a later choice replaces it", async () => {
-  state.analyses.find((a) => a.id === AN_ACME).scope = "modernize";
+  state.analyses.find((a) => a.id === AN_ACME).scope = "deeper_modernize";
   const first = await call(`/api/analyses/${AN_ACME}/template`, { as: "cio_a", method: "PUT", body: { template: "web-modern" } });
   assert.equal(first.status, 200);
   assert.equal(first.body.template, "web-modern");
@@ -511,7 +511,7 @@ const CONVERSION_TEXT = "I approve one file at a time being sent to the language
 function readyForConversion(overrides = {}) {
   const analysis = state.analyses.find((a) => a.id === AN_ACME);
   Object.assign(analysis, {
-    deeper_done: true, scope: "modernize", modern_template: "web-modern", target_language: "python-fastapi", model_key_id: "key-1", source_upload: false,
+    deeper_done: true, scope: "deeper_modernize", modern_template: "web-modern", target_language: "python-fastapi", model_key_id: "key-1", source_upload: false,
     modern_progress: {
       plan: { reviewed_by: PEOPLE.eng_a.email, reviewed_at: NOW },
       starter: { reviewed_by: PEOPLE.eng_a.email, reviewed_at: NOW },
@@ -2349,16 +2349,17 @@ test("every role sees the drawn screens", async () => {
   }
 });
 
-test("only the owner or a CIO or CTO chooses the scope, and deeper is the only choice until the deeper assessment is done", async () => {
+test("only the owner or a CIO or CTO chooses the scope, and any of the four combinations can be chosen before the deeper assessment runs", async () => {
   const denied = await call(`/api/analyses/${AN_ACME}/scope`, { as: "aud_a", method: "PATCH", body: { scope: "deeper" } });
   assert.equal(denied.status, 403);
   const engineer = await call(`/api/analyses/${AN_ACME}/scope`, { as: "eng_a", method: "PATCH", body: { scope: "deeper" } });
   assert.equal(engineer.status, 403, "the engineer carries the scope out, the CIO chooses it");
   const bad = await call(`/api/analyses/${AN_ACME}/scope`, { as: "cio_a", method: "PATCH", body: { scope: "rebuild" } });
   assert.equal(bad.status, 400);
-  const locked = await call(`/api/analyses/${AN_ACME}/scope`, { as: "cio_a", method: "PATCH", body: { scope: "migrate" } });
-  assert.equal(locked.status, 409);
-  assert.match(locked.body.error, /deeper assessment/);
+  const old = await call(`/api/analyses/${AN_ACME}/scope`, { as: "cio_a", method: "PATCH", body: { scope: "migrate" } });
+  assert.equal(old.status, 400, "the single values from before are no longer offered");
+  const all = await call(`/api/analyses/${AN_ACME}/scope`, { as: "cio_a", method: "PATCH", body: { scope: "deeper_modernize_migrate" } });
+  assert.equal(all.status, 200, "the scope is chosen before the deeper assessment runs");
   const deeper = await call(`/api/analyses/${AN_ACME}/scope`, { as: "cio_a", method: "PATCH", body: { scope: "deeper" } });
   assert.equal(deeper.status, 200);
   const saved = state.analyses.find((a) => a.id === AN_ACME);
@@ -2452,7 +2453,7 @@ test("Migrate: the cloud is chosen only after Migrate, the intake is checked, an
   analysis.deeper_done = true;
   const early = await call(`/api/analyses/${AN_ACME}/cloud`, { as: "eng_a", method: "PATCH", body: { cloud: "aws" } });
   assert.equal(early.status, 409, "cloud waits for Migrate");
-  assert.equal((await call(`/api/analyses/${AN_ACME}/scope`, { as: "cio_a", method: "PATCH", body: { scope: "migrate" } })).status, 200);
+  assert.equal((await call(`/api/analyses/${AN_ACME}/scope`, { as: "cio_a", method: "PATCH", body: { scope: "deeper_migrate" } })).status, 200);
   assert.equal((await call(`/api/analyses/${AN_ACME}/cloud`, { as: "aud_a", method: "PATCH", body: { cloud: "aws" } })).status, 403);
   assert.equal((await call(`/api/analyses/${AN_ACME}/cloud`, { as: "eng_a", method: "PATCH", body: { cloud: "mars" } })).status, 400);
   assert.equal((await call(`/api/analyses/${AN_ACME}/cloud`, { as: "eng_a", method: "PATCH", body: { cloud: "aws" } })).status, 200);
@@ -2482,7 +2483,7 @@ test("Migrate: the cloud is chosen only after Migrate, the intake is checked, an
 
 test("Terraform: made only from a confirmed intake, as numbered drafts that are never overwritten, and seen only by infrastructure roles", async () => {
   const analysis = state.analyses.find((a) => a.id === AN_ACME);
-  analysis.scope = "migrate";
+  analysis.scope = "deeper_migrate";
   analysis.deeper_done = true;
   analysis.cloud = "aws";
   analysis.intake = { region: "us-east-1", network: "new", sign_in: "google", compliance: "HIPAA", expected_users: 400, residency: "United States" };
@@ -2518,7 +2519,7 @@ test("Terraform: made only from a confirmed intake, as numbered drafts that are 
 
 test("Terraform: a region the cloud does not accept is refused, so no draft is made from it", async () => {
   const analysis = state.analyses.find((a) => a.id === AN_ACME);
-  analysis.scope = "migrate";
+  analysis.scope = "deeper_migrate";
   analysis.deeper_done = true;
   analysis.cloud = "google";
   analysis.intake = { region: 'us"central\n1', network: "existing", sign_in: "other", compliance: "None", expected_users: 10, residency: "EU" };
@@ -2538,7 +2539,7 @@ test("Terraform: a region the cloud does not accept is refused, so no draft is m
 
 test("intake: the region must be one the chosen cloud accepts", async () => {
   const analysis = state.analyses.find((a) => a.id === AN_ACME);
-  analysis.scope = "migrate";
+  analysis.scope = "deeper_migrate";
   analysis.deeper_done = true;
   analysis.cloud = "azure";
   const intake = { region: "us-east-1", network: "new", sign_in: "google", compliance: "None", expected_users: 50, residency: "EU" };
@@ -2859,7 +2860,7 @@ test("the target language: chosen by an engineer after the approach, fitted to i
   const owner = PEOPLE.stranger.email;
   const early = await call(`/api/analyses/${AN_ACME}/target`, { as: "eng_a", method: "PUT", body: { language: "ts-react", owner_email: owner } });
   assert.equal(early.status, 409, "the target waits for Modernize");
-  assert.equal((await call(`/api/analyses/${AN_ACME}/scope`, { as: "cio_a", method: "PATCH", body: { scope: "modernize" } })).status, 200);
+  assert.equal((await call(`/api/analyses/${AN_ACME}/scope`, { as: "cio_a", method: "PATCH", body: { scope: "deeper_modernize" } })).status, 200);
   const noApproach = await call(`/api/analyses/${AN_ACME}/target`, { as: "eng_a", method: "PUT", body: { language: "ts-react", owner_email: owner } });
   assert.equal(noApproach.status, 409, "the target waits for the approach");
   await call(`/api/analyses/${AN_ACME}/template`, { as: "cio_a", method: "PUT", body: { template: "web-modern" } });
@@ -2893,7 +2894,7 @@ test("the target language: chosen by an engineer after the approach, fitted to i
 test("the target language: lift-contain offers only keeping the current language", async () => {
   const analysis = state.analyses.find((a) => a.id === AN_ACME);
   analysis.deeper_done = true;
-  analysis.scope = "modernize";
+  analysis.scope = "deeper_modernize";
   analysis.modern_template = "lift-contain";
   const wrong = await call(`/api/analyses/${AN_ACME}/target`, { as: "eng_a", method: "PUT", body: { language: "java-spring", owner_email: PEOPLE.stranger.email } });
   assert.equal(wrong.status, 400);

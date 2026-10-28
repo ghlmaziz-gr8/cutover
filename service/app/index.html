@@ -5825,7 +5825,7 @@ a{color:#6d28d9;font-weight:600}`;
       const by = row.modern_template_set_by_email ? ` by ${row.modern_template_set_by_email}` : "";
       wrap.appendChild(el("p", `Chosen approach: ${TEMPLATE_NAME[row.modern_template] || row.modern_template}${by}.`, "small"));
     }
-    const note = row && row.scope === "modernize"
+    const note = row && scopeHas(row.scope, "modernize")
       ? "Modernize is the next stage. The approach is chosen on the next steps page."
       : "To choose an approach, first choose Modernize as the next stage.";
     wrap.appendChild(el("p", note, "small"));
@@ -5843,7 +5843,7 @@ a{color:#6d28d9;font-weight:600}`;
   function renderNextRail(row) {
     const rail = $("nextRail");
     rail.replaceChildren();
-    const modern = row.scope === "modernize";
+    const modern = scopeHas(row.scope, "modernize");
     const steps = [
       { id: "scopeCard", label: "Scope", done: !!row.scope, show: true },
       { id: "approachCard", label: "Approach", done: !!row.modern_template, show: modern },
@@ -5880,7 +5880,7 @@ a{color:#6d28d9;font-weight:600}`;
   function renderApproach(row) {
     const card = $("approachCard");
     $("approachFold").open = !row || !row.modern_template;
-    const visible = !!row && row.scope === "modernize";
+    const visible = !!row && scopeHas(row.scope, "modernize");
     card.hidden = !visible;
     if (!visible) return;
     const by = row.modern_template_set_by_email ? ` by ${row.modern_template_set_by_email}` : "";
@@ -6849,7 +6849,7 @@ a{color:#6d28d9;font-weight:600}`;
     const card = $("effortCard");
     const box = $("effortBody");
     box.replaceChildren();
-    const show = !!row && row.scope === "modernize" && !!row.modern_template && !!window.Effort;
+    const show = !!row && scopeHas(row.scope, "modernize") && !!row.modern_template && !!window.Effort;
     card.hidden = !show;
     if (!show) return;
     if (!effortState || effortState.analysis !== row.id) {
@@ -7256,7 +7256,7 @@ a{color:#6d28d9;font-weight:600}`;
     const card = $("targetCard");
     const box = $("targetBody");
     box.replaceChildren();
-    card.hidden = !(row && row.scope === "modernize" && row.modern_template);
+    card.hidden = !(row && scopeHas(row.scope, "modernize") && row.modern_template);
     if (card.hidden) return;
     const options = (row.target_options || []).filter((o) => o.approaches.includes(row.modern_template));
     const name = (id) => (options.find((o) => o.id === id) || (row.target_options || []).find((o) => o.id === id) || {}).label || id;
@@ -7487,7 +7487,7 @@ a{color:#6d28d9;font-weight:600}`;
   // Next steps: a short summary. The work itself is on the conversion page.
   function renderConversionSummary(row) {
     const card = $("conversionCardNext");
-    card.hidden = !(row && row.scope === "modernize");
+    card.hidden = !(row && scopeHas(row.scope, "modernize"));
     if (card.hidden) return;
     const lang = row.target_language ? languageLabel(row) : "No language chosen yet";
     const approval = row.conversion_approval
@@ -7510,7 +7510,7 @@ a{color:#6d28d9;font-weight:600}`;
     const card = $("conversionCard");
     const box = $("conversionBody");
     box.replaceChildren();
-    card.hidden = !(row && row.scope === "modernize");
+    card.hidden = !(row && scopeHas(row.scope, "modernize"));
     if (card.hidden) return;
     box.appendChild(el("p", "Converting files with the language model", "eyebrow-sm"));
     box.appendChild(el("h3", "Written approval"));
@@ -8501,12 +8501,23 @@ a{color:#6d28d9;font-weight:600}`;
   $("scopeToDeeper").addEventListener("click", () => showDeeper());
   $("lensAll").addEventListener("click", () => showAllLenses());
 
+  // The scope is chosen before the deeper assessment runs. Each option is the deeper assessment plus the stages it names.
   const SCOPE_OPTIONS = [
-    { key: "deeper", title: "Deeper assessment", body: "A purpose and suggestions for every file, plus business, systems and data documents, workflows and an architecture diagram.", needsDeeper: false },
-    { key: "modernize", title: "Modernize", body: "Three future-state proposals for the web application, each with its trade-offs.", needsDeeper: true, note: "The three proposals are on the deeper assessment page. Choosing this records your decision." },
-    { key: "migrate", title: "Migrate", body: "Move to Google Cloud, AWS or Azure. Then an intake form, then a Terraform draft to review.", needsDeeper: true, note: "Choosing this opens the target cloud and the intake form below." },
+    { key: "deeper", title: "Deeper assessment only", body: "A purpose and suggestions for every file, plus business, systems and data documents, workflows and an architecture diagram." },
+    { key: "deeper_modernize", title: "Deeper assessment + Modernize", body: "The deeper assessment, then three future-state proposals for the web application, each with its trade-offs.", note: "The approach, the target language and the plan follow the deeper assessment." },
+    { key: "deeper_migrate", title: "Deeper assessment + Migrate", body: "The deeper assessment, then a move to Google Cloud, AWS or Azure, an intake form and a Terraform draft to review.", note: "Choosing this opens the target cloud and the intake form below." },
+    { key: "deeper_modernize_migrate", title: "Deeper assessment + Modernize + Migrate", body: "All of the above: the deeper assessment, the modernized approach, and the move to a cloud.", note: "Choosing this opens the target cloud, the intake form and the approach." },
   ];
-  const SCOPE_LABEL = { deeper: "Deeper assessment", modernize: "Modernize", migrate: "Migrate" };
+  const SCOPE_LABEL = {
+    deeper: "Deeper assessment only",
+    deeper_modernize: "Deeper assessment + Modernize",
+    deeper_migrate: "Deeper assessment + Migrate",
+    deeper_modernize_migrate: "Deeper assessment + Modernize + Migrate",
+  };
+  // True when the chosen scope includes the stage ("modernize" or "migrate").
+  function scopeHas(scope, stage) {
+    return !!scope && String(scope).split("_").includes(stage);
+  }
 
   // Shows the three next stages. Modernize and Migrate stay locked until the deeper assessment is done.
   function renderScope() {
@@ -8520,11 +8531,8 @@ a{color:#6d28d9;font-weight:600}`;
     $("scopeNote").textContent = canChoose
       ? `${note} Choose the next stage for this analysis.`
       : `${note} The application owner, or a CIO or CTO, chooses the scope.`;
-    if (!deeperDone) $("scopeNote").textContent += " Modernize and Migrate appear once the deeper assessment is complete.";
     $("scopeLockBox").hidden = deeperDone;
     for (const o of SCOPE_OPTIONS) {
-      // Modernize and Migrate are not offered at all until the deeper assessment is done.
-      if (o.needsDeeper && !deeperDone) continue;
       const selected = cur.scope === o.key;
       const card = el("div", null, "scope-opt" + (selected ? " selected" : ""));
       card.dataset.key = o.key;
@@ -8580,7 +8588,7 @@ const REGION_OPTS = {
   // Migrate: the cloud is chosen first, then the intake form. Only platform engineers change either.
   function renderMigrate() {
     const box = $("migrateBox");
-    box.hidden = cur.scope !== "migrate";
+    box.hidden = !scopeHas(cur.scope, "migrate");
     if (box.hidden) return;
     renderTerraform();
     const canEdit = !!cur.can_plan;
@@ -8639,7 +8647,7 @@ const REGION_OPTS = {
   let tfVersions = null;
   async function renderTerraform() {
     const wrap = $("tfWrap");
-    wrap.hidden = cur.scope !== "migrate";
+    wrap.hidden = !scopeHas(cur.scope, "migrate");
     if (wrap.hidden) return;
     const canEdit = !!cur.can_plan;
     const readyToDraft = TF_CLOUDS.includes(cur.cloud) && !!cur.intake_confirmed_at;

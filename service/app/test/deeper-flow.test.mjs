@@ -26,8 +26,9 @@ test("the three deeper assessments are data, business and system, each showing i
   assert.ok(html.includes("(deeper.sections || []).filter((x) => !!lens && lens.sections.includes(x.id))") && html.includes("arch.hidden = !(lens && lens.arch);"));
 });
 
-test("Modernize and Migrate are not drawn until the deeper assessment is done", () => {
-  assert.ok(html.includes("if (o.needsDeeper && !deeperDone) continue;"));
+test("the four scope options are offered before the deeper assessment runs, and the deeper lock still opens the deeper page", () => {
+  assert.ok(!html.includes("if (o.needsDeeper && !deeperDone) continue;"));
+  assert.ok(html.includes('key: "deeper_modernize_migrate"'));
   assert.ok(html.includes('$("scopeLockBox").hidden = deeperDone;'));
   assert.ok(!html.includes("Locked until the deeper assessment is complete"));
 });
