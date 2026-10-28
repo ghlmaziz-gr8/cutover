@@ -174,8 +174,9 @@ def assess_file(path: str, code: str, ask: Callable[[str], str]) -> dict:
                 "reason": "The file holds text that looks like personal data, so nothing was sent."}
     try:
         reply = ask(build_user_text(path, code))
-    except Exception:  # The provider may be down or the key stopped working; the reason stays generic.
-        return {**base, "status": "failed", "reason": "The language model did not answer. Nothing was kept."}
+    except Exception as err:  # The reason names the provider's status, never the key or the reply.
+        from model_purposes import explain_failure  # Imported here: the call code is not needed for the rest of this module.
+        return {**base, "status": "failed", "reason": explain_failure(err)}
     content = clean_reply(reply, code)
     if content is None:
         return {**base, "status": "unusable", "reason": "The model did not reply in the form needed, so nothing was kept."}

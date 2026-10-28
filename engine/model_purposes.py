@@ -191,7 +191,11 @@ def call_provider(provider: str, model: str, api_key: str, user_text: str, opene
     url, headers, body = build_request(provider, model, api_key, user_text, system=system, max_tokens=max_tokens,
                                        base_url=base_url, token_field=token_field, json_reply=json_reply)
     payload = None
-    for attempt in range(len(RETRY_PAUSES) + 1):
+    use_json = json_reply
+    for attempt in range(len(RETRY_PAUSES) + 2):
+        if attempt:
+            url, headers, body = build_request(provider, model, api_key, user_text, system=system, max_tokens=max_tokens,
+                                               base_url=base_url, token_field=token_field, json_reply=use_json)
         req = urllib.request.Request(url, data=body, method="POST", headers=headers)
         try:
             with opener(req, timeout=60) as res:
@@ -200,6 +204,10 @@ def call_provider(provider: str, model: str, api_key: str, user_text: str, opene
         except urllib.error.HTTPError as err:
             if err.code in (401, 403, 429):
                 raise ProviderStopped(err.code)
+            if err.code == 400 and use_json and provider == "openai":
+                # Some providers refuse the JSON setting for some models. The reply is then read as text and checked the same way.
+                use_json = False
+                continue
             if err.code in RETRY_CODES and attempt < len(RETRY_PAUSES):
                 time.sleep(RETRY_PAUSES[attempt])
                 continue

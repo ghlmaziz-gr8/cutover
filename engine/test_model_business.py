@@ -171,6 +171,17 @@ class RunnerStep(unittest.TestCase):
         self.assertEqual(code, 2)
 
 
+class FailureReasonTests(unittest.TestCase):
+    def test_a_provider_error_names_its_status_and_nothing_else(self):
+        import model_purposes as mp_mod
+
+        def ask(text):
+            raise mp_mod.ProviderError("HTTP 400")
+
+        result = mb.assess_file("src/A.java", "public class A {}", ask)
+        self.assertEqual(result["status"], "failed")
+        self.assertEqual(result["reason"], "The model provider answered HTTP 400. Nothing was kept.")
+
 class BusinessRunAsksForJson(unittest.TestCase):
     def test_the_business_run_asks_the_provider_for_a_json_reply(self):
         # Without this, Google may return prose, and the reply is refused as not in the form needed.
