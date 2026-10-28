@@ -3915,6 +3915,16 @@ const STORY_CITES_MAX = 20;
 const STORY_SHAPE = /^As an? .+ I can .+ so that .+/i;
 
 // The approved rules of the given files, with what the story drafting reads. Only approved assessments count.
+// Replaces anything that looks like personal or identifying data in a sample value with a generic placeholder.
+function scrubSample(value) {
+  return String(value || "")
+    .replace(/[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/g, "name@example.com")
+    .replace(/\b\d{3}-\d{2}-\d{4}\b/g, "XXX-XX-XXXX")
+    .replace(/\+?\d[\d\s().-]{7,}\d/g, "555-0100")
+    .replace(/\b(?:\d{1,3}\.){3}\d{1,3}\b/g, "192.0.2.1")
+    .replace(/\b\d{6,}\b/g, "123456");
+}
+
 async function approvedRulesFor(env, id, paths) {
   const found = new Map();
   const unique = [...new Set(paths)];
@@ -3935,7 +3945,13 @@ async function approvedRulesFor(env, id, paths) {
         purpose: String(f.purpose || "").slice(0, 300),
         calls: (Array.isArray(f.calls) ? f.calls : []).filter((c) => typeof c === "string").slice(0, 30),
       }));
-      const examples = (Array.isArray(content.examples) ? content.examples : []).slice(0, 120).filter((e) => e && typeof e.rule === "string").map((e) => ({ rule: e.rule }));
+      // The worked examples become acceptance tests in the module spec. Their values are scrubbed first: anything that
+      // looks like an e-mail, a phone number, an ID or an address is replaced with a placeholder.
+      const examples = (Array.isArray(content.examples) ? content.examples : []).slice(0, 120).filter((e) => e && typeof e.rule === "string").map((e) => ({
+        rule: e.rule,
+        given: scrubSample(e.given).slice(0, 300),
+        expect: scrubSample(e.expect).slice(0, 300),
+      }));
       const db = content.database && typeof content.database === "object" ? content.database : {};
       const database = {
         tables: (Array.isArray(db.tables) ? db.tables : []).slice(0, 40).filter((t) => t && typeof t.name === "string").map((t) => ({
