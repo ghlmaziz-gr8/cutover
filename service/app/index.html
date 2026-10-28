@@ -1358,9 +1358,9 @@ button:not(:disabled):active{transform:scale(.965)}
     .gr-send{display:flex;gap:8px;align-items:flex-start;margin-top:8px;flex-wrap:wrap}
     .gr-text{flex:1 1 260px;min-height:44px;font:13px var(--body);padding:8px;border-radius:8px;border:1px solid var(--line,#ddd)}
     /* Related files: the chord diagram draws its lines in turn, and the order tree grows one step at a time. */
-    .rel-wrap{display:grid;grid-template-columns:minmax(260px,400px) minmax(0,1fr);gap:22px;align-items:center;margin:14px 0 10px}
+    .rel-wrap{display:grid;grid-template-columns:minmax(260px,var(--chord-w,400px)) minmax(0,1fr);gap:22px;align-items:center;margin:14px 0 10px}
     @media (max-width:700px){.rel-wrap{grid-template-columns:1fr}}
-    .rel-chord svg{width:100%;max-width:400px;height:auto;overflow:visible;display:block}
+    .rel-chord svg{width:100%;height:auto;overflow:visible;display:block}
     .rel-chord text{font:600 10.5px var(--body);fill:var(--fg)}
     .rc-link{stroke-linecap:round;stroke-dasharray:1;stroke-dashoffset:1;opacity:.8;transition:stroke-dashoffset .9s cubic-bezier(.2,.8,.2,1),stroke-width .25s ease,opacity .25s ease;transition-delay:var(--d,0ms)}
     .rel-chord.is-on .rc-link{stroke-dashoffset:0}
@@ -9801,6 +9801,8 @@ const REGION_OPTS = {
 
   function relatedView(f, near, paths, links, deep = {}) {
     const wrap = el("div", null, "rel-wrap");
+    // The map grows with the number of related files: 400px for one or two, up to 620px for five or more.
+    wrap.style.setProperty("--chord-w", `${Math.min(620, Math.max(400, 320 + 60 * near.length))}px`);
     const reasonOf = new Map(near.map((r) => [r.path, r]));
     const order = window.FileMap.processingOrder(f.path, paths, links);
 
