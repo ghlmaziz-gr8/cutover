@@ -2084,6 +2084,10 @@ button:not(:disabled):active{transform:scale(.965)}
         <p class="muted small" style="margin:0">Cutover reads every file in the repository and writes a short, plain-English purpose for each one, with suggestions for the move. A platform engineer checks each entry. Only approved entries go into the final report.</p>
       </div>
     </div>
+    <div class="row wzNav" style="margin:14px 0 14px">
+      <button type="button" class="ghost" id="filesBackReview">Back to findings</button>
+      <button type="button" id="filesApproveAll">Approve all drafts</button>
+    </div>
     <div class="card fr-hud" id="frHud" role="status" aria-live="polite">
       <div class="fr-top">
         <span class="fr-kicker" id="frKicker">STAGE 1 OF 4</span>
@@ -2099,10 +2103,6 @@ button:not(:disabled):active{transform:scale(.965)}
       </ol>
       <p class="small muted" id="frNow"></p>
       <div class="fr-burst" id="frBurst" aria-hidden="true">STAGE CLEARED</div>
-    </div>
-    <div class="row wzNav" style="margin:14px 0 4px">
-      <button type="button" class="ghost" id="filesBackReview">Back to findings</button>
-      <button type="button" id="filesApproveAll">Approve all drafts</button>
     </div>
     <div class="card">
       <p class="muted small" id="filesNote" style="margin:0"></p>
