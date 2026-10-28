@@ -11,6 +11,7 @@
 window.CUTOVER_GUIDE = {
   updated: "2026-10-22",
   whatsNew: [
+    "2026-10-28: Run deep assessment keeps the page where it is, and brings the running assessment into view.",
     "2026-10-28: The notification bell is hidden on every screen.",
     "2026-10-28: The screens drawn from the code also show on File-level results. A business draft made before the rules were added says to run the assessment again.",
     "2026-10-28: Every screen drawn from the code is shown in the Deep AI assessment results, and each one can be downloaded as a PNG.",
