@@ -120,3 +120,53 @@ class OverlappingGroups(unittest.TestCase):
         groups = clean_grouping_reply(reply, {"a.asp", "b.asp"})
         self.assertEqual(groups[0]["paths"], ["a.asp"])
         self.assertEqual(groups[1]["paths"], ["a.asp", "b.asp"])
+
+
+class Capabilities(unittest.TestCase):
+    def test_a_capability_holds_features_and_each_feature_is_in_one_capability(self):
+        reply = json.dumps({"capabilities": [
+            {"name": "Sales", "summary": "x", "features": [
+                {"name": "Ordering", "summary": "", "paths": ["src/Orders.py"]},
+                {"name": "Checkout", "summary": "", "paths": ["src/Orders.py", "src/Unknown.py"]}]},
+            {"name": "Returns", "summary": "", "features": [
+                {"name": "Money back", "summary": "", "paths": ["src/Refunds.py"]}]},
+        ]})
+        groups, caps = mg.clean_grouping(reply, ALLOWED)
+        self.assertEqual([g["name"] for g in groups], ["Ordering", "Checkout", "Money back"])
+        self.assertEqual(caps, [
+            {"name": "Sales", "summary": "x", "features": [0, 1]},
+            {"name": "Returns", "summary": "", "features": [2]},
+        ])
+        self.assertEqual(groups[1]["paths"], ["src/Orders.py"])
+
+    def test_a_capability_with_no_usable_feature_is_dropped(self):
+        reply = json.dumps({"capabilities": [
+            {"name": "Empty", "features": [{"name": "Nothing", "paths": ["nope.py"]}]},
+            {"name": "Sales", "features": [{"name": "Ordering", "paths": ["src/Orders.py"]}]},
+        ]})
+        groups, caps = mg.clean_grouping(reply, ALLOWED)
+        self.assertEqual(len(groups), 1)
+        self.assertEqual(caps, [{"name": "Sales", "summary": "", "features": [0]}])
+
+    def test_an_older_reply_with_groups_only_gives_no_capabilities(self):
+        reply = json.dumps({"groups": [{"name": "Ordering", "summary": "", "paths": ["src/Orders.py"]}]})
+        groups, caps = mg.clean_grouping(reply, ALLOWED)
+        self.assertEqual(len(groups), 1)
+        self.assertIsNone(caps)
+
+    def test_a_good_capability_reply_is_ok_with_the_capabilities(self):
+        reply = json.dumps({"capabilities": [{"name": "Sales", "summary": "", "features": [
+            {"name": "Ordering", "summary": "", "paths": ["src/Orders.py"]}]}]})
+        got = mg.group_features(SOURCES, lambda text: reply)
+        self.assertEqual(got["status"], "ok")
+        self.assertEqual(got["capabilities"], [{"name": "Sales", "summary": "", "features": [0]}])
+
+    def test_the_prompt_asks_for_capabilities_and_one_capability_per_feature(self):
+        text = mg.build_user_text(SOURCES)
+        self.assertIn('"capabilities"', text)
+        self.assertIn("A feature belongs to one capability only", text)
+
+    def test_the_run_posts_the_capabilities_too(self):
+        payload = gr.payload_for({"status": "ok", "groups": [{"name": "A", "summary": "", "paths": ["a"]}],
+                                  "capabilities": [{"name": "C", "summary": "", "features": [0]}]})
+        self.assertEqual(payload["capabilities"], [{"name": "C", "summary": "", "features": [0]}])
