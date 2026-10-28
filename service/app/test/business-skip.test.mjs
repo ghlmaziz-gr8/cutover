@@ -23,7 +23,7 @@ test("a skipped view says so, keeps the reason, and tells the person how to asse
 });
 
 test("the feature step shows how many approved files have an approved business view, and lists the skipped ones", () => {
-  assert.match(html, /<div id="groupSummary" class="small"/);
+  assert.match(html, /<div id="groupSummary" class="fg-summary"/);
   assert.match(html, /async function loadGroupSummary\(\) \{/);
   assert.match(html, /api\(`\/api\/analyses\/\$\{cur\.id\}\/business-summary`\)/);
   assert.match(html, /of \$\{s\.files\} approved files have an approved business view\./);
