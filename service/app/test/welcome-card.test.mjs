@@ -42,12 +42,12 @@ test("the change is listed in What's new", () => {
   assert.match(guide, /A card on the home screen greets you when you sign in/);
 });
 
-test("the level badge sits in the header next to the logo and opens the rewards card", () => {
-  assert.match(html, /<div class="brand"><span class="logo">C<\/span><button type="button" id="headerBadge" class="header-badge" hidden><\/button>Cutover/);
-  assert.match(html, /async function loadHeaderBadge\(\) \{/);
+test("the level badge sits on the home screen next to the Change role button and opens the rewards card", () => {
+  assert.match(html, /<span class="row home-actions">\n        <button type="button" id="levelBadge" class="level-badge" hidden><\/button>\n        <button type="button" class="ghost small-btn" id="changeRole">Change role<\/button>/);
+  assert.match(html, /async function loadLevelBadge\(\) \{/);
   assert.match(html, /badge\.onclick = \(\) => showWelcome\(\);/);
-  assert.match(html, /loadHeaderBadge\(\);\n/);
-  assert.doesNotMatch(html, /levelChip/);
+  assert.match(html, /loadLevelBadge\(\);\n/);
+  assert.doesNotMatch(html, /headerBadge|header-badge/);
 });
 
 test("a failed rewards load says so in the card instead of staying silent", () => {

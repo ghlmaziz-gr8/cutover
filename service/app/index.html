@@ -1410,12 +1410,13 @@ button:not(:disabled):active{transform:scale(.965)}
     .bplate:hover .bplate-glyph{animation:badgeWiggle .6s ease}
     .bmedal{width:26px;height:26px;flex:none;vertical-align:middle;margin-right:6px}
     @media (prefers-reduced-motion: reduce){.bplate,.bplate-glyph{animation:none}.bplate:hover,.bplate:hover .bplate-glyph{transform:none;animation:none}}
-    .header-badge{flex:none;background:none;color:inherit;padding:0;border-radius:0;box-shadow:none;margin:-6px 0 -6px -4px;cursor:pointer;transition:transform .2s cubic-bezier(.34,1.56,.64,1)}
-    .header-badge:hover{transform:translateY(-2px) scale(1.06);background:none;box-shadow:none}
-    .header-badge:focus-visible{outline:2px solid #1d4ed8;outline-offset:2px}
-    .header-badge .bplate-svg{width:42px;height:61px;display:block;animation:none;filter:drop-shadow(0 3px 6px rgba(15,23,42,.3))}
-    .header-badge .bplate-glyph{animation:none}
-    @media (prefers-reduced-motion: reduce){.header-badge:hover{transform:none}}
+    .home-actions{align-items:center;gap:12px}
+    .level-badge{flex:none;background:none;color:inherit;padding:0;border-radius:0;box-shadow:none;margin:-14px 0;cursor:pointer;transition:transform .2s cubic-bezier(.34,1.56,.64,1)}
+    .level-badge:hover{transform:translateY(-2px) scale(1.06);background:none;box-shadow:none}
+    .level-badge:focus-visible{outline:2px solid #1d4ed8;outline-offset:2px}
+    .level-badge .bplate-svg{width:84px;height:122px;display:block;animation:none;filter:drop-shadow(0 4px 8px rgba(15,23,42,.3))}
+    .level-badge .bplate-glyph{animation:none}
+    @media (prefers-reduced-motion: reduce){.level-badge:hover{transform:none}}
     @keyframes wcIn{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
     @media (prefers-reduced-motion: reduce){.welcome-card{animation:none}.wc-fill{transition:none}}
     /* The deep view under a file: it rises in when the file is chosen. */
@@ -1428,7 +1429,7 @@ button:not(:disabled):active{transform:scale(.965)}
 <div id="printReport"></div>
 <header class="top">
   <div class="top-in">
-    <div class="brand"><span class="logo">C</span><button type="button" id="headerBadge" class="header-badge" hidden></button>Cutover <span class="muted" style="font:600 12px var(--body)">portal</span></div>
+    <div class="brand"><span class="logo">C</span>Cutover <span class="muted" style="font:600 12px var(--body)">portal</span></div>
     <div>
       <div class="pmeta"><span id="stageName">Sign in</span><span id="stepCount" class="muted"></span><span class="pct" id="pct"></span><span id="eta" class="muted"></span></div>
       <div class="track" id="barWrap"><div class="fill" id="barFill"></div></div>
@@ -1499,7 +1500,8 @@ button:not(:disabled):active{transform:scale(.965)}
     <div id="welcomeCard" class="welcome-card" hidden></div>
     <div class="row between" style="margin-top:8px">
       <h2 id="homeTitle">Cutover</h2>
-      <span class="row">
+      <span class="row home-actions">
+        <button type="button" id="levelBadge" class="level-badge" hidden></button>
         <button type="button" class="ghost small-btn" id="changeRole">Change role</button>
         <button type="button" class="ghost small-btn" data-signout>Sign out</button>
       </span>
@@ -2499,8 +2501,8 @@ button:not(:disabled):active{transform:scale(.965)}
     card.hidden = false;
   }
   // The level stays visible on the home screen. A click opens the rewards card again.
-  async function loadHeaderBadge() {
-    const badge = $("headerBadge");
+  async function loadLevelBadge() {
+    const badge = $("levelBadge");
     badge.hidden = true;
     if (!me) return;
     try {
@@ -2765,7 +2767,7 @@ button:not(:disabled):active{transform:scale(.965)}
     $("homeRole").hidden = !ws;
     $("changeRole").hidden = !ws;
     $("homeSub").textContent = ws ? "" : "You have no workspace yet. Create one below.";
-    loadHeaderBadge();
+    loadLevelBadge();
     // Three tabs: analyses (this workspace), workspaces (people and new customer workspaces) and the guide.
     const canAnalyse = !!ws;
     const canWork = !!((ws && ws.is_admin) || me.is_operator);
