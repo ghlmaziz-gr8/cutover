@@ -1378,6 +1378,13 @@ button:not(:disabled):active{transform:scale(.965)}
     .fg-empty{margin-top:16px;padding:14px;border-radius:14px;border:1px dashed var(--line,#ddd);color:var(--muted);font:500 13px/1.45 var(--body)}
     .gr-card{margin-top:18px;padding:16px;border:1px solid var(--line,#ddd);border-radius:16px;background:var(--card)}
     .fg-meta{display:flex;flex-wrap:wrap;gap:8px;align-items:center;font:600 12.5px var(--body);color:var(--muted)}
+    .fg-working{display:flex;gap:10px;align-items:center;margin-top:12px;padding:10px 12px;border-radius:12px;background:color-mix(in srgb,var(--accent,#6d28d9) 7%,var(--card,#fff));font:500 13px/1.4 var(--body)}
+    .fg-dots{display:inline-flex;gap:4px;flex:none}
+    .fg-dots i{display:block;width:7px;height:7px;border-radius:50%;background:var(--accent,#6d28d9);animation:fgBounce 1.1s ease-in-out infinite}
+    .fg-dots i:nth-child(2){animation-delay:.15s}
+    .fg-dots i:nth-child(3){animation-delay:.3s}
+    @keyframes fgBounce{0%,80%,100%{transform:translateY(0);opacity:.35}40%{transform:translateY(-5px);opacity:1}}
+    @media (prefers-reduced-motion: reduce){.fg-dots i{animation:none;opacity:.7}}
     .fg-foot{margin-top:14px;padding-top:12px;border-top:1px solid var(--line,#ddd)}
     .fv-feature{margin-top:14px;padding-top:12px;border-top:1px solid var(--line,#ddd);animation:fvIn .45s ease both;animation-delay:var(--d,0ms)}
     .fv-feature h4{margin:0 0 4px;font:600 15px var(--body)}
@@ -9614,29 +9621,48 @@ const REGION_OPTS = {
 
   // The stories of a grouping, as one signature. A change in it means the drafting has finished.
   const storySignature = (g) => JSON.stringify((g.groups || []).map((x) => (x.stories || []).map((st) => st.id + st.story)));
+  // The grouping whose user stories the AI is drafting now. The draft shows the indicator until the stories are ready.
+  let storyDrafting = null;
   async function draftStories(g) {
     setMsg("groupMsg", "", false);
     const before = storySignature(g);
     try {
       await api(`/api/analyses/${cur.id}/groupings/stories`, { method: "POST", body: JSON.stringify({ grouping_id: g.id }) });
-      setMsg("groupMsg", "Drafting the user stories. They appear under each feature when they are ready.", false);
+      storyDrafting = g.id;
+      renderGroupings(groupRows);
+      setMsg("groupMsg", "The AI is drafting the user stories. They appear under each feature when they are ready.", false);
       watchStories(g.id, before);
     } catch (err) {
       setMsg("groupMsg", err.message, true);
     }
   }
+  // The indicator shown inside the draft while the stories are written.
+  function storiesWorking() {
+    const note = el("div", null, "fg-working");
+    note.setAttribute("role", "status");
+    const dots = el("span", null, "fg-dots");
+    dots.append(el("i"), el("i"), el("i"));
+    note.append(dots, el("span", "The AI is drafting the user stories for each feature. They appear here when they are ready.", "small"));
+    return note;
+  }
   // Checks every few seconds for up to four minutes, and stops when the stories change.
   function watchStories(groupingId, before) {
     const until = Date.now() + 4 * 60 * 1000;
+    // Ends the indicator, and shows the message, then redraws the draft without it.
+    const finish = (text) => {
+      storyDrafting = null;
+      setMsg("groupMsg", text, false);
+      renderGroupings(groupRows);
+    };
     const tick = async () => {
       const rows = await loadGroupings();
       const g = rows.find((x) => x.id === groupingId);
       if (g && storySignature(g) !== before) {
-        setMsg("groupMsg", "The user stories are ready. They are drafts until the application owner approves the grouping.", false);
+        finish("The user stories are ready. They are drafts until the application owner approves the grouping.");
         return;
       }
       if (Date.now() < until) setTimeout(tick, 5000);
-      else setMsg("groupMsg", "The drafting is taking longer than expected. Refresh in a minute to see the stories.", false);
+      else finish("The drafting is taking longer than expected. Refresh in a minute to see the stories.");
     };
     setTimeout(tick, 5000);
   }
@@ -9779,10 +9805,13 @@ const REGION_OPTS = {
     actions.style.flexWrap = "wrap";
     box.append(actions);
     if (editable) {
-      const draft = el("button", "Draft user stories", "ghost small-btn");
+      const drafting = storyDrafting === g.id;
+      const draft = el("button", drafting ? "Drafting…" : "Draft user stories", "ghost small-btn");
       draft.type = "button";
+      draft.disabled = drafting;
       draft.addEventListener("click", () => draftStories(g));
       actions.append(draft);
+      if (drafting) box.insertBefore(storiesWorking(), actions);
       const save = el("button", "Save changes", "small-btn");
       save.type = "button";
       save.addEventListener("click", () => groupAction("edit", g.id, { groups }));
