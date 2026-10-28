@@ -1374,6 +1374,8 @@ button:not(:disabled):active{transform:scale(.965)}
     @media (prefers-reduced-motion: reduce){.rel-state.is-running::before{animation:none}}
     @media (prefers-reduced-motion: reduce){.rc-link,.rc-node,.rel-row,.rel-more{transition:none!important}}
     .wc-badge-level{font-weight:700;background:linear-gradient(90deg,rgba(29,78,216,.12),rgba(47,158,107,.14))}
+    .level-chip{cursor:pointer;margin-top:10px;font:inherit;font-size:12px;color:inherit}
+    .level-chip:focus-visible{outline:2px solid #1d4ed8;outline-offset:2px}
     @keyframes wcIn{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
     @media (prefers-reduced-motion: reduce){.welcome-card{animation:none}.wc-fill{transition:none}}
     /* The deep view under a file: it rises in when the file is chosen. */
@@ -1464,6 +1466,7 @@ button:not(:disabled):active{transform:scale(.965)}
     </div>
     <p class="muted" id="homeSub" style="margin-top:6px"></p>
     <p id="homeRole" class="chip" style="margin-top:10px" hidden></p>
+    <button type="button" id="levelChip" class="wc-badge wc-badge-level level-chip" hidden></button>
 
     <div class="row" id="homeTabs" style="margin-top:18px;gap:8px" role="tablist">
       <button type="button" class="small-btn" id="tabAnalyses" role="tab">Analyses</button>
@@ -2411,15 +2414,17 @@ button:not(:disabled):active{transform:scale(.965)}
   async function showWelcome() {
     const card = $("welcomeCard");
     let data;
-    try {
-      data = await api("/api/me/engagement");
-    } catch (err) {
-      return;
-    }
-    card.replaceChildren();
     const close = el("button", "Close", "ghost small-btn wc-close");
     close.type = "button";
     close.addEventListener("click", () => { card.hidden = true; });
+    try {
+      data = await api("/api/me/engagement");
+    } catch (err) {
+      card.replaceChildren(close, el("h3", "Welcome back"), el("div", `Your time and rewards could not be loaded just now (${err.message}).`, "small"));
+      card.hidden = false;
+      return;
+    }
+    card.replaceChildren();
     card.append(close, el("h3", "Welcome back"));
     card.append(el("div", `You have spent ${fmtDuration(data.total_seconds)} on the system.`, "small"));
     if (data.last_visit) {
@@ -2448,6 +2453,22 @@ button:not(:disabled):active{transform:scale(.965)}
       card.append(row);
     }
     card.hidden = false;
+  }
+  // The level stays visible on the home screen. A click opens the rewards card again.
+  async function loadLevelChip() {
+    const chip = $("levelChip");
+    chip.hidden = true;
+    if (!me) return;
+    try {
+      const data = await api("/api/me/engagement");
+      const lvl = data.level;
+      chip.textContent = `Level ${lvl.number} · ${lvl.name} · ${lvl.points} points`;
+      chip.title = "Open your rewards";
+      chip.onclick = () => showWelcome();
+      chip.hidden = false;
+    } catch (err) {
+      chip.hidden = true;
+    }
   }
   function maybeGreet() {
     try {
@@ -2584,6 +2605,7 @@ button:not(:disabled):active{transform:scale(.965)}
     $("homeRole").hidden = !ws;
     $("changeRole").hidden = !ws;
     $("homeSub").textContent = ws ? "" : "You have no workspace yet. Create one below.";
+    loadLevelChip();
     // Three tabs: analyses (this workspace), workspaces (people and new customer workspaces) and the guide.
     const canAnalyse = !!ws;
     const canWork = !!((ws && ws.is_admin) || me.is_operator);
