@@ -98,5 +98,5 @@ test("after an approve or discard, the file states are loaded again so the order
 test("the file colours hold still while a file is open: a finished run does not redraw the map, Refresh and your own actions do", () => {
   assert.doesNotMatch(html, /if \(wasRunning && !running && businessFiles\.analysis === cur\.id\) renderBusinessFiles\(\);/);
   assert.match(html, /refresh\.addEventListener\("click", async \(\) => \{\n\s+if \(businessFiles\.analysis === cur\.id\) await renderBusinessFiles\(\);\n\s+load\(\);/);
-  assert.match(html, /if \(businessFiles\.analysis === cur\.id\) renderBusinessFiles\(\);\n\s+load\(\);/);
+  assert.match(html, /if \(businessFiles\.analysis === cur\.id\) renderBusinessFiles\(\);\n\s+await load\(\);/);
 });
