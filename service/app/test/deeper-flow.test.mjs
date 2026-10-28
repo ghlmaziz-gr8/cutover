@@ -76,3 +76,9 @@ test("What next opens from the Review screen, so the scope is chosen before the 
   assert.ok(review.includes('id="toWhatNext"') && review.includes('id="toWhatNextTop"'));
   assert.ok(html.includes('$("toWhatNext").addEventListener("click", () => showNext());'));
 });
+
+test("the scope options all draw: no check reads an undefined variable, which stopped the loop after the first option", () => {
+  const start = html.indexOf("function renderScope()");
+  const body = html.slice(start, html.indexOf("const CLOUD_OPTS", start));
+  assert.ok(!body.includes("!locked"), "renderScope must not read the undefined locked variable");
+});
