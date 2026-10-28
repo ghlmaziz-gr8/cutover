@@ -791,38 +791,41 @@ test("a result that found nothing is kept but is not counted as a point", async 
   }
 });
 
-test("the security officer sees security and privacy findings only", async () => {
+test("the security officer sees every finding, the same as the engineer", async () => {
+  const engineer = await call(`/api/analyses/${AN_ACME}`, { as: "eng_a" });
   const res = await call(`/api/analyses/${AN_ACME}`, { as: "sec_a" });
-  assert.deepEqual(visibleIds(res.body.findings.findings), ["priv1", "sec1"]);
-  assert.deepEqual(res.body.findings.flags, ["sec1"]);
-  assert.deepEqual(res.body.findings.counts, { total: 9, shown: 2 });
+  assert.deepEqual(visibleIds(res.body.findings.findings), visibleIds(engineer.body.findings.findings));
+  assert.deepEqual(res.body.findings.flags, engineer.body.findings.flags);
+  assert.equal(res.body.findings.counts.shown, res.body.findings.counts.total);
 });
 
-test("the informatics lead sees data and Epic findings only", async () => {
+test("the informatics lead sees every finding, the same as the engineer", async () => {
+  const engineer = await call(`/api/analyses/${AN_ACME}`, { as: "eng_a" });
   const res = await call(`/api/analyses/${AN_ACME}`, { as: "inf_a" });
-  assert.deepEqual(visibleIds(res.body.findings.findings), ["data1", "epic1"]);
-  assert.deepEqual(res.body.findings.flags, ["data1"]);
+  assert.deepEqual(visibleIds(res.body.findings.findings), visibleIds(engineer.body.findings.findings));
+  assert.deepEqual(res.body.findings.flags, engineer.body.findings.flags);
 });
 
-test("the CIO or CTO sees the overview categories, not security or data detail", async () => {
+test("the CIO or CTO sees every finding, the same as the engineer", async () => {
+  const engineer = await call(`/api/analyses/${AN_ACME}`, { as: "eng_a" });
   const res = await call(`/api/analyses/${AN_ACME}`, { as: "cio_a" });
-  assert.deepEqual(visibleIds(res.body.findings.findings), ["cont1", "del1", "inf1", "stack1", "ui1"]);
-  assert.deepEqual(res.body.findings.flags, []);
+  assert.deepEqual(visibleIds(res.body.findings.findings), visibleIds(engineer.body.findings.findings));
+  assert.deepEqual(res.body.findings.flags, engineer.body.findings.flags);
 });
 
-test("the auditor sees the summary and no finding detail", async () => {
+test("the auditor sees every finding too, but cannot change any of it", async () => {
+  const engineer = await call(`/api/analyses/${AN_ACME}`, { as: "eng_a" });
   const res = await call(`/api/analyses/${AN_ACME}`, { as: "aud_a" });
   assert.equal(res.status, 200);
-  assert.deepEqual(res.body.findings.findings, {});
-  assert.deepEqual(res.body.findings.flags, []);
+  assert.deepEqual(visibleIds(res.body.findings.findings), visibleIds(engineer.body.findings.findings));
   assert.deepEqual(res.body.findings.limitations, REPORT.limitations);
   assert.equal(res.body.can_work_items, false);
 });
 
-test("hidden findings are not sent in the downloadable report either", async () => {
+test("the findings reach every role, the downloadable report included", async () => {
   const res = await call(`/api/analyses/${AN_ACME}`, { as: "sec_a" });
   const text = JSON.stringify(res.body);
-  assert.ok(!text.includes("Patient table has 40 columns"), "data finding must not reach the security officer");
+  assert.ok(text.includes("Patient table has 40 columns"), "the data finding reaches the security officer");
 });
 
 test("only platform engineers start analyses", async () => {
@@ -2192,19 +2195,15 @@ test("the screen list is checked: count, paths, names and size", async () => {
   assert.equal((await send([screen("a.html", { html: big })])).status, 400);
 });
 
-test("the people who may see UI findings see the drawn screens; others do not", async () => {
+test("every role sees the drawn screens", async () => {
   runningAnalysis();
   await call(`/api/runner/${AN_RUNNING}/screens`, { method: "POST", body: { screens: [screen("a.html")] }, secret: env.RUNNER_SECRET });
   state.analyses.find((a) => a.id === AN_RUNNING).status = "complete";
-  const engineer = await call(`/api/analyses/${AN_RUNNING}`, { as: "eng_a" });
-  assert.equal(engineer.body.screens.length, 1);
-  assert.equal(engineer.body.screens[0].path, "a.html");
-  const cio = await call(`/api/analyses/${AN_RUNNING}`, { as: "cio_a" });
-  assert.equal(cio.body.screens.length, 1, "the CIO sees UI findings");
-  const security = await call(`/api/analyses/${AN_RUNNING}`, { as: "sec_a" });
-  assert.deepEqual(security.body.screens, []);
-  const auditor = await call(`/api/analyses/${AN_RUNNING}`, { as: "aud_a" });
-  assert.deepEqual(auditor.body.screens, []);
+  for (const as of ["eng_a", "cio_a", "sec_a", "inf_a", "aud_a"]) {
+    const res = await call(`/api/analyses/${AN_RUNNING}`, { as });
+    assert.equal(res.body.screens.length, 1, `${as} sees the screen`);
+    assert.equal(res.body.screens[0].path, "a.html");
+  }
 });
 
 test("only platform engineers choose the scope, and deeper is the only choice until the deeper assessment is done", async () => {
@@ -2222,7 +2221,7 @@ test("only platform engineers choose the scope, and deeper is the only choice un
   assert.equal(saved.scope_set_by_email, PEOPLE.eng_a.email);
 });
 
-test("the deeper assessment is marked done when a run sends it, and each role sees only its own points", async () => {
+test("the deeper assessment is marked done when a run sends it, and every role sees the same points", async () => {
   const deeper = {
     sections: [
       { id: "data", title: "Data", points: [{ text: "2 tables in the SQL scripts: visits, orders.", category: "data", basis: "data.tables" }] },
@@ -2239,11 +2238,12 @@ test("the deeper assessment is marked done when a run sends it, and each role se
   const engineer = await call(`/api/analyses/${uid(262)}`, { as: "eng_a" });
   assert.equal(engineer.body.findings.deeper.sections[0].points.length, 1);
   assert.equal(engineer.body.findings.deeper.architecture.layers.length, 2);
+  const engineerPoints = engineer.body.findings.deeper.sections.flatMap((s) => s.points).map((p) => p.text);
 
   const auditor = await call(`/api/analyses/${uid(262)}`, { as: "aud_a" });
   const auditorPoints = auditor.body.findings.deeper.sections.flatMap((s) => s.points).map((p) => p.text);
-  assert.deepEqual(auditorPoints, ["Version history."], "an auditor sees only the points with no category");
-  assert.deepEqual(auditor.body.findings.deeper.architecture.layers, []);
+  assert.deepEqual(auditorPoints, engineerPoints, "an auditor sees the same points as the engineer");
+  assert.equal(auditor.body.findings.deeper.architecture.layers.length, 2);
 
   runningAnalysisWithId(uid(263));
   await call(`/api/runner/${uid(263)}/result`, { method: "POST", secret: env.RUNNER_SECRET, body: { status: "complete", findings: {} } });
@@ -2286,7 +2286,7 @@ test("the owner hears when the deeper assessment is ready, and a run without it 
   assert.equal(state.notifications.filter((n) => n.kind === "deeper_ready").length, 1, "no new notice without documents");
 });
 
-test("a modernize proposal is shown only to roles that may see every category it relies on", async () => {
+test("a modernize proposal is shown to every role", async () => {
   const deeper = {
     sections: [], architecture: { layers: [] }, limits: [],
     modernize: [
@@ -2296,10 +2296,10 @@ test("a modernize proposal is shown only to roles that may see every category it
   };
   runningAnalysisWithId(uid(266));
   await call(`/api/runner/${uid(266)}/result`, { method: "POST", secret: env.RUNNER_SECRET, body: { status: "complete", findings: { deeper } } });
-  const engineer = await call(`/api/analyses/${uid(266)}`, { as: "eng_a" });
-  assert.deepEqual(engineer.body.findings.deeper.modernize.map((p) => p.id), ["keep", "managed"]);
-  const security = await call(`/api/analyses/${uid(266)}`, { as: "sec_a" });
-  assert.deepEqual(security.body.findings.deeper.modernize.map((p) => p.id), ["keep"], "security does not see data-based proposals");
+  for (const as of ["eng_a", "sec_a", "aud_a"]) {
+    const res = await call(`/api/analyses/${uid(266)}`, { as });
+    assert.deepEqual(res.body.findings.deeper.modernize.map((p) => p.id), ["keep", "managed"], as);
+  }
 });
 
 test("Migrate: the cloud is chosen only after Migrate, the intake is checked, and a change of cloud clears the confirmation", async () => {
@@ -2366,8 +2366,8 @@ test("Terraform: made only from a confirmed intake, as numbered drafts that are 
   const engineer = await call(`/api/analyses/${AN_ACME}/terraform`, { as: "eng_a" });
   assert.equal(engineer.status, 200);
   assert.deepEqual(engineer.body.versions.map((v) => v.version), [2, 1], "newest first");
-  assert.equal((await call(`/api/analyses/${AN_ACME}/terraform`, { as: "aud_a" })).status, 403, "auditors do not see infrastructure");
-  assert.equal((await call(`/api/analyses/${AN_ACME}/terraform`, { as: "sec_a" })).status, 403, "security does not see infrastructure");
+  assert.equal((await call(`/api/analyses/${AN_ACME}/terraform`, { as: "aud_a" })).status, 200, "auditors see the infrastructure too");
+  assert.equal((await call(`/api/analyses/${AN_ACME}/terraform`, { as: "sec_a" })).status, 200, "security sees the infrastructure too");
   assert.ok(state.notifications.some((n) => n.kind === "terraform_drafted" && n.user_id !== PEOPLE.eng_a.id));
 });
 
@@ -3327,14 +3327,14 @@ test("the feature view shows only the approved grouping, with each story's cited
   assert.deepEqual(gone.lines, [20, 30]);
 });
 
-test("the feature view is empty until a grouping is approved, and auditors are refused", async () => {
+test("the feature view is empty until a grouping is approved, and every role may read it", async () => {
   readyForBusiness();
   const empty = await call(`/api/analyses/${AN_ACME}/features`, { as: "cio_a" });
   assert.equal(empty.status, 200);
   assert.equal(empty.body.grouping, null);
   assert.deepEqual(empty.body.features, []);
   const aud = await call(`/api/analyses/${AN_ACME}/features`, { as: "aud_a" });
-  assert.equal(aud.status, 403);
+  assert.equal(aud.status, 200, "auditors read the feature view too");
 });
 
 test("when a table cannot be read, the rewards say which one and the status, so the cause is visible", async () => {

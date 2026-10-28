@@ -51,7 +51,7 @@ import { validateDbMetadata } from "./db-metadata.mjs";
 //   POST   /api/analyses/:id/files/approve-all            approve every file still in draft (platform engineers)
 //   GET    /api/analyses/:id/business?path=               business assessments of one file (platform engineers)
 //   GET    /api/analyses/:id/deep-files?path=...           deep file assessments of one file (platform engineers)
-//   GET    /api/analyses/:id/features                      the approved features with their stories and cited rules (not auditors, read-only)
+//   GET    /api/analyses/:id/features                      the approved features with their stories and cited rules (read-only, every role)
 //   GET    /api/analyses/:id/deep-files/links              function names each file defines and calls (platform engineers)
 //   POST   /api/analyses/:id/deep-files/approve             approve a draft; replaces the earlier approved account
 //   POST   /api/analyses/:id/deep-files/discard             discard a draft (platform engineers)
@@ -89,14 +89,14 @@ const MAX_BODY_BYTES = 5_000_000; // findings can be large, but not unbounded
 const MAX_COMMENT = 2000;
 const MAX_TITLE = 200;
 
-// Which finding categories each role may see. "all" means every category.
-// Summary facts (source, history, limitations, counts) are shown to every member.
+// Which finding categories each role may see. Every role sees every category: the data is the same for everyone in
+// the workspace. Who may change the work is still decided by the role (see canStart and canApproveTarget).
 const ROLE_CATEGORIES = {
   platform_engineer: "all",
-  security_officer: ["security", "privacy", "links"],
-  informatics_lead: ["data", "epic"],
-  cio_cto: ["stack", "ui_portal", "containers", "delivery", "infrastructure", "links"],
-  auditor: [],
+  security_officer: "all",
+  informatics_lead: "all",
+  cio_cto: "all",
+  auditor: "all",
 };
 
 function json(body, status = 200) {
@@ -3640,11 +3640,10 @@ async function listGroupings(request, env, id) {
 }
 
 // The feature view: the approved grouping only, with each story and the approved rules it cites. Every workspace member
-// who may see the findings reads it, except auditors, who see no findings. Only approved features are returned.
+// who may see the findings reads it, auditors included. Only approved features are returned.
 async function listFeatures(request, env, id) {
   const access = await analysisAccess(env, request, id);
   if (access.response) return access.response;
-  if (access.member.role === "auditor") return json({ error: "Auditors do not see the feature view." }, 403);
   const res = await serviceRest(env, `feature_groupings?analysis_id=eq.${id}&status=eq.approved&select=id,groups,reviewed_by_email,reviewed_at&order=reviewed_at.desc.nullslast&limit=1`);
   if (!res.ok) return json({ error: "Could not load the features." }, 502);
   const [grouping] = await res.json();
