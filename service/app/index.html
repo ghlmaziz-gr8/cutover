@@ -664,6 +664,12 @@ pre{white-space:pre-wrap;word-break:break-word;background:var(--soft);padding:12
 .dp-frame{display:block;width:100%;height:520px;border:0;background:#fff}
     .screen-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(100%,380px),1fr));gap:14px;margin-top:12px}
     .screen-card{border:1px solid var(--line);border-radius:14px;overflow:hidden;background:var(--card);min-width:0}
+    .screens-section>summary{cursor:pointer;list-style:none;display:flex;flex-wrap:wrap;align-items:center;gap:6px 10px}
+    .screens-section>summary::-webkit-details-marker{display:none}
+    .screens-section>summary::before{content:"\25BE";color:var(--muted);font-size:14px;margin-right:2px;transition:transform .15s}
+    .screens-section:not([open])>summary::before{transform:rotate(-90deg)}
+    .screens-section>summary>h3,.screens-section>summary>p{margin:0}
+    .screens-section>summary>.tag{margin-left:0}
     .screen-head{display:flex;justify-content:space-between;align-items:center;gap:8px;padding:8px 10px;border-bottom:1px solid var(--line)}
     .screen-name{overflow-wrap:anywhere;font-size:14px}
     .screen-frame{display:block;width:100%;height:420px;border:0;background:#fff}
@@ -3660,17 +3666,48 @@ button:not(:disabled):active{transform:scale(.965)}
     }
   }
 
+  // Reloads the analysis, after a screen is deleted, so the screens shown are the ones kept.
+  async function reloadAnalysis() {
+    cur = await api(`/api/analyses/${cur.id}`);
+    return cur;
+  }
+
   // The screens the model drew from the code, each in a sandboxed frame with a Download PNG button.
-  function drawnScreensCard(screens) {
-    const c = el("div", null, "rcard");
-    c.append(el("p", "Deep AI assessment results", "eyebrow-sm"), el("h3", "Screens drawn from the code"));
-    c.appendChild(el("span", "AI drew these screens from the code. Sample data only.", "tag ai"));
+  // The whole section folds: its heading stays, and the screens, the redraw and the drawing fold with it.
+  // A platform engineer can delete one screen, for example one that came out empty; onChange shows the change.
+  function drawnScreensCard(screens, onChange = () => {}) {
+    const c = document.createElement("details");
+    c.className = "rcard screens-section";
+    c.open = true;
+    const summary = document.createElement("summary");
+    summary.append(el("p", "Deep AI assessment results", "eyebrow-sm"), el("h3", "Screens drawn from the code"));
+    summary.appendChild(el("span", "AI drew these screens from the code. Sample data only.", "tag ai"));
+    c.appendChild(summary);
     // Every screen is shown, each in its own frame with a button that saves it as a PNG.
     const grid = el("div", null, "screen-grid");
     for (const sc of screens) {
       const card = el("div", null, "screen-card");
       const head = el("div", null, "screen-head");
       const title = el("b", sc.name, "screen-name");
+      const actions = el("div", null, "row");
+      actions.style.gap = "6px";
+      if (canActOnResults() && sc.id) {
+        const del = el("button", "Delete", "ghost small-btn");
+        del.type = "button";
+        del.addEventListener("click", async () => {
+          if (!window.confirm(`Delete the screen "${sc.name}"? A later redraw can draw it again.`)) return;
+          del.disabled = true;
+          try {
+            await api(`/api/analyses/${cur.id}/screens/${sc.id}`, { method: "DELETE" });
+            await onChange();
+          } catch (err) {
+            del.disabled = false;
+            del.textContent = "Could not delete";
+            setTimeout(() => { del.textContent = "Delete"; }, 2500);
+          }
+        });
+        actions.appendChild(del);
+      }
       const dl = el("button", "Download PNG", "ghost small-btn");
       dl.type = "button";
       dl.addEventListener("click", async () => {
@@ -3685,7 +3722,8 @@ button:not(:disabled):active{transform:scale(.965)}
           dl.disabled = false;
         }
       });
-      head.append(title, dl);
+      actions.appendChild(dl);
+      head.append(title, actions);
       const frame = document.createElement("iframe");
       frame.className = "screen-frame";
       frame.setAttribute("sandbox", "");
@@ -5259,7 +5297,7 @@ button:not(:disabled):active{transform:scale(.965)}
       const drawing = screensDrawing(cur);
       if (drawing) scheduleScreensPoll();
       if (sees(role, "ui_portal") && screens.length) {
-        const c = drawnScreensCard(screens);
+        const c = drawnScreensCard(screens, () => reloadAnalysis().then(renderReview));
         c.style.gridColumn = "1 / -1";
         if (drawing) c.appendChild(drawingBlock());
         if (cur.model_provider && canActOnResults()) c.appendChild(redrawControl(drawing));
@@ -9276,7 +9314,7 @@ const REGION_OPTS = {
     const screensBox = $("filesScreens");
     screensBox.replaceChildren();
     const drawn = (cur && cur.screens) || [];
-    if (drawn.length && ws && sees(ws.role, "ui_portal")) screensBox.appendChild(drawnScreensCard(drawn));
+    if (drawn.length && ws && sees(ws.role, "ui_portal")) screensBox.appendChild(drawnScreensCard(drawn, () => reloadAnalysis().then(() => showFiles())));
     renderFiles();
     loadGroupings();
     loadFeatureView();
