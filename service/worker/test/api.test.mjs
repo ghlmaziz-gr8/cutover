@@ -390,33 +390,35 @@ const visibleIds = (findings) => Object.keys(findings || {}).sort();
 
 // ---- Choosing the modernized template ----
 
-test("only a platform engineer can choose the modernized template, from the three there are", async () => {
+test("the owner or a CIO or CTO chooses the modernized template, from the three there are; an engineer does not", async () => {
   state.analyses.find((a) => a.id === AN_ACME).scope = "modernize";
   const auditor = await call(`/api/analyses/${AN_ACME}/template`, { as: "aud_a", method: "PUT", body: { template: "web-modern" } });
   assert.equal(auditor.status, 403);
-  const unknown = await call(`/api/analyses/${AN_ACME}/template`, { as: "eng_a", method: "PUT", body: { template: "anything" } });
+  const engineer = await call(`/api/analyses/${AN_ACME}/template`, { as: "eng_a", method: "PUT", body: { template: "web-modern" } });
+  assert.equal(engineer.status, 403, "the engineer carries the approach out, the CIO decides it");
+  const unknown = await call(`/api/analyses/${AN_ACME}/template`, { as: "cio_a", method: "PUT", body: { template: "anything" } });
   assert.equal(unknown.status, 400);
 });
 
 test("the approach can only be chosen once Modernize is the next stage", async () => {
   const analysis = state.analyses.find((a) => a.id === AN_ACME);
   analysis.scope = "deeper";
-  const early = await call(`/api/analyses/${AN_ACME}/template`, { as: "eng_a", method: "PUT", body: { template: "web-modern" } });
+  const early = await call(`/api/analyses/${AN_ACME}/template`, { as: "cio_a", method: "PUT", body: { template: "web-modern" } });
   assert.equal(early.status, 409);
   assert.match(early.body.error, /Choose Modernize/);
   analysis.scope = "modernize";
 });
 
-test("a platform engineer's choice is saved with who chose it and when, and a later choice replaces it", async () => {
+test("the CIO's choice is saved with who chose it and when, and a later choice replaces it", async () => {
   state.analyses.find((a) => a.id === AN_ACME).scope = "modernize";
-  const first = await call(`/api/analyses/${AN_ACME}/template`, { as: "eng_a", method: "PUT", body: { template: "web-modern" } });
+  const first = await call(`/api/analyses/${AN_ACME}/template`, { as: "cio_a", method: "PUT", body: { template: "web-modern" } });
   assert.equal(first.status, 200);
   assert.equal(first.body.template, "web-modern");
-  const second = await call(`/api/analyses/${AN_ACME}/template`, { as: "eng_a", method: "PUT", body: { template: "lift-contain" } });
+  const second = await call(`/api/analyses/${AN_ACME}/template`, { as: "cio_a", method: "PUT", body: { template: "lift-contain" } });
   assert.equal(second.status, 200);
   const read = await call(`/api/analyses/${AN_ACME}`, { as: "eng_a" });
   assert.equal(read.body.modern_template, "lift-contain");
-  assert.equal(read.body.modern_template_set_by_email, PEOPLE.eng_a.email);
+  assert.equal(read.body.modern_template_set_by_email, PEOPLE.cio_a.email);
   assert.ok(read.body.modern_template_set_at);
 });
 
@@ -1463,13 +1465,13 @@ test("the runner reads only the approved business results to group them, with th
 
 // ---- Reviewing file-level results (platform engineers) ----
 
-test("only platform engineers see the file-level results", async () => {
+test("every role reads the file-level results; only engineers change them", async () => {
   const engineer = await call(`/api/analyses/${AN_ACME}/files`, { as: "eng_a" });
   assert.equal(engineer.status, 200);
   assert.equal(engineer.body.files.length, 1);
   assert.equal(engineer.body.files[0].review_status, "draft");
   const auditor = await call(`/api/analyses/${AN_ACME}/files`, { as: "aud_a" });
-  assert.equal(auditor.status, 403);
+  assert.equal(auditor.status, 200, "auditors read the file-level results too");
   const other = await call(`/api/analyses/${AN_ACME}/files`, { as: "eng_b" });
   assert.equal(other.status, 404);
 });
@@ -2206,19 +2208,21 @@ test("every role sees the drawn screens", async () => {
   }
 });
 
-test("only platform engineers choose the scope, and deeper is the only choice until the deeper assessment is done", async () => {
+test("only the owner or a CIO or CTO chooses the scope, and deeper is the only choice until the deeper assessment is done", async () => {
   const denied = await call(`/api/analyses/${AN_ACME}/scope`, { as: "aud_a", method: "PATCH", body: { scope: "deeper" } });
   assert.equal(denied.status, 403);
-  const bad = await call(`/api/analyses/${AN_ACME}/scope`, { as: "eng_a", method: "PATCH", body: { scope: "rebuild" } });
+  const engineer = await call(`/api/analyses/${AN_ACME}/scope`, { as: "eng_a", method: "PATCH", body: { scope: "deeper" } });
+  assert.equal(engineer.status, 403, "the engineer carries the scope out, the CIO chooses it");
+  const bad = await call(`/api/analyses/${AN_ACME}/scope`, { as: "cio_a", method: "PATCH", body: { scope: "rebuild" } });
   assert.equal(bad.status, 400);
-  const locked = await call(`/api/analyses/${AN_ACME}/scope`, { as: "eng_a", method: "PATCH", body: { scope: "migrate" } });
+  const locked = await call(`/api/analyses/${AN_ACME}/scope`, { as: "cio_a", method: "PATCH", body: { scope: "migrate" } });
   assert.equal(locked.status, 409);
   assert.match(locked.body.error, /deeper assessment/);
-  const deeper = await call(`/api/analyses/${AN_ACME}/scope`, { as: "eng_a", method: "PATCH", body: { scope: "deeper" } });
+  const deeper = await call(`/api/analyses/${AN_ACME}/scope`, { as: "cio_a", method: "PATCH", body: { scope: "deeper" } });
   assert.equal(deeper.status, 200);
   const saved = state.analyses.find((a) => a.id === AN_ACME);
   assert.equal(saved.scope, "deeper");
-  assert.equal(saved.scope_set_by_email, PEOPLE.eng_a.email);
+  assert.equal(saved.scope_set_by_email, PEOPLE.cio_a.email);
 });
 
 test("the deeper assessment is marked done when a run sends it, and every role sees the same points", async () => {
@@ -2251,11 +2255,11 @@ test("the deeper assessment is marked done when a run sends it, and every role s
 });
 
 test("choosing a scope, approving file purposes and accepting a plan tell the others, never the person who did it", async () => {
-  const scope = await call(`/api/analyses/${AN_ACME}/scope`, { as: "eng_a", method: "PATCH", body: { scope: "deeper" } });
+  const scope = await call(`/api/analyses/${AN_ACME}/scope`, { as: "cio_a", method: "PATCH", body: { scope: "deeper" } });
   assert.equal(scope.status, 200);
   const chosen = state.notifications.filter((n) => n.kind === "scope_chosen");
   assert.ok(chosen.length > 0, "someone hears about the scope");
-  assert.ok(chosen.every((n) => n.user_id !== PEOPLE.eng_a.id), "not the person who chose it");
+  assert.ok(chosen.every((n) => n.user_id !== PEOPLE.cio_a.id), "not the person who chose it");
   assert.ok(chosen.every((n) => n.tone === "info"));
 
   const approved = await call(`/api/analyses/${AN_ACME}/files/approve-all`, { as: "eng_a", method: "POST" });
@@ -2307,7 +2311,7 @@ test("Migrate: the cloud is chosen only after Migrate, the intake is checked, an
   analysis.deeper_done = true;
   const early = await call(`/api/analyses/${AN_ACME}/cloud`, { as: "eng_a", method: "PATCH", body: { cloud: "aws" } });
   assert.equal(early.status, 409, "cloud waits for Migrate");
-  assert.equal((await call(`/api/analyses/${AN_ACME}/scope`, { as: "eng_a", method: "PATCH", body: { scope: "migrate" } })).status, 200);
+  assert.equal((await call(`/api/analyses/${AN_ACME}/scope`, { as: "cio_a", method: "PATCH", body: { scope: "migrate" } })).status, 200);
   assert.equal((await call(`/api/analyses/${AN_ACME}/cloud`, { as: "aud_a", method: "PATCH", body: { cloud: "aws" } })).status, 403);
   assert.equal((await call(`/api/analyses/${AN_ACME}/cloud`, { as: "eng_a", method: "PATCH", body: { cloud: "mars" } })).status, 400);
   assert.equal((await call(`/api/analyses/${AN_ACME}/cloud`, { as: "eng_a", method: "PATCH", body: { cloud: "aws" } })).status, 200);
@@ -2659,10 +2663,10 @@ test("the target language: chosen by an engineer after the approach, fitted to i
   const owner = PEOPLE.stranger.email;
   const early = await call(`/api/analyses/${AN_ACME}/target`, { as: "eng_a", method: "PUT", body: { language: "ts-react", owner_email: owner } });
   assert.equal(early.status, 409, "the target waits for Modernize");
-  assert.equal((await call(`/api/analyses/${AN_ACME}/scope`, { as: "eng_a", method: "PATCH", body: { scope: "modernize" } })).status, 200);
+  assert.equal((await call(`/api/analyses/${AN_ACME}/scope`, { as: "cio_a", method: "PATCH", body: { scope: "modernize" } })).status, 200);
   const noApproach = await call(`/api/analyses/${AN_ACME}/target`, { as: "eng_a", method: "PUT", body: { language: "ts-react", owner_email: owner } });
   assert.equal(noApproach.status, 409, "the target waits for the approach");
-  await call(`/api/analyses/${AN_ACME}/template`, { as: "eng_a", method: "PUT", body: { template: "web-modern" } });
+  await call(`/api/analyses/${AN_ACME}/template`, { as: "cio_a", method: "PUT", body: { template: "web-modern" } });
 
   assert.equal((await call(`/api/analyses/${AN_ACME}/target`, { as: "aud_a", method: "PUT", body: { language: "ts-react", owner_email: owner } })).status, 403);
   assert.equal((await call(`/api/analyses/${AN_ACME}/target`, { as: "eng_a", method: "PUT", body: { language: "cobol", owner_email: owner } })).status, 400);
