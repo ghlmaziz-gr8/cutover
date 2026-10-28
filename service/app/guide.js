@@ -11,7 +11,7 @@
 window.CUTOVER_GUIDE = {
   updated: "2026-10-22",
   whatsNew: [
-    "2026-10-28: The feature groups card has a complexity treemap under the readiness list. Each feature is a rectangle sized by its complexity (its stories, the distinct rules they cite, and its files), and coloured by its readiness: green when every check passes, amber when one is missing, red when more are.",
+    "2026-10-28: The feature groups card has a complexity treemap under the readiness list. Each feature is a convex cell sized by its complexity (its stories, the distinct rules they cite, and its files), and coloured by its readiness: green when every check passes, amber when one is missing, red when more are.",
     "2026-10-28: The feature groups card shows how ready the draft is for a vibe-coding tool, once the user stories are generated. A feature is ready when its stories cite rules with source lines and no rule is shared with another feature. Each module spec also lists the rules shared between features, the questions to answer before building (such as a rule that depends on today's date), and the decisions still open.",
     "2026-10-28: While the AI drafts the user stories, the draft shows an animated indicator, and its Draft user stories button is disabled until the stories are ready.",
     "2026-10-28: Proposing feature groups again replaces the draft waiting for review, so only one draft is listed. An approved grouping is kept.",

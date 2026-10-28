@@ -11,7 +11,21 @@ const html = readFileSync(join(here, "..", "index.html"), "utf8");
 const guide = readFileSync(join(here, "..", "guide.js"), "utf8");
 const root = {};
 new Function("globalThis", src)(root);
-const { complexityOf, layout, band } = root.ComplexityTreemap;
+const { complexityOf, layout, band, convex } = root.ComplexityTreemap;
+
+// True when every turn of the polygon bends the same way.
+function isConvex(p) {
+  let sign = 0;
+  for (let i = 0; i < p.length; i++) {
+    const a = p[i], b = p[(i + 1) % p.length], c = p[(i + 2) % p.length];
+    const cross = (b[0] - a[0]) * (c[1] - b[1]) - (b[1] - a[1]) * (c[0] - b[0]);
+    if (Math.abs(cross) < 1e-9) continue;
+    const s = Math.sign(cross);
+    if (sign && s !== sign) return false;
+    sign = s;
+  }
+  return true;
+}
 
 test("complexity counts stories, distinct rules and distinct files", () => {
   const c = complexityOf({
@@ -56,12 +70,43 @@ test("band is high when every check passes, medium when one is missing, else low
   assert.equal(band(1, 4), "low");
 });
 
-test("the readiness panel draws the treemap and the script is loaded", () => {
+test("the readiness panel draws convex cells and loads the script", () => {
   assert.match(html, /<script src="complexity-treemap.js"><\/script>/);
   assert.match(html, /complexityMap\(draft\.groups \|\| \[\], r\)/);
-  assert.match(html, /\.fg-cell\.is-high\{background:#2f9e6b\}/);
-  assert.match(html, /\.fg-cell\.is-medium\{background:#d89a1c\}/);
-  assert.match(html, /\.fg-cell\.is-low\{background:#d0524a\}/);
+  assert.match(html, /T\.convex\(items, W, H\)/);
+  assert.match(html, /\.fg-cell\.is-high polygon\{fill:#2f9e6b\}/);
+  assert.match(html, /\.fg-cell\.is-medium polygon\{fill:#d89a1c\}/);
+  assert.match(html, /\.fg-cell\.is-low polygon\{fill:#d0524a\}/);
+});
+
+test("convex cells are convex polygons whose areas match their share", () => {
+  const values = [6, 3, 2, 1, 5, 4, 2];
+  const cells = convex(values.map((v, i) => ({ key: i, value: v })), 600, 400);
+  const total = values.reduce((a, b) => a + b, 0);
+  for (const c of cells) {
+    const want = (values[c.key] / total) * 240000;
+    assert.ok(Math.abs(c.area - want) / want < 0.005, `cell ${c.key}: ${c.area} vs ${want}`);
+    assert.ok(isConvex(c.points), `cell ${c.key} is convex`);
+    for (const [x, y] of c.points) assert.ok(x >= -1e-6 && x <= 600 + 1e-6 && y >= -1e-6 && y <= 400 + 1e-6);
+  }
+  assert.ok(Math.abs(cells.reduce((s, c) => s + c.area, 0) - 240000) < 1);
+});
+
+test("one dominant feature among many small ones keeps every area in proportion", () => {
+  const values = [100, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1];
+  const total = values.reduce((a, b) => a + b, 0);
+  const cells = convex(values.map((v, i) => ({ key: i, value: v })), 600, 400);
+  assert.equal(cells.length, values.length);
+  for (const c of cells) {
+    const want = (values[c.key] / total) * 240000;
+    assert.ok(Math.abs(c.area - want) / want < 0.005, `cell ${c.key}`);
+  }
+});
+
+test("a single feature fills the whole box, and no items lay out to nothing", () => {
+  const [only] = convex([{ key: "a", value: 3 }], 300, 200);
+  assert.equal(only.area, 60000);
+  assert.deepEqual(convex([{ key: "a", value: 0 }], 300, 200), []);
 });
 
 test("the treemap is listed in What's new", () => {

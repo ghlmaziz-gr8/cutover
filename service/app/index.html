@@ -1411,15 +1411,15 @@ button:not(:disabled):active{transform:scale(.965)}
     .fg-ready-empty{margin-top:16px;padding:12px 14px;border-radius:14px;border:1px dashed var(--line,#ddd);color:var(--muted);font:500 13px var(--body)}
     @media (prefers-reduced-motion: reduce){.fg-ready-bar>span{transition:none}}
     .fg-tree-wrap{margin-top:14px}
-    .fg-tree{position:relative;width:100%;border-radius:14px;background:var(--soft,#f7f6fd);overflow:hidden}
-    .fg-cell{position:absolute;box-sizing:border-box;padding:8px 10px;border-radius:10px;color:#fff;text-shadow:0 1px 2px rgba(0,0,0,.25);overflow:hidden;display:flex;flex-direction:column;gap:2px;transition:left .5s ease,top .5s ease,width .5s ease,height .5s ease}
-    .fg-cell.is-high{background:#2f9e6b}
-    .fg-cell.is-medium{background:#d89a1c}
-    .fg-cell.is-low{background:#d0524a}
-    .fg-cell-name{font:700 13px/1.2 var(--body);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-    .fg-cell-value{font:600 11px var(--body);opacity:.92;white-space:nowrap}
+    .fg-tree{width:100%;border-radius:14px;background:var(--soft,#f7f6fd);overflow:hidden;line-height:0}
+    .fg-svg{display:block;width:100%;height:auto}
+    .fg-cell polygon{stroke:#fff;stroke-width:2;stroke-linejoin:round}
+    .fg-cell.is-high polygon{fill:#2f9e6b}
+    .fg-cell.is-medium polygon{fill:#d89a1c}
+    .fg-cell.is-low polygon{fill:#d0524a}
+    .fg-cell-name{fill:#fff;font:700 13px/1.2 var(--body,sans-serif);paint-order:stroke;stroke:rgba(0,0,0,.18);stroke-width:2px}
+    .fg-cell-value{fill:#fff;opacity:.92;font:600 11px var(--body,sans-serif);paint-order:stroke;stroke:rgba(0,0,0,.18);stroke-width:2px}
     .fg-tree-legend{margin:8px 0 0}
-    @media (prefers-reduced-motion: reduce){.fg-cell{transition:none}}
     .fg-foot{margin-top:14px;padding-top:12px;border-top:1px solid var(--line,#ddd)}
     .fv-feature{margin-top:14px;padding-top:12px;border-top:1px solid var(--line,#ddd);animation:fvIn .45s ease both;animation-delay:var(--d,0ms)}
     .fv-feature h4{margin:0 0 4px;font:600 15px var(--body)}
@@ -9709,34 +9709,46 @@ const REGION_OPTS = {
     setTimeout(tick, 5000);
   }
 
-  // The complexity treemap: each feature's area is its complexity, and its colour is its readiness.
+  // The complexity map: each feature is a convex cell whose area is its complexity, coloured by its readiness.
   let treeResize = null;
   function complexityMap(groups, r) {
     const T = window.ComplexityTreemap;
+    const NS = "http://www.w3.org/2000/svg";
+    const svgEl = (tag, attrs) => { const n = document.createElementNS(NS, tag); for (const k in attrs) n.setAttribute(k, attrs[k]); return n; };
     const wrap = el("div", null, "fg-tree-wrap");
     const host = el("div", null, "fg-tree");
     wrap.append(host);
     wrap.append(el("p", "Size: the user stories, the distinct rules they cite, and the files in each feature. Colour: readiness, green when every check passes.", "muted small fg-tree-legend"));
     const nameOf = (g, i) => g.name || `Feature ${i + 1}`;
+    const shortName = (t, max) => (t.length > max ? t.slice(0, max - 1) + "\u2026" : t);
     const items = groups.map((g, i) => ({ key: i, value: Math.max(1, T.complexityOf(g).total) }));
     const draw = () => {
       host.replaceChildren();
-      const W = host.clientWidth || 640;
-      const H = 280;
-      host.style.height = `${H}px`;
-      for (const cell of T.layout(items, W, H)) {
+      const W = Math.max(240, host.clientWidth || 640);
+      const H = Math.round(W * 0.6);
+      const svg = svgEl("svg", { viewBox: `0 0 ${W} ${H}`, role: "img", "aria-label": "Feature complexity map", class: "fg-svg" });
+      for (const cell of T.convex(items, W, H)) {
         const g = groups[cell.key];
         const f = r.features[cell.key];
         const c = T.complexityOf(g);
-        const node = el("div", null, `fg-cell is-${T.band(f.passed, f.total)}`);
-        node.style.left = `${cell.x + 2}px`;
-        node.style.top = `${cell.y + 2}px`;
-        node.style.width = `${Math.max(0, cell.w - 4)}px`;
-        node.style.height = `${Math.max(0, cell.h - 4)}px`;
-        node.title = `${nameOf(g, cell.key)}: ${c.stories} stories, ${c.rules} rules, ${c.files} files. ${f.passed} of ${f.total} checks pass.`;
-        node.append(el("b", nameOf(g, cell.key), "fg-cell-name"), el("span", `${c.total} complexity`, "fg-cell-value"));
-        host.append(node);
+        const name = nameOf(g, cell.key);
+        const grp = svgEl("g", { class: `fg-cell is-${T.band(f.passed, f.total)}` });
+        const title = svgEl("title", {});
+        title.textContent = `${name}: ${c.stories} stories, ${c.rules} rules, ${c.files} files. ${f.passed} of ${f.total} checks pass.`;
+        grp.append(title);
+        grp.append(svgEl("polygon", { points: cell.points.map((p) => p[0].toFixed(1) + "," + p[1].toFixed(1)).join(" ") }));
+        // The label goes in a cell big enough to hold it.
+        if (cell.area > 2200) {
+          const max = Math.max(6, Math.floor(Math.sqrt(cell.area) / 6.2));
+          const t1 = svgEl("text", { x: cell.cx.toFixed(1), y: (cell.cy - 4).toFixed(1), "text-anchor": "middle", class: "fg-cell-name" });
+          t1.textContent = shortName(name, max);
+          const t2 = svgEl("text", { x: cell.cx.toFixed(1), y: (cell.cy + 13).toFixed(1), "text-anchor": "middle", class: "fg-cell-value" });
+          t2.textContent = `${c.total} complexity`;
+          grp.append(t1, t2);
+        }
+        svg.append(grp);
       }
+      host.append(svg);
     };
     // Drawn once the box is on the page, and again when the window changes size.
     requestAnimationFrame(draw);
