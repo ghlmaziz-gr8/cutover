@@ -17,7 +17,7 @@ test("a failed business view offers Skip for now to an engineer, and calls the s
 
 test("a skipped view says so, keeps the reason, and tells the person how to assess it now", () => {
   assert.match(html, /a\.review_status === "skipped"/);
-  assert.match(html, /Skipped for now\. The capabilities go on without this file\./);
+  assert.match(html, /Skipped for now\. The features go on without this file\./);
   assert.match(html, /Press Assess for the business to do it now\./);
   assert.match(html, /skipped: "Skipped for now"/);
 });

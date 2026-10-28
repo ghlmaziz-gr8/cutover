@@ -72,8 +72,8 @@ test("band is high when every check passes, medium when one is missing, else low
 
 test("the readiness panel draws convex cells and loads the script", () => {
   assert.match(html, /<script src="complexity-treemap.js"><\/script>/);
-  assert.match(html, /complexityMap\(draft\.groups \|\| \[\], r\)/);
-  assert.match(html, /T\.convex\(items, W, H\)/);
+  assert.match(html, /complexityMap\(draft\.groups \|\| \[\], r, caps\)/);
+  assert.match(html, /T\.convexIn\(region\.points/);
   // Each feature has its own colour, shared by its row and its cell.
   assert.match(html, /const featureColour = \(i\) => FEATURE_COLOURS\[i % FEATURE_COLOURS\.length\];/);
   assert.match(html, /li\.style\.borderLeft = \`4px solid \$\{featureColour\(i\)\}\`;/);

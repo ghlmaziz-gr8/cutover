@@ -1410,6 +1410,13 @@ button:not(:disabled):active{transform:scale(.965)}
     .fg-ready-gap{width:100%;font:500 12px/1.4 var(--body);color:var(--muted)}
     .fg-ready-empty{margin-top:16px;padding:12px 14px;border-radius:14px;border:1px dashed var(--line,#ddd);color:var(--muted);font:500 13px var(--body)}
     @media (prefers-reduced-motion: reduce){.fg-ready-bar>span{transition:none}}
+    .fg-cap-head{display:flex;align-items:center;gap:10px;margin:16px 0 6px}
+    .fg-cap-name{flex:1;min-width:0;font:700 14px var(--body,sans-serif);color:#2b2540;background:transparent;border:1px dashed transparent;border-radius:8px;padding:4px 6px}
+    .fg-cap-name:hover,.fg-cap-name:focus{border-color:#c9bff0;background:#fff;outline:none}
+    .fg-cap-count{font:600 11px var(--body,sans-serif);color:#6b6585;white-space:nowrap}
+    .fg-ready-groups{display:grid;gap:4px}
+    .fg-cap polygon{fill:none;stroke:#2b2540;stroke-width:3;stroke-linejoin:round}
+    .fg-cap-label{fill:#2b2540;font:700 12px/1.2 var(--body,sans-serif);paint-order:stroke;stroke:#fff;stroke-width:3px}
     .fg-tree-wrap{margin-top:14px}
     .fg-tree{width:100%;border-radius:14px;background:var(--soft,#f7f6fd);overflow:hidden;line-height:0}
     .fg-svg{display:block;width:100%;height:auto}
@@ -2194,14 +2201,14 @@ button:not(:disabled):active{transform:scale(.965)}
       <h3 style="margin:0 0 6px">Capabilities</h3>
       <p class="muted small" style="margin:0">The capabilities the application owner approved. Read-only. Open a story's rules to see each business rule behind it and the lines of code it comes from.</p>
       <p class="small hint" id="featureMeta" style="margin:8px 0 0"></p>
-      <div class="mmap feature-map" id="featureMap" aria-label="Mind map of the approved capabilities"></div>
+      <div class="mmap feature-map" id="featureMap" aria-label="Mind map of the approved capabilities and features"></div>
       <div id="featureList"></div>
       <p class="small hint" id="featureMsg"></p>
     </div>
     <div class="card fg-card" id="groupCard" hidden style="margin-top:14px">
       <h3 class="fg-title">Capabilities</h3>
       <div id="groupReadiness"></div>
-      <p class="muted small fg-lede">Groups the approved business views into capabilities. The AI proposes the groups, a platform engineer reviews them, and the application owner approves them.</p>
+      <p class="muted small fg-lede">Groups the approved business views into capabilities and the features inside them. The AI proposes the groups, a platform engineer reviews them, and the application owner approves them.</p>
       <ol id="groupSteps" class="fg-steps" aria-label="Progress"></ol>
       <div id="groupSummary" class="fg-summary"></div>
       <div id="groupRunning"></div>
@@ -2304,7 +2311,7 @@ button:not(:disabled):active{transform:scale(.965)}
         <button type="button" class="ghost small-btn" id="deeperReviewFiles">Review file results</button>
       </div>
       <p class="muted small" id="deeperFilesNote" style="margin-top:6px"></p>
-      <p class="muted small" style="margin:6px 0 0">Capabilities are made from the files whose business assessment you approve here. File results are reviewed on Review file results.</p>
+      <p class="muted small" style="margin:6px 0 0">Features are made from the files whose business assessment you approve here. File results are reviewed on Review file results.</p>
       <div class="mmap file-map" id="deeperFilesMap" aria-label="Map of the files in this application"></div>
       <div class="card" id="deeperFileDetail" hidden style="margin-top:14px"></div>
     </div>
@@ -9403,6 +9410,19 @@ const REGION_OPTS = {
   // Feature groups: platform engineers propose them from the approved summaries, then approve or discard the draft.
   const GROUP_STATUS = { running: "Running", draft: "Draft to review", approved: "Approved", superseded: "Replaced by a later approval" };
 
+  // Any signed-in user can rename a capability, on the draft or the approved grouping. The name is saved as typed, trimmed.
+  async function renameCapability(groupingId, index, name, reload) {
+    const next = String(name || "").trim();
+    if (!next) { setMsg("groupMsg", "A capability needs a name.", true); return; }
+    try {
+      await api(`/api/analyses/${cur.id}/capabilities`, { method: "PATCH", body: JSON.stringify({ grouping_id: groupingId, index, name: next }) });
+      setMsg("groupMsg", "Capability renamed.", false);
+      await reload();
+    } catch (err) {
+      setMsg("groupMsg", err.message, true);
+    }
+  }
+
   // The feature view: the approved features, read-only, for every role.
   async function loadFeatureView() {
     const card = $("featureCard");
@@ -9426,7 +9446,7 @@ const REGION_OPTS = {
       return;
     }
     drawMap(tree, box, {
-      title: "Mind map of the approved capabilities",
+      title: "Mind map of the approved capabilities and features",
       toolbar: true,
       legend: {
         tones: [["pro", "High confidence"], ["possible", "Medium confidence"], ["con", "Low confidence"], ["plain", "No approved assessment"]],
@@ -9506,8 +9526,26 @@ const REGION_OPTS = {
     const oldPackage = $("packageBtn");
     if (oldPackage) oldPackage.remove();
     $("featureMeta").after(packageButton(data));
+    // The capability heading comes before the first of its features. Each name can be changed by any signed-in user.
+    const capOf = new Map();
+    const approvedCaps = Array.isArray(data.capabilities) && data.capabilities.length ? data.capabilities : null;
+    if (approvedCaps) approvedCaps.forEach((c, ci) => c.features.forEach((fi) => capOf.set(fi, ci)));
+    let shownCap = -1;
     data.features.forEach((f, index) => {
+      const ci = capOf.get(index);
+      if (approvedCaps && ci !== undefined && ci !== shownCap) {
+        shownCap = ci;
+        const head = el("div", null, "fg-cap-head");
+        const input = el("input", null, "fg-cap-name");
+        input.value = approvedCaps[ci].name;
+        input.maxLength = 80;
+        input.setAttribute("aria-label", "Capability name");
+        input.addEventListener("change", () => renameCapability(data.grouping.id, ci, input.value, () => loadFeatureView()));
+        head.append(input, el("span", `${approvedCaps[ci].features.length} ${approvedCaps[ci].features.length === 1 ? "feature" : "features"}`, "fg-cap-count"));
+        list.append(head);
+      }
       const wrap = el("section", null, "fv-feature");
+
       wrap.style.setProperty("--d", `${index * 90}ms`);
       wrap.append(el("h4", f.name));
       if (f.summary) wrap.append(el("p", f.summary, "muted small"));
@@ -9519,7 +9557,7 @@ const REGION_OPTS = {
       }
       wrap.append(files);
       wrap.append(moduleSpecButton(f, data));
-      if (!f.stories.length) wrap.append(el("p", "No user stories drafted for this capability yet.", "muted small"));
+      if (!f.stories.length) wrap.append(el("p", "No user stories drafted for this feature yet.", "muted small"));
       for (const st of f.stories) {
         const row = el("div", null, "fv-story");
         row.append(el("div", st.story, "small"));
@@ -9555,7 +9593,7 @@ const REGION_OPTS = {
     document.querySelectorAll(".gr-file[data-path]").forEach((chip) => {
       const missing = groupNoView.has(chip.dataset.path);
       chip.classList.toggle("is-missing", missing);
-      chip.title = missing ? "No approved business view yet. Approve it, or take this file out of the capability." : "";
+      chip.title = missing ? "No approved business view yet. Approve it, or take this file out of the feature." : "";
     });
   }
   // How many approved files have an approved business view, the files still waiting for one, and the files skipped for now.
@@ -9583,7 +9621,7 @@ const REGION_OPTS = {
       if (s.without_view && s.without_view.length) {
         const note = el("div", null, "fg-notice");
         note.append(el("b", "Waiting for an approved business view"));
-        note.append(el("div", "Approve or skip each of these on the file results before you save the capabilities:"));
+        note.append(el("div", "Approve or skip each of these on the file results before you save the features:"));
         for (const p of s.without_view) note.append(el("span", p, "gr-file"));
         box.append(note);
       }
@@ -9633,7 +9671,7 @@ const REGION_OPTS = {
     if (!g) return;
     const minutes = g.created_at ? Math.max(0, Math.round((Date.now() - new Date(g.created_at)) / 60000)) : 0;
     const card = firstRunCard(
-      "The AI is grouping the approved files into capabilities",
+      "The AI is grouping the approved files into features and capabilities",
       `Reading the approved business views of ${g.source_count || 0} files and proposing the groups.`,
       `Started ${minutes < 1 ? "just now" : minutes + " min ago"}. It usually takes a few minutes. This page checks for the draft every few seconds.`
     );
@@ -9669,7 +9707,7 @@ const REGION_OPTS = {
       await api(`/api/analyses/${cur.id}/groupings/stories`, { method: "POST", body: JSON.stringify({ grouping_id: g.id }) });
       storyDrafting = g.id;
       renderGroupings(groupRows);
-      setMsg("groupMsg", "The AI is drafting the user stories. They appear under each capability when they are ready.", false);
+      setMsg("groupMsg", "The AI is drafting the user stories. They appear under each feature when they are ready.", false);
       watchStories(g.id, before);
     } catch (err) {
       setMsg("groupMsg", err.message, true);
@@ -9681,7 +9719,7 @@ const REGION_OPTS = {
     note.setAttribute("role", "status");
     const dots = el("span", null, "fg-dots");
     dots.append(el("i"), el("i"), el("i"));
-    note.append(dots, el("span", "The AI is drafting the user stories for each capability. They appear here when they are ready.", "small"));
+    note.append(dots, el("span", "The AI is drafting the user stories for each feature. They appear here when they are ready.", "small"));
     return note;
   }
   // Checks every few seconds for up to four minutes, and stops when the stories change.
@@ -9712,42 +9750,62 @@ const REGION_OPTS = {
 
   // The complexity map: each feature is a convex cell whose area is its complexity, in its own colour.
   let treeResize = null;
-  function complexityMap(groups, r) {
+  function complexityMap(groups, r, caps) {
     const T = window.ComplexityTreemap;
     const NS = "http://www.w3.org/2000/svg";
     const svgEl = (tag, attrs) => { const n = document.createElementNS(NS, tag); for (const k in attrs) n.setAttribute(k, attrs[k]); return n; };
     const wrap = el("div", null, "fg-tree-wrap");
     const host = el("div", null, "fg-tree");
     wrap.append(host);
-    wrap.append(el("p", "Size: the user stories, the distinct rules they cite, and the files in each capability. Colour: each capability has its own colour, the same as its row above.", "muted small fg-tree-legend"));
-    const nameOf = (g, i) => g.name || `Capability ${i + 1}`;
-    const shortName = (t, max) => (t.length > max ? t.slice(0, max - 1) + "\u2026" : t);
-    const items = groups.map((g, i) => ({ key: i, value: Math.max(1, T.complexityOf(g).total) }));
+    wrap.append(el("p", "Size: the user stories, the distinct rules they cite, and the files in each feature. Colour: each feature has its own colour, the same as its row above. Each capability is outlined and named.", "muted small fg-tree-legend"));
+    const nameOf = (g, i) => g.name || `Feature ${i + 1}`;
+    const shortName = (t, max) => (t.length > max ? t.slice(0, max - 1) + "…" : t);
+    const cost = (i) => Math.max(1, T.complexityOf(groups[i]).total);
+    // Without capabilities (an older grouping), each feature stands alone and is not outlined.
+    const grouped = !!(caps && caps.length);
+    const sections = grouped ? caps : groups.map((g, i) => ({ name: "", features: [i] }));
     const draw = () => {
       host.replaceChildren();
       const W = Math.max(240, host.clientWidth || 640);
       const H = Math.round(W * 0.6);
-      const svg = svgEl("svg", { viewBox: `0 0 ${W} ${H}`, role: "img", "aria-label": "Capability complexity map", class: "fg-svg" });
-      for (const cell of T.convex(items, W, H)) {
-        const g = groups[cell.key];
-        const f = r.features[cell.key];
-        const c = T.complexityOf(g);
-        const name = nameOf(g, cell.key);
-        const grp = svgEl("g", { class: "fg-cell" });
-        const title = svgEl("title", {});
-        title.textContent = `${name}: ${c.stories} stories, ${c.rules} rules, ${c.files} files. ${f.passed} of ${f.total} checks pass.`;
-        grp.append(title);
-        grp.append(svgEl("polygon", { points: cell.points.map((p) => p[0].toFixed(1) + "," + p[1].toFixed(1)).join(" "), fill: featureColour(cell.key) }));
-        // The label goes in a cell big enough to hold it.
-        if (cell.area > 2200) {
-          const max = Math.max(6, Math.floor(Math.sqrt(cell.area) / 6.2));
-          const t1 = svgEl("text", { x: cell.cx.toFixed(1), y: (cell.cy - 4).toFixed(1), "text-anchor": "middle", class: "fg-cell-name" });
-          t1.textContent = shortName(name, max);
-          const t2 = svgEl("text", { x: cell.cx.toFixed(1), y: (cell.cy + 13).toFixed(1), "text-anchor": "middle", class: "fg-cell-value" });
-          t2.textContent = `${c.total} complexity`;
-          grp.append(t1, t2);
+      const svg = svgEl("svg", { viewBox: `0 0 ${W} ${H}`, role: "img", "aria-label": "Complexity map of capabilities and features", class: "fg-svg" });
+      const regions = T.convex(sections.map((s, ci) => ({ key: ci, value: s.features.reduce((a, fi) => a + cost(fi), 0) })), W, H);
+      for (const region of regions) {
+        const sec = sections[region.key];
+        const cells = T.convexIn(region.points, sec.features.map((fi) => ({ key: fi, value: cost(fi) })));
+        for (const cell of cells) {
+          const g = groups[cell.key];
+          const f = r.features[cell.key];
+          const c = T.complexityOf(g);
+          const name = nameOf(g, cell.key);
+          const grp = svgEl("g", { class: "fg-cell" });
+          const title = svgEl("title", {});
+          title.textContent = `${name}${grouped ? ` (in ${sec.name})` : ""}: ${c.stories} stories, ${c.rules} rules, ${c.files} files. ${f.passed} of ${f.total} checks pass.`;
+          grp.append(title);
+          grp.append(svgEl("polygon", { points: cell.points.map((p) => p[0].toFixed(1) + "," + p[1].toFixed(1)).join(" "), fill: featureColour(cell.key) }));
+          // The label goes in a cell big enough to hold it.
+          if (cell.area > 2200) {
+            const max = Math.max(6, Math.floor(Math.sqrt(cell.area) / 6.2));
+            const t1 = svgEl("text", { x: cell.cx.toFixed(1), y: (cell.cy - 4).toFixed(1), "text-anchor": "middle", class: "fg-cell-name" });
+            t1.textContent = shortName(name, max);
+            const t2 = svgEl("text", { x: cell.cx.toFixed(1), y: (cell.cy + 13).toFixed(1), "text-anchor": "middle", class: "fg-cell-value" });
+            t2.textContent = `${c.total} complexity`;
+            grp.append(t1, t2);
+          }
+          svg.append(grp);
         }
-        svg.append(grp);
+        if (grouped) {
+          // The capability's outline and name, drawn over its features. The name sits at the region's top-left corner.
+          const outline = svgEl("g", { class: "fg-cap" });
+          outline.append(svgEl("polygon", { points: region.points.map((p) => p[0].toFixed(1) + "," + p[1].toFixed(1)).join(" ") }));
+          const top = region.points.reduce((best, p) => (p[1] < best[1] || (p[1] === best[1] && p[0] < best[0]) ? p : best), region.points[0]);
+          const label = svgEl("text", { x: (top[0] + 10).toFixed(1), y: (top[1] + 18).toFixed(1), class: "fg-cap-label" });
+          label.textContent = shortName(sec.name, 28);
+          const title = svgEl("title", {});
+          title.textContent = `Capability: ${sec.name}, ${sec.features.length} ${sec.features.length === 1 ? "feature" : "features"}`;
+          outline.append(title, label);
+          svg.append(outline);
+        }
       }
       host.append(svg);
     };
@@ -9779,17 +9837,36 @@ const REGION_OPTS = {
     fill.style.width = "0%";
     bar.append(fill);
     card.append(head, bar);
-    const list = el("ul", null, "fg-ready-list");
-    r.features.forEach((f, i) => {
+    const list = el("div", null, "fg-ready-groups");
+    // Features sit under their capability. An older grouping has no capabilities, so its features stand alone.
+    const caps = Array.isArray(draft.capabilities) && draft.capabilities.length ? draft.capabilities : null;
+    const sections = caps || r.features.map((f, i) => ({ name: "", features: [i] }));
+    const rowFor = (i) => {
+      const f = r.features[i];
       const li = el("li", null, f.passed === f.total ? "is-ok" : "is-gap");
       li.style.borderLeft = `4px solid ${featureColour(i)}`;
       li.append(el("span", f.name, "fg-ready-name"), el("span", `${f.passed} of ${f.total} checks`, "fg-ready-count"));
       const gaps = f.checks.filter((c) => !c.ok).map((c) => c.text);
       if (gaps.length) li.append(el("div", gaps.join(" · "), "fg-ready-gap"));
-      list.append(li);
+      return li;
+    };
+    sections.forEach((sec, ci) => {
+      if (caps) {
+        const head = el("div", null, "fg-cap-head");
+        const input = el("input", null, "fg-cap-name");
+        input.value = sec.name;
+        input.maxLength = 80;
+        input.setAttribute("aria-label", "Capability name");
+        input.addEventListener("change", () => renameCapability(draft.id, ci, input.value, loadGroupings));
+        head.append(input, el("span", `${sec.features.length} ${sec.features.length === 1 ? "feature" : "features"}`, "fg-cap-count"));
+        list.append(head);
+      }
+      const ul = el("ul", null, "fg-ready-list");
+      for (const fi of sec.features) ul.append(rowFor(fi));
+      list.append(ul);
     });
     card.append(list);
-    card.append(complexityMap(draft.groups || [], r));
+    card.append(complexityMap(draft.groups || [], r, caps));
     box.append(card);
     // The bar fills from empty to the score, so the figure is read as it arrives.
     requestAnimationFrame(() => requestAnimationFrame(() => { fill.style.width = `${r.score}%`; }));
@@ -9806,7 +9883,7 @@ const REGION_OPTS = {
     if (running) groupPollTimer = setTimeout(() => loadGroupings(), 5000);
     const drafts = rows.filter((g) => g.status !== "running");
     if (!drafts.length && !running) {
-      list.append(el("div", "No capabilities proposed yet. Propose them once every approved file has an approved business view.", "fg-empty"));
+      list.append(el("div", "No features proposed yet. Propose them once every approved file has an approved business view.", "fg-empty"));
     }
     for (const g of drafts) list.append(groupingBox(g));
     paintGroupSteps();
@@ -9821,8 +9898,8 @@ const REGION_OPTS = {
     const pick = el("select", null, "small-btn");
     pick.setAttribute("aria-label", "Approved file to add");
     const into = el("select", null, "small-btn");
-    into.setAttribute("aria-label", "Capability to add it to");
-    const add = el("button", "Add to capability", "ghost small-btn");
+    into.setAttribute("aria-label", "Feature to add it to");
+    const add = el("button", "Add to feature", "ghost small-btn");
     add.type = "button";
     const note = el("span", "Loading the approved files…", "muted small");
     let approvedPaths = [];
@@ -9837,11 +9914,11 @@ const REGION_OPTS = {
           pick.appendChild(o);
         }
       } else {
-        pick.appendChild(el("option", "Every approved file is in a capability"));
+        pick.appendChild(el("option", "Every approved file is in a feature"));
       }
       into.replaceChildren();
       groups.forEach((x, i) => {
-        const o = el("option", x.name || `Capability ${i + 1}`);
+        const o = el("option", x.name || `Feature ${i + 1}`);
         o.value = String(i);
         into.appendChild(o);
       });
@@ -9863,7 +9940,7 @@ const REGION_OPTS = {
       redraw();
       fill();
     });
-    row.append(el("span", "Add an approved file to a capability:", "muted small"), pick, el("span", "→", "muted small"), into, add, note);
+    row.append(el("span", "Add an approved file to a feature:", "muted small"), pick, el("span", "→", "muted small"), into, add, note);
     return row;
   }
 
@@ -9890,7 +9967,7 @@ const REGION_OPTS = {
           const name = el("input", null, "gr-name");
           name.value = item.name;
           name.maxLength = 80;
-          name.setAttribute("aria-label", "Capability name");
+          name.setAttribute("aria-label", "Feature name");
           name.addEventListener("input", () => { item.name = name.value; });
           wrap.append(name);
         } else {
@@ -10158,7 +10235,7 @@ const REGION_OPTS = {
   function canActOnResults() {
     return !!ws && ws.role === "platform_engineer";
   }
-  const RESULTS_READ_ONLY_NOTE = "You can read every result here. Only platform engineers run, approve or discard file results, or change the model. Your part is the scope and the approach, and approving the capabilities.";
+  const RESULTS_READ_ONLY_NOTE = "You can read every result here. Only platform engineers run, approve or discard file results, or change the model. Your part is the scope and the approach, and approving the groupings.";
 
   // The model for this analysis, shown in the Business and Deep views. An engineer can switch it once the analysis has finished.
   function analysisModelRow(msg) {
@@ -10630,11 +10707,11 @@ const REGION_OPTS = {
       .then((data) => {
         const names = (data.features || []).filter((f) => (f.files || []).some((x) => x.path === path)).map((f) => f.name);
         if (names.length) {
-          note.textContent = `Next step: this file is in ${names.join(", ")}. Its rules feed those capabilities' user stories, shown on the Capabilities card.`;
+          note.textContent = `Next step: this file is in ${names.join(", ")}. Its rules feed those features' user stories, shown on the Capabilities card.`;
         } else if (canActOnResults()) {
-          note.textContent = "Next step: add this file to a capability in the draft on the Capabilities card. If there is no draft, propose the groups again. Then send it to the owner for approval.";
+          note.textContent = "Next step: add this file to a feature in the draft on the Capabilities card. If there is no draft, propose the groups again. Then send it to the owner for approval.";
         } else {
-          note.textContent = "Next step: an engineer groups this file into a capability, and the owner approves it.";
+          note.textContent = "Next step: an engineer groups this file into a feature, and the owner approves it.";
         }
       })
       .catch(() => {
@@ -10918,7 +10995,7 @@ const REGION_OPTS = {
     if (a.review_status === "skipped") {
       // Skipped for now: the reason stays visible, and the file is left out of the feature groups until it is assessed.
       const why = (a.content && a.content.skip && a.content.skip.reason) || (a.content && a.content.failure && a.content.failure.reason) || "The assessment did not finish.";
-      c.append(el("div", "Skipped for now. The capabilities go on without this file.", "small"));
+      c.append(el("div", "Skipped for now. The features go on without this file.", "small"));
       c.append(el("div", why, "small"));
       c.append(el("div", "Press Assess for the business to do it now.", "muted small"));
       return c;

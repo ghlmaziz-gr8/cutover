@@ -26,9 +26,9 @@
         { ok: stories.length > 0, text: stories.length ? `${stories.length} user ${plural(stories.length, "story", "stories")}` : "No user stories yet" },
         { ok: stories.length > 0 && stories.every((st) => (st.rules || []).length > 0), text: "Every story points to a rule in the code" },
         { ok: rules.length > 0 && rules.every((r) => Array.isArray(r.lines)), text: "Every cited rule has its source lines" },
-        { ok: shared.length === 0, text: shared.length ? `${shared.length} ${plural(shared.length, "rule is", "rules are")} also used by another capability` : "No rule is shared with another capability" },
+        { ok: shared.length === 0, text: shared.length ? `${shared.length} ${plural(shared.length, "rule is", "rules are")} also used by another feature` : "No rule is shared with another feature" },
       ];
-      return { name: g.name || `Capability ${i + 1}`, checks, passed: checks.filter((c) => c.ok).length, total: checks.length, shared };
+      return { name: g.name || `Feature ${i + 1}`, checks, passed: checks.filter((c) => c.ok).length, total: checks.length, shared };
     });
     const total = features.reduce((a, f) => a + f.total, 0);
     const passed = features.reduce((a, f) => a + f.passed, 0);

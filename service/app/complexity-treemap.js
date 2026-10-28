@@ -101,9 +101,9 @@
   }
   // The cell of each site in a weighted (power) diagram clipped to the box. Each cell is an intersection of
   // half-planes, so it is convex.
-  function cellsOf(sites, weights, W, H) {
+  function cellsOf(sites, weights, box) {
     return sites.map((p, i) => {
-      let poly = [[0, 0], [W, 0], [W, H], [0, H]];
+      let poly = box;
       for (let j = 0; j < sites.length && poly.length; j++) {
         if (j === i) continue;
         const [xi, yi] = p, [xj, yj] = sites[j];
@@ -117,18 +117,30 @@
   // Returns [{ key, points, cx, cy, area }], where points is the convex polygon and cx, cy its centre for a label.
   // Weights are adjusted until each area matches its share; the sites drift toward their cells' centres so the shapes stay even.
   function convex(items, width, height, iters = 400) {
+    if (!(width > 0) || !(height > 0)) return [];
+    return convexIn([[0, 0], [width, 0], [width, height], [0, height]], items, iters);
+  }
+
+  // Convex cells that tile a convex polygon, each with an area in proportion to its value. Same method as convex.
+  function convexIn(box, items, iters = 400) {
     const list = (items || []).filter((i) => i && i.value > 0).sort((a, b) => b.value - a.value);
     const total = list.reduce((a, b) => a + b.value, 0);
-    if (!total || !(width > 0) || !(height > 0)) return [];
-    const W = width, H = height, A = W * H, n = list.length;
+    const A = polyArea(box);
+    if (!total || !(A > 0) || box.length < 3) return [];
+    const n = list.length;
     const target = list.map((i) => (i.value / total) * A);
-    if (n === 1) return [{ key: list[0].key, points: [[0, 0], [W, 0], [W, H], [0, H]], cx: W / 2, cy: H / 2, area: A }];
-    // Start from the squarified layout, so the cells begin where the rectangles were.
+    if (n === 1) {
+      const c = polyCentroid(box) || box[0];
+      return [{ key: list[0].key, points: box, cx: c[0], cy: c[1], area: A }];
+    }
+    // Start from the squarified layout of the box's bounding rectangle, so the cells begin where the rectangles were.
+    const minX = Math.min(...box.map((p) => p[0])), minY = Math.min(...box.map((p) => p[1]));
+    const W = Math.max(...box.map((p) => p[0])) - minX, H = Math.max(...box.map((p) => p[1])) - minY;
     const seed = layout(list, W, H);
-    const sites = list.map((i) => { const r = seed.find((c) => c.key === i.key); return [r.x + r.w / 2, r.y + r.h / 2]; });
+    const sites = list.map((i) => { const r = seed.find((c) => c.key === i.key); return [minX + r.x + r.w / 2, minY + r.y + r.h / 2]; });
     const weights = new Array(n).fill(0);
     for (let it = 0; it < iters; it++) {
-      const cells = cellsOf(sites, weights, W, H);
+      const cells = cellsOf(sites, weights, box);
       const decay = 0.5 * (1 - it / iters) + 1e-3;
       for (let i = 0; i < n; i++) {
         const a = polyArea(cells[i]), c = polyCentroid(cells[i]);
@@ -137,12 +149,12 @@
         weights[i] += decay * target[i] * Math.max(-1, Math.min(1, (target[i] - a) / target[i]));
       }
     }
-    const cells = cellsOf(sites, weights, W, H);
+    const cells = cellsOf(sites, weights, box);
     return list.map((item, i) => {
       const poly = cells[i], c = polyCentroid(poly) || sites[i];
       return { key: item.key, points: poly, cx: c[0], cy: c[1], area: polyArea(poly) };
     });
   }
 
-  root.ComplexityTreemap = { complexityOf, layout, band, convex };
+  root.ComplexityTreemap = { complexityOf, layout, band, convex, convexIn };
 })(typeof globalThis !== "undefined" ? globalThis : this);

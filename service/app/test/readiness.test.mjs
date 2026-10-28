@@ -33,7 +33,7 @@ test("a rule cited by two features is flagged on both, and lowers the score", ()
   assert.ok(r.score < 100);
   assert.equal(r.features[0].checks[3].ok, false);
   assert.equal(r.features[1].checks[3].ok, false);
-  assert.match(r.features[1].checks[3].text, /1 rule is also used by another capability/);
+  assert.match(r.features[1].checks[3].text, /1 rule is also used by another feature/);
 });
 
 test("a story with no rule, or a rule with no source lines, is a gap", () => {
