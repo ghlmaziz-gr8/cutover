@@ -8552,13 +8552,13 @@ a{color:#6d28d9;font-weight:600}`;
       head.appendChild(el("b", o.title));
       card.appendChild(head);
       card.appendChild(el("div", o.body, "small muted"));
-      if (o.note && !locked) card.appendChild(el("div", o.note, "small"));
+      if (o.note) card.appendChild(el("div", o.note, "small"));
       if (selected) {
         card.appendChild(el("span", "Selected", "tag ai"));
       } else {
         card.appendChild(el("span", "Available", "tag"));
       }
-      if (canChoose && !selected && !locked) {
+      if (canChoose && !selected) {
         const b = el("button", `Choose ${o.title.toLowerCase()}`, "ghost small-btn");
         b.type = "button";
         b.addEventListener("click", () => setScope(o.key));
