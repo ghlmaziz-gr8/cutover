@@ -33,11 +33,12 @@ test("the four scope options are offered before the deeper assessment runs, and 
   assert.ok(!html.includes("Locked until the deeper assessment is complete"));
 });
 
-test("the target language and effort plan sit on the deeper assessment page, not on Next steps", () => {
+test("the tech stack (target language) is chosen on What next, and the effort plan stays on the deeper assessment page", () => {
   const deeper = html.slice(html.indexOf('<section id="s-deeper"'), html.indexOf('<script', html.indexOf('<section id="s-deeper"')));
-  assert.ok(deeper.includes('id="targetCard"') && deeper.includes('id="effortCard"'));
+  assert.ok(deeper.includes('id="effortCard"'));
+  assert.ok(!deeper.includes('id="targetCard"'));
   const next = html.slice(html.indexOf('id="s-next"'), html.indexOf('<!-- 9. Contingency planning -->'));
-  assert.ok(!next.includes('id="targetCard"') && !next.includes('id="effortCard"'));
+  assert.ok(next.includes('id="targetCard"') && !next.includes('id="effortCard"'));
 });
 
 test("the header counts the deeper assessment as its own step and the weights still add up to 100", () => {
