@@ -49,10 +49,10 @@ import { validateDbMetadata } from "./db-metadata.mjs";
 //   DELETE /api/contingencies/:id                         remove a contingency (platform engineers)
 //   GET    /api/analyses/:id/files                        file-level results, a page at a time (platform engineers)
 //   POST   /api/analyses/:id/files/approve-all            approve every file still in draft (platform engineers)
-//   GET    /api/analyses/:id/business?path=               business assessments of one file (platform engineers)
-//   GET    /api/analyses/:id/deep-files?path=...           deep file assessments of one file (platform engineers)
+//   GET    /api/analyses/:id/business?path=               business assessments of one file (every role)
+//   GET    /api/analyses/:id/deep-files?path=...           deep file assessments of one file (every role)
 //   GET    /api/analyses/:id/features                      the approved features with their stories and cited rules (read-only, every role)
-//   GET    /api/analyses/:id/deep-files/links              function names each file defines and calls (platform engineers)
+//   GET    /api/analyses/:id/deep-files/links              function names each file defines and calls (every role)
 //   POST   /api/analyses/:id/deep-files/approve             approve a draft; replaces the earlier approved account
 //   POST   /api/analyses/:id/deep-files/discard             discard a draft (platform engineers)
 //   POST   /api/analyses/:id/deep-files/start           start a deep file assessment of one file (platform engineers)
@@ -3108,7 +3108,6 @@ const BUSINESS_MAX_CHARS = 20000;
 async function listBusiness(request, env, id) {
   const access = await analysisAccess(env, request, id);
   if (access.response) return access.response;
-  if (!canStart(access.member)) return json({ error: "Only platform engineers can see business assessments." }, 403);
   const path = new URL(request.url).searchParams.get("path") || "";
   if (!CONVERT_PATH.test(path)) return json({ error: "Choose a file." }, 400);
   const res = await serviceRest(env, `file_business_assessments?analysis_id=eq.${id}&path=eq.${encodeURIComponent(path)}&select=id,path,commit_sha,content,review_status,created_by_email,created_at,reviewed_by_email,reviewed_at&order=created_at.desc&limit=50`);
@@ -3272,7 +3271,6 @@ function dispatchBusiness(env, inputs) {
 async function deepSummary(request, env, id) {
   const access = await analysisAccess(env, request, id);
   if (access.response) return access.response;
-  if (!canStart(access.member)) return json({ error: "Only platform engineers can see the deep assessments." }, 403);
   const res = await serviceRest(env, `file_deep_assessments?analysis_id=eq.${id}&select=id,file_path,status,created_at,finished_at&order=created_at.desc&limit=5000`);
   if (!res.ok) return json({ error: "Could not load the deep assessments." }, 502);
   const files = {};
@@ -3292,7 +3290,6 @@ const DEEP_LINK_NAMES = 300;
 async function deepLinks(request, env, id) {
   const access = await analysisAccess(env, request, id);
   if (access.response) return access.response;
-  if (!canStart(access.member)) return json({ error: "Only platform engineers can see the deep assessments." }, 403);
   const res = await serviceRest(env, `file_deep_assessments?analysis_id=eq.${id}&status=in.(draft,approved)&select=file_path,status,content,created_at&order=created_at.desc&limit=2000`);
   if (!res.ok) return json({ error: "Could not load the deep assessment links." }, 502);
   const chosen = {};
@@ -3320,7 +3317,6 @@ async function deepLinks(request, env, id) {
 async function listDeepFiles(request, env, id) {
   const access = await analysisAccess(env, request, id);
   if (access.response) return access.response;
-  if (!canStart(access.member)) return json({ error: "Only platform engineers can see deep file assessments." }, 403);
   const path = new URL(request.url).searchParams.get("path") || "";
   if (!CONVERT_PATH.test(path)) return json({ error: "Choose a file." }, 400);
   const res = await serviceRest(env, `file_deep_assessments?analysis_id=eq.${id}&file_path=eq.${encodeURIComponent(path)}&select=id,file_path,status,content,confidence,dropped,commit_sha,created_by_email,created_at,finished_at,reviewed_by_email,reviewed_at&order=created_at.desc&limit=50`);
@@ -3633,7 +3629,6 @@ function checkGroups(value, allowed) {
 async function listGroupings(request, env, id) {
   const access = await analysisAccess(env, request, id);
   if (access.response) return access.response;
-  if (!canStart(access.member) && !canReviewGrouping(access.row, access.member, access.user)) return json({ error: "Only platform engineers, the application owner, or a CIO or CTO can see feature groupings." }, 403);
   const res = await serviceRest(env, `feature_groupings?analysis_id=eq.${id}&select=id,status,groups,source_count,created_by_email,created_at,reviewed_by_email,reviewed_at,review_note,review_note_by_email,review_note_at,edited_by_email,edited_at&order=created_at.desc&limit=20`);
   if (!res.ok) return json({ error: "Could not load the feature groupings." }, 502);
   return json({ groupings: await res.json() });

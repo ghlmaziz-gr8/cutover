@@ -13,9 +13,10 @@ const end = html.indexOf("  function renderFiles() {");
 const section = html.slice(start, end);
 const wiring = html.slice(html.indexOf('$("groupStart").addEventListener'), html.indexOf('$("filesApproveAll").addEventListener'));
 
-test("the card is shown to platform engineers, and to the application owner or a CIO or CTO", () => {
+test("every role sees the card; only engineers propose, and only the owner or a CIO or CTO approve", () => {
   assert.notEqual(start, -1);
-  assert.match(section, /card\.hidden = !\(isEngineer \|\| canReviewGrouping\(\)\);/);
+  assert.match(section, /card\.hidden = false;/);
+  assert.match(section, /Every role sees the groupings\./);
 });
 
 test("the list is read from the groupings endpoint and reloaded after showing the files", () => {

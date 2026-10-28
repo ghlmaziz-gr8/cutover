@@ -8914,7 +8914,8 @@ const REGION_OPTS = {
   async function loadGroupings() {
     const card = $("groupCard");
     const isEngineer = !!ws && ws.role === "platform_engineer";
-    card.hidden = !(isEngineer || canReviewGrouping());
+    // Every role sees the groupings. Only an engineer can propose or edit, and only the owner or a CIO or CTO can approve.
+    card.hidden = false;
     if (card.hidden) return [];
     $("groupStart").hidden = !isEngineer;
     try {
