@@ -3371,8 +3371,27 @@ test("the feature view carries each approved file's functions, worked examples, 
   assert.deepEqual(orders.assessment.functions.map((f) => f.name), ["SaveOrder"]);
   assert.deepEqual(orders.assessment.functions[0].calls, ["CheckCustomer"]);
   assert.equal(orders.assessment.rules[0].function, "SaveOrder");
-  assert.deepEqual(orders.assessment.examples, [{ rule: "R1" }, { rule: "R9" }]);
+  assert.deepEqual(orders.assessment.examples.map((e) => e.rule), ["R1", "R9"]);
+  assert.equal(orders.assessment.examples[0].given, "no customer");
+  assert.equal(orders.assessment.examples[0].expect, "refused");
   assert.equal(orders.assessment.database.tables[0].name, "orders");
   assert.equal(orders.assessment.database.queries[0].operation, "INSERT");
   assert.equal(pending.assessment, null, "a file with no approved assessment is marked, not invented");
+});
+
+test("the worked examples are scrubbed before they reach the module spec: e-mails, phone numbers, IDs and addresses become placeholders", async () => {
+  readyForBusiness();
+  const stories = [{ id: "S1", story: "As a clerk I can place an order so that it is checked.", status: "draft", rules: [{ file: "src/Orders.asp", id: "R1", lines: [4, 9] }] }];
+  state.feature_groupings.push({ ...groupingRow(1160, "approved", [{ name: "Ordering", summary: "x", paths: ["src/Orders.asp"], stories }]), reviewed_by_email: "cio@acme.test", reviewed_at: NOW });
+  state.file_deep_assessments.push(storyDeepRow(1161, "src/Orders.asp", {
+    file_purpose: "Takes orders.",
+    functions: [],
+    rules: [{ id: "R1", statement: "x", lines: [4, 9] }],
+    examples: [{ rule: "R1", given: "jane.doe@clinic.org, phone 555 123 4567, id 98765432, ssn 123-45-6789 at 10.1.2.3", expect: "refused for 800-555-0199" }],
+  }));
+  const res = await call(`/api/analyses/${AN_ACME}/features`, { as: "eng_a" });
+  const [example] = res.body.features[0].files[0].assessment.examples;
+  assert.equal(example.given, "name@example.com, phone 555-0100, id 123456, ssn XXX-XX-XXXX at 192.0.2.1");
+  assert.equal(example.expect, "refused for 555-0100");
+  assert.doesNotMatch(JSON.stringify(res.body), /clinic\.org|4567|98765432/);
 });

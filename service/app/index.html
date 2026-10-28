@@ -2231,6 +2231,7 @@ button:not(:disabled):active{transform:scale(.965)}
 <script src="confidence.js"></script>
 <script src="feature-map.js"></script>
 <script src="treemap.js"></script>
+<script src="module-spec.js"></script>
 <script src="radial.js"></script>
 <script src="architecture.js"></script>
 <script src="plan.js"></script>
@@ -8950,6 +8951,29 @@ const REGION_OPTS = {
     });
   }
 
+  // The module spec for one approved feature, downloaded as Markdown. Built from the approved data only.
+  function moduleSpecButton(f, data) {
+    const button = el("button", "Download module spec", "ghost small-btn");
+    button.type = "button";
+    button.addEventListener("click", () => {
+      const spec = window.ModuleSpec.build(f, {
+        app: cur.app_name || cur.repo,
+        approvedBy: data.grouping.approved_by_email,
+        approvedAt: data.grouping.approved_at,
+        confidenceOf: window.Confidence.confidenceOf,
+      });
+      const url = URL.createObjectURL(new Blob([spec.markdown], { type: "text/markdown" }));
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = spec.file;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+    });
+    return button;
+  }
+
   function renderFeatureView(data) {
     const card = $("featureCard");
     const list = $("featureList");
@@ -8974,6 +8998,7 @@ const REGION_OPTS = {
         files.append(chip);
       }
       wrap.append(files);
+      wrap.append(moduleSpecButton(f, data));
       if (!f.stories.length) wrap.append(el("p", "No user stories drafted for this feature yet.", "muted small"));
       for (const st of f.stories) {
         const row = el("div", null, "fv-story");
