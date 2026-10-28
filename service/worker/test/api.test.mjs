@@ -2181,6 +2181,16 @@ test("drawn screens are saved, and a later upload replaces the earlier ones", as
   assert.deepEqual(kept, ["c.html"]);
 });
 
+test("a redraw adds the screens it draws and keeps the ones already on the card", async () => {
+  runningAnalysis();
+  await call(`/api/runner/${AN_RUNNING}/screens`, { method: "POST", body: { screens: [screen("a.html"), screen("b.html")] }, secret: env.RUNNER_SECRET });
+  const added = await call(`/api/runner/${AN_RUNNING}/screens`, { method: "POST", body: { mode: "add", screens: [screen("b.html"), screen("c.html")] }, secret: env.RUNNER_SECRET });
+  assert.equal(added.status, 201);
+  assert.equal(added.body.saved, 1, "only the path with no screen yet is saved");
+  const kept = state.analysis_screens.filter((s) => s.analysis_id === AN_RUNNING).map((s) => s.path).sort();
+  assert.deepEqual(kept, ["a.html", "b.html", "c.html"]);
+});
+
 test("a screen that runs code, loads from elsewhere, or sends a form is refused, and nothing is saved", async () => {
   runningAnalysis();
   const refused = [

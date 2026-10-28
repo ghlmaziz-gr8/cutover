@@ -335,6 +335,25 @@ class MainTests(unittest.TestCase):
         self.assertEqual(recs[0]["purpose"], "Rule-based purpose.")
         self.assertNotIn(KEY, out)
 
+    def test_a_redraw_asks_the_api_to_add_to_the_screens_on_the_card(self):
+        html = "<!doctype html><html><body>" + "<div>Orders</div>" * 60 + "</body></html>"
+        sent = []
+
+        class Created(FakeResponse):
+            status = 201
+
+        def opener(req, timeout):
+            if "/model-key" in req.full_url:
+                return FakeResponse(json.dumps({"provider": "google", "model": "gemini-3.5-flash", "api_key": KEY}).encode())
+            if "/screens" in req.full_url:
+                sent.append(json.loads(req.data.decode("utf-8")))
+                return Created(b"{}")
+            return FakeResponse(json.dumps({"candidates": [{"content": {"parts": [{"text": html}]}}]}).encode())
+
+        self.run_main({"MODEL_TOKEN": TOKEN, "RUNNER_SECRET": "s", "DRAW_SCREENS": "true"}, opener,
+                      extra=["--screens-only"], spec=(("Orders.html", "template"),))
+        self.assertEqual(sent[0]["mode"], "add")
+
     def test_screens_only_with_screens_off_draws_nothing(self):
         calls = []
 

@@ -364,7 +364,8 @@ def main(argv=None, opener=urllib.request.urlopen) -> int:
         if screen_reasons:
             print("Screens refused because: " + "; ".join(f"{n} x {r}" for r, n in Counter(screen_reasons).most_common()))
         if screens:
-            status = post_screens(args.callback, args.analysis_id, secret, screens, opener=opener)
+            # A redraw adds to the screens already on the card; the first run replaces them.
+            status = post_screens(args.callback, args.analysis_id, secret, screens, opener=opener, add=args.screens_only)
             if status == 201:
                 print(f"{len(screens)} screens drawn from the code and saved; {screen_stats['refused']} refused.")
             else:

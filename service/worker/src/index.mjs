@@ -2002,7 +2002,8 @@ function screenProblem(html) {
   return null;
 }
 
-// Saves the screens for one analysis, replacing any saved before. Only while the analysis is still running.
+// Saves the screens for one analysis. By default it replaces the screens saved before; with mode "add" it keeps them
+// and saves only the paths that have none yet (a redraw). Only for a queued, running or finished analysis.
 async function runnerScreens(request, env, id) {
   if (!timingSafeEqual(request.headers.get("x-runner-secret") || "", env.RUNNER_SECRET || "")) {
     return json({ error: "Unauthorized." }, 401);
@@ -2021,6 +2022,8 @@ async function runnerScreens(request, env, id) {
   if (!Array.isArray(list) || list.length === 0 || list.length > SCREEN_MAX) {
     return json({ error: `Send 1 to ${SCREEN_MAX} screens.` }, 400);
   }
+  // A redraw ("add") keeps the screens already on the card and saves only the paths that have none yet.
+  const adding = parsed.value?.mode === "add";
   const rows = [];
   const paths = new Set();
   for (const value of list) {
@@ -2034,11 +2037,20 @@ async function runnerScreens(request, env, id) {
     paths.add(path);
     rows.push({ analysis_id: id, path, name, html: value.html });
   }
-  const cleared = await serviceRest(env, `analysis_screens?analysis_id=eq.${id}`, { method: "DELETE" });
-  if (!cleared.ok) return json({ error: "Could not save the screens." }, 502);
-  const made = await serviceRest(env, "analysis_screens", { method: "POST", headers: { prefer: "return=minimal" }, body: JSON.stringify(rows) });
+  let toSave = rows;
+  if (adding) {
+    const have = await serviceRest(env, `analysis_screens?analysis_id=eq.${id}&select=path`);
+    if (!have.ok) return json({ error: "Could not save the screens." }, 502);
+    const saved = new Set((await have.json()).map((r) => r.path));
+    toSave = rows.filter((r) => !saved.has(r.path));
+    if (toSave.length === 0) return json({ saved: 0 }, 201);
+  } else {
+    const cleared = await serviceRest(env, `analysis_screens?analysis_id=eq.${id}`, { method: "DELETE" });
+    if (!cleared.ok) return json({ error: "Could not save the screens." }, 502);
+  }
+  const made = await serviceRest(env, "analysis_screens", { method: "POST", headers: { prefer: "return=minimal" }, body: JSON.stringify(toSave) });
   if (!made.ok) return json({ error: "Could not save the screens." }, 502);
-  return json({ saved: rows.length }, 201);
+  return json({ saved: toSave.length }, 201);
 }
 
 // The runner reports that a screens run has finished, whether or not it drew any. Clears the drawing state.

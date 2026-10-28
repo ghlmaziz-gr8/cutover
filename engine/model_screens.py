@@ -283,10 +283,13 @@ def post_screens_done(callback: str, analysis_id: str, secret: str, opener=urlli
         return 0
 
 
-def post_screens(callback: str, analysis_id: str, secret: str, screens: list[dict], opener=urllib.request.urlopen) -> int:
-    """Sends the drawings to the API. Returns the HTTP status (201 when saved)."""
+def post_screens(callback: str, analysis_id: str, secret: str, screens: list[dict], opener=urllib.request.urlopen,
+                 add: bool = False) -> int:
+    """Sends the drawings to the API. Returns the HTTP status (201 when saved).
+    add=True keeps the screens already saved and adds only the paths that have none (a redraw)."""
     url = f"{callback.rstrip('/')}/api/runner/{analysis_id}/screens"
-    req = urllib.request.Request(url, data=json.dumps({"screens": screens}).encode("utf-8"), method="POST", headers={
+    mode = "add" if add else "replace"
+    req = urllib.request.Request(url, data=json.dumps({"mode": mode, "screens": screens}).encode("utf-8"), method="POST", headers={
         "content-type": "application/json",
         "x-runner-secret": secret,
         "user-agent": "cutover-runner",
