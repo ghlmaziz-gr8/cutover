@@ -64,10 +64,12 @@ test("zero values are left out, and an empty list draws nothing", () => {
   assert.equal(layout(rows.concat({ label: "zero", value: 0 }), 400, 240).length, rows.length);
 });
 
-test("the findings card draws a treemap, not bars, and the tiles animate in with the count", () => {
-  assert.match(html, /<script src="treemap\.js"><\/script>/);
-  assert.match(html, /p\.appendChild\(treemap\(catRows\)\);/);
+test("the findings card draws a radar chart with its own colour per category, a glow and a sweep, not bars or a treemap", () => {
+  assert.match(html, /p\.appendChild\(radarChart\(catRows\)\);/);
   assert.doesNotMatch(html, /hbars\(catRows\)/);
-  assert.match(html, /@keyframes tmIn/);
-  assert.match(html, /@media \(prefers-reduced-motion: reduce\)\{\.tm-tile\{animation:none;opacity:1;transform:none\}/);
+  assert.doesNotMatch(html, /p\.appendChild\(treemap\(catRows\)\);/);
+  assert.match(html, /const RADAR_HUES = \["#22d3ee", "#c084fc", "#f472b6"/);
+  assert.match(html, /id: "radarGlow"/);
+  assert.match(html, /@keyframes radarSweep/);
+  assert.match(html, /@media \(prefers-reduced-motion: reduce\)\{\.radar-label,\.radar-count,\.radar-point\{animation:none;opacity:1\}/);
 });

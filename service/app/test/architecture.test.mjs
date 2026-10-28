@@ -118,9 +118,10 @@ test("each analyses list row shows the AI badge when a model was used", () => {
   assert.ok(body.includes("if (r.model_provider) title.appendChild(aiBadge(r.model_provider));"));
 });
 
-test("findings by area draw as a treemap whose tiles grow in turn with counted numbers", () => {
-  assert.ok(html.includes("@keyframes tmIn"));
-  assert.ok(html.includes("countUp(count, t.value, \"\", i * 110 + 200);"));
+test("findings by area draw as a radar chart that grows from the centre, with counted numbers", () => {
+  assert.ok(html.includes("@keyframes radarSweep"));
+  assert.ok(html.includes("const RADAR_HUES = ["));
+  assert.ok(html.includes("countUp(count, r.value, \"\", 900 + i * 120);"));
 });
 
 test("architecture layers keep their dim and selected styles after the entrance animation", () => {
