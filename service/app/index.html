@@ -1398,6 +1398,16 @@ button:not(:disabled):active{transform:scale(.965)}
     @keyframes badgeWiggle{0%,100%{transform:rotate(0) scale(1)}25%{transform:rotate(-16deg) scale(1.15)}75%{transform:rotate(14deg) scale(1.15)}}
     @keyframes badgeShine{0%{transform:translateX(-120%)}55%,100%{transform:translateX(120%)}}
     @media (prefers-reduced-motion: reduce){.wc-badge.cute,.wc-badge.cute .av,.wc-badge.cute::after,.av-eyes{animation:none}.wc-badge.cute:hover{transform:none}}
+    .bplate{display:inline-flex;flex-direction:column;align-items:center;width:120px;animation:badgePop .65s cubic-bezier(.34,1.56,.64,1) both;animation-delay:var(--d,0ms);transition:transform .2s cubic-bezier(.34,1.56,.64,1)}
+    .bplate:hover{transform:translateY(-3px) scale(1.04)}
+    .bplate-svg{width:120px;height:180px;overflow:visible;filter:drop-shadow(0 6px 10px rgba(15,23,42,.28))}
+    .bplate-title{font:800 21px var(--body,system-ui,sans-serif);fill:#fff}
+    .bplate-pill{font:700 12.5px var(--body,system-ui,sans-serif);fill:#fff}
+    .bplate-foot{font:800 16px var(--body,system-ui,sans-serif);fill:#fff}
+    .bplate-glyph{transform-box:fill-box;transform-origin:center;animation:badgeBob 3s ease-in-out infinite;animation-delay:var(--d,0ms)}
+    .bplate:hover .bplate-glyph{animation:badgeWiggle .6s ease}
+    .bmedal{width:26px;height:26px;flex:none;vertical-align:middle;margin-right:6px}
+    @media (prefers-reduced-motion: reduce){.bplate,.bplate-glyph{animation:none}.bplate:hover,.bplate:hover .bplate-glyph{transform:none;animation:none}}
     .level-chip{cursor:pointer;margin-top:10px;font:inherit;font-size:12px;color:inherit}
     .level-chip:focus-visible{outline:2px solid #1d4ed8;outline-offset:2px}
     @keyframes wcIn{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
@@ -2478,7 +2488,7 @@ button:not(:disabled):active{transform:scale(.965)}
     requestAnimationFrame(() => requestAnimationFrame(() => { fill.style.width = `${pct}%`; }));
     if (data.badges && data.badges.length) {
       const row = el("div", null, "wc-badges");
-      data.badges.forEach((b, i) => row.append(badgePill(b, i)));
+      data.badges.forEach((b, i) => row.append(badgePill(b, i, lvl)));
       card.append(row);
     }
     card.hidden = false;
@@ -2493,7 +2503,7 @@ button:not(:disabled):active{transform:scale(.965)}
       const lvl = data.level;
       chip.replaceChildren();
       chip.classList.add("cute");
-      chip.append(characterFor({ id: `level-${lvl.number}`, kind: "level" }), document.createTextNode(`Level ${lvl.number} · ${lvl.name} · ${lvl.points} points`));
+      chip.append(badgeMedal({ id: `level-${lvl.number}`, kind: "level" }), document.createTextNode(`Level ${lvl.number} · ${lvl.name} · ${lvl.points} points`));
       chip.title = "Open your rewards";
       chip.onclick = () => showWelcome();
       chip.hidden = false;
@@ -2501,76 +2511,120 @@ button:not(:disabled):active{transform:scale(.965)}
       chip.hidden = true;
     }
   }
-  // Each badge is a little character. The base is the same round friend in every badge; the tier adds its look:
-  // a sprout, a hat, a bolt on a headband, a crown, a cape with a crown. Time on the system adds an emblem.
-  // The server sends the names; the characters are only for looks.
+  // Each badge is a shield plate, like a game award: a glowing medal with an icon, the badge name, a pill with the
+  // level or time, a divider, and the points. The tier sets the icon; time on the system sets the icon too.
+  // The server sends the names; the art is only for looks.
   const TIER_LOOK = {
-    "level-1": { body: "#86efac", accent: "#15803d", look: "sprout" },
-    "level-2": { body: "#fcd34d", accent: "#b45309", look: "hat" },
-    "level-3": { body: "#7dd3fc", accent: "#1d4ed8", look: "bolt" },
-    "level-4": { body: "#c4b5fd", accent: "#ca8a04", look: "crown" },
-    "level-5": { body: "#f9a8d4", accent: "#9d174d", look: "cape" },
+    "level-1": { look: "sprout" },
+    "level-2": { look: "hat" },
+    "level-3": { look: "bolt" },
+    "level-4": { look: "crown" },
+    "level-5": { look: "cape" },
   };
   const HOUR_EMBLEM = { 1: "clock", 5: "star", 25: "flame", 100: "gem" };
-  const INK = "#1f2937";
-  function characterFor(b) {
+  const HOUR_TITLE = { 1: "First hour", 5: "Five hours", 25: "Dedicated", 100: "Veteran" };
+  const GOLD = "#facc15";
+  // One white icon on a 64 by 64 grid. The medal and the hours emblem both use these.
+  function badgeGlyph(name) {
+    // The outer group places the icon; the inner group moves it, so the CSS animation does not replace the position.
+    const outer = svgEl("g", { transform: "translate(68 30)" });
+    const g = svgEl("g", { class: "bplate-glyph" });
+    outer.appendChild(g);
+    const add = (tag, attrs) => g.appendChild(svgEl(tag, attrs));
+    if (name === "sprout") {
+      add("path", { d: "M32 56 V26", stroke: "#fff", "stroke-width": "4", "stroke-linecap": "round", fill: "none" });
+      add("ellipse", { cx: "21", cy: "22", rx: "10", ry: "5.5", fill: "#fff", transform: "rotate(-28 21 22)" });
+      add("ellipse", { cx: "43", cy: "18", rx: "10", ry: "5.5", fill: "#fff", transform: "rotate(28 43 18)" });
+    } else if (name === "hat") {
+      add("path", { d: "M32 10 L60 23 L32 36 L4 23 Z", fill: "#fff" });
+      add("path", { d: "M16 30 V42 Q32 52 48 42 V30 L32 38 Z", fill: "#fff", opacity: "0.85" });
+      add("path", { d: "M54 25 V41", stroke: GOLD, "stroke-width": "2.5", "stroke-linecap": "round" });
+    } else if (name === "bolt") {
+      add("path", { d: "M36 4 L14 36 H30 L26 60 L50 26 H34 Z", fill: GOLD, stroke: "#fff", "stroke-width": "1.5", "stroke-linejoin": "round" });
+    } else if (name === "crown") {
+      add("path", { d: "M6 48 L10 16 L24 32 L32 10 L40 32 L54 16 L58 48 Z", fill: GOLD, stroke: "#fff", "stroke-width": "1.5", "stroke-linejoin": "round" });
+      add("rect", { x: "8", y: "50", width: "48", height: "6", rx: "2", fill: "#fff" });
+    } else if (name === "clock") {
+      add("circle", { cx: "32", cy: "32", r: "25", fill: "none", stroke: "#fff", "stroke-width": "4" });
+      add("path", { d: "M32 18 V33 L42 39", stroke: "#fff", "stroke-width": "4", "stroke-linecap": "round", fill: "none" });
+    } else if (name === "flame") {
+      add("path", { d: "M32 4 Q44 18 42 32 Q41 40 36 44 Q40 36 36 28 Q34 36 28 38 Q24 42 26 50 Q18 46 18 36 Q18 24 32 4 Z", fill: "#fff" });
+    } else if (name === "gem") {
+      add("path", { d: "M18 20 H46 L58 34 L32 60 L6 34 Z", fill: "#fff" });
+      add("path", { d: "M6 34 H58 M24 20 L32 34 L40 20", stroke: "#93c5fd", "stroke-width": "2", fill: "none" });
+    } else {
+      // The cape and the plain look use a star.
+      add("path", { d: "M32 4 L40 23 L60 25 L45 38 L50 58 L32 47 L14 58 L19 38 L4 25 L24 23 Z", fill: GOLD, stroke: "#fff", "stroke-width": "1.5", "stroke-linejoin": "round" });
+    }
+    return outer;
+  }
+  // The small medal used on the home chip.
+  function badgeMedal(b) {
     const id = (b && b.id) || "";
-    const tier = TIER_LOOK[id];
     const hours = /^hours-(\d+)$/.exec(id);
-    const look = tier || { body: "#5eead4", accent: "#0f766e", look: "plain" };
-    const svg = svgEl("svg", { viewBox: "0 0 64 64", class: "av", "aria-hidden": "true", focusable: "false" });
-    if (look.look === "cape") svg.appendChild(svgEl("path", { d: "M14 36 Q32 64 50 36 L47 58 Q32 66 17 58 Z", fill: look.accent, opacity: "0.9" }));
-    svg.appendChild(svgEl("ellipse", { cx: "32", cy: "37", rx: "20", ry: "17", fill: look.body }));
-    svg.appendChild(svgEl("ellipse", { cx: "32", cy: "53", rx: "14", ry: "3", fill: "rgba(0,0,0,0.12)" }));
-    if (look.look === "sprout") {
-      svg.appendChild(svgEl("path", { d: "M32 22 Q32 14 32 10", stroke: "#15803d", "stroke-width": "2.5", fill: "none", "stroke-linecap": "round" }));
-      svg.appendChild(svgEl("ellipse", { cx: "26", cy: "11", rx: "6", ry: "3.4", fill: look.accent, transform: "rotate(-25 26 11)" }));
-      svg.appendChild(svgEl("ellipse", { cx: "38", cy: "11", rx: "6", ry: "3.4", fill: look.accent, transform: "rotate(25 38 11)" }));
-    }
-    if (look.look === "hat") {
-      svg.appendChild(svgEl("ellipse", { cx: "32", cy: "21", rx: "17", ry: "3.5", fill: look.accent }));
-      svg.appendChild(svgEl("path", { d: "M22 21 L24 8 Q32 4 40 8 L42 21 Z", fill: look.accent }));
-    }
-    if (look.look === "bolt") {
-      svg.appendChild(svgEl("rect", { x: "13", y: "24", width: "38", height: "4.5", rx: "2", fill: look.accent }));
-      svg.appendChild(svgEl("path", { d: "M35 6 L29 16 L33.5 16 L30 26 L38 14 L33.5 14 Z", fill: "#facc15", stroke: look.accent, "stroke-width": "1" }));
-    }
-    if (look.look === "crown" || look.look === "cape") {
-      svg.appendChild(svgEl("path", { d: "M20 22 L22 9 L28 16 L32 6 L36 16 L42 9 L44 22 Z", fill: "#facc15", stroke: look.accent, "stroke-width": "1.5", "stroke-linejoin": "round" }));
-      svg.appendChild(svgEl("circle", { cx: "32", cy: "15", r: "2", fill: "#f43f5e" }));
-    }
-    // The face: blinking eyes, cheeks and a smile.
-    const eyes = svgEl("g", { class: "av-eyes" });
-    eyes.appendChild(svgEl("circle", { cx: "25", cy: "35", r: "3.4", fill: INK }));
-    eyes.appendChild(svgEl("circle", { cx: "39", cy: "35", r: "3.4", fill: INK }));
-    eyes.appendChild(svgEl("circle", { cx: "26", cy: "34", r: "1.1", fill: "#fff" }));
-    eyes.appendChild(svgEl("circle", { cx: "40", cy: "34", r: "1.1", fill: "#fff" }));
-    svg.appendChild(eyes);
-    svg.appendChild(svgEl("circle", { cx: "20", cy: "42", r: "3", fill: "#fb7185", opacity: "0.45" }));
-    svg.appendChild(svgEl("circle", { cx: "44", cy: "42", r: "3", fill: "#fb7185", opacity: "0.45" }));
-    svg.appendChild(svgEl("path", { d: "M27 42 Q32 47 37 42", stroke: INK, "stroke-width": "2", fill: "none", "stroke-linecap": "round" }));
-    // Time on the system: a small emblem in the corner.
-    if (hours) {
-      const emblem = HOUR_EMBLEM[hours[1]] || "star";
-      svg.appendChild(svgEl("circle", { cx: "52", cy: "12", r: "9", fill: "#fff", stroke: look.accent, "stroke-width": "1.6" }));
-      if (emblem === "clock") {
-        svg.appendChild(svgEl("path", { d: "M52 7.5 V12 L55 14", stroke: look.accent, "stroke-width": "1.6", fill: "none", "stroke-linecap": "round" }));
-      } else if (emblem === "star") {
-        svg.appendChild(svgEl("path", { d: "M52 6.5 L53.6 10.3 L57.6 10.6 L54.5 13.1 L55.5 17 L52 14.9 L48.5 17 L49.5 13.1 L46.4 10.6 L50.4 10.3 Z", fill: "#facc15" }));
-      } else if (emblem === "flame") {
-        svg.appendChild(svgEl("path", { d: "M52 6 Q56 10 55 14 Q54 17 52 17 Q49 17 49 14 Q49 11 51 9 Q51 12 52.5 12 Q52 9 52 6 Z", fill: "#f97316" }));
-      } else {
-        svg.appendChild(svgEl("path", { d: "M47.5 10 L52 6.5 L56.5 10 L52 17 Z", fill: "#38bdf8" }));
-      }
-    }
+    const name = hours ? HOUR_EMBLEM[hours[1]] || "star" : (TIER_LOOK[id] || {}).look || "star";
+    const svg = svgEl("svg", { viewBox: "0 0 120 120", class: "bmedal", "aria-hidden": "true", focusable: "false" });
+    svg.appendChild(svgEl("circle", { cx: "60", cy: "60", r: "56", fill: "#1f6bff" }));
+    svg.appendChild(svgEl("circle", { cx: "60", cy: "60", r: "46", fill: "#0b1d4a" }));
+    const glyph = badgeGlyph(name);
+    glyph.setAttribute("transform", "translate(28 28) scale(0.875)");
+    svg.appendChild(glyph);
     return svg;
   }
-
-  function badgePill(b, index, extraClass) {
-    const pill = el("span", null, `wc-badge cute${b && b.kind === "level" ? " wc-badge-level" : ""}${extraClass ? ` ${extraClass}` : ""}`);
-    pill.style.setProperty("--d", `${index * 120}ms`);
-    pill.append(characterFor(b), document.createTextNode(b ? b.name : ""));
-    return pill;
+  // The full plate. level: the points and level number for a level badge.
+  function badgeArt(b, index, level) {
+    const id = (b && b.id) || "";
+    const lvl = /^level-(\d+)$/.exec(id);
+    const hours = /^hours-(\d+)$/.exec(id);
+    const name = hours ? HOUR_EMBLEM[hours[1]] || "star" : (TIER_LOOK[id] || {}).look || "star";
+    const svg = svgEl("svg", { viewBox: "0 0 200 300", class: "bplate-svg", "aria-hidden": "true", focusable: "false" });
+    const defs = svgEl("defs", {});
+    const grad = (gid, x2, y2, stops) => {
+      const g = svgEl("linearGradient", { id: gid, x1: "0", y1: "0", x2, y2 });
+      stops.forEach(([offset, color]) => g.appendChild(svgEl("stop", { offset, "stop-color": color })));
+      defs.appendChild(g);
+    };
+    grad("bpBody", "0", "1", [["0", "#13326f"], ["1", "#061338"]]);
+    grad("bpRim", "1", "1", [["0", "#60d5ff"], ["0.5", "#1d6bff"], ["1", "#0a3fc4"]]);
+    grad("bpPill", "1", "0", [["0", "#22d3ee"], ["1", "#2563eb"]]);
+    const medalGlow = svgEl("radialGradient", { id: "bpMedal", cx: "50%", cy: "38%", r: "65%" });
+    medalGlow.appendChild(svgEl("stop", { offset: "0", "stop-color": "#2b57b8" }));
+    medalGlow.appendChild(svgEl("stop", { offset: "1", "stop-color": "#07163f" }));
+    defs.appendChild(medalGlow);
+    svg.appendChild(defs);
+    // The shield body and its rim.
+    svg.appendChild(svgEl("path", { d: "M12 80 L100 48 L188 80 L188 214 L100 296 L12 214 Z", fill: "url(#bpBody)", stroke: "url(#bpRim)", "stroke-width": "6", "stroke-linejoin": "round" }));
+    // The medal with its glowing ring and icon.
+    svg.appendChild(svgEl("circle", { cx: "100", cy: "62", r: "60", fill: "#1d6bff", opacity: "0.35" }));
+    svg.appendChild(svgEl("circle", { cx: "100", cy: "62", r: "55", fill: "#1f6bff" }));
+    svg.appendChild(svgEl("circle", { cx: "100", cy: "62", r: "47", fill: "url(#bpMedal)" }));
+    const glyph = badgeGlyph(name);
+    glyph.setAttribute("transform", "translate(68 30)");
+    svg.appendChild(glyph);
+    // A sparkle at the top right, as on the reference badge.
+    svg.appendChild(svgEl("path", { d: "M156 14 Q158 28 170 30 Q158 32 156 46 Q154 32 142 30 Q154 28 156 14 Z", fill: "#38bdf8" }));
+    // The name, the pill and the divider.
+    const title = svgEl("text", { x: "100", y: "160", "text-anchor": "middle", class: "bplate-title" });
+    title.textContent = lvl ? String(b.name || "").replace(/ badge$/, "") : HOUR_TITLE[hours ? hours[1] : ""] || "Time";
+    svg.appendChild(title);
+    svg.appendChild(svgEl("rect", { x: "34", y: "172", width: "132", height: "26", rx: "13", fill: "url(#bpPill)" }));
+    const pill = svgEl("text", { x: "100", y: "190", "text-anchor": "middle", class: "bplate-pill" });
+    pill.textContent = lvl ? `Level ${lvl[1]}` : hours ? `${hours[1]} ${hours[1] === "1" ? "hour" : "hours"}` : "";
+    svg.appendChild(pill);
+    svg.appendChild(svgEl("path", { d: "M34 212 H84 M116 212 H166", stroke: "#2563eb", "stroke-width": "2", "stroke-linecap": "round" }));
+    svg.appendChild(svgEl("path", { d: "M100 205 L102 210 L107 212 L102 214 L100 219 L98 214 L93 212 L98 210 Z", fill: "#38bdf8" }));
+    // The footer: a gold star and the points for a level, or the time on the system.
+    svg.appendChild(svgEl("path", { d: "M56 229 L59 235 L66 236 L61 241 L62 248 L56 244 L50 248 L51 241 L46 236 L53 235 Z", fill: GOLD }));
+    const foot = svgEl("text", { x: "70", y: "246", class: "bplate-foot" });
+    foot.textContent = lvl ? `${level && typeof level.points === "number" ? level.points : 0} Points` : "Earned";
+    svg.appendChild(foot);
+    return svg;
+  }
+  function badgePill(b, index, level) {
+    const plate = el("span", null, `bplate${b && b.kind === "level" ? " bplate-level" : ""}`);
+    plate.style.setProperty("--d", `${index * 120}ms`);
+    plate.append(badgeArt(b, index, level));
+    return plate;
   }
   function maybeGreet() {
     try {
