@@ -9227,8 +9227,7 @@ const REGION_OPTS = {
       try {
         const res = await api(`/api/analyses/${cur.id}/deep-files?path=${encodeURIComponent(f.path)}`);
         const running = res.assessments.find((a) => a.status === "running") || null;
-        // When a run ends, the file's state on the map changes, so the map is drawn again.
-        if (wasRunning && !running && businessFiles.analysis === cur.id) renderBusinessFiles();
+        // The colours hold still while the file is open. A run that ends does not redraw the map; Refresh or your next action does.
         wasRunning = !!running;
         if (running && waitCard && waitCard.isConnected) {
           // The live card stays in place between checks, so its animation keeps going.
@@ -9252,7 +9251,10 @@ const REGION_OPTS = {
         msg.textContent = err.message;
       }
     });
-    refresh.addEventListener("click", load);
+    refresh.addEventListener("click", async () => {
+      if (businessFiles.analysis === cur.id) await renderBusinessFiles();
+      load();
+    });
     top.append(start, refresh, close);
     if (actionSlot) actionSlot.append(top);
     else panel.append(top);
