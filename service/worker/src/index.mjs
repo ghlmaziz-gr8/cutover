@@ -415,14 +415,16 @@ async function engagementSummary(request, env) {
     serviceRest(env, `engagement?user_id=eq.${userId}&select=total_seconds,last_seen,previous_seen,previous_visit_seconds`),
     serviceRest(env, `screen_time?user_id=eq.${userId}&day=gte.${since}&select=screen,seconds`),
   ]);
-  if (!totalsRes.ok || !screensRes.ok) return json({ error: "Could not load your time on the system." }, 502);
+  const firstFailure = [["engagement", totalsRes], ["screen_time", screensRes]].find(([, r]) => !r.ok);
+  if (firstFailure) return json({ error: `Could not load your time on the system (${firstFailure[0]}, status ${firstFailure[1].status}).` }, 502);
   const [eng] = await totalsRes.json();
   const total = Number(eng?.total_seconds || 0);
   const [wsTimeRes, membersRes] = await Promise.all([
     serviceRest(env, `workspace_time?user_id=eq.${userId}&select=workspace_id,seconds`),
     serviceRest(env, `members?user_id=eq.${userId}&select=workspace_id,workspace:workspaces(id,name)`),
   ]);
-  if (!wsTimeRes.ok || !membersRes.ok) return json({ error: "Could not load your time on the system." }, 502);
+  const secondFailure = [["workspace_time", wsTimeRes], ["members", membersRes]].find(([, r]) => !r.ok);
+  if (secondFailure) return json({ error: `Could not load your time on the system (${secondFailure[0]}, status ${secondFailure[1].status}).` }, 502);
   const wsSeconds = {};
   for (const r of await wsTimeRes.json()) wsSeconds[r.workspace_id] = (wsSeconds[r.workspace_id] || 0) + Number(r.seconds || 0);
   const workspaces = (await membersRes.json())
