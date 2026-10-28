@@ -11,6 +11,7 @@
 window.CUTOVER_GUIDE = {
   updated: "2026-10-22",
   whatsNew: [
+    "2026-10-27: Each level has its own colours, so the badge shows your progress. Starter is blue, Explorer teal, Regular indigo, Champion amber and Legend magenta. Time-on-the-system badges keep the blue.",
     "2026-10-27: Your level badge sits in the header, next to the Cutover logo. It is the shield badge with your level and points. Click it to open your rewards.",
     "2026-10-27: Each badge is a shield plate now, like a game award: a glowing medal with an icon, the name, a level pill, the points, and a gold star. Hours on the system get their own plates with a clock, star, flame or gem.",
     "2026-10-27: Download package on the Features card gives one zip for the approved features: a manifest of the approved modules, a brief with the scope, approach, target and the rules every module follows, and one module file per feature. It holds sample data only and names no agent.",

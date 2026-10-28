@@ -1402,7 +1402,7 @@ button:not(:disabled):active{transform:scale(.965)}
     .bplate:hover{transform:translateY(-3px) scale(1.04)}
     .bplate-svg{width:120px;height:174px;overflow:visible;filter:drop-shadow(0 6px 10px rgba(15,23,42,.28))}
     .bplate-title{font:800 21px var(--body,system-ui,sans-serif);fill:#fff}
-    .bplate-pill{font:700 12.5px var(--body,system-ui,sans-serif);fill:#fff}
+    .bplate-pill{font:700 12.5px var(--body,system-ui,sans-serif)}
     .bplate-foot{font:800 14px var(--body,system-ui,sans-serif);fill:#fff}
     .bplate-num{font:800 20px var(--display,system-ui,sans-serif)}
     .bplate-word{font:700 13px var(--body,system-ui,sans-serif)}
@@ -2528,6 +2528,16 @@ button:not(:disabled):active{transform:scale(.965)}
     "level-5": { look: "cape" },
   };
   const HOUR_EMBLEM = { 1: "clock", 5: "star", 25: "flame", 100: "gem" };
+  // The colours of each plate. Starter is blue, then the colour warms and deepens as the level goes up.
+  // body: shield gradient top to bottom. rim: shield edge. ring: medal glow. medal: inner disc. pill: the level pill.
+  const PLATE_COLOURS = {
+    1: { body: ["#16397a", "#061338"], rim: ["#67dcff", "#1d6bff", "#0a3fc4"], ring: ["#9be9ff", "#1f6bff", "#0b3fb8"], medal: ["#2d5cc0", "#07163f"], pill: ["#22d3ee", "#2563eb"], pillText: "#fff", spark: "#38bdf8" },
+    2: { body: ["#0f4c4c", "#052a2a"], rim: ["#7ff5e0", "#14b8a6", "#0b6f66"], ring: ["#b8fff0", "#14b8a6", "#0a6b5f"], medal: ["#1f7a72", "#062b28"], pill: ["#5eead4", "#0d9488"], pillText: "#fff", spark: "#5eead4" },
+    3: { body: ["#2b2a7a", "#110f3a"], rim: ["#c4b5fd", "#6366f1", "#3730a3"], ring: ["#ddd6fe", "#6366f1", "#312e81"], medal: ["#4338ca", "#1e1b4b"], pill: ["#a5b4fc", "#4f46e5"], pillText: "#fff", spark: "#a5b4fc" },
+    4: { body: ["#6b4310", "#2e1a04"], rim: ["#fde68a", "#f59e0b", "#b45309"], ring: ["#fff3c4", "#f59e0b", "#92400e"], medal: ["#a16207", "#3b2305"], pill: ["#fde047", "#d97706"], pillText: "#2b1a03", spark: "#fcd34d" },
+    5: { body: ["#5b1046", "#25041c"], rim: ["#f9a8d4", "#db2777", "#9d174d"], ring: ["#fbcfe8", "#db2777", "#831843"], medal: ["#9d174d", "#2e0619"], pill: ["#f9a8d4", "#be185d"], pillText: "#fff", spark: "#f9a8d4" },
+    time: { body: ["#16397a", "#061338"], rim: ["#67dcff", "#1d6bff", "#0a3fc4"], ring: ["#9be9ff", "#1f6bff", "#0b3fb8"], medal: ["#2d5cc0", "#07163f"], pill: ["#22d3ee", "#2563eb"], pillText: "#fff", spark: "#38bdf8" },
+  };
   const HOUR_TITLE = { 1: "First hour", 5: "Five hours", 25: "Dedicated", 100: "Veteran" };
   const GOLD = "#facc15";
   // One white icon on a 64 by 64 grid. The medal and the hours emblem both use these.
@@ -2571,6 +2581,10 @@ button:not(:disabled):active{transform:scale(.965)}
     const lvl = /^level-(\d+)$/.exec(id);
     const hours = /^hours-(\d+)$/.exec(id);
     const name = hours ? HOUR_EMBLEM[hours[1]] || "star" : (TIER_LOOK[id] || {}).look || "star";
+    // Each level has its own colours, so the badge shows progress. Time badges keep the blue.
+    const colours = PLATE_COLOURS[lvl ? lvl[1] : "time"] || PLATE_COLOURS.time;
+    // Gradient ids carry the colour key, so two plates in different colours do not share one gradient.
+    const k = lvl ? lvl[1] : "time";
     const svg = svgEl("svg", { viewBox: "0 0 200 290", class: "bplate-svg", "aria-hidden": "true", focusable: "false" });
     const defs = svgEl("defs", {});
     const linear = (gid, x2, y2, stops) => {
@@ -2583,34 +2597,34 @@ button:not(:disabled):active{transform:scale(.965)}
       stops.forEach(([offset, color]) => g.appendChild(svgEl("stop", { offset, "stop-color": color })));
       defs.appendChild(g);
     };
-    linear("bpBody", "0", "1", [["0", "#16397a"], ["1", "#061338"]]);
-    linear("bpRim", "1", "1", [["0", "#67dcff"], ["0.5", "#1d6bff"], ["1", "#0a3fc4"]]);
-    linear("bpPill", "1", "0", [["0", "#22d3ee"], ["1", "#2563eb"]]);
-    radial("bpRing", "40%", "30%", "75%", [["0", "#9be9ff"], ["0.55", "#1f6bff"], ["1", "#0b3fb8"]]);
-    radial("bpMedal", "50%", "38%", "65%", [["0", "#2d5cc0"], ["1", "#07163f"]]);
+    linear(`bpBody-${k}`, "0", "1", [["0", colours.body[0]], ["1", colours.body[1]]]);
+    linear(`bpRim-${k}`, "1", "1", [["0", colours.rim[0]], ["0.5", colours.rim[1]], ["1", colours.rim[2]]]);
+    linear(`bpPill-${k}`, "1", "0", [["0", colours.pill[0]], ["1", colours.pill[1]]]);
+    radial(`bpRing-${k}`, "40%", "30%", "75%", [["0", colours.ring[0]], ["0.55", colours.ring[1]], ["1", colours.ring[2]]]);
+    radial(`bpMedal-${k}`, "50%", "38%", "65%", [["0", colours.medal[0]], ["1", colours.medal[1]]]);
     svg.appendChild(defs);
     // The shield, with straight sides and a point at the bottom.
-    svg.appendChild(svgEl("path", { d: "M12 76 L100 36 L188 76 L188 206 L100 284 L12 206 Z", fill: "url(#bpBody)", stroke: "url(#bpRim)", "stroke-width": "6", "stroke-linejoin": "round" }));
+    svg.appendChild(svgEl("path", { d: "M12 76 L100 36 L188 76 L188 206 L100 284 L12 206 Z", fill: `url(#bpBody-${k})`, stroke: `url(#bpRim-${k})`, "stroke-width": "6", "stroke-linejoin": "round" }));
     // The medal: a glowing ring, the inner disc, and a gloss on its top left.
-    svg.appendChild(svgEl("circle", { cx: "100", cy: "62", r: "70", fill: "#1d6bff", opacity: "0.3" }));
-    svg.appendChild(svgEl("circle", { cx: "100", cy: "62", r: "63", fill: "url(#bpRing)" }));
-    svg.appendChild(svgEl("circle", { cx: "100", cy: "62", r: "53", fill: "url(#bpMedal)" }));
+    svg.appendChild(svgEl("circle", { cx: "100", cy: "62", r: "70", fill: colours.rim[1], opacity: "0.3" }));
+    svg.appendChild(svgEl("circle", { cx: "100", cy: "62", r: "63", fill: `url(#bpRing-${k})` }));
+    svg.appendChild(svgEl("circle", { cx: "100", cy: "62", r: "53", fill: `url(#bpMedal-${k})` }));
     svg.appendChild(svgEl("ellipse", { cx: "80", cy: "32", rx: "30", ry: "12", fill: "#fff", opacity: "0.16", transform: "rotate(-22 80 32)" }));
     const glyph = badgeGlyph(name);
     glyph.setAttribute("transform", "translate(63 25) scale(1.15)");
     svg.appendChild(glyph);
     // A sparkle at the top right.
-    svg.appendChild(svgEl("path", { d: "M160 12 Q162 27 175 29 Q162 31 160 46 Q158 31 145 29 Q158 27 160 12 Z", fill: "#38bdf8" }));
+    svg.appendChild(svgEl("path", { d: "M160 12 Q162 27 175 29 Q162 31 160 46 Q158 31 145 29 Q158 27 160 12 Z", fill: colours.spark }));
     // The title, the pill, and the divider.
     const title = svgEl("text", { x: "100", y: "146", "text-anchor": "middle", class: "bplate-title" });
     title.textContent = lvl ? String(b.name || "").replace(/ badge$/, "") : HOUR_TITLE[hours ? hours[1] : ""] || "Time";
     svg.appendChild(title);
-    svg.appendChild(svgEl("rect", { x: "30", y: "158", width: "140", height: "26", rx: "13", fill: "url(#bpPill)" }));
-    const pill = svgEl("text", { x: "100", y: "175", "text-anchor": "middle", class: "bplate-pill" });
+    svg.appendChild(svgEl("rect", { x: "30", y: "158", width: "140", height: "26", rx: "13", fill: `url(#bpPill-${k})` }));
+    const pill = svgEl("text", { x: "100", y: "175", "text-anchor": "middle", class: "bplate-pill", fill: colours.pillText });
     pill.textContent = lvl ? `Level ${lvl[1]}` : hours ? `${hours[1]} ${hours[1] === "1" ? "hour" : "hours"}` : "";
     svg.appendChild(pill);
-    svg.appendChild(svgEl("path", { d: "M30 196 H80 M120 196 H170", stroke: "#2563eb", "stroke-width": "2", "stroke-linecap": "round" }));
-    svg.appendChild(svgEl("path", { d: "M100 189 L102 194 L107 196 L102 198 L100 203 L98 198 L93 196 L98 194 Z", fill: "#38bdf8" }));
+    svg.appendChild(svgEl("path", { d: "M30 196 H80 M120 196 H170", stroke: colours.pill[1], "stroke-width": "2", "stroke-linecap": "round" }));
+    svg.appendChild(svgEl("path", { d: "M100 189 L102 194 L107 196 L102 198 L100 203 L98 198 L93 196 L98 194 Z", fill: colours.spark }));
     // The footer: a gold star with the points for a level, or "Earned" for time on the system.
     svg.appendChild(svgEl("path", { d: "M56 215 L59 221 L66 222 L61 227 L62 234 L56 230 L50 234 L51 227 L46 222 L53 221 Z", fill: GOLD }));
     const foot = svgEl("text", { x: "72", y: "232", class: "bplate-foot" });
