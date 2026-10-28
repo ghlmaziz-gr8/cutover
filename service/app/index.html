@@ -2057,6 +2057,10 @@ button:not(:disabled):active{transform:scale(.965)}
       <p class="small hint" id="approachMsg" role="status"></p>
     </div>
     <div class="card" id="targetCard" hidden style="margin-top:18px"><div id="targetBody"></div></div>
+    <details class="card fold-card" id="effortCard" hidden style="margin-top:18px">
+      <summary class="fold-sum"><span id="effortSum">Effort, resources and project plan</span></summary>
+      <div id="effortBody"></div>
+    </details>
     <div class="next-group" id="groupNext"><span>3</span>Next steps<em>Conversion and the path ahead</em></div>
     <div class="card" id="conversionCardNext" hidden style="margin-top:18px">
       <h3 style="margin-top:0">Convert files to the chosen language</h3>
@@ -2331,12 +2335,6 @@ button:not(:disabled):active{transform:scale(.965)}
     </div>
     <div id="deeperModern"></div>
     <div class="card" id="deeperLimits"></div>
-    <h2 style="margin:28px 0 4px">Effort and plan</h2>
-    <p class="muted small" style="margin:0">Built from this assessment. The approach and the tech stack are chosen on What next; the plan then follows them.</p>
-    <details class="card fold-card" id="effortCard" hidden style="margin-top:18px">
-      <summary class="fold-sum"><span id="effortSum">Effort, resources and project plan</span></summary>
-      <div id="effortBody"></div>
-    </details>
     <div class="row wzNav">
       <button type="button" class="ghost" id="deeperBackBottom">Back to findings</button>
       <button type="button" id="deeperNextBottom" disabled>Go to next steps</button>
@@ -6883,6 +6881,7 @@ a{color:#6d28d9;font-weight:600}`;
     box.appendChild(head);
     box.appendChild(el("h3", "Effort, resources and project plan"));
     box.appendChild(el("p", "Cutover AI assessment, built from this analysis: its findings, the deeper assessment and the files the code review could not read. It covers the project from discovery to retiring the legacy system. A planning range for review, not a quote.", "muted small"));
+    if (row.deeper_done !== true) box.appendChild(el("p", "A rough estimate for now. It firms up once the deeper assessment is done.", "muted small"));
     if (!est.ready) {
       box.appendChild(el("p", est.message, "muted"));
       return;
