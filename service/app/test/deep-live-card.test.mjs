@@ -9,7 +9,7 @@ import { fileURLToPath } from "node:url";
 const here = dirname(fileURLToPath(import.meta.url));
 const html = readFileSync(join(here, "..", "index.html"), "utf8");
 const guide = readFileSync(join(here, "..", "guide.js"), "utf8");
-const wait = html.slice(html.indexOf("  function deepWait(a) {"), html.indexOf("  function deepCard(a, reload, msg, path) {"));
+const wait = html.slice(html.indexOf("  function deepWait(a, opts = {}) {"), html.indexOf("  function deepCard(a, reload, msg, path) {"));
 const panel = html.slice(html.indexOf("  function deepPanel(li, f, onClose"), html.indexOf("  function businessPanel(li, f) {"));
 
 test("the running card shows the estimate as a range, from the size the runner reported", () => {

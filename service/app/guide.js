@@ -11,6 +11,7 @@
 window.CUTOVER_GUIDE = {
   updated: "2026-10-22",
   whatsNew: [
+    "2026-10-27: Business view and Deep view open with a first-run card when nothing has run yet. A business run shows the same live card as a deep run. Both views open from the Deeper assessment file tree too.",
     "2026-10-27: Review file results is on the Deeper assessment screen, next to Files for the business assessment. A blocked feature grouping says where to approve the business assessments.",
     "2026-10-27: The badge by the Change role button is the one you reached most recently, such as your first hour. Each badge now records the day it was reached.",
     "2026-10-27: Every role can open Review file results from the review screen, to read the file-level results and the features. Approve and Edit purpose show to platform engineers only.",
