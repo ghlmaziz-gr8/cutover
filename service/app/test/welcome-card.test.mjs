@@ -53,14 +53,22 @@ test("a failed rewards load says so in the card instead of staying silent", () =
   assert.match(html, /Your time and rewards could not be loaded just now/);
 });
 
-test("each badge is a small pill with its own character, popping in and shining now and then, and it stays still for reduced motion", () => {
+test("each badge is a shield plate with a glowing medal, a pill, a divider and points, popping in and bobbing, and it stays still for reduced motion", () => {
   assert.match(html, /const TIER_LOOK = \{/);
-  assert.match(html, /"level-5": \{ body: "#f9a8d4", accent: "#9d174d", look: "cape" \},/);
+  assert.match(html, /"level-5": \{ look: "cape" \},/);
   assert.match(html, /const HOUR_EMBLEM = \{ 1: "clock", 5: "star", 25: "flame", 100: "gem" \};/);
-  assert.match(html, /function characterFor\(b\) \{/);
-  assert.match(html, /data\.badges\.forEach\(\(b, i\) => row\.append\(badgePill\(b, i\)\)\);/);
+  assert.match(html, /function badgeArt\(b, index, level\) \{/);
+  assert.match(html, /function badgeMedal\(b\) \{/);
+  assert.match(html, /data\.badges\.forEach\(\(b, i\) => row\.append\(badgePill\(b, i, lvl\)\)\);/);
+  assert.match(html, /M12 80 L100 48 L188 80 L188 214 L100 296 L12 214 Z/);
   assert.match(html, /@keyframes badgePop/);
-  assert.match(html, /@keyframes badgeShine/);
-  assert.match(html, /@keyframes avBlink/);
-  assert.match(html, /@media \(prefers-reduced-motion: reduce\)\{\.wc-badge\.cute,\.wc-badge\.cute \.av,\.wc-badge\.cute::after,\.av-eyes\{animation:none\}/);
+  assert.match(html, /@keyframes badgeBob/);
+  assert.match(html, /@media \(prefers-reduced-motion: reduce\)\{\.bplate,\.bplate-glyph\{animation:none\}/);
+});
+
+test("the plate shows the level, the points, and the time on the system without any character art", () => {
+  assert.match(html, /`Level \$\{lvl\[1\]\}`/);
+  assert.match(html, /`\$\{level && typeof level\.points === "number" \? level\.points : 0\} Points`/);
+  assert.match(html, /"Earned"/);
+  assert.doesNotMatch(html, /function characterFor/);
 });
