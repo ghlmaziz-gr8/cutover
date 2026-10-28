@@ -65,3 +65,10 @@ test("an engineer can add an approved file that is not in the draft to one of it
   assert.match(html, /Add to feature/);
 });
 
+test("every role can open the file-level results; only engineers see Approve and Edit purpose on a file", () => {
+  assert.match(html, /\$\("reviewFilesTop"\)\.hidden = false;/);
+  assert.doesNotMatch(html, /\$\("reviewFilesTop"\)\.hidden = !cur\.can_plan;/);
+  assert.match(html, /if \(canActOnResults\(\)\) \{\n      if \(f\.review_status !== "approved"\) button\("Approve"/);
+  assert.match(html, /button\("Edit purpose", \(\) => openFileEditor\(li, f\)\);\n    \}/);
+});
+

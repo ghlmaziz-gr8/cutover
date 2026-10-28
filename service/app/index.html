@@ -4285,7 +4285,8 @@ button:not(:disabled):active{transform:scale(.965)}
 
   function showReview() {
     show("s-review");
-    $("reviewFilesTop").hidden = !cur.can_plan;
+    // Every role can read the file-level results and the features on them. Only engineer changes are gated.
+    $("reviewFilesTop").hidden = false;
     $("reviewTitle").textContent = cur.app_name || cur.repo;
     const modelLabels = { anthropic: "Anthropic (Claude)", google: "Google (Gemini)" };
     const modelText = cur.model_provider
@@ -9537,8 +9538,10 @@ const REGION_OPTS = {
       b.addEventListener("click", fn);
       buttons.appendChild(b);
     };
-    if (f.review_status !== "approved") button("Approve", () => reviewFile(f.id, { review_status: "approved" }));
-    button("Edit purpose", () => openFileEditor(li, f));
+    if (canActOnResults()) {
+      if (f.review_status !== "approved") button("Approve", () => reviewFile(f.id, { review_status: "approved" }));
+      button("Edit purpose", () => openFileEditor(li, f));
+    }
     button("Business view", () => businessPanel(li, f));
     button("Deep view", () => deepPanel(li, f));
     li.appendChild(buttons);
