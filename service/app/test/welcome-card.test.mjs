@@ -52,3 +52,12 @@ test("the level stays on the home screen as a chip that reopens the rewards card
 test("a failed rewards load says so in the card instead of staying silent", () => {
   assert.match(html, /Your time and rewards could not be loaded just now/);
 });
+
+test("each badge is a small pill with its own icon, popping in and shining now and then, and it stays still for reduced motion", () => {
+  assert.match(html, /const BADGE_ICON = \{ "level-1": "🌱", "level-2": "🧭", "level-3": "⚡", "level-4": "🏆", "level-5": "👑" \};/);
+  assert.match(html, /const HOUR_ICON = \{ 1: "⏱️", 5: "⭐", 25: "🔥", 100: "💎" \};/);
+  assert.match(html, /data\.badges\.forEach\(\(b, i\) => row\.append\(badgePill\(b, i\)\)\);/);
+  assert.match(html, /@keyframes badgePop/);
+  assert.match(html, /@keyframes badgeShine/);
+  assert.match(html, /@media \(prefers-reduced-motion: reduce\)\{\.wc-badge\.cute,\.wc-badge\.cute \.ico,\.wc-badge\.cute::after\{animation:none\}/);
+});

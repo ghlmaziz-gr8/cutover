@@ -11,6 +11,7 @@
 window.CUTOVER_GUIDE = {
   updated: "2026-10-22",
   whatsNew: [
+    "2026-10-27: Badges are little pills with their own icon: a sprout for Starter, a compass for Explorer, and a clock, star, flame or gem for the hours on the system. They pop in, the icon bobs, and a shine passes over now and then. Hover one to see it wiggle.",
     "2026-10-27: Every role can read everything in the portal: the deep file assessments, the business assessments, the function links and the feature groupings. Only the owner or a CIO or CTO approves a grouping, and engineers still start and edit the work.",
     "2026-10-27: Every role sees all the data: the findings, the deeper assessment, the screens, the infrastructure, the features and the mind map. Roles still decide who may change the work.",
     "2026-10-27: Findings by area is a treemap. Each tile is sized by its count, the tiles grow in turn, and the count rises as each one appears. Hover a tile to lift it and see its exact count.",
