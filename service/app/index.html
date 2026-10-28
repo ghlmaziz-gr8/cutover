@@ -1385,6 +1385,31 @@ button:not(:disabled):active{transform:scale(.965)}
     .fg-dots i:nth-child(3){animation-delay:.3s}
     @keyframes fgBounce{0%,80%,100%{transform:translateY(0);opacity:.35}40%{transform:translateY(-5px);opacity:1}}
     @media (prefers-reduced-motion: reduce){.fg-dots i{animation:none;opacity:.7}}
+    .fg-ready{margin-top:16px;padding:14px 16px;border-radius:16px;border:1px solid var(--line,#ddd);background:var(--card)}
+    .fg-ready.is-favourable{border-color:color-mix(in srgb,#10b981 55%,var(--line,#ddd))}
+    .fg-ready.is-review{border-color:color-mix(in srgb,#f59e0b 55%,var(--line,#ddd))}
+    .fg-ready.is-not-ready{border-color:color-mix(in srgb,#ef4444 55%,var(--line,#ddd))}
+    .fg-ready-head{display:flex;flex-wrap:wrap;gap:6px 12px;align-items:baseline}
+    .fg-ready-kicker{font:700 11px var(--body);letter-spacing:.06em;text-transform:uppercase;color:var(--muted)}
+    .fg-ready-label{font:700 14px var(--body)}
+    .fg-ready-score{margin-left:auto;font:800 24px var(--body);font-variant-numeric:tabular-nums}
+    .fg-ready.is-favourable .fg-ready-score{color:#059669}
+    .fg-ready.is-review .fg-ready-score{color:#b45309}
+    .fg-ready.is-not-ready .fg-ready-score{color:#b91c1c}
+    .fg-ready-bar{margin-top:10px;height:10px}
+    .fg-ready-bar>span{transition:width 1.2s cubic-bezier(.2,.8,.2,1)}
+    .fg-ready.is-favourable .fg-bar>span{background:linear-gradient(90deg,#10b981,#34d399)}
+    .fg-ready.is-review .fg-bar>span{background:linear-gradient(90deg,#f59e0b,#fbbf24)}
+    .fg-ready.is-not-ready .fg-bar>span{background:linear-gradient(90deg,#ef4444,#f87171)}
+    .fg-ready-list{list-style:none;margin:12px 0 0;padding:0;display:grid;gap:8px}
+    .fg-ready-list li{display:flex;flex-wrap:wrap;gap:4px 10px;align-items:center;padding:8px 10px;border-radius:12px;background:var(--soft,#f7f6fd)}
+    .fg-ready-list li.is-ok{border-left:3px solid #10b981}
+    .fg-ready-list li.is-gap{border-left:3px solid #f59e0b}
+    .fg-ready-name{font:700 13px var(--body)}
+    .fg-ready-count{margin-left:auto;font:600 12px var(--body);color:var(--muted)}
+    .fg-ready-gap{width:100%;font:500 12px/1.4 var(--body);color:var(--muted)}
+    .fg-ready-empty{margin-top:16px;padding:12px 14px;border-radius:14px;border:1px dashed var(--line,#ddd);color:var(--muted);font:500 13px var(--body)}
+    @media (prefers-reduced-motion: reduce){.fg-ready-bar>span{transition:none}}
     .fg-foot{margin-top:14px;padding-top:12px;border-top:1px solid var(--line,#ddd)}
     .fv-feature{margin-top:14px;padding-top:12px;border-top:1px solid var(--line,#ddd);animation:fvIn .45s ease both;animation-delay:var(--d,0ms)}
     .fv-feature h4{margin:0 0 4px;font:600 15px var(--body)}
@@ -2168,6 +2193,7 @@ button:not(:disabled):active{transform:scale(.965)}
     </div>
     <div class="card fg-card" id="groupCard" hidden style="margin-top:14px">
       <h3 class="fg-title">Feature groups</h3>
+      <div id="groupReadiness"></div>
       <p class="muted small fg-lede">Groups the approved business views into product features. The AI proposes the groups, a platform engineer reviews them, and the application owner approves them.</p>
       <ol id="groupSteps" class="fg-steps" aria-label="Progress"></ol>
       <div id="groupSummary" class="fg-summary"></div>
@@ -2323,6 +2349,7 @@ button:not(:disabled):active{transform:scale(.965)}
 <script src="feature-map.js"></script>
 <script src="treemap.js"></script>
 <script src="module-spec.js"></script>
+<script src="readiness.js"></script>
 <script src="package-builder.js"></script>
 <script src="radial.js"></script>
 <script src="architecture.js"></script>
@@ -9410,6 +9437,10 @@ const REGION_OPTS = {
         approvedBy: data.grouping.approved_by_email,
         approvedAt: data.grouping.approved_at,
         confidenceOf: window.Confidence.confidenceOf,
+        allFeatures: data.features,
+        approach: cur.modern_template ? TEMPLATE_NAME[cur.modern_template] || cur.modern_template : null,
+        targetLanguage: cur.target_language ? (((cur.target_options || []).find((o) => o.id === cur.target_language) || {}).label || cur.target_language) : null,
+        targetChosenBy: cur.target_language_set_by_email || null,
       });
       const url = URL.createObjectURL(new Blob([spec.markdown], { type: "text/markdown" }));
       const link = document.createElement("a");
@@ -9667,8 +9698,43 @@ const REGION_OPTS = {
     setTimeout(tick, 5000);
   }
 
+  // How ready the draft is for a vibe-coding tool to build from. Shown once the user stories are generated.
+  function paintReadiness(rows) {
+    const box = $("groupReadiness");
+    if (!box) return;
+    box.replaceChildren();
+    const draft = rows.find((g) => g.status === "draft");
+    if (!draft) return;
+    const r = window.Readiness.assess(Array.isArray(draft.groups) ? draft.groups : []);
+    if (!r.stories) {
+      box.append(el("div", "Draft the user stories to see how ready this is for a vibe-coding tool.", "fg-ready-empty"));
+      return;
+    }
+    const card = el("div", null, `fg-ready is-${r.verdict}`);
+    const head = el("div", null, "fg-ready-head");
+    head.append(el("span", "Readiness for a vibe-coding tool", "fg-ready-kicker"), el("span", r.label, "fg-ready-label"), el("span", `${r.score}%`, "fg-ready-score"));
+    const bar = el("div", null, "fg-bar fg-ready-bar");
+    const fill = el("span");
+    fill.style.width = "0%";
+    bar.append(fill);
+    card.append(head, bar);
+    const list = el("ul", null, "fg-ready-list");
+    for (const f of r.features) {
+      const li = el("li", null, f.passed === f.total ? "is-ok" : "is-gap");
+      li.append(el("span", f.name, "fg-ready-name"), el("span", `${f.passed} of ${f.total} checks`, "fg-ready-count"));
+      const gaps = f.checks.filter((c) => !c.ok).map((c) => c.text);
+      if (gaps.length) li.append(el("div", gaps.join(" · "), "fg-ready-gap"));
+      list.append(li);
+    }
+    card.append(list);
+    box.append(card);
+    // The bar fills from empty to the score, so the figure is read as it arrives.
+    requestAnimationFrame(() => requestAnimationFrame(() => { fill.style.width = `${r.score}%`; }));
+  }
+
   function renderGroupings(rows) {
     groupRows = rows;
+    paintReadiness(rows);
     const list = $("groupList");
     list.replaceChildren();
     const running = rows.find((g) => g.status === "running") || null;

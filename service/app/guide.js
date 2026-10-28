@@ -11,6 +11,7 @@
 window.CUTOVER_GUIDE = {
   updated: "2026-10-22",
   whatsNew: [
+    "2026-10-28: The feature groups card shows how ready the draft is for a vibe-coding tool, once the user stories are generated. A feature is ready when its stories cite rules with source lines and no rule is shared with another feature. Each module spec also lists the rules shared between features, the questions to answer before building (such as a rule that depends on today's date), and the decisions still open.",
     "2026-10-28: While the AI drafts the user stories, the draft shows an animated indicator, and its Draft user stories button is disabled until the stories are ready.",
     "2026-10-28: Proposing feature groups again replaces the draft waiting for review, so only one draft is listed. An approved grouping is kept.",
     "2026-10-28: The feature groups card shows three steps and where each one stands. While the AI proposes the groups, the card shows it working, and the draft appears when it is ready. The draft is laid out as a set of tiles, with the file list and the actions below.",
