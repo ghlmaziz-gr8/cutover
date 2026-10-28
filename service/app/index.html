@@ -9672,6 +9672,8 @@ const REGION_OPTS = {
     function rebuild(assessments) {
       list.innerHTML = "";
       waitCard = null;
+      // Once a deep result is approved, the file is done at this stage: the run button is hidden, and the approved result stays.
+      if (assessments.some((x) => x.status === "approved")) start.hidden = true;
       if (!assessments.length) {
         list.appendChild(firstRunCard(
           "No deep assessment has run for this file",
@@ -10275,19 +10277,31 @@ const REGION_OPTS = {
     return panel;
   }
 
+  // The business assessment card. It uses the same layout as the deep card: the job header, the status line,
+  // the purpose, labelled sections with bullets, the model note, and the approve and discard row.
   function bizCard(a, reload, msg) {
-    const card = el("div", null, "biz-card");
-    card.style.borderTop = "1px solid var(--line, #ddd)";
-    card.style.paddingTop = "8px";
-    card.style.marginTop = "8px";
+    const c = el("div", null, "biz-card");
+    c.style.borderTop = "1px solid var(--line, #ddd)";
+    c.style.paddingTop = "8px";
+    c.style.marginTop = "8px";
     const commit = a.commit_sha ? ` · commit ${String(a.commit_sha).slice(0, 7)}` : "";
-    card.append(el("div", `${BIZ_STATUS[a.review_status] || a.review_status}${commit}`, "muted small"));
+    c.append(...deepJobHead({ ...a, status: a.review_status }));
+    c.append(el("div", `${BIZ_STATUS[a.review_status] || a.review_status}${commit}`, "muted small"));
+    const content = a.content || {};
+    if (content.purpose) c.append(el("div", content.purpose, "small"));
     for (const [key, label] of BIZ_FIELDS) {
-      const value = a.content ? a.content[key] : undefined;
+      if (key === "purpose") continue;
+      const value = content[key];
       if (value === undefined || value === null || value === "" || (Array.isArray(value) && !value.length)) continue;
-      card.append(el("div", `${label}: ${Array.isArray(value) ? value.join("; ") : value}`, "small"));
+      const box = el("div", null, "small");
+      box.style.marginTop = "8px";
+      box.append(el("b", label));
+      for (const item of Array.isArray(value) ? value : [value]) box.append(el("div", `• ${item}`, "small"));
+      c.append(box);
     }
+    c.append(el("div", "Read by the model, so its confidence is lower than a rule-based result. An engineer checks it before it is final.", "attn small"));
     if (a.review_status === "draft" && canActOnResults()) {
+      c.append(el("div", "Approving makes this the business assessment for the file, and replaces any earlier approved one. Discard removes this draft.", "muted small"));
       const row = el("div", null, "row");
       row.style.gap = "8px";
       const approve = el("button", "Approve this draft", "small-btn");
@@ -10313,9 +10327,9 @@ const REGION_OPTS = {
         }
       });
       row.append(approve, discard);
-      card.append(row);
+      c.append(row);
     }
-    return card;
+    return c;
   }
 
   // Replaces one file's purpose with an editable box. Saving marks the file as edited and approved.
