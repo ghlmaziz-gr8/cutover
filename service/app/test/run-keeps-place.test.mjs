@@ -17,6 +17,7 @@ test("the file map stays on screen while it reloads", () => {
 test("after Run deep assessment, the running card is brought into view", () => {
   const start = html.slice(html.indexOf("Started. The live view below follows the assessment"), html.indexOf("refresh.addEventListener(\"click\", async () => {", html.indexOf("Started. The live view below follows the assessment")));
   assert.ok(start.includes("await load();"));
+  assert.ok(!start.includes("renderBusinessFiles()"), "the map is not redrawn when a run starts");
   assert.ok(start.includes('panel.querySelector(".dw-card")'));
   assert.ok(start.includes("scrollIntoView"));
 });
