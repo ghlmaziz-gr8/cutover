@@ -19,7 +19,7 @@ CODE = "class Booking:\n    def cancel(self, visit):\n        visit.free_slot()\
 class CleanReply(unittest.TestCase):
     def test_a_good_reply_keeps_the_fixed_fields(self):
         got = mb.clean_reply(json.dumps(GOOD))
-        self.assertEqual(set(got), set(GOOD))
+        self.assertTrue(set(GOOD) <= set(got))
         self.assertEqual(got["business_rules"], GOOD["business_rules"])
 
     def test_a_fenced_reply_is_read(self):
@@ -37,6 +37,25 @@ class CleanReply(unittest.TestCase):
         self.assertIsNone(mb.clean_reply(json.dumps({k: v for k, v in GOOD.items() if k != "purpose"})))
         self.assertIsNone(mb.clean_reply(json.dumps(dict(GOOD, workflows="one"))))
         self.assertIsNone(mb.clean_reply(None))
+
+
+class Functions(unittest.TestCase):
+    def test_a_function_the_code_does_not_contain_is_dropped_and_counted(self):
+        reply = dict(GOOD, functions=[{"name": "cancel", "lines": [2, 3]}, {"name": "invented", "lines": [1, 1]}])
+        got = mb.clean_reply(json.dumps(reply), CODE)
+        self.assertEqual(got["functions"], [{"name": "cancel", "lines": [2, 3]}])
+        self.assertEqual(got["dropped"], 1)
+
+    def test_line_numbers_are_kept_only_when_they_make_sense(self):
+        reply = dict(GOOD, functions=[{"name": "cancel", "lines": [3, 2]}, {"name": "Booking", "lines": "2-3"}])
+        got = mb.clean_reply(json.dumps(reply), CODE)
+        self.assertEqual(got["functions"], [{"name": "cancel", "lines": None}, {"name": "Booking", "lines": None}])
+        self.assertEqual(got["dropped"], 0)
+
+    def test_a_reply_without_functions_is_still_kept(self):
+        got = mb.clean_reply(json.dumps(GOOD), CODE)
+        self.assertEqual(got["functions"], [])
+        self.assertEqual(got["dropped"], 0)
 
 
 class AssessFile(unittest.TestCase):

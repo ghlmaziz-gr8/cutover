@@ -10328,6 +10328,19 @@ const REGION_OPTS = {
     c.append(...deepJobHead({ ...a, status: a.review_status }));
     c.append(el("div", `${BIZ_STATUS[a.review_status] || a.review_status}${commit}`, "muted small"));
     const content = a.content || {};
+    // The halo, as on the deep result. An older draft, made before the run gave its functions, has none.
+    if (Array.isArray(content.functions)) {
+      const conf = Confidence.businessConfidenceOf(content);
+      const row = el("div", null, "dh-row");
+      const band = { high: "High", medium: "Medium", low: "Low" }[conf.band];
+      const text = el("div", null, "dh-text");
+      text.append(el("b", `Confidence: ${band}`));
+      text.append(el("div", `Function names checked against the code: ${conf.parts.names}%`, conf.parts.names < 100 ? "attn small" : "muted small"));
+      text.append(el("div", `Functions with line numbers: ${conf.parts.lines}%`, "muted small"));
+      row.append(deepHalo(conf.score, conf.band), text);
+      c.append(row);
+    }
+    if (a.content && a.content.dropped) c.append(el("div", `${a.content.dropped} ${a.content.dropped === 1 ? "name was" : "names were"} not found in the file and left out.`, "attn small"));
     if (content.purpose) c.append(el("div", content.purpose, "small"));
     for (const [key, label] of BIZ_FIELDS) {
       if (key === "purpose") continue;
