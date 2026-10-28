@@ -123,6 +123,9 @@ class AssessFile(unittest.TestCase):
 
 
 class RunnerStep(unittest.TestCase):
+    def test_the_connection_note_carries_the_path_and_no_key(self):
+        self.assertEqual(br.progress_payload("src/Booking.py"), {"path": "src/Booking.py", "connected": True})
+
     def test_the_payload_carries_the_outcome_and_never_a_key(self):
         payload = br.result_payload("src/Booking.py", "abc1234", {"status": "ok", "content": GOOD})
         self.assertEqual(set(payload), {"path", "commit_sha", "status", "content", "reason"})

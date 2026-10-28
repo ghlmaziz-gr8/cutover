@@ -9727,7 +9727,7 @@ const REGION_OPTS = {
   }
 
   // ---- Business view of one file: start an assessment, then approve or discard its drafts ----
-  const BIZ_STATUS = { running: "Running", draft: "Draft to review", approved: "Approved", superseded: "Replaced by a later approval" };
+  const BIZ_STATUS = { running: "Running", draft: "Draft to review", approved: "Approved", superseded: "Replaced by a later approval", failed: "Failed" };
   const BIZ_FIELDS = [["purpose", "Purpose"], ["business_rules", "Business rules"], ["workflows", "Workflows"],
     ["data_used", "Data used"], ["risks", "Risks to keep safe"], ["questions", "Open questions"]];
 
@@ -10130,7 +10130,7 @@ const REGION_OPTS = {
       const progress = (data.content || {}).progress || null;
       const started = Date.parse(data.created_at) || Date.now();
       const elapsed = Math.max(0, (Date.now() - started) / 1000);
-      const estimate = progress ? progress.estimate_seconds : fallback;
+      const estimate = (progress && progress.estimate_seconds) || fallback;
       clock.textContent = deepFmt(elapsed);
       // Until the runner reports that the model was reached, the card says so and ticks nothing else.
       const connected = !!(progress && progress.connected_at);
@@ -10159,7 +10159,7 @@ const REGION_OPTS = {
         DW_STAGES.forEach(([, at], i) => { if (share >= at) current = i; });
         stageItems.forEach((li, i) => { li.className = i < current ? "done" : i === current ? "now" : ""; });
         stageText.textContent = DW_STAGES[current][0];
-        const facts_ = progress
+        const facts_ = progress && typeof progress.lines === "number"
           ? [el("span", `${progress.lines.toLocaleString()} lines`), el("span", `${progress.chars.toLocaleString()} characters`)]
           : [];
         facts.replaceChildren(...facts_, el("span", `Estimate ${deepFmt(estimate)}`));
@@ -10400,7 +10400,7 @@ const REGION_OPTS = {
           }
           for (const a of res.assessments) {
             if (a.review_status === "running") {
-              waitCard = deepWait({ ...a, status: "running", file_path: f.path }, { fallbackSeconds: BIZ_FALLBACK_SECONDS });
+              waitCard = deepWait({ ...a, status: "running", file_path: f.path }, { fallbackSeconds: BIZ_FALLBACK_SECONDS, connection: true });
               list.appendChild(waitCard);
             } else {
               list.appendChild(bizCard(a, load, msg));
@@ -10444,6 +10444,14 @@ const REGION_OPTS = {
     const commit = a.commit_sha ? ` · commit ${String(a.commit_sha).slice(0, 7)}` : "";
     c.append(...deepJobHead({ ...a, status: a.review_status }));
     c.append(el("div", `${BIZ_STATUS[a.review_status] || a.review_status}${commit}`, "muted small"));
+    if (a.review_status === "failed") {
+      // The AI assessment for the business failed: say so, with the reason from the runner, and how to try again.
+      const why = (a.content && a.content.failure && a.content.failure.reason) || "The assessment did not finish.";
+      c.append(el("div", "The AI assessment for the business failed.", "small"));
+      c.append(el("div", why, "small"));
+      c.append(el("div", "Press Assess for the business to try again.", "muted small"));
+      return c;
+    }
     const content = a.content || {};
     // A draft made before the rules, checks and worked examples were added: say so, and how to see them.
     if (!Array.isArray(content.rules)) {

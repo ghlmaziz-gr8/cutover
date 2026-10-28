@@ -26,7 +26,7 @@ test("an empty deep panel and an empty business panel show the first-run card", 
 
 test("a running business assessment shows the live card with an estimate, and is checked again", () => {
   assert.ok(biz.includes('a.review_status === "running"'));
-  assert.ok(biz.includes("deepWait({ ...a, status: \"running\", file_path: f.path }, { fallbackSeconds: BIZ_FALLBACK_SECONDS })"));
+  assert.ok(biz.includes("deepWait({ ...a, status: \"running\", file_path: f.path }, { fallbackSeconds: BIZ_FALLBACK_SECONDS, connection: true })"));
   assert.ok(biz.includes("setTimeout(load, 4000)"));
   assert.ok(html.includes("const BIZ_FALLBACK_SECONDS = 120;"));
 });

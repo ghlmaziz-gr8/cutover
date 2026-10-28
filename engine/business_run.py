@@ -18,7 +18,7 @@ from pathlib import Path
 
 from model_business import assess_file
 from model_purposes import ReleaseError, call_provider, exchange_token, make_source_reader
-from model_purposes import ProviderError, ProviderStopped
+from model_purposes import ProviderError, ProviderStopped, explain_failure
 
 UUID = re.compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$")
 SAFE_PATH = re.compile(r"^[A-Za-z0-9_./-]{1,300}$")
@@ -34,6 +34,29 @@ def result_payload(path: str, commit_sha: str | None, result: dict) -> dict:
         "content": result.get("content"),
         "reason": result.get("reason"),
     }
+
+
+def progress_payload(path: str) -> dict:
+    """Sent once the model has been reached, so the portal can tick the connection step."""
+    return {"path": path, "connected": True}
+
+
+def post_progress(callback: str, analysis_id: str, secret: str, payload: dict,
+                  opener=urllib.request.urlopen) -> int:
+    """Tells the API the model was reached. A failure here does not stop the assessment."""
+    url = f"{callback.rstrip('/')}/api/runner/{analysis_id}/business-progress"
+    req = urllib.request.Request(url, data=json.dumps(payload).encode("utf-8"), method="POST", headers={
+        "content-type": "application/json",
+        "x-runner-secret": secret,
+        "user-agent": "cutover-runner",
+    })
+    try:
+        with opener(req, timeout=30) as res:
+            return res.status
+    except urllib.error.HTTPError as err:
+        return err.code
+    except (urllib.error.URLError, OSError):
+        return 0
 
 
 def post_result(callback: str, analysis_id: str, secret: str, payload: dict,
@@ -103,12 +126,13 @@ def main(argv=None, opener=urllib.request.urlopen) -> int:
 
     provider, model, api_key = release["provider"], release["model"], release["api_key"]
     base_url, token_field = release.get("base_url"), release.get("token_field", "max_tokens")
+    post_progress(args.callback, args.analysis_id, secret, progress_payload(args.path), opener=opener)
     try:
         result = run(args.path, source,
                      lambda text: call_provider(provider, model, api_key, text, opener=opener,
                                                 base_url=base_url, token_field=token_field, max_tokens=1500))
-    except (ProviderStopped, ProviderError):
-        result = {"path": args.path, "status": "failed", "reason": "The language model did not answer. Nothing was kept."}
+    except (ProviderStopped, ProviderError) as err:
+        result = {"path": args.path, "status": "failed", "reason": explain_failure(err)}
     status = post_result(args.callback, args.analysis_id, secret, result_payload(args.path, commit, result),
                          opener=opener)
     del api_key, release
