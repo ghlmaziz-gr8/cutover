@@ -130,7 +130,8 @@ def main(argv=None, opener=urllib.request.urlopen) -> int:
     try:
         result = run(args.path, source,
                      lambda text: call_provider(provider, model, api_key, text, opener=opener,
-                                                base_url=base_url, token_field=token_field, max_tokens=1500))
+                                                base_url=base_url, token_field=token_field, max_tokens=1500,
+                                                json_reply=True))
     except (ProviderStopped, ProviderError) as err:
         result = {"path": args.path, "status": "failed", "reason": explain_failure(err)}
     status = post_result(args.callback, args.analysis_id, secret, result_payload(args.path, commit, result),

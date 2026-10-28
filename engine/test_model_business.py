@@ -171,5 +171,13 @@ class RunnerStep(unittest.TestCase):
         self.assertEqual(code, 2)
 
 
+class BusinessRunAsksForJson(unittest.TestCase):
+    def test_the_business_run_asks_the_provider_for_a_json_reply(self):
+        # Without this, Google may return prose, and the reply is refused as not in the form needed.
+        import pathlib
+        src = (pathlib.Path(__file__).parent / "business_run.py").read_text(encoding="utf-8")
+        self.assertIn("json_reply=True", src)
+
+
 if __name__ == "__main__":
     unittest.main()
