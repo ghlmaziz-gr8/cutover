@@ -1400,13 +1400,14 @@ button:not(:disabled):active{transform:scale(.965)}
     .rel-title{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
     button.ghost.small-btn.is-active{background:#7c3aed;border-color:#7c3aed;color:#fff}
     li.is-biz-open{box-shadow:inset 4px 0 0 #7c3aed}
-    .biz-compare{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:16px;align-items:start}
-    .biz-compare>*{min-width:0}
-    .biz-head{font:600 13px var(--body);margin:8px 0 6px}
+    .biz-compare{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:16px;align-items:start;margin-top:12px}
+    .biz-compare>.biz-col{min-width:0;border:1px solid var(--line,#ddd);border-radius:16px;padding:12px 14px;background:var(--card,#fff)}
+    .biz-head{font:700 13px var(--body);letter-spacing:.02em;margin:0 0 8px;padding-bottom:6px;border-bottom:1px solid var(--line,#ddd)}
+    .biz-compare .next-step{white-space:normal;display:flex;border-radius:12px;padding:6px 10px;margin:8px 0;line-height:1.4}
+    .biz-compare .conf-ring,.biz-compare .conf-ring svg{width:150px;height:150px}
+    .biz-compare .conf-halo{inset:-14px}
     .biz-panel.is-enlarged{position:fixed;inset:12px;z-index:60;overflow:auto;background:var(--card);padding:16px;border-radius:14px;box-shadow:0 20px 60px rgba(0,0,0,.35);margin:0}
     @media (max-width:820px){.biz-compare{grid-template-columns:1fr}}
-    .biz-code{margin:8px 0 12px}
-    .biz-code>summary{cursor:pointer;font:600 13px var(--body);margin-bottom:6px}
     .rel-state{font:600 11px var(--body);padding:2px 8px;border-radius:99px;border:1px solid currentColor;white-space:nowrap;background:color-mix(in srgb,currentColor 10%,transparent)}
     .rel-state.is-running::before{content:"";display:inline-block;width:6px;height:6px;border-radius:50%;background:currentColor;margin-right:5px;vertical-align:middle;animation:relPulse 1.2s ease-in-out infinite}
     @keyframes relPulse{50%{opacity:.25}}
@@ -10593,12 +10594,8 @@ const REGION_OPTS = {
     if (!canActOnResults()) panel.append(el("p", RESULTS_READ_ONLY_NOTE, "muted small"));
     const { modelRow, loadModels } = analysisModelRow(msg);
     // The code view: the file's deep assessment, the same card as on the Deeper screen, so the reader sees what the code does.
-    const codeBox = document.createElement("details");
-    codeBox.className = "biz-code";
-    codeBox.open = true;
-    const codeSummary = document.createElement("summary");
-    codeSummary.textContent = "What the code does (deep assessment)";
-    codeBox.append(codeSummary);
+    const codeBox = el("div", null, "biz-col biz-code");
+    codeBox.append(el("div", "Deep assessment: what the code does", "biz-head"));
     async function loadCode() {
       try {
         const res = await api(`/api/analyses/${cur.id}/deep-files?path=${encodeURIComponent(f.path)}`);
@@ -10616,7 +10613,7 @@ const REGION_OPTS = {
     }
     // Side by side: the code view on the left, the business assessment on the right. They stack on a narrow screen.
     const compare = el("div", null, "biz-compare");
-    const side = el("div", null, "biz-side");
+    const side = el("div", null, "biz-col biz-side");
     side.append(el("div", "Business assessment", "biz-head"), list);
     compare.append(codeBox, side);
     panel.append(top, modelRow, msg, compare);
