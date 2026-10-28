@@ -11,6 +11,7 @@
 window.CUTOVER_GUIDE = {
   updated: "2026-10-22",
   whatsNew: [
+    "2026-10-27: The business assessment of a file has the same layout as its deep result. Once a file's deep result is approved, its Run deep assessment button is hidden.",
     "2026-10-27: The file-level results rows have Business view only. The deep result of a file opens from the Deeper assessment file tree.",
     "2026-10-27: The file-level results list shows a file once its deep assessment is approved. Approve all drafts approves only the files listed.",
     "2026-10-27: The Business view shows the model for this analysis, as the Deep view does, and an engineer can switch it there.",
