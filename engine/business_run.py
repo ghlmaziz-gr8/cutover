@@ -20,6 +20,9 @@ from model_business import assess_file
 from model_purposes import ReleaseError, call_provider, exchange_token, make_source_reader
 from model_purposes import ProviderError, ProviderStopped, explain_failure
 
+# The answer room. Some models spend part of it on their own reasoning, so it matches the deep assessment's room.
+MAX_TOKENS = 8000
+
 UUID = re.compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$")
 SAFE_PATH = re.compile(r"^[A-Za-z0-9_./-]{1,300}$")
 SHA = re.compile(r"^[0-9a-f]{7,64}$")
@@ -130,7 +133,7 @@ def main(argv=None, opener=urllib.request.urlopen) -> int:
     try:
         result = run(args.path, source,
                      lambda text: call_provider(provider, model, api_key, text, opener=opener,
-                                                base_url=base_url, token_field=token_field, max_tokens=1500,
+                                                base_url=base_url, token_field=token_field, max_tokens=MAX_TOKENS,
                                                 json_reply=True))
     except (ProviderStopped, ProviderError) as err:
         result = {"path": args.path, "status": "failed", "reason": explain_failure(err)}
