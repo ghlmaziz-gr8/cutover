@@ -9,14 +9,14 @@ const here = dirname(fileURLToPath(import.meta.url));
 const html = readFileSync(join(here, "..", "index.html"), "utf8");
 
 test("every screen is shown in a grid, not one at a time", () => {
-  const block = html.slice(html.indexOf("function drawnScreensCard(screens)"), html.indexOf("  // A screen drawn by the model, as a PNG."));
+  const block = html.slice(html.indexOf("function drawnScreensCard(screens, onChange"), html.indexOf("  // A screen drawn by the model, as a PNG."));
   assert.ok(block.includes("for (const sc of screens)"));
   assert.ok(block.includes('el("div", null, "screen-grid")'));
   assert.ok(!block.includes("dp-tabs"));
 });
 
 test("each screen can be downloaded as a PNG, and the drawing fetches nothing", () => {
-  const block = html.slice(html.indexOf("function drawnScreensCard(screens)"), html.indexOf("  // A screen drawn by the model, as a PNG."));
+  const block = html.slice(html.indexOf("function drawnScreensCard(screens, onChange"), html.indexOf("  // A screen drawn by the model, as a PNG."));
   assert.ok(block.includes('"Download PNG"'));
   assert.ok(block.includes("screenPng(sc.html)"));
   assert.ok(block.includes('frame.setAttribute("sandbox", "")'));
@@ -28,8 +28,8 @@ test("each screen can be downloaded as a PNG, and the drawing fetches nothing", 
 
 test("the screens show on the file-level results screen as well as the overview", () => {
   assert.ok(html.includes('<div id="filesScreens"></div>'));
-  assert.ok(html.includes('screensBox.appendChild(drawnScreensCard(drawn))'));
-  assert.ok(html.includes("const c = drawnScreensCard(screens);"));
+  assert.ok(html.includes('screensBox.appendChild(drawnScreensCard(drawn, () => reloadAnalysis().then(() => showFiles())))'));
+  assert.ok(html.includes("const c = drawnScreensCard(screens, () => reloadAnalysis().then(renderReview));"));
 });
 
 test("an old business draft says it must be assessed again to see the rules", () => {

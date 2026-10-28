@@ -1397,6 +1397,23 @@ test("the file list says which commit each file result was read at", async () =>
   assert.equal(res.body.files.find((f) => f.path === "src/Commit.java").commit_sha, "abc1234");
 });
 
+// ---- Deleting one drawn screen ----
+
+test("an engineer deletes one drawn screen; the removal is logged, and an auditor or another analysis's screen is refused", async () => {
+  state.analysis_screens.push({ id: uid(1200), analysis_id: AN_ACME, path: "src/Empty.java", name: "Gethint", html: "<p>x</p>" });
+  state.analysis_screens.push({ id: uid(1201), analysis_id: AN_BETA, path: "beta/B.java", name: "Other", html: "<p>y</p>" });
+  const auditor = await call(`/api/analyses/${AN_ACME}/screens/${uid(1200)}`, { as: "aud_a", method: "DELETE" });
+  assert.equal(auditor.status, 403);
+  const other = await call(`/api/analyses/${AN_ACME}/screens/${uid(1201)}`, { as: "eng_a", method: "DELETE" });
+  assert.equal(other.status, 404, "a screen of another analysis is not found here");
+  const res = await call(`/api/analyses/${AN_ACME}/screens/${uid(1200)}`, { as: "eng_a", method: "DELETE" });
+  assert.equal(res.status, 200);
+  assert.equal(res.body.name, "Gethint");
+  assert.equal(state.analysis_screens.some((r) => r.id === uid(1200)), false);
+  assert.equal(state.analysis_screens.some((r) => r.id === uid(1201)), true);
+  assert.ok(state.assessment_log.some((e) => e.action === "screen_delete" && e.detail === "Gethint"));
+});
+
 // ---- Skipping a failed business view for now, and the count on the feature step ----
 
 test("a failed business view can be skipped by an engineer; its reason stays, and it is logged", async () => {

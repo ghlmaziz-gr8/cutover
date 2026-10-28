@@ -61,6 +61,7 @@ import { validateDbMetadata } from "./db-metadata.mjs";
 //   POST   /api/analyses/:id/business/approve             approve a draft; the earlier approved one is superseded (platform engineers)
 //   POST   /api/analyses/:id/business/discard             discard a draft (platform engineers)
 //   POST   /api/analyses/:id/business/skip                skip a failed business view for now, with its reason (platform engineers)
+//   DELETE /api/analyses/:id/screens/:screenId                remove one drawn screen (platform engineers)
 //   GET    /api/analyses/:id/business-summary             how many approved files have an approved business view, and the skipped ones (every role)
 //   POST   /api/runner/:id/business                       one draft business assessment (shared secret)
 //   PATCH  /api/file-findings/:id                         approve or edit one file's purpose and suggestions (platform engineers)
@@ -2055,6 +2056,23 @@ async function runnerScreens(request, env, id) {
   const made = await serviceRest(env, "analysis_screens", { method: "POST", headers: { prefer: "return=minimal" }, body: JSON.stringify(toSave) });
   if (!made.ok) return json({ error: "Could not save the screens." }, 502);
   return json({ saved: toSave.length }, 201);
+}
+
+// Removes one drawn screen, for example one that came out empty. Only platform engineers. The removal is logged first.
+// A later redraw draws the file again if it has no screen.
+async function deleteScreen(request, env, id, screenId) {
+  const access = await analysisAccess(env, request, id);
+  if (access.response) return access.response;
+  if (!canStart(access.member)) return json({ error: "Only platform engineers can delete a screen." }, 403);
+  const found = await serviceRest(env, `analysis_screens?id=eq.${screenId}&analysis_id=eq.${id}&select=id,name`);
+  if (!found.ok) return json({ error: "Could not load the screen." }, 502);
+  const [screen] = await found.json();
+  if (!screen) return json({ error: "Not found." }, 404);
+  const refused = await logFirst(env, { workspace_id: access.row.workspace_id, user: access.user, action: "screen_delete", analysis_id: id, repo: access.row.repo, detail: screen.name });
+  if (refused) return refused;
+  const res = await serviceRest(env, `analysis_screens?id=eq.${screenId}&analysis_id=eq.${id}`, { method: "DELETE", headers: { prefer: "return=minimal" } });
+  if (!res.ok) return json({ error: "Could not delete the screen." }, 502);
+  return json({ deleted: true, name: screen.name });
 }
 
 // The paths that already have a screen, so a redraw draws only the files without one. The runner's shared secret.
@@ -4993,6 +5011,8 @@ async function route(request, env) {
     if (businessDiscard && UUID_PATTERN.test(businessDiscard[1]) && method === "POST") return discardBusiness(request, env, businessDiscard[1]);
     const businessSkip = path.match(/^\/api\/analyses\/([^/]+)\/business\/skip$/);
     if (businessSkip && UUID_PATTERN.test(businessSkip[1]) && method === "POST") return skipBusiness(request, env, businessSkip[1]);
+    const screenDelete = path.match(/^\/api\/analyses\/([^/]+)\/screens\/([^/]+)$/);
+    if (screenDelete && UUID_PATTERN.test(screenDelete[1]) && UUID_PATTERN.test(screenDelete[2]) && method === "DELETE") return deleteScreen(request, env, screenDelete[1], screenDelete[2]);
     const businessSum = path.match(/^\/api\/analyses\/([^/]+)\/business-summary$/);
     if (businessSum && UUID_PATTERN.test(businessSum[1]) && method === "GET") return businessSummary(request, env, businessSum[1]);
     const deepLinksRoute = path.match(/^\/api\/analyses\/([^/]+)\/deep-files\/links$/);
