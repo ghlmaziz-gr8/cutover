@@ -200,6 +200,8 @@ function defaultsFor(table) {
 
 let DATABASE_BYTES = 125 * 1024 * 1024;
 
+// A table named here answers with a server error, to test how a failed read is reported.
+let failTable = null;
 function handleRest(url, init) {
   const u = new URL(url);
   const table = u.pathname.replace("/rest/v1/", "");
@@ -213,6 +215,7 @@ function handleRest(url, init) {
   }
   const method = init.method || "GET";
   const prefer = init.headers?.prefer || "";
+  if (table === failTable) return j({ message: "forced failure" }, 500);
   const rows = state[table];
   const filters = [...u.searchParams.entries()].filter(([k]) => !SKIP_PARAMS.includes(k));
   const hit = (row) => filters.every(([k, v]) => matches(row, k, v));
@@ -3332,4 +3335,15 @@ test("the feature view is empty until a grouping is approved, and auditors are r
   assert.deepEqual(empty.body.features, []);
   const aud = await call(`/api/analyses/${AN_ACME}/features`, { as: "aud_a" });
   assert.equal(aud.status, 403);
+});
+
+test("when a table cannot be read, the rewards say which one and the status, so the cause is visible", async () => {
+  failTable = "workspace_time";
+  try {
+    const res = await call("/api/me/engagement", { as: "eng_a" });
+    assert.equal(res.status, 502);
+    assert.match(res.body.error, /Could not load your time on the system \(workspace_time, status 500\)\./);
+  } finally {
+    failTable = null;
+  }
 });
