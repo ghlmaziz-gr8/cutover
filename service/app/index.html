@@ -1227,15 +1227,15 @@ button:not(:disabled):active{transform:scale(.965)}
 .conf-ring{position:relative;width:180px;height:180px;flex:0 0 auto}
 .conf-ring svg{width:180px;height:180px;display:block;overflow:visible}
 .conf-track{stroke:var(--soft,#f1f0fb)}
-.conf-seg{stroke-dasharray:0 100;transition:stroke-dasharray 1.2s cubic-bezier(.2,.8,.2,1),stroke-width .25s ease,opacity .3s ease}
+.conf-seg{stroke-dasharray:0 100;transition:stroke-width .25s ease,opacity .3s ease}
 .conf-seg.is-on{stroke-width:22px}
 .has-focus .conf-seg:not(.is-on){opacity:.3}
 /* The halo: a glow behind the ring in the colour of the status under the pointer, a dashed ring turning, and a dot orbiting. */
-.conf-halo{position:absolute;inset:-22px;border-radius:50%;background:radial-gradient(circle,var(--halo,#10b981) 0%,transparent 66%);opacity:.32;filter:blur(10px);pointer-events:none;animation:dhPulse 3.2s ease-in-out infinite;transition:background .4s ease}
-.conf-spin{position:absolute;inset:-9px;border-radius:50%;border:1.5px dashed var(--halo,#10b981);opacity:.5;pointer-events:none;animation:dhSpin 18s linear infinite;transition:border-color .4s ease}
-.conf-orbit{position:absolute;inset:0;pointer-events:none;animation:dhSpin 5.5s linear infinite}
+.conf-halo{position:absolute;inset:-22px;border-radius:50%;background:radial-gradient(circle,var(--halo,#10b981) 0%,transparent 66%);opacity:.32;filter:blur(10px);pointer-events:none;transition:background .4s ease}
+.conf-spin{position:absolute;inset:-9px;border-radius:50%;border:1.5px dashed var(--halo,#10b981);opacity:.5;pointer-events:none;transition:border-color .4s ease}
+.conf-orbit{position:absolute;inset:0;pointer-events:none}
 .conf-orbit::after{content:"";position:absolute;top:9px;left:50%;width:9px;height:9px;margin-left:-4.5px;border-radius:50%;background:var(--halo,#10b981);box-shadow:0 0 12px var(--halo,#10b981);transition:background .4s ease,box-shadow .4s ease}
-@media (prefers-reduced-motion: reduce){.conf-halo,.conf-spin,.conf-orbit{animation:none}}
+
 .conf-center{position:absolute;inset:0;display:grid;place-content:center;justify-items:center;text-align:center;pointer-events:none}
 .conf-n{font:800 36px/1 var(--display);color:var(--fg);font-variant-numeric:tabular-nums}
 .conf-l{margin-top:6px;max-width:112px;font:700 10.5px var(--body);letter-spacing:.07em;text-transform:uppercase;color:var(--muted);line-height:1.35}
@@ -1325,18 +1325,14 @@ button:not(:disabled):active{transform:scale(.965)}
     .dh-wrap.dh-high{--dh-c:#2f9e6b}
     .dh-wrap.dh-medium{--dh-c:#d89a1c}
     .dh-wrap.dh-low{--dh-c:#d0524a}
-    .dh-glow{position:absolute;inset:0;border-radius:50%;background:radial-gradient(circle,var(--dh-c) 0%,transparent 68%);opacity:.35;filter:blur(8px);animation:dhPulse 2.8s ease-in-out infinite}
+    .dh-glow{position:absolute;inset:0;border-radius:50%;background:radial-gradient(circle,var(--dh-c) 0%,transparent 68%);opacity:.35;filter:blur(8px)}
     .dh-svg{position:absolute;inset:0;width:100%;height:100%;transform:rotate(-90deg);overflow:visible}
     .dh-track{fill:none;stroke:var(--line,#e2e2e2);stroke-width:8}
-    .dh-arc{fill:none;stroke:var(--dh-c);stroke-width:8;stroke-linecap:round;transition:stroke-dashoffset 1.4s cubic-bezier(.2,.8,.2,1);filter:drop-shadow(0 0 6px var(--dh-c))}
-    .dh-dash{position:absolute;inset:6px;border-radius:50%;border:1px dashed var(--dh-c);opacity:.5;animation:dhSpin 14s linear infinite}
-    .dh-orbit{position:absolute;inset:0;animation:dhSpin 4s linear infinite}
-    .dh-orbit::after{content:"";position:absolute;top:-3px;left:50%;width:8px;height:8px;margin-left:-4px;border-radius:50%;background:var(--dh-c);box-shadow:0 0 10px var(--dh-c)}
+    .dh-arc{fill:none;stroke:var(--dh-c);stroke-width:8;stroke-linecap:round;filter:drop-shadow(0 0 6px var(--dh-c))}
+    .dh-dash{position:absolute;inset:6px;border-radius:50%;border:1px dashed var(--dh-c);opacity:.5}
     .dh-num{position:relative;font-size:30px;font-weight:700;font-variant-numeric:tabular-nums;color:var(--dh-c)}
     .dh-text{min-width:170px}
-    @keyframes dhPulse{0%,100%{transform:scale(.9);opacity:.25}50%{transform:scale(1.12);opacity:.55}}
-    @keyframes dhSpin{to{transform:rotate(360deg)}}
-    @media (prefers-reduced-motion: reduce){.dh-glow,.dh-dash,.dh-orbit{animation:none}.dh-arc{transition:none}}
+    /* The confidence scores hold still: no pulse, no turning ring, no draw-in, no count-up. */
     /* The welcome card on the home screen: a short line of thanks, the level, and any badges. */
     .welcome-card{position:relative;border:1px solid var(--line,#ddd);border-radius:14px;padding:16px 18px;margin:12px 0 16px;background:linear-gradient(135deg,rgba(29,78,216,.06),rgba(47,158,107,.07));animation:wcIn .5s cubic-bezier(.2,.8,.2,1) both}
     .welcome-card h3{margin:0 0 6px}
@@ -1399,7 +1395,8 @@ button:not(:disabled):active{transform:scale(.965)}
     .rel-reason::before{content:"";display:inline-block;width:7px;height:7px;border-radius:50%;background:var(--k,var(--muted));margin-right:6px;vertical-align:middle}
     .rel-title{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
     button.ghost.small-btn.is-active{background:#7c3aed;border-color:#7c3aed;color:#fff}
-    li.is-biz-open{box-shadow:inset 4px 0 0 #7c3aed}
+    .biz-panel>.row{flex-wrap:wrap}
+    .file-biz-view{min-width:0;overflow-wrap:anywhere}
     .biz-compare{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:16px;align-items:start;margin-top:12px}
     .biz-compare>.biz-col{min-width:0;border:1px solid var(--line,#ddd);border-radius:16px;padding:12px 14px;background:var(--card,#fff)}
     .biz-head{font:700 13px var(--body);letter-spacing:.02em;margin:0 0 8px;padding-bottom:6px;border-bottom:1px solid var(--line,#ddd)}
@@ -10350,22 +10347,13 @@ const REGION_OPTS = {
     const target = circumference * (1 - score / 100);
     const svg = svgEl("svg", { class: "dh-svg", viewBox: "0 0 132 132" });
     svg.append(svgEl("circle", { class: "dh-track", cx: 66, cy: 66, r: 58 }));
+    // Static: the ring and the score show at once. Nothing moves.
     const arc = svgEl("circle", { class: "dh-arc", cx: 66, cy: 66, r: 58 });
     arc.style.strokeDasharray = String(circumference);
-    arc.style.strokeDashoffset = reduce ? String(target) : String(circumference);
+    arc.style.strokeDashoffset = String(target);
     svg.append(arc);
-    const num = el("div", reduce ? String(score) : "0", "dh-num");
-    wrap.append(el("div", null, "dh-glow"), el("div", null, "dh-dash"), el("div", null, "dh-orbit"), svg, num);
-    if (!reduce) {
-      requestAnimationFrame(() => requestAnimationFrame(() => { arc.style.strokeDashoffset = String(target); }));
-      const started = performance.now();
-      const tick = (now) => {
-        const t = Math.min(1, (now - started) / 1400);
-        num.textContent = String(Math.round(score * (1 - Math.pow(1 - t, 3))));
-        if (t < 1) requestAnimationFrame(tick);
-      };
-      requestAnimationFrame(tick);
-    }
+    const num = el("div", String(score), "dh-num");
+    wrap.append(el("div", null, "dh-glow"), el("div", null, "dh-dash"), svg, num);
     return wrap;
   }
   // The step after an approved file: its feature, or grouping it into one. Read from the approved features.
