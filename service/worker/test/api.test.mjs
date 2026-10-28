@@ -1397,6 +1397,66 @@ test("the file list says which commit each file result was read at", async () =>
   assert.equal(res.body.files.find((f) => f.path === "src/Commit.java").commit_sha, "abc1234");
 });
 
+// ---- Skipping a failed business view for now, and the count on the feature step ----
+
+test("a failed business view can be skipped by an engineer; its reason stays, and it is logged", async () => {
+  state.file_business_assessments.push(businessRow(1100, "failed"));
+  state.file_business_assessments.find((r) => r.id === uid(1100)).content = { failure: { reason: "The model did not answer.", at: NOW } };
+  const auditor = await call(`/api/analyses/${AN_ACME}/business/skip`, { as: "aud_a", method: "POST", body: { path: "src/A.java" } });
+  assert.equal(auditor.status, 403);
+  const res = await call(`/api/analyses/${AN_ACME}/business/skip`, { as: "eng_a", method: "POST", body: { path: "src/A.java" } });
+  assert.equal(res.status, 200);
+  assert.equal(res.body.reason, "The model did not answer.");
+  const row = state.file_business_assessments.find((r) => r.id === uid(1100));
+  assert.equal(row.review_status, "skipped");
+  assert.equal(row.content.failure.reason, "The model did not answer.", "the failure stays on the file");
+  assert.equal(row.content.skip.reason, "The model did not answer.");
+  assert.ok(state.assessment_log.some((e) => e.action === "business_skip" && e.detail === "src/A.java"));
+});
+
+test("only a failed view can be skipped; a file with a draft, an approved view or a run in progress is refused", async () => {
+  state.file_business_assessments.push(businessRow(1110, "draft"));
+  const draft = await call(`/api/analyses/${AN_ACME}/business/skip`, { as: "eng_a", method: "POST", body: { path: "src/A.java" } });
+  assert.equal(draft.status, 409);
+  state.file_business_assessments.length = 0;
+  state.file_business_assessments.push(businessRow(1111, "failed"), businessRow(1112, "approved"));
+  const withApproved = await call(`/api/analyses/${AN_ACME}/business/skip`, { as: "eng_a", method: "POST", body: { path: "src/A.java" } });
+  assert.equal(withApproved.status, 409, "an approved view is never hidden by a skip");
+  assert.equal(state.file_business_assessments.find((r) => r.id === uid(1111)).review_status, "failed");
+  const none = await call(`/api/analyses/${AN_ACME}/business/skip`, { as: "eng_a", method: "POST", body: { path: "src/Nothing.java" } });
+  assert.equal(none.status, 409);
+});
+
+test("a skipped file can be assessed again: the new run replaces the skipped row", async () => {
+  readyForBusiness();
+  state.file_business_assessments.push(businessRow(1120, "skipped"));
+  state.file_business_assessments.find((r) => r.id === uid(1120)).content = { skip: { reason: "x", at: NOW } };
+  const res = await call(`/api/analyses/${AN_ACME}/business/start`, { as: "eng_a", method: "POST", body: { path: "src/A.java" } });
+  assert.equal(res.status, 202);
+  const rows = state.file_business_assessments.filter((r) => r.analysis_id === AN_ACME && r.path === "src/A.java");
+  assert.equal(rows.length, 1);
+  assert.equal(rows[0].review_status, "running");
+});
+
+test("the feature step counts the approved files that have an approved business view, and lists the skipped ones", async () => {
+  state.file_findings.push(
+    { id: uid(1130), analysis_id: AN_ACME, path: "src/Done.java", category: "source", purpose: "x", suggestions: [], sample_only: true, review_status: "approved", commit_sha: null, created_at: NOW },
+    { id: uid(1131), analysis_id: AN_ACME, path: "src/Skip.java", category: "source", purpose: "x", suggestions: [], sample_only: true, review_status: "edited", commit_sha: null, created_at: NOW },
+    { id: uid(1132), analysis_id: AN_ACME, path: "src/Missing.java", category: "source", purpose: "x", suggestions: [], sample_only: true, review_status: "approved", commit_sha: null, created_at: NOW },
+    { id: uid(1133), analysis_id: AN_ACME, path: "src/Draft.java", category: "source", purpose: "x", suggestions: [], sample_only: true, review_status: "draft", commit_sha: null, created_at: NOW },
+  );
+  state.file_business_assessments.push(
+    businessRow(1140, "approved", "src/Done.java"),
+    { ...businessRow(1141, "skipped", "src/Skip.java"), content: { skip: { reason: "The model did not answer.", at: NOW } } },
+    businessRow(1142, "skipped", "src/Draft.java"),
+  );
+  const res = await call(`/api/analyses/${AN_ACME}/business-summary`, { as: "aud_a" });
+  assert.equal(res.status, 200, "every role reads the count");
+  assert.equal(res.body.files, 3, "the draft file is not counted");
+  assert.equal(res.body.with_view, 1);
+  assert.deepEqual(res.body.skipped, [{ path: "src/Skip.java", reason: "The model did not answer." }], "only approved files are listed as skipped");
+});
+
 // ---- Feature grouping from the approved business results ----
 
 function groupingRow(idN, status, groups = [{ name: "Ordering", summary: "x", paths: ["src/A.java"] }]) {

@@ -2119,6 +2119,7 @@ button:not(:disabled):active{transform:scale(.965)}
     <div class="card" id="groupCard" hidden style="margin-top:14px">
       <h3 style="margin:0 0 6px">Feature groups</h3>
       <p class="muted small" style="margin:0">Groups the approved file summaries into product features. A grouping is a draft until a platform engineer approves it.</p>
+      <div id="groupSummary" class="small" style="margin-top:10px"></div>
       <div class="row" style="margin-top:10px"><button type="button" id="groupStart">Propose feature groups</button></div>
       <div id="groupList"></div>
       <p class="small hint" id="groupMsg"></p>
@@ -9421,6 +9422,27 @@ const REGION_OPTS = {
     const owner = cur && cur.target_owner_email;
     return (!!owner && owner === me.email) || ws.role === "cio_cto";
   }
+  // How many approved files have an approved business view, and the approved files skipped for now, with their reasons.
+  async function loadGroupSummary() {
+    const box = $("groupSummary");
+    try {
+      const s = await api(`/api/analyses/${cur.id}/business-summary`);
+      box.innerHTML = "";
+      if (!s.files) {
+        box.append(el("p", "No file results are approved yet. Approve them on the file results first.", "muted small"));
+      } else {
+        box.append(el("p", `${s.with_view} of ${s.files} approved files have an approved business view.`, "small"));
+      }
+      if (s.skipped.length) {
+        box.append(el("p", `Skipped for now (${s.skipped.length}). These files are left out until their business view is assessed and approved.`, "attn small"));
+        for (const item of s.skipped) box.append(el("div", `${item.path}: ${item.reason}`, "small"));
+      }
+    } catch (err) {
+      box.innerHTML = "";
+      box.append(el("p", err.message, "small"));
+    }
+  }
+
   async function loadGroupings() {
     const card = $("groupCard");
     const isEngineer = !!ws && ws.role === "platform_engineer";
@@ -9428,6 +9450,7 @@ const REGION_OPTS = {
     card.hidden = false;
     if (card.hidden) return [];
     $("groupStart").hidden = !isEngineer;
+    loadGroupSummary();
     try {
       const data = await api(`/api/analyses/${cur.id}/groupings`);
       renderGroupings(data.groupings || []);
@@ -9798,7 +9821,7 @@ const REGION_OPTS = {
   }
 
   // ---- Business view of one file: start an assessment, then approve or discard its drafts ----
-  const BIZ_STATUS = { running: "Running", draft: "Draft to review", approved: "Approved", superseded: "Replaced by a later approval", failed: "Failed" };
+  const BIZ_STATUS = { running: "Running", draft: "Draft to review", approved: "Approved", superseded: "Replaced by a later approval", failed: "Failed", skipped: "Skipped for now" };
   const BIZ_FIELDS = [["purpose", "Purpose"], ["business_rules", "Business rules"], ["workflows", "Workflows"],
     ["data_used", "Data used"], ["risks", "Risks to keep safe"], ["questions", "Open questions"]];
 
@@ -10521,6 +10544,32 @@ const REGION_OPTS = {
       c.append(el("div", "The AI assessment for the business failed.", "small"));
       c.append(el("div", why, "small"));
       c.append(el("div", "Press Assess for the business to try again.", "muted small"));
+      if (canActOnResults()) {
+        // Skipping keeps the failure on the file, so the feature groups can go on without this file.
+        const skip = el("button", "Skip for now", "ghost small-btn");
+        skip.type = "button";
+        skip.addEventListener("click", async () => {
+          msg.textContent = "";
+          try {
+            await api(`/api/analyses/${cur.id}/business/skip`, { method: "POST", body: JSON.stringify({ path: a.path }) });
+            if (reload) reload();
+            loadGroupSummary();
+          } catch (err) {
+            msg.textContent = err.message;
+          }
+        });
+        const row = el("div", null, "row");
+        row.append(skip);
+        c.append(row);
+      }
+      return c;
+    }
+    if (a.review_status === "skipped") {
+      // Skipped for now: the reason stays visible, and the file is left out of the feature groups until it is assessed.
+      const why = (a.content && a.content.skip && a.content.skip.reason) || (a.content && a.content.failure && a.content.failure.reason) || "The assessment did not finish.";
+      c.append(el("div", "Skipped for now. The feature groups go on without this file.", "small"));
+      c.append(el("div", why, "small"));
+      c.append(el("div", "Press Assess for the business to do it now.", "muted small"));
       return c;
     }
     const content = a.content || {};

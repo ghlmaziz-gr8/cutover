@@ -60,6 +60,8 @@ import { validateDbMetadata } from "./db-metadata.mjs";
 //   POST   /api/analyses/:id/business/start               start a business assessment of one file (platform engineers)
 //   POST   /api/analyses/:id/business/approve             approve a draft; the earlier approved one is superseded (platform engineers)
 //   POST   /api/analyses/:id/business/discard             discard a draft (platform engineers)
+//   POST   /api/analyses/:id/business/skip                skip a failed business view for now, with its reason (platform engineers)
+//   GET    /api/analyses/:id/business-summary             how many approved files have an approved business view, and the skipped ones (every role)
 //   POST   /api/runner/:id/business                       one draft business assessment (shared secret)
 //   PATCH  /api/file-findings/:id                         approve or edit one file's purpose and suggestions (platform engineers)
 //   POST   /api/runner/:id/files                          one chunk of file-level results, up to 200 files (shared secret)
@@ -3278,6 +3280,67 @@ async function discardBusiness(request, env, id) {
   return json({ discarded: true, path: item.path });
 }
 
+// Skips a file whose business view failed, for now, so the feature groups can go on. The failed row is kept, with its
+// reason, and marked skipped. A file with a draft, an approved view or a run in progress cannot be skipped.
+async function skipBusiness(request, env, id) {
+  const access = await analysisAccess(env, request, id);
+  if (access.response) return access.response;
+  if (!canStart(access.member)) return json({ error: "Only platform engineers can skip a business assessment." }, 403);
+  const parsed = await readJson(request);
+  if (parsed.error) return json({ error: parsed.error }, 400);
+  const path = typeof parsed.value?.path === "string" ? parsed.value.path : "";
+  if (!CONVERT_PATH.test(path)) return json({ error: "Choose a file." }, 400);
+  const busy = await serviceRest(env, `file_business_assessments?analysis_id=eq.${id}&path=eq.${encodeURIComponent(path)}&review_status=in.(running,draft,approved)&select=id&limit=1`);
+  if (!busy.ok) return json({ error: "Could not check the file." }, 502);
+  if ((await busy.json()).length) return json({ error: "This file has a draft, an approved view or a run in progress. Approve, discard or wait for it first." }, 409);
+  const found = await serviceRest(env, `file_business_assessments?analysis_id=eq.${id}&path=eq.${encodeURIComponent(path)}&review_status=eq.failed&select=id,content&order=created_at.desc&limit=1`);
+  if (!found.ok) return json({ error: "Could not load the assessment." }, 502);
+  const [failed] = await found.json();
+  if (!failed) return json({ error: "Only a file whose business assessment failed can be skipped." }, 409);
+  const reason = failed.content && failed.content.failure && typeof failed.content.failure.reason === "string"
+    ? failed.content.failure.reason : "The assessment did not finish.";
+  const refused = await logFirst(env, { workspace_id: access.row.workspace_id, user: access.user, action: "business_skip", analysis_id: id, repo: access.row.repo, detail: path });
+  if (refused) return refused;
+  const now = new Date().toISOString();
+  const res = await serviceRest(env, `file_business_assessments?id=eq.${failed.id}&review_status=eq.failed`, {
+    method: "PATCH",
+    headers: { prefer: "return=minimal" },
+    body: JSON.stringify({
+      review_status: "skipped",
+      content: { ...(failed.content || {}), skip: { reason, at: now } },
+      reviewed_by_email: normalizeEmail(access.user.email),
+      reviewed_at: now,
+    }),
+  });
+  if (!res.ok) return json({ error: "Could not skip the file." }, 502);
+  return json({ skipped: true, path, reason });
+}
+
+// The feature step's count: how many approved files have an approved business view, and the approved files skipped for
+// now, with their reasons. Every role reads it.
+async function businessSummary(request, env, id) {
+  const access = await analysisAccess(env, request, id);
+  if (access.response) return access.response;
+  const files = await serviceRest(env, `file_findings?analysis_id=eq.${id}&review_status=in.(approved,edited)&select=path&limit=100000`);
+  if (!files.ok) return json({ error: "Could not load the file results." }, 502);
+  const approvedFiles = [...new Set((await files.json()).map((r) => r.path))];
+  const biz = await approvedBusinessPaths(env, id);
+  if (biz.failed) return json({ error: "Could not load the business assessments." }, 502);
+  const withView = new Set(biz.paths);
+  const skippedRes = await serviceRest(env, `file_business_assessments?analysis_id=eq.${id}&review_status=eq.skipped&select=path,content&limit=100000`);
+  if (!skippedRes.ok) return json({ error: "Could not load the business assessments." }, 502);
+  const approvedSet = new Set(approvedFiles);
+  const skipped = (await skippedRes.json())
+    .filter((r) => approvedSet.has(r.path) && !withView.has(r.path))
+    .map((r) => ({ path: r.path, reason: (r.content && r.content.skip && r.content.skip.reason) || "The assessment did not finish." }))
+    .sort((a, b) => a.path.localeCompare(b.path));
+  return json({
+    files: approvedFiles.length,
+    with_view: approvedFiles.filter((p) => withView.has(p)).length,
+    skipped,
+  });
+}
+
 // The runner saves one draft. The analysis may already be complete: the draft is not part of its run.
 // The runner has reached the model for a business run. The running row says so, and the portal ticks the connection step.
 async function saveBusinessProgress(request, env, id) {
@@ -3373,7 +3436,7 @@ async function startBusiness(request, env, id) {
   if (!modelToken) return json({ error: "Could not prepare the model. Try again in a minute." }, 502);
   const refusedStart = await logFirst(env, { workspace_id: row.workspace_id, user: access.user, action: "business_start", analysis_id: id, repo: row.repo, detail: path });
   if (refusedStart) return refusedStart;
-  await serviceRest(env, `file_business_assessments?analysis_id=eq.${id}&path=eq.${encodeURIComponent(path)}&review_status=in.(running,failed)`, { method: "DELETE", headers: { prefer: "return=minimal" } });
+  await serviceRest(env, `file_business_assessments?analysis_id=eq.${id}&path=eq.${encodeURIComponent(path)}&review_status=in.(running,failed,skipped)`, { method: "DELETE", headers: { prefer: "return=minimal" } });
   const made = await serviceRest(env, "file_business_assessments", {
     method: "POST",
     headers: { prefer: "return=minimal" },
@@ -4928,6 +4991,10 @@ async function route(request, env) {
     if (businessStart && UUID_PATTERN.test(businessStart[1]) && method === "POST") return startBusiness(request, env, businessStart[1]);
     const businessDiscard = path.match(/^\/api\/analyses\/([^/]+)\/business\/discard$/);
     if (businessDiscard && UUID_PATTERN.test(businessDiscard[1]) && method === "POST") return discardBusiness(request, env, businessDiscard[1]);
+    const businessSkip = path.match(/^\/api\/analyses\/([^/]+)\/business\/skip$/);
+    if (businessSkip && UUID_PATTERN.test(businessSkip[1]) && method === "POST") return skipBusiness(request, env, businessSkip[1]);
+    const businessSum = path.match(/^\/api\/analyses\/([^/]+)\/business-summary$/);
+    if (businessSum && UUID_PATTERN.test(businessSum[1]) && method === "GET") return businessSummary(request, env, businessSum[1]);
     const deepLinksRoute = path.match(/^\/api\/analyses\/([^/]+)\/deep-files\/links$/);
     if (deepLinksRoute && UUID_PATTERN.test(deepLinksRoute[1]) && method === "GET") return deepLinks(request, env, deepLinksRoute[1]);
     const deepSummaryRoute = path.match(/^\/api\/analyses\/([^/]+)\/deep-files\/summary$/);
