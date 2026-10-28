@@ -1386,14 +1386,18 @@ button:not(:disabled):active{transform:scale(.965)}
     .wc-badge-level{font-weight:700;background:linear-gradient(90deg,rgba(29,78,216,.12),rgba(47,158,107,.14))}
     .wc-badge.cute{display:inline-flex;align-items:center;gap:8px;padding:5px 13px 5px 5px;border:1px solid rgba(124,58,237,.18);background:linear-gradient(120deg,#fff7e6,#e9f7ff 55%,#f3e8ff);box-shadow:0 2px 10px rgba(124,58,237,.12);position:relative;overflow:hidden;animation:badgePop .65s cubic-bezier(.34,1.56,.64,1) both;animation-delay:var(--d,0ms);transition:transform .2s cubic-bezier(.34,1.56,.64,1)}
     .wc-badge.cute:hover{transform:translateY(-2px) scale(1.04)}
-    .wc-badge.cute .ico{width:28px;height:28px;border-radius:50%;display:grid;place-items:center;background:#fff;font-size:16px;line-height:1;box-shadow:inset 0 0 0 1px rgba(0,0,0,.05);animation:badgeBob 2.6s ease-in-out infinite;animation-delay:var(--d,0ms)}
-    .wc-badge.cute:hover .ico{animation:badgeWiggle .55s ease}
+    .wc-badge.cute .av{width:46px;height:46px;flex:none;margin:-6px 0 -6px -4px;overflow:visible;animation:avBob 2.8s ease-in-out infinite;animation-delay:var(--d,0ms)}
+    .wc-badge.cute:hover .av{animation:avWave .6s ease}
+    .av-eyes{transform-box:fill-box;transform-origin:center;animation:avBlink 4.2s infinite}
+    @keyframes avBob{0%,100%{transform:translateY(0)}50%{transform:translateY(-2px)}}
+    @keyframes avWave{0%,100%{transform:rotate(0)}25%{transform:rotate(-8deg)}75%{transform:rotate(8deg)}}
+    @keyframes avBlink{0%,92%,100%{transform:scaleY(1)}95%{transform:scaleY(.12)}}
     .wc-badge.cute::after{content:"";position:absolute;inset:0;background:linear-gradient(100deg,transparent 35%,rgba(255,255,255,.75) 50%,transparent 65%);transform:translateX(-120%);animation:badgeShine 3.6s ease-in-out 1s infinite;pointer-events:none}
     @keyframes badgePop{0%{opacity:0;transform:scale(.4) rotate(-12deg)}100%{opacity:1;transform:none}}
     @keyframes badgeBob{0%,100%{transform:translateY(0) rotate(0)}50%{transform:translateY(-2px) rotate(-7deg)}}
     @keyframes badgeWiggle{0%,100%{transform:rotate(0) scale(1)}25%{transform:rotate(-16deg) scale(1.15)}75%{transform:rotate(14deg) scale(1.15)}}
     @keyframes badgeShine{0%{transform:translateX(-120%)}55%,100%{transform:translateX(120%)}}
-    @media (prefers-reduced-motion: reduce){.wc-badge.cute,.wc-badge.cute .ico,.wc-badge.cute::after{animation:none}.wc-badge.cute:hover{transform:none}}
+    @media (prefers-reduced-motion: reduce){.wc-badge.cute,.wc-badge.cute .av,.wc-badge.cute::after,.av-eyes{animation:none}.wc-badge.cute:hover{transform:none}}
     .level-chip{cursor:pointer;margin-top:10px;font:inherit;font-size:12px;color:inherit}
     .level-chip:focus-visible{outline:2px solid #1d4ed8;outline-offset:2px}
     @keyframes wcIn{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
@@ -2487,9 +2491,7 @@ button:not(:disabled):active{transform:scale(.965)}
       const lvl = data.level;
       chip.replaceChildren();
       chip.classList.add("cute");
-      const ico = el("span", BADGE_ICON[`level-${lvl.number}`] || "✨", "ico");
-      ico.setAttribute("aria-hidden", "true");
-      chip.append(ico, document.createTextNode(`Level ${lvl.number} · ${lvl.name} · ${lvl.points} points`));
+      chip.append(characterFor({ id: `level-${lvl.number}`, kind: "level" }), document.createTextNode(`Level ${lvl.number} · ${lvl.name} · ${lvl.points} points`));
       chip.title = "Open your rewards";
       chip.onclick = () => showWelcome();
       chip.hidden = false;
@@ -2497,21 +2499,75 @@ button:not(:disabled):active{transform:scale(.965)}
       chip.hidden = true;
     }
   }
-  // Each badge gets a small icon: a sprout for Starter, a compass for Explorer and so on, and a clock, star, flame or gem
-  // for the hours on the system. The server sends the names; the icons are only for looks.
-  const BADGE_ICON = { "level-1": "🌱", "level-2": "🧭", "level-3": "⚡", "level-4": "🏆", "level-5": "👑" };
-  const HOUR_ICON = { 1: "⏱️", 5: "⭐", 25: "🔥", 100: "💎" };
-  function badgeIcon(b) {
-    if (b && BADGE_ICON[b.id]) return BADGE_ICON[b.id];
-    const hours = /^hours-(\d+)$/.exec((b && b.id) || "");
-    return (hours && HOUR_ICON[hours[1]]) || "✨";
+  // Each badge is a little character. The base is the same round friend in every badge; the tier adds its look:
+  // a sprout, a hat, a bolt on a headband, a crown, a cape with a crown. Time on the system adds an emblem.
+  // The server sends the names; the characters are only for looks.
+  const TIER_LOOK = {
+    "level-1": { body: "#86efac", accent: "#15803d", look: "sprout" },
+    "level-2": { body: "#fcd34d", accent: "#b45309", look: "hat" },
+    "level-3": { body: "#7dd3fc", accent: "#1d4ed8", look: "bolt" },
+    "level-4": { body: "#c4b5fd", accent: "#ca8a04", look: "crown" },
+    "level-5": { body: "#f9a8d4", accent: "#9d174d", look: "cape" },
+  };
+  const HOUR_EMBLEM = { 1: "clock", 5: "star", 25: "flame", 100: "gem" };
+  const INK = "#1f2937";
+  function characterFor(b) {
+    const id = (b && b.id) || "";
+    const tier = TIER_LOOK[id];
+    const hours = /^hours-(\d+)$/.exec(id);
+    const look = tier || { body: "#5eead4", accent: "#0f766e", look: "plain" };
+    const svg = svgEl("svg", { viewBox: "0 0 64 64", class: "av", "aria-hidden": "true", focusable: "false" });
+    if (look.look === "cape") svg.appendChild(svgEl("path", { d: "M14 36 Q32 64 50 36 L47 58 Q32 66 17 58 Z", fill: look.accent, opacity: "0.9" }));
+    svg.appendChild(svgEl("ellipse", { cx: "32", cy: "37", rx: "20", ry: "17", fill: look.body }));
+    svg.appendChild(svgEl("ellipse", { cx: "32", cy: "53", rx: "14", ry: "3", fill: "rgba(0,0,0,0.12)" }));
+    if (look.look === "sprout") {
+      svg.appendChild(svgEl("path", { d: "M32 22 Q32 14 32 10", stroke: "#15803d", "stroke-width": "2.5", fill: "none", "stroke-linecap": "round" }));
+      svg.appendChild(svgEl("ellipse", { cx: "26", cy: "11", rx: "6", ry: "3.4", fill: look.accent, transform: "rotate(-25 26 11)" }));
+      svg.appendChild(svgEl("ellipse", { cx: "38", cy: "11", rx: "6", ry: "3.4", fill: look.accent, transform: "rotate(25 38 11)" }));
+    }
+    if (look.look === "hat") {
+      svg.appendChild(svgEl("ellipse", { cx: "32", cy: "21", rx: "17", ry: "3.5", fill: look.accent }));
+      svg.appendChild(svgEl("path", { d: "M22 21 L24 8 Q32 4 40 8 L42 21 Z", fill: look.accent }));
+    }
+    if (look.look === "bolt") {
+      svg.appendChild(svgEl("rect", { x: "13", y: "24", width: "38", height: "4.5", rx: "2", fill: look.accent }));
+      svg.appendChild(svgEl("path", { d: "M35 6 L29 16 L33.5 16 L30 26 L38 14 L33.5 14 Z", fill: "#facc15", stroke: look.accent, "stroke-width": "1" }));
+    }
+    if (look.look === "crown" || look.look === "cape") {
+      svg.appendChild(svgEl("path", { d: "M20 22 L22 9 L28 16 L32 6 L36 16 L42 9 L44 22 Z", fill: "#facc15", stroke: look.accent, "stroke-width": "1.5", "stroke-linejoin": "round" }));
+      svg.appendChild(svgEl("circle", { cx: "32", cy: "15", r: "2", fill: "#f43f5e" }));
+    }
+    // The face: blinking eyes, cheeks and a smile.
+    const eyes = svgEl("g", { class: "av-eyes" });
+    eyes.appendChild(svgEl("circle", { cx: "25", cy: "35", r: "3.4", fill: INK }));
+    eyes.appendChild(svgEl("circle", { cx: "39", cy: "35", r: "3.4", fill: INK }));
+    eyes.appendChild(svgEl("circle", { cx: "26", cy: "34", r: "1.1", fill: "#fff" }));
+    eyes.appendChild(svgEl("circle", { cx: "40", cy: "34", r: "1.1", fill: "#fff" }));
+    svg.appendChild(eyes);
+    svg.appendChild(svgEl("circle", { cx: "20", cy: "42", r: "3", fill: "#fb7185", opacity: "0.45" }));
+    svg.appendChild(svgEl("circle", { cx: "44", cy: "42", r: "3", fill: "#fb7185", opacity: "0.45" }));
+    svg.appendChild(svgEl("path", { d: "M27 42 Q32 47 37 42", stroke: INK, "stroke-width": "2", fill: "none", "stroke-linecap": "round" }));
+    // Time on the system: a small emblem in the corner.
+    if (hours) {
+      const emblem = HOUR_EMBLEM[hours[1]] || "star";
+      svg.appendChild(svgEl("circle", { cx: "52", cy: "12", r: "9", fill: "#fff", stroke: look.accent, "stroke-width": "1.6" }));
+      if (emblem === "clock") {
+        svg.appendChild(svgEl("path", { d: "M52 7.5 V12 L55 14", stroke: look.accent, "stroke-width": "1.6", fill: "none", "stroke-linecap": "round" }));
+      } else if (emblem === "star") {
+        svg.appendChild(svgEl("path", { d: "M52 6.5 L53.6 10.3 L57.6 10.6 L54.5 13.1 L55.5 17 L52 14.9 L48.5 17 L49.5 13.1 L46.4 10.6 L50.4 10.3 Z", fill: "#facc15" }));
+      } else if (emblem === "flame") {
+        svg.appendChild(svgEl("path", { d: "M52 6 Q56 10 55 14 Q54 17 52 17 Q49 17 49 14 Q49 11 51 9 Q51 12 52.5 12 Q52 9 52 6 Z", fill: "#f97316" }));
+      } else {
+        svg.appendChild(svgEl("path", { d: "M47.5 10 L52 6.5 L56.5 10 L52 17 Z", fill: "#38bdf8" }));
+      }
+    }
+    return svg;
   }
+
   function badgePill(b, index, extraClass) {
     const pill = el("span", null, `wc-badge cute${b && b.kind === "level" ? " wc-badge-level" : ""}${extraClass ? ` ${extraClass}` : ""}`);
     pill.style.setProperty("--d", `${index * 120}ms`);
-    const ico = el("span", badgeIcon(b), "ico");
-    ico.setAttribute("aria-hidden", "true");
-    pill.append(ico, document.createTextNode(b ? b.name : ""));
+    pill.append(characterFor(b), document.createTextNode(b ? b.name : ""));
     return pill;
   }
   function maybeGreet() {
