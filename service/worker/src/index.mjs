@@ -3829,7 +3829,7 @@ async function approvedBusinessPaths(env, id) {
   return { paths: [...new Set((await res.json()).map((r) => r.path))] };
 }
 
-function checkGroups(value, allowed) {
+export function checkGroups(value, allowed, capabilities) {
   if (!Array.isArray(value) || value.length < 1 || value.length > GROUP_MAX) return { error: `A grouping holds 1 to ${GROUP_MAX} capabilities.` };
   const groups = [];
   const missing = [];
@@ -3851,8 +3851,37 @@ function checkGroups(value, allowed) {
   if (missing.length) {
     return { error: `These files have no approved business assessment: ${missing.join(", ")}. Approve their business view, or take them out of the capabilities, then save again.`, missing };
   }
-  return { groups };
+  const caps = capabilities == null ? null : checkCapabilities(capabilities, groups.length);
+  if (caps && caps.error) return caps;
+  return { groups, capabilities: caps ? caps.capabilities : null };
 }
+
+// The capabilities of a grouping. Each one names its features by their position in the grouping, so a feature
+// can be renamed without losing its place. A feature sits in exactly one capability.
+const CAPABILITY_MAX = 30;
+export function checkCapabilities(value, featureCount) {
+  if (!Array.isArray(value) || value.length < 1 || value.length > CAPABILITY_MAX) return { error: `A grouping holds 1 to ${CAPABILITY_MAX} capabilities.` };
+  const capabilities = [];
+  const seen = new Set();
+  for (const item of value) {
+    if (!item || typeof item !== "object" || Array.isArray(item)) return { error: "Each capability must be an object." };
+    const name = typeof item.name === "string" ? item.name.trim() : "";
+    if (!name || name.length > 80) return { error: "Each capability needs a name of up to 80 characters." };
+    const summary = typeof item.summary === "string" ? item.summary.trim().slice(0, 300) : "";
+    if (!Array.isArray(item.features) || item.features.length < 1) return { error: "Each capability needs at least one feature." };
+    const features = [];
+    for (const index of item.features) {
+      if (!Number.isInteger(index) || index < 0 || index >= featureCount) return { error: "A capability names a feature that is not in the grouping." };
+      if (seen.has(index)) return { error: "A feature can be in one capability only." };
+      seen.add(index);
+      features.push(index);
+    }
+    capabilities.push({ name, summary, features });
+  }
+  if (seen.size !== featureCount) return { error: "Every feature must be in a capability." };
+  return { capabilities };
+}
+
 
 async function listGroupings(request, env, id) {
   const access = await analysisAccess(env, request, id);
@@ -3867,7 +3896,7 @@ async function listGroupings(request, env, id) {
 async function listFeatures(request, env, id) {
   const access = await analysisAccess(env, request, id);
   if (access.response) return access.response;
-  const res = await serviceRest(env, `feature_groupings?analysis_id=eq.${id}&status=eq.approved&select=id,groups,reviewed_by_email,reviewed_at&order=reviewed_at.desc.nullslast&limit=1`);
+  const res = await serviceRest(env, `feature_groupings?analysis_id=eq.${id}&status=eq.approved&select=id,groups,capabilities,reviewed_by_email,reviewed_at&order=reviewed_at.desc.nullslast&limit=1`);
   if (!res.ok) return json({ error: "Could not load the capabilities." }, 502);
   const [grouping] = await res.json();
   if (!grouping) return json({ grouping: null, features: [] });
@@ -3903,10 +3932,44 @@ async function listFeatures(request, env, id) {
       }),
     })),
   }));
+  const capabilities = Array.isArray(grouping.capabilities) ? grouping.capabilities : null;
   return json({
     grouping: { id: grouping.id, approved_by_email: grouping.reviewed_by_email || null, approved_at: grouping.reviewed_at || null },
     features,
+    capabilities,
   });
+}
+
+// Any member of the workspace can rename a capability, on the draft or the approved grouping. The log records
+// the position of the capability, not its name.
+async function renameCapability(request, env, id) {
+  const access = await analysisAccess(env, request, id);
+  if (access.response) return access.response;
+  const parsed = await readJson(request, 4000);
+  if (parsed.error) return json({ error: parsed.error }, 400);
+  const groupingId = String(parsed.value?.grouping_id || "");
+  if (!UUID_PATTERN.test(groupingId)) return json({ error: "Choose a grouping." }, 400);
+  const name = typeof parsed.value?.name === "string" ? parsed.value.name.trim() : "";
+  if (!name || name.length > 80) return json({ error: "A capability needs a name of up to 80 characters." }, 400);
+  const found = await serviceRest(env, `feature_groupings?id=eq.${groupingId}&analysis_id=eq.${id}&select=id,status,capabilities`);
+  if (!found.ok) return json({ error: "Could not load the grouping." }, 502);
+  const [item] = await found.json();
+  if (!item) return json({ error: "Not found." }, 404);
+  if (item.status !== "draft" && item.status !== "approved") return json({ error: "Only the current grouping can be renamed." }, 409);
+  const caps = Array.isArray(item.capabilities) ? item.capabilities : null;
+  if (!caps) return json({ error: "This grouping has no capabilities yet. Propose the grouping again." }, 409);
+  const index = parsed.value?.index;
+  if (!Number.isInteger(index) || index < 0 || index >= caps.length) return json({ error: "That capability is not in the grouping." }, 400);
+  const next = caps.map((c, i) => (i === index ? { ...c, name } : c));
+  const refused = await logFirst(env, { workspace_id: access.row.workspace_id, user: access.user, action: "capability_rename", analysis_id: id, repo: access.row.repo, detail: `capability ${index + 1}` });
+  if (refused) return refused;
+  const res = await serviceRest(env, `feature_groupings?id=eq.${groupingId}`, {
+    method: "PATCH",
+    headers: { prefer: "return=minimal" },
+    body: JSON.stringify({ capabilities: next }),
+  });
+  if (!res.ok) return json({ error: "Could not save the name." }, 502);
+  return json({ saved: true, capabilities: next });
 }
 
 async function startGrouping(request, env, id) {
@@ -3986,7 +4049,7 @@ async function saveGrouping(request, env, id) {
   }
   const approved = await approvedBusinessPaths(env, id);
   if (approved.failed) return json({ error: "Could not check the approved results." }, 502);
-  const checked = checkGroups(body.groups, new Set(approved.paths));
+  const checked = checkGroups(body.groups, new Set(approved.paths), body.capabilities);
   if (checked.error) return json({ error: checked.error }, 400);
   const serialised = JSON.stringify(checked.groups);
   if (serialised.length > 40000) return json({ error: "The grouping is too large to save." }, 400);
@@ -3996,7 +4059,7 @@ async function saveGrouping(request, env, id) {
   const res = await serviceRest(env, "feature_groupings", {
     method: "POST",
     headers: { prefer: "return=representation" },
-    body: JSON.stringify({ analysis_id: id, status: "draft", groups: checked.groups, source_count: approved.paths.length }),
+    body: JSON.stringify({ analysis_id: id, status: "draft", groups: checked.groups, capabilities: checked.capabilities, source_count: approved.paths.length }),
   });
   if (!res.ok) return json({ error: "Could not save the grouping." }, 502);
   const [saved] = await res.json();
@@ -4099,7 +4162,7 @@ async function editGrouping(request, env, id) {
   const earlier = Array.isArray(item.groups) ? item.groups : [];
   const approved = await approvedBusinessPaths(env, id);
   if (approved.failed) return json({ error: "Could not check the approved results. Try again in a minute." }, 502);
-  const checked = checkGroups(parsed.value?.groups, new Set(approved.paths));
+  const checked = checkGroups(parsed.value?.groups, new Set(approved.paths), parsed.value?.capabilities);
   if (checked.error) return json({ error: checked.error }, 400);
   const serialised = JSON.stringify(checked.groups);
   if (serialised.length > 40000) return json({ error: "The grouping is too large to save." }, 400);
@@ -4114,7 +4177,7 @@ async function editGrouping(request, env, id) {
   const res = await serviceRest(env, `feature_groupings?id=eq.${groupingId}&status=eq.draft`, {
     method: "PATCH",
     headers: { prefer: "return=minimal" },
-    body: JSON.stringify({ groups: kept, edited_by_email: normalizeEmail(access.user.email), edited_at: new Date().toISOString() }),
+    body: JSON.stringify({ groups: kept, capabilities: checked.capabilities, edited_by_email: normalizeEmail(access.user.email), edited_at: new Date().toISOString() }),
   });
   if (!res.ok) return json({ error: "Could not save the changes." }, 502);
   return json({ saved: true });
@@ -5005,6 +5068,8 @@ async function route(request, env) {
     if (groupingApprove && UUID_PATTERN.test(groupingApprove[1]) && method === "POST") return approveGrouping(request, env, groupingApprove[1]);
     const groupingReject = path.match(/^\/api\/analyses\/([^/]+)\/groupings\/reject$/);
     if (groupingReject && UUID_PATTERN.test(groupingReject[1]) && method === "POST") return rejectGrouping(request, env, groupingReject[1]);
+    const capabilityRename = path.match(/^\/api\/analyses\/([^/]+)\/capabilities$/);
+    if (capabilityRename && UUID_PATTERN.test(capabilityRename[1]) && method === "PATCH") return renameCapability(request, env, capabilityRename[1]);
     const groupingEdit = path.match(/^\/api\/analyses\/([^/]+)\/groupings\/edit$/);
     if (groupingEdit && UUID_PATTERN.test(groupingEdit[1]) && method === "POST") return editGrouping(request, env, groupingEdit[1]);
     const groupingDiscard = path.match(/^\/api\/analyses\/([^/]+)\/groupings\/discard$/);
