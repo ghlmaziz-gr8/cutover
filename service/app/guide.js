@@ -11,6 +11,7 @@
 window.CUTOVER_GUIDE = {
   updated: "2026-10-22",
   whatsNew: [
+    "2026-10-27: Findings by area is a treemap. Each tile is sized by its count, the tiles grow in turn, and the count rises as each one appears. Hover a tile to lift it and see its exact count.",
     "2026-10-27: The approved features now have a mind map. The application branches into each feature, its user stories, and each file with its functions, rules and data. Every branch shows its confidence, and files with no approved assessment are marked.",
     "2026-10-27: The file colours hold still while you have a file open. A run that finishes does not change them until you press Refresh, start, approve or discard, or open the file again.",
     "2026-10-27: After you approve or discard a deep assessment, the order to assess and the file map update at once, so an approved file no longer shows as draft ready.",
