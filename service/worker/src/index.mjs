@@ -3940,6 +3940,14 @@ async function startGrouping(request, env, id) {
     await serviceRest(env, `feature_groupings?analysis_id=eq.${id}&status=eq.running`, { method: "DELETE", headers: { prefer: "return=minimal" } });
     return json({ error: "The runner could not be started. Try again in a minute." }, 502);
   }
+  // A new proposal replaces the drafts still waiting for review, so only one draft is ever listed. The drafts are
+  // removed once the run has started, and the removal is logged first. Approved groupings are kept.
+  const drafts = await serviceRest(env, `feature_groupings?analysis_id=eq.${id}&status=eq.draft&select=id`);
+  if (drafts.ok && (await drafts.json()).length) {
+    if (await recordAction(env, { workspace_id: row.workspace_id, user: access.user, action: "grouping_discard", analysis_id: id, repo: row.repo, detail: "Replaced by a new proposal" })) {
+      await serviceRest(env, `feature_groupings?analysis_id=eq.${id}&status=eq.draft`, { method: "DELETE", headers: { prefer: "return=minimal" } });
+    }
+  }
   return json({ queued: true }, 202);
 }
 
