@@ -26,6 +26,7 @@ from datetime import datetime, timezone
 import os
 import re
 import sys
+import time
 import urllib.error
 import urllib.request
 from pathlib import Path
@@ -179,21 +180,32 @@ def accept_purpose(reply: str, code: str) -> str | None:
     return text
 
 
+# A server error from the provider is often brief (overload or a restart). The call is tried again after each pause.
+RETRY_PAUSES = (3, 8)
+RETRY_CODES = (500, 502, 503, 504)
+
+
 def call_provider(provider: str, model: str, api_key: str, user_text: str, opener=urllib.request.urlopen,
                   system: str = SYSTEM, max_tokens: int = 160, base_url: str | None = None,
                   token_field: str = "max_tokens", json_reply: bool = False) -> str:
     url, headers, body = build_request(provider, model, api_key, user_text, system=system, max_tokens=max_tokens,
                                        base_url=base_url, token_field=token_field, json_reply=json_reply)
-    req = urllib.request.Request(url, data=body, method="POST", headers=headers)
-    try:
-        with opener(req, timeout=60) as res:
-            payload = json.loads(res.read().decode("utf-8"))
-    except urllib.error.HTTPError as err:
-        if err.code in (401, 403, 429):
-            raise ProviderStopped(err.code)
-        raise ProviderError(f"HTTP {err.code}")
-    except (urllib.error.URLError, OSError, ValueError):
-        raise ProviderError("request failed")
+    payload = None
+    for attempt in range(len(RETRY_PAUSES) + 1):
+        req = urllib.request.Request(url, data=body, method="POST", headers=headers)
+        try:
+            with opener(req, timeout=60) as res:
+                payload = json.loads(res.read().decode("utf-8"))
+            break
+        except urllib.error.HTTPError as err:
+            if err.code in (401, 403, 429):
+                raise ProviderStopped(err.code)
+            if err.code in RETRY_CODES and attempt < len(RETRY_PAUSES):
+                time.sleep(RETRY_PAUSES[attempt])
+                continue
+            raise ProviderError(f"HTTP {err.code}")
+        except (urllib.error.URLError, OSError, ValueError):
+            raise ProviderError("request failed")
     payload = payload if isinstance(payload, dict) else {}
     if reply_cut_off(provider, payload):
         raise ProviderError("reply cut off")
