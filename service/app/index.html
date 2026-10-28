@@ -2121,6 +2121,7 @@ button:not(:disabled):active{transform:scale(.965)}
       <div id="groupList"></div>
       <p class="small hint" id="groupMsg"></p>
     </div>
+    <div id="filesScreens"></div>
     <ul id="filesList" style="list-style:none;padding:0;margin:14px 0 0"></ul>
     <p id="filesMsg" class="err small hint" role="status"></p>
     <div class="row wzNav">
@@ -3649,6 +3650,44 @@ button:not(:disabled):active{transform:scale(.965)}
     }
   }
 
+  // The screens the model drew from the code, each in a sandboxed frame with a Download PNG button.
+  function drawnScreensCard(screens) {
+    const c = el("div", null, "rcard");
+    c.append(el("p", "Deep AI assessment results", "eyebrow-sm"), el("h3", "Screens drawn from the code"));
+    c.appendChild(el("span", "AI drew these screens from the code. Sample data only.", "tag ai"));
+    // Every screen is shown, each in its own frame with a button that saves it as a PNG.
+    const grid = el("div", null, "screen-grid");
+    for (const sc of screens) {
+      const card = el("div", null, "screen-card");
+      const head = el("div", null, "screen-head");
+      const title = el("b", sc.name, "screen-name");
+      const dl = el("button", "Download PNG", "ghost small-btn");
+      dl.type = "button";
+      dl.addEventListener("click", async () => {
+        dl.disabled = true;
+        try {
+          const blob = await screenPng(sc.html);
+          saveBlob(blob, `${String(sc.name || "screen").replace(/[^A-Za-z0-9_.-]+/g, "_")}.png`);
+        } catch (err) {
+          dl.textContent = "Could not save";
+          setTimeout(() => { dl.textContent = "Download PNG"; }, 2500);
+        } finally {
+          dl.disabled = false;
+        }
+      });
+      head.append(title, dl);
+      const frame = document.createElement("iframe");
+      frame.className = "screen-frame";
+      frame.setAttribute("sandbox", "");
+      frame.setAttribute("title", `Screen drawn by AI: ${sc.name}`);
+      frame.srcdoc = sc.html;
+      card.append(head, frame);
+      grid.appendChild(card);
+    }
+    c.appendChild(grid);
+    return c;
+  }
+
   // A screen drawn by the model, as a PNG. The markup is read into a detached copy, with scripts, links, frames and
   // remote images taken out, then drawn in a hidden shadow root so its own styles stay inside it. Nothing is fetched.
   function saveBlob(blob, name) {
@@ -5145,43 +5184,12 @@ button:not(:disabled):active{transform:scale(.965)}
     }
 
     // Deep AI assessment results: screens the workspace's own model drew from the code, with sample data only.
-    // Each one is shown in a frame with no scripts and no network. The server has already checked each drawing.
+    // The same card is shown on the file-level results screen.
     {
       const screens = (cur && cur.screens) || [];
       if (sees(role, "ui_portal") && screens.length) {
-        const c = shell("Deep AI assessment results", "Screens drawn from the code");
+        const c = drawnScreensCard(screens);
         c.style.gridColumn = "1 / -1";
-        c.appendChild(el("span", "AI drew these screens from the code. Sample data only.", "tag ai"));
-        // Every screen is shown, each in its own frame with a button that saves it as a PNG.
-        const grid = el("div", null, "screen-grid");
-        for (const sc of screens) {
-          const card = el("div", null, "screen-card");
-          const head = el("div", null, "screen-head");
-          const title = el("b", sc.name, "screen-name");
-          const dl = el("button", "Download PNG", "ghost small-btn");
-          dl.type = "button";
-          dl.addEventListener("click", async () => {
-            dl.disabled = true;
-            try {
-              const blob = await screenPng(sc.html);
-              saveBlob(blob, `${String(sc.name || "screen").replace(/[^A-Za-z0-9_.-]+/g, "_")}.png`);
-            } catch (err) {
-              dl.textContent = "Could not save";
-              setTimeout(() => { dl.textContent = "Download PNG"; }, 2500);
-            } finally {
-              dl.disabled = false;
-            }
-          });
-          head.append(title, dl);
-          const frame = document.createElement("iframe");
-          frame.className = "screen-frame";
-          frame.setAttribute("sandbox", "");
-          frame.setAttribute("title", `Screen drawn by AI: ${sc.name}`);
-          frame.srcdoc = sc.html;
-          card.append(head, frame);
-          grid.appendChild(card);
-        }
-        c.appendChild(grid);
         out.push(c);
       } else if (sees(role, "ui_portal")) {
         const c = shell("Deep AI assessment results", "No screens drawn");
@@ -9185,6 +9193,10 @@ const REGION_OPTS = {
       fileRows = [];
       setMsg("filesMsg", err.message, true);
     }
+    const screensBox = $("filesScreens");
+    screensBox.replaceChildren();
+    const drawn = (cur && cur.screens) || [];
+    if (drawn.length && ws && sees(ws.role, "ui_portal")) screensBox.appendChild(drawnScreensCard(drawn));
     renderFiles();
     loadGroupings();
     loadFeatureView();
@@ -10412,6 +10424,10 @@ const REGION_OPTS = {
     c.append(...deepJobHead({ ...a, status: a.review_status }));
     c.append(el("div", `${BIZ_STATUS[a.review_status] || a.review_status}${commit}`, "muted small"));
     const content = a.content || {};
+    // A draft made before the rules, checks and worked examples were added: say so, and how to see them.
+    if (!Array.isArray(content.rules)) {
+      c.append(el("div", "Made before the rules, checks and worked examples were added. Run the business assessment again to see them.", "attn small"));
+    }
     appendHalo(c, content, content.dropped);
     if (content.dropped) c.append(el("div", `${content.dropped} ${content.dropped === 1 ? "name was" : "names were"} not found in the file and left out.`, "attn small"));
     if (content.purpose) c.append(el("div", content.purpose, "small"));
