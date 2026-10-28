@@ -2815,9 +2815,10 @@ async function targetApproval(env, row) {
 // Each stage is locked until the one before it is cleared. A stage is cleared by its own steps, and by a platform
 // engineer's review once its output is ready. Each viewer is told once when a stage clears.
 const PROGRESS_STAGES = [
-  { id: "deeper", title: "Deeper assessment", produces: "The architecture, the sections and the documents for this application." },
-  { id: "approach", title: "Choose the approach", produces: "The modernized approach the team agrees on, from the three proposals.", needs: "deeper" },
-  { id: "plan", title: "Modernization plan", produces: "A plan for the chosen approach: the order of work, the risks and a rough size.", needs: "approach" },
+  { id: "assessment", title: "Application Assessment", produces: "What the application is, how it is built and what data it holds, from the code." },
+  { id: "approach", title: "Choose the approach", produces: "The modernized approach the team agrees on, from the three proposals.", needs: "assessment" },
+  { id: "deeper", title: "Deeper assessment", produces: "The architecture, the sections and the documents for this application.", needs: "approach" },
+  { id: "plan", title: "Modernization plan", produces: "A plan for the chosen approach: the order of work, the risks and a rough size.", needs: "deeper" },
   { id: "starter", title: "Starter project", produces: "A zip with the skeleton for the chosen template, with no copied business logic.", needs: "plan" },
   { id: "convert", title: "Converted code", produces: "Converted screens and routines, on a branch, with test results.", needs: "starter" },
   { id: "pr", title: "Pull request", produces: "The modernized application as a pull request. This is the end goal.", needs: "convert" },
@@ -2839,11 +2840,13 @@ function stageStates(row, viewerId) {
   return PROGRESS_STAGES.map((stage) => {
     const prior = stage.needs ? PROGRESS_STAGES.find((s) => s.id === stage.needs) : null;
     const record = saved[stage.id] && typeof saved[stage.id] === "object" ? saved[stage.id] : null;
-    const cleared = stage.id === "deeper"
-      ? row.deeper_done === true
+    const cleared = stage.id === "assessment"
+      ? row.status === "complete"
       : stage.id === "approach"
         ? Boolean(row.modern_template)
-        : Boolean(record && record.reviewed_at);
+        : stage.id === "deeper"
+          ? row.deeper_done === true
+          : Boolean(record && record.reviewed_at);
     const unlocked = !prior || done[prior.id] === true;
     done[stage.id] = cleared;
     const state = cleared ? "cleared" : unlocked ? "available" : "locked";

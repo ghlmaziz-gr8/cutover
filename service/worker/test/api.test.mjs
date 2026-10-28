@@ -427,19 +427,20 @@ test("the CIO's choice is saved with who chose it and when, and a later choice r
 test("the stages unlock one after another, and a locked stage says what to clear first", async () => {
   const before = await call(`/api/analyses/${AN_ACME}`, { as: "eng_a" });
   const stages = before.body.stages;
-  assert.deepEqual(stages.map((s) => s.id), ["deeper", "approach", "plan", "starter", "convert", "pr"]);
-  const plan = stages.find((s) => s.id === "plan");
+  assert.deepEqual(stages.map((s) => s.id), ["assessment", "approach", "deeper", "plan", "starter", "convert", "pr"]);
   const approach = stages.find((s) => s.id === "approach");
-  if (before.body.deeper_done !== true) {
-    assert.equal(stages[0].state, "available");
-    assert.equal(approach.state, "locked");
+  const deeper = stages.find((s) => s.id === "deeper");
+  const plan = stages.find((s) => s.id === "plan");
+  if (!before.body.modern_template) {
+    assert.equal(approach.state, stages[0].state === "cleared" ? "available" : "locked");
+    assert.equal(deeper.state, "locked");
     assert.equal(plan.state, "locked");
-    assert.match(approach.lock_reason, /Clear Deeper assessment to unlock Choose the approach/);
-    assert.match(plan.lock_reason, /Clear Choose the approach to unlock Modernization plan/);
+    assert.match(deeper.lock_reason, /Clear Choose the approach to unlock Deeper assessment/);
+    assert.match(plan.lock_reason, /Clear Deeper assessment to unlock Modernization plan/);
   } else {
-    assert.equal(stages[0].state, "cleared");
-    assert.equal(approach.state, before.body.modern_template ? "cleared" : "available");
-    assert.equal(plan.state, before.body.modern_template ? "available" : "locked");
+    assert.equal(approach.state, "cleared");
+    assert.equal(deeper.state, before.body.deeper_done === true ? "cleared" : "available");
+    assert.equal(plan.state, before.body.deeper_done === true ? "available" : "locked");
   }
 });
 
@@ -449,7 +450,7 @@ test("a stage cannot be reviewed while it is locked, or before its output is rea
   analysis.modern_template = null;
   const locked = await call(`/api/analyses/${AN_ACME}/progress`, { as: "eng_a", method: "PUT", body: { action: "review", stage: "plan" } });
   assert.equal(locked.status, 409);
-  assert.match(locked.body.error, /Clear Choose the approach/);
+  assert.match(locked.body.error, /Clear Deeper assessment/);
   analysis.deeper_done = true;
   analysis.modern_template = "web-modern";
   analysis.modern_progress = { plan: { reviewed_by: PEOPLE.eng_a.email, reviewed_at: NOW }, starter: { reviewed_by: PEOPLE.eng_a.email, reviewed_at: NOW } };
