@@ -5313,7 +5313,7 @@ a{color:#6d28d9;font-weight:600}`;
       link.textContent = "See the proposed design →";
       link.style.cssText = "display:inline-block;margin-top:10px;font-weight:700;color:var(--k)";
       c.appendChild(link);
-      if (choosable && row && row.can_plan) {
+      if (choosable && row && row.can_choose_direction) {
         const pick = el("button", row.modern_template === p.id ? "Chosen approach" : "Choose this approach");
         pick.type = "button";
         pick.className = row.modern_template === p.id ? "tag" : "ghost";
@@ -5396,9 +5396,9 @@ a{color:#6d28d9;font-weight:600}`;
     if (!visible) return;
     const by = row.modern_template_set_by_email ? ` by ${row.modern_template_set_by_email}` : "";
     const chosen = row.modern_template ? `Chosen: ${TEMPLATE_NAME[row.modern_template] || row.modern_template}${by}. ` : "";
-    $("approachNote").textContent = row.can_plan
+    $("approachNote").textContent = row.can_choose_direction
       ? `${chosen}Compare the three options and their previews, then choose one.`
-      : `${chosen}A platform engineer chooses the approach.`;
+      : `${chosen}The application owner, or a CIO or CTO, chooses the approach.`;
     $("approachGrid").replaceChildren(templateGrid(currentFindings, row, true));
     renderApproachMap(currentFindings, row.modern_template);
   }
@@ -7662,6 +7662,11 @@ a{color:#6d28d9;font-weight:600}`;
   let lensState = { analysis: null, key: null, opened: false };
   function currentLens() {
     if (!cur || lensState.analysis !== cur.id) return null;
+    // A CIO or CTO opens to the system assessment: the technology, delivery and architecture behind the decision.
+    // "Show everything" still shows all three.
+    if (!lensState.key && !lensState.all && cur.deeper_done === true && ws && ws.role === "cio_cto") {
+      return LENSES.find((l) => l.key === "system") || null;
+    }
     return LENSES.find((l) => l.key === lensState.key) || null;
   }
   function renderLensCards() {
@@ -7702,14 +7707,14 @@ a{color:#6d28d9;font-weight:600}`;
     renderDeeperNext();
   }
   function showAllLenses() {
-    lensState = { analysis: cur.id, key: null, opened: lensState.opened };
+    lensState = { analysis: cur.id, key: null, opened: lensState.opened, all: true };
     renderDeeper();
     renderLensCards();
     renderDeeperNext();
   }
   // The business view shows every file as a tree, the same map as the conversion page. Choosing a file shows what it does.
   let businessFiles = { analysis: null, rows: [] };
-  // The deep state of each file, for the map. An engineer sees them; anyone else sees none.
+  // The deep state of each file, for the map. Every role sees them.
   async function loadDeepLinks() {
     try {
       const res = await api(`/api/analyses/${cur.id}/deep-files/links`);
@@ -8006,14 +8011,14 @@ a{color:#6d28d9;font-weight:600}`;
   function renderScope() {
     const list = $("scopeOpts");
     list.replaceChildren();
-    const canChoose = !!cur.can_plan;
+    const canChoose = !!cur.can_choose_direction;
     const deeperDone = cur.deeper_done === true;
     const note = cur.scope
       ? `Chosen: ${SCOPE_LABEL[cur.scope]}${cur.scope_set_by_email ? ` by ${cur.scope_set_by_email}` : ""}.`
       : "No scope chosen yet.";
     $("scopeNote").textContent = canChoose
       ? `${note} Choose the next stage for this analysis.`
-      : `${note} A platform engineer chooses the scope.`;
+      : `${note} The application owner, or a CIO or CTO, chooses the scope.`;
     if (!deeperDone) $("scopeNote").textContent += " Modernize and Migrate appear once the deeper assessment is complete.";
     $("scopeLockBox").hidden = deeperDone;
     for (const o of SCOPE_OPTIONS) {

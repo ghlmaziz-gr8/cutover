@@ -1897,6 +1897,8 @@ async function getAnalysis(request, env, id) {
     viewer_is_admin: isAdmin,
     can_work_items: canWorkItems(member),
     can_plan: canStart(member),
+    // The scope and the modernized approach are the owner's or a CIO's or CTO's choice; the engineer carries them out.
+    can_choose_direction: canApproveTarget(row, member, user),
     stages: stageStates(row, user.id),
     comments,
     action_items: await actionsRes.json(),
@@ -2524,8 +2526,9 @@ async function draftTerraform(request, env, id) {
 async function setScope(request, env, id) {
   const access = await analysisAccess(env, request, id);
   if (access.response) return access.response;
-  if (!canStart(access.member)) {
-    return json({ error: "Only platform engineers can choose the scope." }, 403);
+  // The direction is the owner's or a CIO's or CTO's decision; the engineer carries it out.
+  if (!canApproveTarget(access.row, access.member, access.user)) {
+    return json({ error: "Only the application owner, or a CIO or CTO, can choose the scope." }, 403);
   }
   const parsed = await readJson(request);
   if (parsed.error) return json({ error: parsed.error }, 400);
@@ -2558,8 +2561,9 @@ const MODERN_TEMPLATES = ["web-modern", "services-data", "lift-contain"];
 async function setTemplate(request, env, id) {
   const access = await analysisAccess(env, request, id);
   if (access.response) return access.response;
-  if (!canStart(access.member)) {
-    return json({ error: "Only platform engineers can choose the modernized template." }, 403);
+  // The approach is the owner's or a CIO's or CTO's decision; the engineer carries it out.
+  if (!canApproveTarget(access.row, access.member, access.user)) {
+    return json({ error: "Only the application owner, or a CIO or CTO, can choose the modernized template." }, 403);
   }
   const parsed = await readJson(request);
   if (parsed.error) return json({ error: parsed.error }, 400);
@@ -3028,14 +3032,13 @@ function suggestionsOk(value) {
   return Array.isArray(value) && value.length <= 20 && JSON.stringify(value).length <= 4000;
 }
 
-// File-level review. Only platform engineers see file-level results, for now.
+// File-level review. Every role reads the file-level results; only platform engineers change them.
 const FILE_PAGE_MAX = 200;
 const FILE_COLUMNS = "id,path,category,purpose,purpose_source,suggestions,review_status,reviewed_by_email,reviewed_at,commit_sha";
 
 async function listFiles(request, env, id) {
   const access = await analysisAccess(env, request, id);
   if (access.response) return access.response;
-  if (!canStart(access.member)) return json({ error: "Only platform engineers can review file-level results." }, 403);
   const url = new URL(request.url);
   const offset = Math.max(0, Math.floor(Number(url.searchParams.get("offset") || 0)) || 0);
   const limit = Math.min(FILE_PAGE_MAX, Math.max(1, Math.floor(Number(url.searchParams.get("limit") || FILE_PAGE_MAX)) || FILE_PAGE_MAX));

@@ -11,6 +11,7 @@
 window.CUTOVER_GUIDE = {
   updated: "2026-10-22",
   whatsNew: [
+    "2026-10-27: The owner, or a CIO or CTO, chooses the scope and the modernized approach; the engineer carries them out. A CIO or CTO opens the deeper assessment on the system view. Every role can read the file-level results.",
     "2026-10-27: Each badge is a little character now. A sprout for Starter, a hat for Explorer, a bolt for Regular, a crown for Champion, a cape and crown for Legend. Time on the system adds a clock, star, flame or gem. They blink and bob, and wave when you hover.",
     "2026-10-27: Badges are little pills with their own icon: a sprout for Starter, a compass for Explorer, and a clock, star, flame or gem for the hours on the system. They pop in, the icon bobs, and a shine passes over now and then. Hover one to see it wiggle.",
     "2026-10-27: Every role can read everything in the portal: the deep file assessments, the business assessments, the function links and the feature groupings. Only the owner or a CIO or CTO approves a grouping, and engineers still start and edit the work.",
