@@ -2283,13 +2283,13 @@ button:not(:disabled):active{transform:scale(.965)}
     { title: "Links and domains", cats: ["links"], onlyWhenFound: true },
     { title: "Healthcare standards", cats: ["epic"], onlyWhenFound: true },
   ];
-  // Mirrors ROLE_CATEGORIES in the Worker. The server filters; this only decides what to say.
+  // Mirrors ROLE_CATEGORIES in the Worker: every role sees every category. The server filters; this only decides what to say.
   const ROLE_SEES = {
     platform_engineer: "all",
-    security_officer: ["security", "privacy", "links"],
-    informatics_lead: ["data", "epic"],
-    cio_cto: ["stack", "ui_portal", "containers", "delivery", "infrastructure", "links"],
-    auditor: [],
+    security_officer: "all",
+    informatics_lead: "all",
+    cio_cto: "all",
+    auditor: "all",
   };
   const sees = (role, cat) => ROLE_SEES[role] === "all" || (ROLE_SEES[role] || []).includes(cat);
 
@@ -8826,12 +8826,12 @@ const REGION_OPTS = {
   // Feature groups: platform engineers propose them from the approved summaries, then approve or discard the draft.
   const GROUP_STATUS = { running: "Running", draft: "Draft to review", approved: "Approved", superseded: "Replaced by a later approval" };
 
-  // The feature view: the approved features, read-only, for everyone who may see the findings except auditors.
+  // The feature view: the approved features, read-only, for every role.
   async function loadFeatureView() {
     const card = $("featureCard");
     card.hidden = true;
     setMsg("featureMsg", "", false);
-    if (!cur || !ws || ws.role === "auditor") return;
+    if (!cur || !ws) return;
     try {
       const data = await api(`/api/analyses/${cur.id}/features`);
       renderFeatureView(data);

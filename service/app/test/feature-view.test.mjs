@@ -15,8 +15,8 @@ test("the feature card sits on the files screen and loads with the groupings", (
   assert.match(html, /renderFiles\(\);\n\s+loadGroupings\(\);\n\s+loadFeatureView\(\);/);
 });
 
-test("auditors do not load the feature view, and it reads the approved features endpoint only", () => {
-  assert.match(html, /if \(!cur \|\| !ws \|\| ws\.role === "auditor"\) return;/);
+test("every role loads the feature view, and it reads the approved features endpoint only", () => {
+  assert.match(html, /if \(!cur \|\| !ws\) return;/);
   assert.match(html, /api\(`\/api\/analyses\/\$\{cur\.id\}\/features`\)/);
 });
 

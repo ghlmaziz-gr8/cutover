@@ -93,7 +93,7 @@ test("the confidence panel uses the animated view, with the ring, the rows and t
 
 test("links and domains have their own card, shown when found, and the same access as the worker", () => {
   assert.ok(html.includes('{ title: "Links and domains", cats: ["links"], onlyWhenFound: true }'));
-  assert.ok(html.includes('security_officer: ["security", "privacy", "links"]'));
+  assert.ok(html.includes('security_officer: "all"'));
   assert.ok(html.includes('"links.domains": {') && html.includes('"links.credentials": {'));
 });
 
