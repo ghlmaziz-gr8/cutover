@@ -25,7 +25,8 @@ test("the redraw is allowed only for a finished assessment, and it does not star
 });
 
 test("while the screens are drawn, the card shows the drawing and the page checks until they are ready", () => {
-  assert.ok(card.includes('firstRunCard("Drawing the screens"'));
+  assert.ok(card.includes("drawingBlock()"), "the drawing sits inside the Deep AI assessment results card");
+  assert.ok(helpers.includes('firstRunCard("Drawing the screens"'));
   assert.ok(helpers.includes("SCREENS_RUN_WINDOW_MS = 35 * 60 * 1000"));
   assert.ok(helpers.includes("screens_started_at"));
   assert.ok(helpers.includes("}, 15000);"));
