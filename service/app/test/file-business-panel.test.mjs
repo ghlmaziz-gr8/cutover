@@ -11,8 +11,8 @@ const guide = readFileSync(join(here, "..", "guide.js"), "utf8");
 const section = html.slice(html.indexOf("// ---- Business view of one file"), html.indexOf("// Replaces one file's purpose with an editable box."));
 
 test("each file has a Business view button that opens the panel", () => {
-  assert.match(html, /button\("Business view", \(\) => openBusinessView\(li, f\)\);/);
-  assert.match(html, /businessPanel\(box, f, \(\) => box\.remove\(\)\);/);
+  assert.match(html, /button\("Business view", \(\) => openBusinessView\(li, f, bizBtn\)\);/);
+  assert.match(html, /businessPanel\(box, f, closeView\);/);
 });
 
 test("the panel starts an assessment and reads the file's assessments", () => {
