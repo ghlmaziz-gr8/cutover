@@ -1410,14 +1410,23 @@ button:not(:disabled):active{transform:scale(.965)}
     .fg-ready-gap{width:100%;font:500 12px/1.4 var(--body);color:var(--muted)}
     .fg-ready-empty{margin-top:16px;padding:12px 14px;border-radius:14px;border:1px dashed var(--line,#ddd);color:var(--muted);font:500 13px var(--body)}
     @media (prefers-reduced-motion: reduce){.fg-ready-bar>span{transition:none}}
-    .fg-cap-head{display:flex;align-items:center;gap:10px;margin:16px 0 6px}
-    .fg-cap-name{flex:1;min-width:0;font:800 16px var(--body,sans-serif);color:#2b2540;background:transparent;border:1px dashed transparent;border-radius:8px;padding:4px 6px}
-    .fg-cap-name:hover,.fg-cap-name:focus{border-color:#c9bff0;background:#fff;outline:none}
-    .fg-cap-count{font:600 11px var(--body,sans-serif);color:#6b6585;white-space:nowrap}
+    .fg-cap-head{position:relative;display:flex;align-items:center;gap:12px;margin:18px 0 8px;padding:10px 14px 10px 18px;border-radius:14px;background:linear-gradient(90deg,var(--soft) 0%,var(--card) 75%);border:1px solid var(--line);overflow:hidden;animation:capIn .5s cubic-bezier(.2,.8,.2,1) both}
+    .fg-cap-head::before{content:"";position:absolute;left:0;top:0;bottom:0;width:5px;background:var(--grad);background-size:200% 100%;animation:capFlow 4s linear infinite}
+    .fg-cap-head::after{content:"";position:absolute;inset:0;background:linear-gradient(105deg,transparent 40%,color-mix(in srgb,var(--accent2) 16%,transparent) 50%,transparent 60%);transform:translateX(-100%);animation:capShine 4s ease-in-out infinite;pointer-events:none}
+    .fg-cap-eyebrow{font:700 10px/1 var(--body);letter-spacing:.14em;text-transform:uppercase;color:var(--accent);white-space:nowrap}
+    .fg-cap-name{flex:1;min-width:0;font:700 18px/1.2 var(--display);color:var(--fg);background:transparent;border:0;border-radius:8px;padding:2px 6px;outline:none}
+    .fg-cap-name:focus{background:var(--card);box-shadow:0 0 0 2px var(--accent)}
+    .fg-cap-count{font:700 11px var(--body);color:var(--accent);background:var(--card);border:1px solid var(--line);border-radius:999px;padding:4px 10px;white-space:nowrap}
     .fg-ready-groups{display:grid;gap:4px}
-    .fg-cap polygon{fill:none;stroke:#2b2540;stroke-width:3;stroke-linejoin:round}
-    .fg-cap-pill{fill:#fff;stroke:#2b2540;stroke-width:1.5}
-    .fg-cap-label{fill:#2b2540;font:800 15px var(--body,sans-serif)}
+    .fg-cap polygon{fill:none;stroke:var(--accent);stroke-width:3;stroke-linejoin:round}
+    .fg-cap-pill{fill:var(--card);stroke:var(--accent);stroke-width:1.5}
+    .fg-cap-label{fill:var(--fg);font:800 15px var(--display)}
+    .fg-cell-in{animation:fgIn .6s cubic-bezier(.2,.8,.2,1) both;transform-box:fill-box;transform-origin:center}
+    @keyframes capIn{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
+    @keyframes capFlow{to{background-position:200% 0}}
+    @keyframes capShine{0%{transform:translateX(-100%)}55%,100%{transform:translateX(100%)}}
+    @keyframes fgIn{from{opacity:0;transform:scale(.86)}to{opacity:1;transform:none}}
+    @media (prefers-reduced-motion: reduce){.fg-cap-head,.fg-cap-head::before,.fg-cap-head::after,.fg-cell-in{animation:none}}
     .fg-tree-wrap{margin-top:14px}
     .fg-tree{width:100%;border-radius:14px;background:var(--soft,#f7f6fd);overflow:hidden;line-height:0}
     .fg-svg{display:block;width:100%;height:auto}
@@ -9542,7 +9551,7 @@ const REGION_OPTS = {
         input.maxLength = 80;
         input.setAttribute("aria-label", "Capability name");
         input.addEventListener("change", () => renameCapability(data.grouping.id, ci, input.value, () => loadFeatureView()));
-        head.append(input, el("span", `${approvedCaps[ci].features.length} ${approvedCaps[ci].features.length === 1 ? "feature" : "features"}`, "fg-cap-count"));
+        head.append(el("span", "Capability", "fg-cap-eyebrow"), input, el("span", `${approvedCaps[ci].features.length} ${approvedCaps[ci].features.length === 1 ? "feature" : "features"}`, "fg-cap-count"));
         list.append(head);
       }
       const wrap = el("section", null, "fv-feature");
@@ -9746,7 +9755,7 @@ const REGION_OPTS = {
   }
 
   // One colour per feature. The row above the map and the cell use the same colour, so they can be matched.
-  const FEATURE_COLOURS = ["#6d5bd0", "#2f9e6b", "#c9821a", "#c2453d", "#2b7bb9", "#b8457a", "#2f8a8a", "#7a5a2e"];
+  const FEATURE_COLOURS = ["#6d28d9", "#ec4899", "#0891b2", "#d97706", "#059669", "#4f46e5", "#db2777", "#0e7490"];
   const featureColour = (i) => FEATURE_COLOURS[i % FEATURE_COLOURS.length];
 
   // The complexity map: each feature is a convex cell whose area is its complexity, in its own colour.
@@ -9767,6 +9776,7 @@ const REGION_OPTS = {
     const sections = grouped ? caps : groups.map((g, i) => ({ name: "", features: [i] }));
     const draw = () => {
       host.replaceChildren();
+      let step = 0;
       const W = Math.max(240, host.clientWidth || 640);
       const H = Math.round(W * 0.6);
       const svg = svgEl("svg", { viewBox: `0 0 ${W} ${H}`, role: "img", "aria-label": "Complexity map of capabilities and features", class: "fg-svg" });
@@ -9779,7 +9789,8 @@ const REGION_OPTS = {
           const f = r.features[cell.key];
           const c = T.complexityOf(g);
           const name = nameOf(g, cell.key);
-          const grp = svgEl("g", { class: "fg-cell" });
+  const grp = svgEl("g", { class: "fg-cell fg-cell-in" });
+          grp.style.animationDelay = `${step++ * 90}ms`;
           const title = svgEl("title", {});
           title.textContent = `${name}${grouped ? ` (in ${sec.name})` : ""}: ${c.stories} stories, ${c.rules} rules, ${c.files} files. ${f.passed} of ${f.total} checks pass.`;
           grp.append(title);
@@ -9797,7 +9808,8 @@ const REGION_OPTS = {
         }
         if (grouped) {
           // The capability's outline and name, drawn over its features. The name sits at the region's top-left corner.
-          const outline = svgEl("g", { class: "fg-cap" });
+          const outline = svgEl("g", { class: "fg-cap fg-cell-in" });
+          outline.style.animationDelay = `${step++ * 90}ms`;
           outline.append(svgEl("polygon", { points: region.points.map((p) => p[0].toFixed(1) + "," + p[1].toFixed(1)).join(" ") }));
           const top = region.points.reduce((best, p) => (p[1] < best[1] || (p[1] === best[1] && p[0] < best[0]) ? p : best), region.points[0]);
           // The name sits on a white pill, so it reads clearly over any colour.
@@ -9863,7 +9875,7 @@ const REGION_OPTS = {
         input.maxLength = 80;
         input.setAttribute("aria-label", "Capability name");
         input.addEventListener("change", () => renameCapability(draft.id, ci, input.value, loadGroupings));
-        head.append(input, el("span", `${sec.features.length} ${sec.features.length === 1 ? "feature" : "features"}`, "fg-cap-count"));
+        head.append(el("span", "Capability", "fg-cap-eyebrow"), input, el("span", `${sec.features.length} ${sec.features.length === 1 ? "feature" : "features"}`, "fg-cap-count"));
         list.append(head);
       }
       const ul = el("ul", null, "fg-ready-list");
@@ -9982,7 +9994,7 @@ const REGION_OPTS = {
           input.setAttribute("aria-label", "Capability name");
           input.addEventListener("change", () => renameCapability(g.id, ci, input.value, loadGroupings));
           const n = draftCaps[ci].features.length;
-          head.append(input, el("span", `${n} ${n === 1 ? "feature" : "features"}`, "fg-cap-count"));
+          head.append(el("span", "Capability", "fg-cap-eyebrow"), input, el("span", `${n} ${n === 1 ? "feature" : "features"}`, "fg-cap-count"));
           box.insertBefore(head, actions);
         }
         const wrap = el("div", null, "gr-feature");
