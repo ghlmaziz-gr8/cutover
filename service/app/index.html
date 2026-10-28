@@ -12,6 +12,7 @@
   --bg:#f7f6ff; --fg:#1d1640; --muted:#66607f; --card:#ffffff; --line:#e4e0f6;
   --accent:#6d28d9; --accent2:#ec4899; --accent3:#0891b2; --ok:#059669; --warn:#d97706; --bad:#b91c1c;
   --soft:#efeafd; --grad:linear-gradient(120deg,#6d28d9,#ec4899 55%,#f59e0b);
+  --radar-a:#1e1b4b; --radar-b:#0b1024; --radar-edge:#1e1b4b;
   --display:"Bricolage Grotesque",system-ui,sans-serif; --body:"DM Sans",system-ui,sans-serif;
   color-scheme:light;
 }
@@ -20,8 +21,10 @@
     --bg:#120e26; --fg:#f3f0ff; --muted:#a9a2c9; --card:#1c1735; --line:#2f2857;
     --accent:#a78bfa; --accent2:#f472b6; --accent3:#22d3ee; --ok:#34d399; --warn:#fbbf24; --bad:#fca5a5;
     --soft:#2a2150; color-scheme:dark;
+    --radar-a:#1a1440; --radar-b:#0c0920; --radar-edge:#2f2857;
   }
 }
+:root[data-theme="dark"]{--radar-a:#1a1440; --radar-b:#0c0920; --radar-edge:#2f2857}
 *{box-sizing:border-box}
 body{margin:0;background:var(--bg);color:var(--fg);font:400 15px/1.55 var(--body);min-height:100%}
 main{padding-inline:16px;padding-block:20px 48px;max-width:1080px;margin-inline:auto}
@@ -528,7 +531,7 @@ pre{white-space:pre-wrap;word-break:break-word;background:var(--soft);padding:12
 .eyebrow-sm{font-size:12px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:var(--accent)}
 .panel h3,.rcard h3{color:var(--accent);margin-top:6px}
 .attn{color:#92400e;background:#fef3c7;border-left:3px solid #f59e0b;border-radius:8px;padding:6px 10px;margin-top:6px}
-    .radar-wrap{margin-top:12px;border-radius:18px;background:radial-gradient(ellipse at 50% 40%,#1e1b4b 0%,#0b1024 70%);padding:6px 0 4px;box-shadow:0 10px 30px -12px rgba(76,29,149,.55)}
+    .radar-wrap{margin-top:12px;border-radius:20px;border:1px solid var(--radar-edge);background:radial-gradient(ellipse at 50% 40%,var(--radar-a) 0%,var(--radar-b) 70%);padding:10px 8px 8px;box-shadow:0 10px 30px -12px rgba(76,29,149,.55)}
 .radar{display:block;width:100%;height:auto;overflow:visible}
 .radar-label{font:700 13px var(--body);opacity:0;animation:radarFade .6s ease forwards;animation-delay:1000ms}
 .radar-count{fill:#fff;font:800 15px var(--body);opacity:0;animation:radarFade .6s ease forwards;animation-delay:1100ms}
