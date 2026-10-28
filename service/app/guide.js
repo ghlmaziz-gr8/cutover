@@ -11,6 +11,7 @@
 window.CUTOVER_GUIDE = {
   updated: "2026-10-22",
   whatsNew: [
+    "2026-10-28: Feature groups now have two levels. A capability is a named business area, and it holds one or more features. The AI proposes the capabilities and their features together, and the owner approves both. Any signed-in user can rename a capability, on the draft or the approved grouping. The readiness list and the map group each feature under its capability, and the map outlines each capability.",
     "2026-10-28: Feature groups are now called capabilities. The card, its steps and buttons, the readiness list, the map, the module specs and the messages use the word capability. Nothing else changes.",
     "2026-10-28: The feature groups card has a complexity treemap under the readiness list. Each feature is a convex cell sized by its complexity (its stories, the distinct rules they cite, and its files), and in its own colour, matching its row above, so each feature can be found on the map.",
     "2026-10-28: The feature groups card shows how ready the draft is for a vibe-coding tool, once the user stories are generated. A feature is ready when its stories cite rules with source lines and no rule is shared with another feature. Each module spec also lists the rules shared between features, the questions to answer before building (such as a rule that depends on today's date), and the decisions still open.",

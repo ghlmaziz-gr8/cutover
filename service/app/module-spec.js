@@ -36,7 +36,7 @@
     if (feature.summary) out.push("## Purpose", "", feature.summary, "");
 
     out.push("## User stories", "");
-    if (!(feature.stories || []).length) out.push("No user stories drafted for this capability yet.", "");
+    if (!(feature.stories || []).length) out.push("No user stories drafted for this feature yet.", "");
     for (const st of feature.stories || []) {
       out.push(`- ${st.story}`);
       for (const r of st.rules || []) out.push(`  - Rule ${r.id} in ${r.file}${where(r.lines)}${r.current ? "" : " (no longer in the approved assessment)"}`);
@@ -44,7 +44,7 @@
     out.push("");
 
     out.push("## Files", "");
-    if (!files.length) out.push("No files in this capability.", "");
+    if (!files.length) out.push("No files in this feature.", "");
     files.forEach((f, i) => {
       if (!f.assessment) {
         out.push(`- ${f.path}: no approved assessment yet`);
@@ -68,7 +68,7 @@
         out.push("");
       }
     }
-    if (!anyRule) out.push("No rules in the approved assessments of this capability.", "");
+    if (!anyRule) out.push("No rules in the approved assessments of this feature.", "");
 
     out.push("## Functions", "");
     let anyFn = false;
@@ -78,7 +78,7 @@
         out.push(`- ${fn.name} (${f.path})${fn.purpose ? `: ${fn.purpose}` : ""}${fn.calls && fn.calls.length ? ` — calls ${fn.calls.join(", ")}` : ""}`);
       }
     }
-    if (!anyFn) out.push("No functions in the approved assessments of this capability.");
+    if (!anyFn) out.push("No functions in the approved assessments of this feature.");
     out.push("");
 
     out.push("## Data", "");
@@ -94,13 +94,13 @@
         out.push(`- ${q.operation}${q.function ? ` in ${q.function}` : ""} on ${(q.tables || []).join(", ") || "(no table named)"} (${f.path})`);
       }
     }
-    if (!anyData) out.push("No data read or written in the approved assessments of this capability.");
+    if (!anyData) out.push("No data read or written in the approved assessments of this feature.");
     out.push("");
 
     out.push("## Shared rules", "");
     const mine = [...new Set((feature.stories || []).flatMap((st) => (st.rules || []).map(keyOf)))];
     const sharedRules = mine.filter((k) => citedBy.has(k) && citedBy.get(k).size > 1);
-    if (!sharedRules.length) out.push("No rule is shared with another capability.");
+    if (!sharedRules.length) out.push("No rule is shared with another feature.");
     for (const k of sharedRules) {
       const others = [...citedBy.get(k)].filter((n) => n !== feature.name);
       out.push(`- ${k} is also used by ${others.join(", ")}. Keep one copy; the other module refers to it.`);
@@ -118,7 +118,7 @@
         out.push(`  - Expect: ${e.expect || "(not given)"}`);
       }
     }
-    if (!anyExample) out.push("No worked examples in the approved assessments of this capability.");
+    if (!anyExample) out.push("No worked examples in the approved assessments of this feature.");
     out.push("");
 
     // Open questions: what must be answered before the module is built.
@@ -139,7 +139,7 @@
       if (!f.assessment) questions.push(`${f.path} has no approved assessment, so what it does is not yet known.`);
     }
     out.push("## Open questions", "");
-    if (!questions.length) out.push("No open questions for this capability.");
+    if (!questions.length) out.push("No open questions for this feature.");
     for (const q of questions) out.push(`- ${q}`);
     out.push("");
 
