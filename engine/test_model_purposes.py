@@ -238,6 +238,24 @@ class ApplyTests(unittest.TestCase):
         self.assertEqual(stats["model"], 1)
 
 
+class JsonRefusalTests(unittest.TestCase):
+    def test_a_provider_that_refuses_the_json_setting_gets_the_same_request_as_text(self):
+        bodies = []
+
+        def opener(req, timeout):
+            body = json.loads(req.data.decode("utf-8"))
+            bodies.append(body)
+            if "response_format" in body:
+                raise http_error(400)
+            return FakeResponse(json.dumps({"choices": [{"message": {"content": "{\"ok\": true}"}, "finish_reason": "stop"}]}).encode())
+
+        reply = mp.call_provider("openai", "gpt-oss-120b", "k", "text", opener=opener,
+                                 base_url="https://api.groq.test/openai/v1", json_reply=True)
+        self.assertEqual(reply, '{"ok": true}')
+        self.assertIn("response_format", bodies[0])
+        self.assertNotIn("response_format", bodies[-1])
+
+
 class SourceReaderTests(unittest.TestCase):
     def test_reads_files_inside_the_checkout_only(self):
         with tempfile.TemporaryDirectory() as tmp:
