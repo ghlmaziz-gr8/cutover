@@ -1183,7 +1183,7 @@ function businessRow(idN, status = "draft", path = "src/A.java") {
 
 test("only platform engineers see business assessments, and a file path is required", async () => {
   const aud = await call(`/api/analyses/${AN_ACME}/business?path=src/A.java`, { as: "aud_a" });
-  assert.equal(aud.status, 403);
+  assert.equal(aud.status, 200, "every role sees the business assessments");
   const noPath = await call(`/api/analyses/${AN_ACME}/business`, { as: "eng_a" });
   assert.equal(noPath.status, 400);
 });
@@ -1389,7 +1389,7 @@ function groupingRow(idN, status, groups = [{ name: "Ordering", summary: "x", pa
 
 test("only platform engineers see or start a grouping", async () => {
   const aud = await call(`/api/analyses/${AN_ACME}/groupings`, { as: "aud_a" });
-  assert.equal(aud.status, 403);
+  assert.equal(aud.status, 200, "every role sees the groupings");
   const audStart = await call(`/api/analyses/${AN_ACME}/groupings/start`, { as: "aud_a", method: "POST" });
   assert.equal(audStart.status, 403);
 });
@@ -2999,7 +2999,7 @@ function deepRow(idN, status, path = "src/A.java", extra = {}) {
 test("only platform engineers see, approve or discard deep file assessments", async () => {
   state.file_deep_assessments.push(deepRow(1100, "draft"));
   const seen = await call(`/api/analyses/${AN_ACME}/deep-files?path=src/A.java`, { as: "aud_a" });
-  assert.equal(seen.status, 403);
+  assert.equal(seen.status, 200, "every role sees the deep file assessments");
   const id = state.file_deep_assessments[0].id;
   const approved = await call(`/api/analyses/${AN_ACME}/deep-files/approve`, { as: "aud_a", method: "POST", body: { assessment_id: id } });
   assert.equal(approved.status, 403);
@@ -3122,7 +3122,7 @@ test("the file map gets the latest deep state of each file, and an approved acco
   assert.equal(res.body.files["src/A.java"].state, "approved");
   assert.equal(res.body.files["src/B.java"].state, "running");
   const denied = await call(`/api/analyses/${AN_ACME}/deep-files/summary`, { as: "aud_a" });
-  assert.equal(denied.status, 403);
+  assert.equal(denied.status, 200, "every role sees the summary");
 });
 
 test("the links give the names each file defines and calls, from its approved account or latest draft, to engineers only", async () => {
@@ -3139,7 +3139,7 @@ test("the links give the names each file defines and calls, from its approved ac
   assert.deepEqual(res.body.links["src/B.java"].calls, ["Save"], "a name called twice is listed once");
   assert.equal(res.body.links["src/C.java"], undefined, "a running file has no links yet");
   const denied = await call(`/api/analyses/${AN_ACME}/deep-files/links`, { as: "aud_a" });
-  assert.equal(denied.status, 403);
+  assert.equal(denied.status, 200, "every role sees the links");
 });
 
 test("time on the system adds up per screen, sets points and level, and names a clear favourite screen", async () => {
@@ -3219,7 +3219,7 @@ test("the application owner sends a grouping back with a note, and the engineer 
   const owned = await call(`/api/analyses/${AN_ACME}/groupings`, { as: "inf_a" });
   assert.equal(owned.status, 200, "the application owner can see the groupings");
   const other = await call(`/api/analyses/${AN_ACME}/groupings`, { as: "sec_a" });
-  assert.equal(other.status, 403);
+  assert.equal(other.status, 200, "every role sees the groupings; only the owner approves them");
   row.status = "approved";
   const refused = await call(`/api/analyses/${AN_ACME}/groupings/edit`, { as: "eng_a", method: "POST", body: { grouping_id: uid(1090), groups: [{ name: "X", summary: "", paths: ["src/A.java"] }] } });
   assert.equal(refused.status, 409, "an approved grouping cannot be edited");
