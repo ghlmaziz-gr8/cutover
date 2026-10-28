@@ -1384,6 +1384,16 @@ button:not(:disabled):active{transform:scale(.965)}
     @media (prefers-reduced-motion: reduce){.rel-state.is-running::before{animation:none}}
     @media (prefers-reduced-motion: reduce){.rc-link,.rc-node,.rel-row,.rel-more{transition:none!important}}
     .wc-badge-level{font-weight:700;background:linear-gradient(90deg,rgba(29,78,216,.12),rgba(47,158,107,.14))}
+    .wc-badge.cute{display:inline-flex;align-items:center;gap:8px;padding:5px 13px 5px 5px;border:1px solid rgba(124,58,237,.18);background:linear-gradient(120deg,#fff7e6,#e9f7ff 55%,#f3e8ff);box-shadow:0 2px 10px rgba(124,58,237,.12);position:relative;overflow:hidden;animation:badgePop .65s cubic-bezier(.34,1.56,.64,1) both;animation-delay:var(--d,0ms);transition:transform .2s cubic-bezier(.34,1.56,.64,1)}
+    .wc-badge.cute:hover{transform:translateY(-2px) scale(1.04)}
+    .wc-badge.cute .ico{width:28px;height:28px;border-radius:50%;display:grid;place-items:center;background:#fff;font-size:16px;line-height:1;box-shadow:inset 0 0 0 1px rgba(0,0,0,.05);animation:badgeBob 2.6s ease-in-out infinite;animation-delay:var(--d,0ms)}
+    .wc-badge.cute:hover .ico{animation:badgeWiggle .55s ease}
+    .wc-badge.cute::after{content:"";position:absolute;inset:0;background:linear-gradient(100deg,transparent 35%,rgba(255,255,255,.75) 50%,transparent 65%);transform:translateX(-120%);animation:badgeShine 3.6s ease-in-out 1s infinite;pointer-events:none}
+    @keyframes badgePop{0%{opacity:0;transform:scale(.4) rotate(-12deg)}100%{opacity:1;transform:none}}
+    @keyframes badgeBob{0%,100%{transform:translateY(0) rotate(0)}50%{transform:translateY(-2px) rotate(-7deg)}}
+    @keyframes badgeWiggle{0%,100%{transform:rotate(0) scale(1)}25%{transform:rotate(-16deg) scale(1.15)}75%{transform:rotate(14deg) scale(1.15)}}
+    @keyframes badgeShine{0%{transform:translateX(-120%)}55%,100%{transform:translateX(120%)}}
+    @media (prefers-reduced-motion: reduce){.wc-badge.cute,.wc-badge.cute .ico,.wc-badge.cute::after{animation:none}.wc-badge.cute:hover{transform:none}}
     .level-chip{cursor:pointer;margin-top:10px;font:inherit;font-size:12px;color:inherit}
     .level-chip:focus-visible{outline:2px solid #1d4ed8;outline-offset:2px}
     @keyframes wcIn{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
@@ -2462,7 +2472,7 @@ button:not(:disabled):active{transform:scale(.965)}
     requestAnimationFrame(() => requestAnimationFrame(() => { fill.style.width = `${pct}%`; }));
     if (data.badges && data.badges.length) {
       const row = el("div", null, "wc-badges");
-      for (const b of data.badges) row.append(el("span", b.name, b.kind === "level" ? "wc-badge wc-badge-level" : "wc-badge"));
+      data.badges.forEach((b, i) => row.append(badgePill(b, i)));
       card.append(row);
     }
     card.hidden = false;
@@ -2475,13 +2485,34 @@ button:not(:disabled):active{transform:scale(.965)}
     try {
       const data = await api("/api/me/engagement");
       const lvl = data.level;
-      chip.textContent = `Level ${lvl.number} · ${lvl.name} · ${lvl.points} points`;
+      chip.replaceChildren();
+      chip.classList.add("cute");
+      const ico = el("span", BADGE_ICON[`level-${lvl.number}`] || "✨", "ico");
+      ico.setAttribute("aria-hidden", "true");
+      chip.append(ico, document.createTextNode(`Level ${lvl.number} · ${lvl.name} · ${lvl.points} points`));
       chip.title = "Open your rewards";
       chip.onclick = () => showWelcome();
       chip.hidden = false;
     } catch (err) {
       chip.hidden = true;
     }
+  }
+  // Each badge gets a small icon: a sprout for Starter, a compass for Explorer and so on, and a clock, star, flame or gem
+  // for the hours on the system. The server sends the names; the icons are only for looks.
+  const BADGE_ICON = { "level-1": "🌱", "level-2": "🧭", "level-3": "⚡", "level-4": "🏆", "level-5": "👑" };
+  const HOUR_ICON = { 1: "⏱️", 5: "⭐", 25: "🔥", 100: "💎" };
+  function badgeIcon(b) {
+    if (b && BADGE_ICON[b.id]) return BADGE_ICON[b.id];
+    const hours = /^hours-(\d+)$/.exec((b && b.id) || "");
+    return (hours && HOUR_ICON[hours[1]]) || "✨";
+  }
+  function badgePill(b, index, extraClass) {
+    const pill = el("span", null, `wc-badge cute${b && b.kind === "level" ? " wc-badge-level" : ""}${extraClass ? ` ${extraClass}` : ""}`);
+    pill.style.setProperty("--d", `${index * 120}ms`);
+    const ico = el("span", badgeIcon(b), "ico");
+    ico.setAttribute("aria-hidden", "true");
+    pill.append(ico, document.createTextNode(b ? b.name : ""));
+    return pill;
   }
   function maybeGreet() {
     try {
