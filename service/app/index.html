@@ -664,6 +664,7 @@ pre{white-space:pre-wrap;word-break:break-word;background:var(--soft);padding:12
 .dp-frame{display:block;width:100%;height:520px;border:0;background:#fff}
     .screen-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(100%,380px),1fr));gap:14px;margin-top:12px}
     .screen-card{border:1px solid var(--line);border-radius:14px;overflow:hidden;background:var(--card);min-width:0}
+    .screens-section.arch-card{background:linear-gradient(180deg,color-mix(in srgb,var(--accent,#6d28d9) 6%,var(--card,#fff)),var(--card,#fff))}
     .screens-section>summary{cursor:pointer;list-style:none;display:flex;flex-wrap:wrap;align-items:center;gap:6px 10px}
     .screens-section>summary::-webkit-details-marker{display:none}
     .screens-section>summary::before{content:"\25BE";color:var(--muted);font-size:14px;margin-right:2px;transition:transform .15s}
@@ -3682,7 +3683,7 @@ button:not(:disabled):active{transform:scale(.965)}
   // A platform engineer can delete one screen, for example one that came out empty; onChange shows the change.
   function drawnScreensCard(screens, onChange = () => {}) {
     const c = document.createElement("details");
-    c.className = "rcard screens-section";
+    c.className = "rcard arch-card screens-section";
     c.open = true;
     const summary = document.createElement("summary");
     summary.append(el("p", "Deep AI assessment results", "eyebrow-sm"), el("h3", "Screens drawn from the code"));

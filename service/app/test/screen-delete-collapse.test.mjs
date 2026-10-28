@@ -10,7 +10,7 @@ const html = readFileSync(join(here, "..", "index.html"), "utf8");
 const guide = readFileSync(join(here, "..", "guide.js"), "utf8");
 
 test("the screens section is a folding section with its heading in the summary", () => {
-  assert.match(html, /const c = document\.createElement\("details"\);\s*c\.className = "rcard screens-section";\s*c\.open = true;/);
+  assert.match(html, /const c = document\.createElement\("details"\);\s*c\.className = "rcard arch-card screens-section";\s*c\.open = true;/);
   assert.match(html, /summary\.append\(el\("p", "Deep AI assessment results", "eyebrow-sm"\), el\("h3", "Screens drawn from the code"\)\);/);
   assert.match(html, /\.screens-section>summary\{cursor:pointer/);
 });
@@ -25,4 +25,8 @@ test("an engineer can delete one screen, after a confirmation, and the page show
 
 test("the change is listed in What's new", () => {
   assert.match(guide, /can delete one drawn screen/);
+});
+
+test("the screens section has the same background as the architecture panel", () => {
+  assert.match(html, /\.screens-section\.arch-card\{background:linear-gradient\(180deg,color-mix\(in srgb,var\(--accent,#6d28d9\) 6%,var\(--card,#fff\)\),var\(--card,#fff\)\)\}/);
 });
