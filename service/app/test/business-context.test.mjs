@@ -9,8 +9,9 @@ const here = dirname(fileURLToPath(import.meta.url));
 const html = readFileSync(join(here, "..", "index.html"), "utf8");
 
 test("the business view shows the approved deep assessment of the file, read only", () => {
-  assert.match(html, /codeBox\.className = "biz-code";/);
-  assert.match(html, /What the code does \(deep assessment\)/);
+  assert.match(html, /const codeBox = el\("div", null, "biz-col biz-code"\);/);
+  assert.match(html, /Deep assessment: what the code does/);
+  assert.match(html, /Deep assessment: what the code does/);
   assert.match(html, /api\(`\/api\/analyses\/\$\{cur\.id\}\/deep-files\?path=\$\{encodeURIComponent\(f\.path\)\}`\)/);
   assert.match(html, /rows\.find\(\(a\) => a\.status === "approved"\) \|\| null/);
   assert.match(html, /else body\.append\(deepCard\(pick, \(\) => \{\}, msg, f\.path\)\);/);
@@ -40,4 +41,10 @@ test("Enlarge extends the business panel to the window, and Shrink brings it bac
   assert.match(html, /enlarge\.textContent = on \? "Shrink" : "Enlarge";/);
   assert.match(html, /top\.append\(start, refresh, enlarge, close\);/);
   assert.match(html, /\.biz-panel\.is-enlarged\{position:fixed;inset:12px;z-index:60;overflow:auto/);
+});
+
+test("both columns are headed and bordered, and the deep card\'s next-step note wraps inside its column", () => {
+  assert.match(html, /side\.append\(el\("div", "Business assessment", "biz-head"\), list\);/);
+  assert.match(html, /\.biz-compare>\.biz-col\{min-width:0;border:1px solid/);
+  assert.match(html, /\.biz-compare \.next-step\{white-space:normal;/);
 });
