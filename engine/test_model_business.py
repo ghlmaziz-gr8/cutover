@@ -50,6 +50,16 @@ class Rules(unittest.TestCase):
         self.assertEqual(got["dropped"], 1)
         self.assertEqual(got["functions"], [{"name": "cancel", "lines": [2, 3]}])
 
+    def test_when_then_and_values_are_kept_and_values_must_be_in_the_code(self):
+        code = CODE + "STATUS = 'cancelled'\n"
+        reply = dict(GOOD, rules=[dict(RULE, condition="A visit is cancelled.", outcome="Its slot is free.",
+                                       values=["cancelled", "not-in-code"])])
+        got = mb.clean_reply(json.dumps(reply), code)
+        self.assertEqual(got["rules"][0]["condition"], "A visit is cancelled.")
+        self.assertEqual(got["rules"][0]["outcome"], "Its slot is free.")
+        self.assertEqual(got["rules"][0]["values"], ["cancelled"])
+        self.assertEqual(got["dropped"], 1)
+
     def test_line_numbers_are_kept_only_when_they_make_sense(self):
         reply = dict(GOOD, rules=[dict(RULE, lines=[3, 2])])
         got = mb.clean_reply(json.dumps(reply), CODE)

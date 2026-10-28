@@ -11,6 +11,7 @@
 window.CUTOVER_GUIDE = {
   updated: "2026-10-22",
   whatsNew: [
+    "2026-10-28: The business card and the deep card use the same halo, checks and rules. A business rule shows When, Then, Values and its worked examples, as the deep card does.",
     "2026-10-28: The related-files map is larger, and grows with the number of related files.",
     "2026-10-28: The findings radar keeps its dark panel. In dark mode the panel is deeper and more muted, and its corners and border match the card around it.",
     "2026-10-27: The business assessment shows the same halo and checks as the deep result: names checked against the code, rules with line numbers, and rules with worked examples.",

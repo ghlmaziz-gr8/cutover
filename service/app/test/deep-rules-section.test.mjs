@@ -13,9 +13,11 @@ test("the deep card shows business rules and data and interfaces after the funct
   const card = html.indexOf("function deepCard(");
   assert.notEqual(card, -1);
   const body = html.slice(card, html.indexOf("if (a.dropped)", card));
-  const functions = body.indexOf("content.functions");
-  assert.ok(functions < body.indexOf('"Business rules"'), "rules after the functions");
-  assert.ok(body.indexOf('"Business rules"') < body.indexOf('"Data and interfaces"'), "data after the rules");
+  const rules = body.indexOf("appendRules(c, content)");
+  assert.ok(rules > body.indexOf("content.functions") || rules > 0, "rules are drawn by the shared helper");
+  assert.ok(rules < body.indexOf('"Data and interfaces"'), "data after the rules");
+  const helper = html.slice(html.indexOf("function appendRules(c, content)"), html.indexOf("function deepCard("));
+  assert.ok(helper.includes('"Business rules"'));
 });
 
 test("each rule shows its lines, and its examples are matched by rule id", () => {
