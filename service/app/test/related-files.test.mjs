@@ -62,7 +62,7 @@ test("the limit caps the suggestions", () => {
 
 test("the file view shows related files as a chord diagram and the order as a tree", () => {
   assert.match(html, /window\.FileMap\.related\(f\.path, paths, 6, links\)/);
-  assert.match(html, /function relatedView\(f, near, paths, links\)/);
+  assert.match(html, /function relatedView\(f, near, paths, links, deep = \{\}\)/);
   assert.match(html, /Order to assess/);
   assert.match(html, /\.rel-tree\.is-on \.rel-row/);
   assert.match(html, /\.rc-link\{[^}]*stroke-dashoffset:1/);
@@ -75,4 +75,17 @@ test("the chord diagram and tree stop animating under reduced motion, and the tr
 
 test("the change is listed in What's new", () => {
   assert.match(guide, /Choosing a file now suggests related files/);
+});
+
+test("each file in the order shows where it stands: approved and draft ready have different colours", () => {
+  assert.match(html, /const STATE_COLOURS = \{ approved: "#059669", draft: "#4f46e5", running: "#d97706", failed: "#d0524a", superseded: "#6b7280" \};/);
+  assert.match(html, /window\.FileMap\.deepStatusOf\(deep\[path\]\)/);
+  assert.match(html, /num\.style\.background = colour;/);
+  assert.match(html, /businessFiles\.deep = deep;/);
+  assert.match(html, /relatedView\(f, near, paths, links, businessFiles\.deep \|\| \{\}\)/);
+  assert.notEqual(
+    html.match(/approved: "(#[0-9a-f]{6})"/)[1],
+    html.match(/draft: "(#[0-9a-f]{6})"/)[1],
+    "draft ready must not be green like approved",
+  );
 });

@@ -1367,6 +1367,11 @@ button:not(:disabled):active{transform:scale(.965)}
     .rel-link:hover,.rel-link:focus-visible{text-decoration:underline}
     .rel-reason{font-size:11.5px;color:var(--muted);margin-top:1px}
     .rel-reason::before{content:"";display:inline-block;width:7px;height:7px;border-radius:50%;background:var(--k,var(--muted));margin-right:6px;vertical-align:middle}
+    .rel-title{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+    .rel-state{font:600 11px var(--body);padding:2px 8px;border-radius:99px;border:1px solid currentColor;white-space:nowrap;background:color-mix(in srgb,currentColor 10%,transparent)}
+    .rel-state.is-running::before{content:"";display:inline-block;width:6px;height:6px;border-radius:50%;background:currentColor;margin-right:5px;vertical-align:middle;animation:relPulse 1.2s ease-in-out infinite}
+    @keyframes relPulse{50%{opacity:.25}}
+    @media (prefers-reduced-motion: reduce){.rel-state.is-running::before{animation:none}}
     @media (prefers-reduced-motion: reduce){.rc-link,.rc-node,.rel-row,.rel-more{transition:none!important}}
     .wc-badge-level{font-weight:700;background:linear-gradient(90deg,rgba(29,78,216,.12),rgba(47,158,107,.14))}
     @keyframes wcIn{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
@@ -7605,6 +7610,7 @@ a{color:#6d28d9;font-weight:600}`;
     box.replaceChildren();
     if (!rows.length) return;
     const deep = await loadDeepStates();
+    businessFiles.deep = deep;
     businessFiles.links = await loadDeepLinks();
     drawMap(window.FileMap.tree({ label: "Files in the application", files: rows, conversions: cur.conversions || [], deep }), box, {
       title: "Files in the application",
@@ -7639,7 +7645,7 @@ a{color:#6d28d9;font-weight:600}`;
     const paths = (businessFiles.rows || []).map((x) => x.path);
     const links = businessFiles.links || {};
     const near = window.FileMap.related(f.path, paths, 6, links);
-    if (near.length) box.appendChild(relatedView(f, near, paths, links));
+    if (near.length) box.appendChild(relatedView(f, near, paths, links, businessFiles.deep || {}));
     // The deep view: the purpose, user stories, functions and what they call, opened inline on this file.
     // The deep view opens by itself under the file, with a short entrance, so the status and the work show at once.
     box.classList.remove("dp-enter");
@@ -9242,7 +9248,10 @@ const REGION_OPTS = {
   function relName(path) {
     return String(path).split("/").pop();
   }
-  function relatedView(f, near, paths, links) {
+  // The colour of each deep state in the order to assess: approved green, draft ready indigo, so they never look alike.
+  const STATE_COLOURS = { approved: "#059669", draft: "#4f46e5", running: "#d97706", failed: "#d0524a", superseded: "#6b7280" };
+
+  function relatedView(f, near, paths, links, deep = {}) {
     const wrap = el("div", null, "rel-wrap");
     const reasonOf = new Map(near.map((r) => [r.path, r]));
     const order = window.FileMap.processingOrder(f.path, paths, links);
@@ -9305,10 +9314,24 @@ const REGION_OPTS = {
       row.style.setProperty("--d", `${i * 110}ms`);
       const num = el("span", String(i + 1), "rel-num");
       const body = el("div", null, "rel-body");
+      const title = el("div", null, "rel-title");
       const link = el("button", path, "rel-link");
       link.type = "button";
       link.addEventListener("click", () => showBusinessFile(path));
-      body.append(link);
+      title.append(link);
+      // Where the file stands: draft and approved are different colours, so a file already worked on is easy to skip.
+      const state = deep && deep[path] ? deep[path].state : null;
+      const status = state ? window.FileMap.deepStatusOf(deep[path]) : null;
+      if (status) {
+        const colour = STATE_COLOURS[state] || "var(--muted)";
+        const pill = el("span", status.text, `rel-state is-${state}`);
+        pill.style.color = colour;
+        pill.dataset.state = state;
+        num.style.background = colour;
+        num.dataset.state = state;
+        title.append(pill);
+      }
+      body.append(title);
       if (reason) {
         const kind = relKind(reason);
         const why = el("div", reason, "rel-reason");
