@@ -98,11 +98,55 @@ class CallTests(unittest.TestCase):
                 with self.assertRaises(mp.ProviderStopped):
                     mp.call_provider("google", "gemini-3.5-flash", KEY, "hi", opener=opener)
 
+    def test_a_server_error_is_tried_again_before_the_file_fails(self):
+        body = json.dumps({"candidates": [{"content": {"parts": [{"text": "Reads orders."}]}}]}).encode()
+        calls = []
+        def opener(req, timeout):
+            calls.append(1)
+            if len(calls) < 3:
+                raise http_error(503)
+            return FakeResponse(body)
+        old = mp.RETRY_PAUSES
+        mp.RETRY_PAUSES = (0, 0)
+        try:
+            self.assertEqual(mp.call_provider("google", "gemini-3.5-flash", KEY, "hi", opener=opener), "Reads orders.")
+        finally:
+            mp.RETRY_PAUSES = old
+        self.assertEqual(len(calls), 3)
+
+    def test_a_server_error_that_stays_fails_after_the_tries(self):
+        calls = []
+        def opener(req, timeout):
+            calls.append(1)
+            raise http_error(503)
+        old = mp.RETRY_PAUSES
+        mp.RETRY_PAUSES = (0, 0)
+        try:
+            with self.assertRaises(mp.ProviderError):
+                mp.call_provider("google", "gemini-3.5-flash", KEY, "hi", opener=opener)
+        finally:
+            mp.RETRY_PAUSES = old
+        self.assertEqual(len(calls), 3)
+
+    def test_stopping_errors_are_not_retried(self):
+        calls = []
+        def opener(req, timeout):
+            calls.append(1)
+            raise http_error(429)
+        with self.assertRaises(mp.ProviderStopped):
+            mp.call_provider("google", "gemini-3.5-flash", KEY, "hi", opener=opener)
+        self.assertEqual(len(calls), 1)
+
     def test_other_errors_affect_only_that_file(self):
         def opener(req, timeout):
             raise http_error(500)
-        with self.assertRaises(mp.ProviderError):
-            mp.call_provider("google", "gemini-3.5-flash", KEY, "hi", opener=opener)
+        old = mp.RETRY_PAUSES
+        mp.RETRY_PAUSES = (0, 0)
+        try:
+            with self.assertRaises(mp.ProviderError):
+                mp.call_provider("google", "gemini-3.5-flash", KEY, "hi", opener=opener)
+        finally:
+            mp.RETRY_PAUSES = old
 
     def test_a_good_reply_is_returned(self):
         body = json.dumps({"candidates": [{"content": {"parts": [{"text": "Reads orders."}]}}]}).encode()
