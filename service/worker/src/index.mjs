@@ -465,11 +465,12 @@ async function engagementSummary(request, env) {
     favourite,
     workspaces,
     level,
-    // Every level reached stays on the list, from Starter at zero, so earlier badges are not lost. Each says the day it was reached.
+    // Every badge reached stays on the list, in the order it was reached: the earliest day first. On the same day a
+    // level comes before a time badge. Each says the day it was reached.
     badges: [
       ...LEVELS.slice(0, level.number).map((l, i) => ({ id: `level-${i + 1}`, name: `${l.name} badge`, kind: "level", earned_on: reachedOn(Math.ceil(l.at / POINTS_PER_MINUTE) * 60) })),
       ...HOUR_BADGES.filter((h) => total >= h * 3600).map((h) => ({ id: `hours-${h}`, name: `${h} ${h === 1 ? "hour" : "hours"} on the system`, kind: "hours", earned_on: reachedOn(h * 3600) })),
-    ],
+    ].sort((a, b) => (a.earned_on || "9999").localeCompare(b.earned_on || "9999") || (a.kind === b.kind ? 0 : a.kind === "level" ? -1 : 1)),
   });
 }
 

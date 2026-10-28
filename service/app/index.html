@@ -2561,7 +2561,7 @@ button:not(:disabled):active{transform:scale(.965)}
     "level-5": { look: "cape" },
   };
   const HOUR_EMBLEM = { 1: "clock", 5: "star", 25: "flame", 100: "gem" };
-  // The colours of each plate. Starter is blue, then the colour warms and deepens as the level goes up.
+  // The colours of each plate. Starter is blue, then the colour warms and deepens as the level goes up. Time badges are graphite.
   // body: shield gradient top to bottom. rim: shield edge. ring: medal glow. medal: inner disc. pill: the level pill.
   const PLATE_COLOURS = {
     1: { body: ["#16397a", "#061338"], rim: ["#67dcff", "#1d6bff", "#0a3fc4"], ring: ["#9be9ff", "#1f6bff", "#0b3fb8"], medal: ["#2d5cc0", "#07163f"], pill: ["#22d3ee", "#2563eb"], pillText: "#fff", spark: "#38bdf8" },
@@ -2569,7 +2569,8 @@ button:not(:disabled):active{transform:scale(.965)}
     3: { body: ["#2b2a7a", "#110f3a"], rim: ["#c4b5fd", "#6366f1", "#3730a3"], ring: ["#ddd6fe", "#6366f1", "#312e81"], medal: ["#4338ca", "#1e1b4b"], pill: ["#a5b4fc", "#4f46e5"], pillText: "#fff", spark: "#a5b4fc" },
     4: { body: ["#6b4310", "#2e1a04"], rim: ["#fde68a", "#f59e0b", "#b45309"], ring: ["#fff3c4", "#f59e0b", "#92400e"], medal: ["#a16207", "#3b2305"], pill: ["#fde047", "#d97706"], pillText: "#2b1a03", spark: "#fcd34d" },
     5: { body: ["#5b1046", "#25041c"], rim: ["#f9a8d4", "#db2777", "#9d174d"], ring: ["#fbcfe8", "#db2777", "#831843"], medal: ["#9d174d", "#2e0619"], pill: ["#f9a8d4", "#be185d"], pillText: "#fff", spark: "#f9a8d4" },
-    time: { body: ["#16397a", "#061338"], rim: ["#67dcff", "#1d6bff", "#0a3fc4"], ring: ["#9be9ff", "#1f6bff", "#0b3fb8"], medal: ["#2d5cc0", "#07163f"], pill: ["#22d3ee", "#2563eb"], pillText: "#fff", spark: "#38bdf8" },
+    // Time badges are graphite, so they do not look like a level.
+    time: { body: ["#3f3f46", "#18181b"], rim: ["#f4f4f5", "#a1a1aa", "#52525b"], ring: ["#fafafa", "#a1a1aa", "#3f3f46"], medal: ["#52525b", "#18181b"], pill: ["#e4e4e7", "#71717a"], pillText: "#18181b", spark: "#e4e4e7" },
   };
   const HOUR_TITLE = { 1: "First hour", 5: "Five hours", 25: "Dedicated", 100: "Veteran" };
   const GOLD = "#facc15";
