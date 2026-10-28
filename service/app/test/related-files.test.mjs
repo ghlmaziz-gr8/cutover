@@ -91,7 +91,7 @@ test("each file in the order shows where it stands: approved and draft ready hav
 });
 
 test("after an approve or discard, the file states are loaded again so the order shows the change", () => {
-  assert.match(html, /deepCard\(a, \(\) => refreshAfterChange\(f\.path\), msg\)/);
+  assert.match(html, /deepCard\(a, \(\) => refreshAfterChange\(f\.path\), msg, f\.path\)/);
   assert.match(html, /async function refreshAfterChange\(path\) \{\n\s+businessFiles\.deep = await loadDeepStates\(\);\n\s+showBusinessFile\(path\);/);
 });
 

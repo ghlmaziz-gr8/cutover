@@ -42,3 +42,11 @@ test("choosing a file opens its deep view under it by itself, with an entrance, 
   assert.ok(!detail.includes('"Deep view", "small-btn"'));
 });
 
+test("an approved file says its next step: its feature, or grouping it", () => {
+  assert.match(html, /list\.appendChild\(deepCard\(a, \(\) => refreshAfterChange\(f\.path\), msg, f\.path\)\);/);
+  assert.match(html, /if \(a\.status === "approved" && path\) c\.append\(nextStepNote\(path\)\);/);
+  assert.match(html, /Next step: group this file into a feature\./);
+  assert.match(html, /Next step: an engineer groups this file into a feature, and the owner approves it\./);
+  assert.match(html, /api\(`\/api\/analyses\/\$\{cur\.id\}\/features`\)/);
+});
+

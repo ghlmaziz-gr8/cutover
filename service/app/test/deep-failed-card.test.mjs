@@ -7,7 +7,7 @@ import { fileURLToPath } from "node:url";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const html = readFileSync(join(here, "..", "index.html"), "utf8");
-const card = html.slice(html.indexOf("  function deepCard(a, reload, msg) {"), html.indexOf("    const content = a.content || {};", html.indexOf("  function deepCard(a, reload, msg) {")));
+const card = html.slice(html.indexOf("  function deepCard(a, reload, msg, path) {"), html.indexOf("    const content = a.content || {};", html.indexOf("  function deepCard(a, reload, msg, path) {")));
 
 test("a failed run is labelled Failed", () => {
   assert.ok(html.includes('failed: "Failed"'));

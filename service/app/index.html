@@ -9491,7 +9491,7 @@ const REGION_OPTS = {
           waitCard = deepWait(a);
           list.appendChild(waitCard);
         } else {
-          list.appendChild(deepCard(a, () => refreshAfterChange(f.path), msg));
+          list.appendChild(deepCard(a, () => refreshAfterChange(f.path), msg, f.path));
         }
       }
     }
@@ -9837,7 +9837,27 @@ const REGION_OPTS = {
     }
     return wrap;
   }
-  function deepCard(a, reload, msg) {
+  // The step after an approved file: its feature, or grouping it into one. Read from the approved features.
+  function nextStepNote(path) {
+    const note = el("p", "Checking the next step…", "muted small next-step");
+    api(`/api/analyses/${cur.id}/features`)
+      .then((data) => {
+        const names = (data.features || []).filter((f) => (f.files || []).some((x) => x.path === path)).map((f) => f.name);
+        if (names.length) {
+          note.textContent = `Next step: this file is in ${names.join(", ")}. Its rules feed those features' user stories, shown on the Features card.`;
+        } else if (canActOnResults()) {
+          note.textContent = "Next step: group this file into a feature. Start the grouping on the Features card, then send it to the owner for approval.";
+        } else {
+          note.textContent = "Next step: an engineer groups this file into a feature, and the owner approves it.";
+        }
+      })
+      .catch(() => {
+        note.textContent = "";
+      });
+    return note;
+  }
+
+  function deepCard(a, reload, msg, path) {
     const c = el("div", null, "biz-card");
     c.style.borderTop = "1px solid var(--line, #ddd)";
     c.style.paddingTop = "8px";
@@ -9845,6 +9865,7 @@ const REGION_OPTS = {
     const commit = a.commit_sha ? ` · commit ${String(a.commit_sha).slice(0, 7)}` : "";
     c.append(...deepJobHead(a));
     c.append(el("div", `${DEEP_STATUS[a.status] || a.status}${commit}`, "muted small"));
+    if (a.status === "approved" && path) c.append(nextStepNote(path));
     if (a.status === "failed") {
       // The reason the run ended, from the runner. A new run can be started from the panel above.
       const why = (a.content && a.content.failure && a.content.failure.reason) || "The assessment did not finish.";
