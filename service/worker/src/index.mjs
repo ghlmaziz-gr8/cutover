@@ -2458,7 +2458,7 @@ async function setCloud(request, env, id) {
   if (parsed.error) return json({ error: parsed.error }, 400);
   const cloud = parsed.value && parsed.value.cloud;
   if (!Object.prototype.hasOwnProperty.call(CLOUDS, cloud)) return json({ error: "Choose google, aws, azure or undecided." }, 400);
-  if (access.row.scope !== "migrate") return json({ error: "Choose Migrate as the next stage first." }, 409);
+  if (!scopeIncludes(access.row.scope, "migrate")) return json({ error: "Choose Migrate as the next stage first." }, 409);
   const changed = access.row.cloud !== cloud;
   // A different cloud makes the saved intake and its confirmation out of date, so they are cleared.
   const change = changed
@@ -2481,7 +2481,7 @@ async function saveIntake(request, env, id) {
   const access = await analysisAccess(env, request, id);
   if (access.response) return access.response;
   if (!canStart(access.member)) return json({ error: "Only platform engineers can fill in the intake." }, 403);
-  if (access.row.scope !== "migrate") return json({ error: "Choose Migrate as the next stage first." }, 409);
+  if (!scopeIncludes(access.row.scope, "migrate")) return json({ error: "Choose Migrate as the next stage first." }, 409);
   if (!access.row.cloud || access.row.cloud === "undecided") return json({ error: "Choose a cloud before the intake form." }, 409);
   const parsed = await readJson(request);
   if (parsed.error) return json({ error: parsed.error }, 400);
@@ -2619,7 +2619,7 @@ async function draftTerraform(request, env, id) {
   if (access.response) return access.response;
   if (!canStart(access.member)) return json({ error: "Only platform engineers can make a Terraform draft." }, 403);
   const row = access.row;
-  if (row.scope !== "migrate") return json({ error: "Choose Migrate as the next stage first." }, 409);
+  if (!scopeIncludes(row.scope, "migrate")) return json({ error: "Choose Migrate as the next stage first." }, 409);
   if (!row.cloud || row.cloud === "undecided" || !TERRAFORM_CLOUDS.includes(row.cloud)) {
     return json({ error: "Choose Google Cloud, AWS or Azure before making the draft." }, 409);
   }
@@ -2647,6 +2647,24 @@ async function draftTerraform(request, env, id) {
   return json({ saved: true, version }, 201);
 }
 
+// The scope is chosen before the deeper assessment runs. Each choice is the deeper assessment plus the stages it names.
+const SCOPES = {
+  deeper: [],
+  deeper_modernize: ["modernize"],
+  deeper_migrate: ["migrate"],
+  deeper_modernize_migrate: ["modernize", "migrate"],
+};
+const SCOPE_LABELS = {
+  deeper: "Deeper assessment",
+  deeper_modernize: "Deeper assessment and Modernize",
+  deeper_migrate: "Deeper assessment and Migrate",
+  deeper_modernize_migrate: "Deeper assessment, Modernize and Migrate",
+};
+// True when the chosen scope includes the stage ("modernize" or "migrate").
+function scopeIncludes(scope, stage) {
+  return Object.prototype.hasOwnProperty.call(SCOPES, scope) && SCOPES[scope].includes(stage);
+}
+
 // Saves the next stage for one analysis. Modernize and Migrate wait for the deeper assessment to finish.
 async function setScope(request, env, id) {
   const access = await analysisAccess(env, request, id);
@@ -2658,11 +2676,8 @@ async function setScope(request, env, id) {
   const parsed = await readJson(request);
   if (parsed.error) return json({ error: parsed.error }, 400);
   const scope = parsed.value && parsed.value.scope;
-  if (!["deeper", "modernize", "migrate"].includes(scope)) {
-    return json({ error: "Choose deeper, modernize or migrate." }, 400);
-  }
-  if (scope !== "deeper" && access.row.deeper_done !== true) {
-    return json({ error: "Finish the deeper assessment before choosing Modernize or Migrate." }, 409);
+  if (!Object.prototype.hasOwnProperty.call(SCOPES, scope)) {
+    return json({ error: "Choose deeper, deeper and modernize, deeper and migrate, or all three." }, 400);
   }
   const refused = await logFirst(env, { workspace_id: access.row.workspace_id, user: access.user, action: "scope", analysis_id: id, repo: access.row.repo, detail: scope });
   if (refused) return refused;
@@ -2672,7 +2687,7 @@ async function setScope(request, env, id) {
     body: JSON.stringify({ scope, scope_set_by_email: access.user.email, scope_set_at: new Date().toISOString() }),
   });
   if (!res.ok) return json({ error: "Could not save the scope." }, 502);
-  const labels = { deeper: "Deeper assessment", modernize: "Modernize", migrate: "Migrate" };
+  const labels = SCOPE_LABELS;
   await notifyPeople(env, access.row.workspace_id, await analysisAudienceExcept(env, access.row, access.user.id), {
     kind: "scope_chosen", tone: "info", title: `Next stage chosen: ${labels[scope]}`,
     body: `${access.row.app_name || access.row.repo}: chosen by ${access.user.email}.`, analysis_id: id,
@@ -2696,7 +2711,7 @@ async function setTemplate(request, env, id) {
   if (!MODERN_TEMPLATES.includes(template)) {
     return json({ error: "Choose web-modern, services-data or lift-contain." }, 400);
   }
-  if (access.row.scope !== "modernize") {
+  if (!scopeIncludes(access.row.scope, "modernize")) {
     return json({ error: "Choose Modernize as the next stage before choosing the approach." }, 409);
   }
   const res = await serviceRest(env, `analyses?id=eq.${id}`, {
@@ -2748,7 +2763,7 @@ async function setTarget(request, env, id) {
   if (!option) return json({ error: `Choose one of: ${TARGET_IDS.join(", ")}.` }, 400);
   const owner = normalizeEmail(parsed.value && parsed.value.owner_email);
   if (!owner) return json({ error: "Enter the email of the application owner who approves the language." }, 400);
-  if (access.row.scope !== "modernize") return json({ error: "Choose Modernize as the next stage first." }, 409);
+  if (!scopeIncludes(access.row.scope, "modernize")) return json({ error: "Choose Modernize as the next stage first." }, 409);
   if (!access.row.modern_template) return json({ error: "Choose the approach before the target language." }, 409);
   if (!option.approaches.includes(access.row.modern_template)) {
     return json({ error: "That language does not fit the chosen approach. Choose another." }, 400);
@@ -2987,7 +3002,7 @@ async function startConversion(request, env, id) {
   if (state && state.state !== "available") return json({ error: state.lock_reason || "This stage is not open yet." }, 409);
   if (!row.modern_template) return json({ error: "Choose the approach before converting a file." }, 409);
   if (!row.target_language) return json({ error: "Choose the target language first." }, 409);
-  if (row.scope !== "modernize") return json({ error: "Choose Modernize as the next stage first." }, 409);
+  if (!scopeIncludes(row.scope, "modernize")) return json({ error: "Choose Modernize as the next stage first." }, 409);
   if (row.source_upload === true) {
     return json({ error: "The uploaded zip is deleted when its run ends. Upload the code again to convert a file." }, 409);
   }

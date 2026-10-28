@@ -27,7 +27,7 @@ create table if not exists public.analyses (
   findings      jsonb,
   error         text check (error is null or length(error) <= 500),
   data_rules_confirmed_at timestamptz,
-  scope         text check (scope is null or scope in ('deeper', 'modernize', 'migrate')),
+  scope         text check (scope is null or scope in ('deeper', 'deeper_modernize', 'deeper_migrate', 'deeper_modernize_migrate')),
   scope_set_by_email text,
   scope_set_at  timestamptz,
   deeper_done   boolean not null default false,

@@ -1,7 +1,11 @@
 // The agent package for the approved features: a manifest, a brief shared by every module, and one module file per
 // approved feature. Plain text and Markdown only, with no agent or model named. Also packs the files into a zip.
 (function (root) {
-  const SCOPE = { deeper: "Deeper assessment", modernize: "Modernize", migrate: "Migrate" };
+  const SCOPE = {
+    deeper: "Deeper assessment only", modernize: "Modernize", migrate: "Migrate",
+    deeper_modernize: "Deeper assessment + Modernize", deeper_migrate: "Deeper assessment + Migrate",
+    deeper_modernize_migrate: "Deeper assessment + Modernize + Migrate",
+  };
 
   // data: the features response. ctx: { app, approach, scope, targetLanguage, targetChosenBy, confidenceOf, ModuleSpec }.
   function build(data, ctx) {
