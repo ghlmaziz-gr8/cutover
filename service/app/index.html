@@ -1413,6 +1413,8 @@ button:not(:disabled):active{transform:scale(.965)}
     .fg-cap-head{position:relative;display:flex;align-items:center;gap:12px;margin:18px 0 8px;padding:10px 14px 10px 18px;border-radius:14px;background:linear-gradient(90deg,var(--soft) 0%,var(--card) 75%);border:1px solid var(--line);overflow:hidden;animation:capIn .5s cubic-bezier(.2,.8,.2,1) both}
     .fg-cap-head::before{content:"";position:absolute;left:0;top:0;bottom:0;width:5px;background:var(--grad);background-size:200% 100%;animation:capFlow 4s linear infinite}
     .fg-cap-head::after{content:"";position:absolute;inset:0;background:linear-gradient(105deg,transparent 40%,color-mix(in srgb,var(--accent2) 16%,transparent) 50%,transparent 60%);transform:translateX(-100%);animation:capShine 4s ease-in-out infinite;pointer-events:none}
+    .fg-cap-icon{flex:none;fill:none;stroke:var(--accent);stroke-width:2;stroke-linecap:round}
+    .fg-cap-icon circle{fill:var(--card)}
     .fg-cap-eyebrow{font:700 10px/1 var(--body);letter-spacing:.14em;text-transform:uppercase;color:var(--accent);white-space:nowrap}
     .fg-cap-name{flex:1;min-width:0;font:700 18px/1.2 var(--display);color:var(--fg);background:transparent;border:0;border-radius:8px;padding:2px 6px;outline:none}
     .fg-cap-name:focus{background:var(--card);box-shadow:0 0 0 2px var(--accent)}
@@ -9551,7 +9553,7 @@ const REGION_OPTS = {
         input.maxLength = 80;
         input.setAttribute("aria-label", "Capability name");
         input.addEventListener("change", () => renameCapability(data.grouping.id, ci, input.value, () => loadFeatureView()));
-        head.append(el("span", "Capability", "fg-cap-eyebrow"), input, el("span", `${approvedCaps[ci].features.length} ${approvedCaps[ci].features.length === 1 ? "feature" : "features"}`, "fg-cap-count"));
+        head.append(capIcon(), el("span", "Capability", "fg-cap-eyebrow"), input, el("span", `${approvedCaps[ci].features.length} ${approvedCaps[ci].features.length === 1 ? "feature" : "features"}`, "fg-cap-count"));
         list.append(head);
       }
       const wrap = el("section", null, "fv-feature");
@@ -9755,6 +9757,26 @@ const REGION_OPTS = {
   }
 
   // One colour per feature. The row above the map and the cell use the same colour, so they can be matched.
+  // A sliders icon for the capability heading, drawn inline.
+  function capIcon() {
+    const NS = "http://www.w3.org/2000/svg";
+    const svg = document.createElementNS(NS, "svg");
+    svg.setAttribute("viewBox", "0 0 24 24");
+    svg.setAttribute("width", "16");
+    svg.setAttribute("height", "16");
+    svg.setAttribute("aria-hidden", "true");
+    svg.setAttribute("class", "fg-cap-icon");
+    for (const [x1, x2, cx, y] of [[4, 20, 8, 6], [4, 20, 16, 12], [4, 20, 10, 18]]) {
+      const line = document.createElementNS(NS, "line");
+      line.setAttribute("x1", x1); line.setAttribute("x2", x2); line.setAttribute("y1", y); line.setAttribute("y2", y);
+      svg.append(line);
+      const knob = document.createElementNS(NS, "circle");
+      knob.setAttribute("cx", cx); knob.setAttribute("cy", y); knob.setAttribute("r", "2.6");
+      svg.append(knob);
+    }
+    return svg;
+  }
+
   const FEATURE_COLOURS = ["#6d28d9", "#ec4899", "#0891b2", "#d97706", "#059669", "#4f46e5", "#db2777", "#0e7490"];
   const featureColour = (i) => FEATURE_COLOURS[i % FEATURE_COLOURS.length];
 
@@ -9875,7 +9897,7 @@ const REGION_OPTS = {
         input.maxLength = 80;
         input.setAttribute("aria-label", "Capability name");
         input.addEventListener("change", () => renameCapability(draft.id, ci, input.value, loadGroupings));
-        head.append(el("span", "Capability", "fg-cap-eyebrow"), input, el("span", `${sec.features.length} ${sec.features.length === 1 ? "feature" : "features"}`, "fg-cap-count"));
+        head.append(capIcon(), el("span", "Capability", "fg-cap-eyebrow"), input, el("span", `${sec.features.length} ${sec.features.length === 1 ? "feature" : "features"}`, "fg-cap-count"));
         list.append(head);
       }
       const ul = el("ul", null, "fg-ready-list");
@@ -9994,7 +10016,7 @@ const REGION_OPTS = {
           input.setAttribute("aria-label", "Capability name");
           input.addEventListener("change", () => renameCapability(g.id, ci, input.value, loadGroupings));
           const n = draftCaps[ci].features.length;
-          head.append(el("span", "Capability", "fg-cap-eyebrow"), input, el("span", `${n} ${n === 1 ? "feature" : "features"}`, "fg-cap-count"));
+          head.append(capIcon(), el("span", "Capability", "fg-cap-eyebrow"), input, el("span", `${n} ${n === 1 ? "feature" : "features"}`, "fg-cap-count"));
           box.insertBefore(head, actions);
         }
         const wrap = el("div", null, "gr-feature");
