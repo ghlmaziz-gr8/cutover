@@ -74,9 +74,10 @@ test("the readiness panel draws convex cells and loads the script", () => {
   assert.match(html, /<script src="complexity-treemap.js"><\/script>/);
   assert.match(html, /complexityMap\(draft\.groups \|\| \[\], r\)/);
   assert.match(html, /T\.convex\(items, W, H\)/);
-  assert.match(html, /\.fg-cell\.is-high polygon\{fill:#2f9e6b\}/);
-  assert.match(html, /\.fg-cell\.is-medium polygon\{fill:#d89a1c\}/);
-  assert.match(html, /\.fg-cell\.is-low polygon\{fill:#d0524a\}/);
+  // Each feature has its own colour, shared by its row and its cell.
+  assert.match(html, /const featureColour = \(i\) => FEATURE_COLOURS\[i % FEATURE_COLOURS\.length\];/);
+  assert.match(html, /li\.style\.borderLeft = \`4px solid \$\{featureColour\(i\)\}\`;/);
+  assert.match(html, /fill: featureColour\(cell\.key\)/);
 });
 
 test("convex cells are convex polygons whose areas match their share", () => {
