@@ -71,5 +71,78 @@
     return passed >= total - 1 ? "medium" : "low";
   }
 
-  root.ComplexityTreemap = { complexityOf, layout, band };
+  // Clips a convex polygon to the half-plane a*x + b*y <= c (Sutherland–Hodgman).
+  function clip(poly, a, b, c) {
+    const out = [];
+    for (let i = 0; i < poly.length; i++) {
+      const P = poly[i], Q = poly[(i + 1) % poly.length];
+      const fp = a * P[0] + b * P[1] - c, fq = a * Q[0] + b * Q[1] - c;
+      if (fp <= 0) out.push(P);
+      if ((fp < 0 && fq > 0) || (fp > 0 && fq < 0)) {
+        const t = fp / (fp - fq);
+        out.push([P[0] + t * (Q[0] - P[0]), P[1] + t * (Q[1] - P[1])]);
+      }
+    }
+    return out;
+  }
+  function polyArea(p) {
+    let s = 0;
+    for (let i = 0; i < p.length; i++) { const [x1, y1] = p[i], [x2, y2] = p[(i + 1) % p.length]; s += x1 * y2 - x2 * y1; }
+    return Math.abs(s) / 2;
+  }
+  function polyCentroid(p) {
+    let A = 0, x = 0, y = 0;
+    for (let i = 0; i < p.length; i++) {
+      const [x1, y1] = p[i], [x2, y2] = p[(i + 1) % p.length], c = x1 * y2 - x2 * y1;
+      A += c; x += (x1 + x2) * c; y += (y1 + y2) * c;
+    }
+    A /= 2;
+    return A ? [x / (6 * A), y / (6 * A)] : null;
+  }
+  // The cell of each site in a weighted (power) diagram clipped to the box. Each cell is an intersection of
+  // half-planes, so it is convex.
+  function cellsOf(sites, weights, W, H) {
+    return sites.map((p, i) => {
+      let poly = [[0, 0], [W, 0], [W, H], [0, H]];
+      for (let j = 0; j < sites.length && poly.length; j++) {
+        if (j === i) continue;
+        const [xi, yi] = p, [xj, yj] = sites[j];
+        poly = clip(poly, 2 * (xj - xi), 2 * (yj - yi), xj * xj + yj * yj - weights[j] - (xi * xi + yi * yi) + weights[i]);
+      }
+      return poly;
+    });
+  }
+
+  // Convex cells that tile width × height, each with an area in proportion to its value. Items: [{ key, value }].
+  // Returns [{ key, points, cx, cy, area }], where points is the convex polygon and cx, cy its centre for a label.
+  // Weights are adjusted until each area matches its share; the sites drift toward their cells' centres so the shapes stay even.
+  function convex(items, width, height, iters = 400) {
+    const list = (items || []).filter((i) => i && i.value > 0).sort((a, b) => b.value - a.value);
+    const total = list.reduce((a, b) => a + b.value, 0);
+    if (!total || !(width > 0) || !(height > 0)) return [];
+    const W = width, H = height, A = W * H, n = list.length;
+    const target = list.map((i) => (i.value / total) * A);
+    if (n === 1) return [{ key: list[0].key, points: [[0, 0], [W, 0], [W, H], [0, H]], cx: W / 2, cy: H / 2, area: A }];
+    // Start from the squarified layout, so the cells begin where the rectangles were.
+    const seed = layout(list, W, H);
+    const sites = list.map((i) => { const r = seed.find((c) => c.key === i.key); return [r.x + r.w / 2, r.y + r.h / 2]; });
+    const weights = new Array(n).fill(0);
+    for (let it = 0; it < iters; it++) {
+      const cells = cellsOf(sites, weights, W, H);
+      const decay = 0.5 * (1 - it / iters) + 1e-3;
+      for (let i = 0; i < n; i++) {
+        const a = polyArea(cells[i]), c = polyCentroid(cells[i]);
+        if (c) { sites[i][0] += 0.2 * (c[0] - sites[i][0]); sites[i][1] += 0.2 * (c[1] - sites[i][1]); }
+        // Each cell's step is scaled to its own target area, so small cells are not thrown out of the box.
+        weights[i] += decay * target[i] * Math.max(-1, Math.min(1, (target[i] - a) / target[i]));
+      }
+    }
+    const cells = cellsOf(sites, weights, W, H);
+    return list.map((item, i) => {
+      const poly = cells[i], c = polyCentroid(poly) || sites[i];
+      return { key: item.key, points: poly, cx: c[0], cy: c[1], area: polyArea(poly) };
+    });
+  }
+
+  root.ComplexityTreemap = { complexityOf, layout, band, convex };
 })(typeof globalThis !== "undefined" ? globalThis : this);
