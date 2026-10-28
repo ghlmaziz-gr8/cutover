@@ -322,6 +322,8 @@ class MainTests(unittest.TestCase):
         def opener(req, timeout):
             if "/model-key" in req.full_url:
                 return FakeResponse(json.dumps({"provider": "google", "model": "gemini-3.5-flash", "api_key": KEY}).encode())
+            if "/screen-paths" in req.full_url:
+                return FakeResponse(b'{"paths": []}')
             if "/screens" in req.full_url:
                 return Created(b"{}")
             provider_calls.append(req.full_url)
@@ -345,6 +347,8 @@ class MainTests(unittest.TestCase):
         def opener(req, timeout):
             if "/model-key" in req.full_url:
                 return FakeResponse(json.dumps({"provider": "google", "model": "gemini-3.5-flash", "api_key": KEY}).encode())
+            if "/screen-paths" in req.full_url:
+                return FakeResponse(b'{"paths": []}')
             if "/screens" in req.full_url:
                 sent.append(json.loads(req.data.decode("utf-8")))
                 return Created(b"{}")
@@ -353,6 +357,28 @@ class MainTests(unittest.TestCase):
         self.run_main({"MODEL_TOKEN": TOKEN, "RUNNER_SECRET": "s", "DRAW_SCREENS": "true"}, opener,
                       extra=["--screens-only"], spec=(("Orders.html", "template"),))
         self.assertEqual(sent[0]["mode"], "add")
+
+    def test_a_redraw_does_not_draw_a_file_that_already_has_a_screen(self):
+        html = "<!doctype html><html><body>" + "<div>Orders</div>" * 60 + "</body></html>"
+        drawn = []
+
+        class Created(FakeResponse):
+            status = 201
+
+        def opener(req, timeout):
+            if "/model-key" in req.full_url:
+                return FakeResponse(json.dumps({"provider": "google", "model": "gemini-3.5-flash", "api_key": KEY}).encode())
+            if "/screen-paths" in req.full_url:
+                return FakeResponse(b'{"paths": ["Orders.html"]}')
+            if "/screens" in req.full_url:
+                return Created(b"{}")
+            drawn.append(req.full_url)
+            return FakeResponse(json.dumps({"candidates": [{"content": {"parts": [{"text": html}]}}]}).encode())
+
+        code, out, recs = self.run_main({"MODEL_TOKEN": TOKEN, "RUNNER_SECRET": "s", "DRAW_SCREENS": "true"}, opener,
+                                        extra=["--screens-only"], spec=(("Orders.html", "template"),))
+        self.assertEqual(drawn, [], "the file with a screen is not sent to the model")
+        self.assertIn("1 files already have a screen and are not drawn again.", out)
 
     def test_screens_only_with_screens_off_draws_nothing(self):
         calls = []

@@ -67,6 +67,7 @@ import { validateDbMetadata } from "./db-metadata.mjs";
 //   POST   /api/runner/:id/model-key                      one-time exchange of a model token for the key (shared secret + token)
 //   POST   /api/runner/:id/screens                        screens drawn from the code by the model (shared secret)
 //   POST   /api/runner/:id/screens-done                   a screens run has finished, with or without screens (shared secret)
+//   GET    /api/runner/:id/screen-paths                   the paths that already have a screen (shared secret)
 //   POST   /api/analyses/:id/rerun                        run a finished analysis again with the same settings (platform engineers)
 //   POST   /api/analyses/:id/screens/redraw               draw the screens again with the same model, without a new assessment (platform engineers)
 //   GET    /api/analyses/:id/db-metadata                  whether a database structure is saved, and its counts (members)
@@ -2051,6 +2052,17 @@ async function runnerScreens(request, env, id) {
   const made = await serviceRest(env, "analysis_screens", { method: "POST", headers: { prefer: "return=minimal" }, body: JSON.stringify(toSave) });
   if (!made.ok) return json({ error: "Could not save the screens." }, 502);
   return json({ saved: toSave.length }, 201);
+}
+
+// The paths that already have a screen, so a redraw draws only the files without one. The runner's shared secret.
+async function runnerScreenPaths(request, env, id) {
+  if (!timingSafeEqual(request.headers.get("x-runner-secret") || "", env.RUNNER_SECRET || "")) {
+    return json({ error: "Unauthorized." }, 401);
+  }
+  const res = await serviceRest(env, `analysis_screens?analysis_id=eq.${id}&select=path`);
+  if (!res.ok) return json({ error: "Could not load the screens." }, 502);
+  const rows = await res.json();
+  return json({ paths: rows.map((r) => r.path) }, 200);
 }
 
 // The runner reports that a screens run has finished, whether or not it drew any. Clears the drawing state.
@@ -4963,6 +4975,10 @@ async function route(request, env) {
     const screensUpload = path.match(/^\/api\/runner\/([^/]+)\/screens$/);
     if (screensUpload && UUID_PATTERN.test(screensUpload[1]) && method === "POST") {
       return runnerScreens(request, env, screensUpload[1]);
+    }
+    const screenPaths = path.match(/^\/api\/runner\/([^/]+)\/screen-paths$/);
+    if (screenPaths && UUID_PATTERN.test(screenPaths[1]) && method === "GET") {
+      return runnerScreenPaths(request, env, screenPaths[1]);
     }
     const screensDone = path.match(/^\/api\/runner\/([^/]+)\/screens-done$/);
     if (screensDone && UUID_PATTERN.test(screensDone[1]) && method === "POST") {
