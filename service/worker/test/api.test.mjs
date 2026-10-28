@@ -2349,11 +2349,11 @@ test("every role sees the drawn screens", async () => {
   }
 });
 
-test("only the owner or a CIO or CTO chooses the scope, and any of the four combinations can be chosen before the deeper assessment runs", async () => {
-  const denied = await call(`/api/analyses/${AN_ACME}/scope`, { as: "aud_a", method: "PATCH", body: { scope: "deeper" } });
-  assert.equal(denied.status, 403);
+test("any workspace member can choose the scope for now, and any of the four combinations can be chosen before the deeper assessment runs", async () => {
+  const auditor = await call(`/api/analyses/${AN_ACME}/scope`, { as: "aud_a", method: "PATCH", body: { scope: "deeper" } });
+  assert.equal(auditor.status, 200, "open to every role while the scope is decided");
   const engineer = await call(`/api/analyses/${AN_ACME}/scope`, { as: "eng_a", method: "PATCH", body: { scope: "deeper" } });
-  assert.equal(engineer.status, 403, "the engineer carries the scope out, the CIO chooses it");
+  assert.equal(engineer.status, 200);
   const bad = await call(`/api/analyses/${AN_ACME}/scope`, { as: "cio_a", method: "PATCH", body: { scope: "rebuild" } });
   assert.equal(bad.status, 400);
   const old = await call(`/api/analyses/${AN_ACME}/scope`, { as: "cio_a", method: "PATCH", body: { scope: "migrate" } });

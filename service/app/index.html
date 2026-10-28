@@ -8534,14 +8534,13 @@ a{color:#6d28d9;font-weight:600}`;
   function renderScope() {
     const list = $("scopeOpts");
     list.replaceChildren();
-    const canChoose = !!cur.can_choose_direction;
+    // Open to every role for now, so the team can decide the scope together. Limiting it is to be decided later.
+    const canChoose = true;
     const deeperDone = cur.deeper_done === true;
     const note = cur.scope
       ? `Chosen: ${SCOPE_LABEL[cur.scope]}${cur.scope_set_by_email ? ` by ${cur.scope_set_by_email}` : ""}.`
       : "No scope chosen yet.";
-    $("scopeNote").textContent = canChoose
-      ? `${note} Choose the next stage for this analysis.`
-      : `${note} The application owner, or a CIO or CTO, chooses the scope.`;
+    $("scopeNote").textContent = `${note} Choose the scope for this analysis. Any role can choose it for now.`;
     $("scopeLockBox").hidden = deeperDone;
     for (const o of SCOPE_OPTIONS) {
       const selected = cur.scope === o.key;

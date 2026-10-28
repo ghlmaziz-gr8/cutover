@@ -6,10 +6,10 @@ import { readFileSync } from "node:fs";
 const html = readFileSync(new URL("../index.html", import.meta.url), "utf8");
 
 test("the scope and the approach follow the owner or CIO/CTO flag, not the engineer flag", () => {
-  assert.match(html, /const canChoose = !!cur\.can_choose_direction;/);
+  assert.match(html, /const canChoose = true;/);
   assert.match(html, /if \(choosable && row && row\.can_choose_direction\) \{/);
   assert.match(html, /\$\("approachNote"\)\.textContent = row\.can_choose_direction/);
-  assert.match(html, /The application owner, or a CIO or CTO, chooses the scope\./);
+  assert.match(html, /Any role can choose it for now\./);
 });
 
 test("the target language stays with the engineer", () => {
