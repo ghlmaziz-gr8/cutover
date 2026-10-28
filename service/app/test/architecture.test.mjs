@@ -118,9 +118,9 @@ test("each analyses list row shows the AI badge when a model was used", () => {
   assert.ok(body.includes("if (r.model_provider) title.appendChild(aiBadge(r.model_provider));"));
 });
 
-test("findings bars animate in with a staggered grow and counted numbers", () => {
-  assert.ok(html.includes("animation:barGrow 1s"));
-  assert.ok(html.includes("countUp(num, r.value, \"\", idx * 90 + 200);"));
+test("findings by area draw as a treemap whose tiles grow in turn with counted numbers", () => {
+  assert.ok(html.includes("@keyframes tmIn"));
+  assert.ok(html.includes("countUp(count, t.value, \"\", i * 110 + 200);"));
 });
 
 test("architecture layers keep their dim and selected styles after the entrance animation", () => {

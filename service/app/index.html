@@ -527,6 +527,16 @@ pre{white-space:pre-wrap;word-break:break-word;background:var(--soft);padding:12
 .panel{background:var(--card);border:1px solid var(--line);border-radius:20px;padding:18px}
 .eyebrow-sm{font-size:12px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:var(--accent)}
 .panel h3,.rcard h3{color:var(--accent);margin-top:6px}
+.tmap-wrap{margin-top:12px}
+.tmap{display:block;width:100%;height:auto;overflow:visible}
+.tm-tile{opacity:0;transform:scale(.7);transform-box:fill-box;transform-origin:center;animation:tmIn .7s cubic-bezier(.2,.8,.2,1) forwards;animation-delay:var(--d,0ms)}
+@keyframes tmIn{to{opacity:1;transform:scale(1)}}
+.tm-tile rect{transform-box:fill-box;transform-origin:center;transition:filter .2s ease,transform .25s cubic-bezier(.2,.8,.2,1)}
+.tm-tile:hover rect{filter:brightness(1.12) saturate(1.1);transform:translateY(-3px)}
+.tm-tile text{pointer-events:none}
+.tm-label{fill:#fff;font:600 13px var(--body);opacity:.92}
+.tm-count{fill:#fff;font:700 20px var(--body)}
+@media (prefers-reduced-motion: reduce){.tm-tile{animation:none;opacity:1;transform:none}.tm-tile:hover rect{transform:none}}
 .hbar{display:grid;gap:10px;margin-top:12px}
 .hrow{display:grid;grid-template-columns:160px 1fr 34px;gap:8px;align-items:center;font-size:13px}
 .hrow i{height:12px;border-radius:99px;background:var(--soft);overflow:hidden;display:block}
@@ -2206,6 +2216,7 @@ button:not(:disabled):active{transform:scale(.965)}
 <script src="file-map.js"></script>
 <script src="confidence.js"></script>
 <script src="feature-map.js"></script>
+<script src="treemap.js"></script>
 <script src="radial.js"></script>
 <script src="architecture.js"></script>
 <script src="plan.js"></script>
@@ -4239,24 +4250,36 @@ button:not(:disabled):active{transform:scale(.965)}
   }
 
   // Horizontal bars: one row per label.
-  function hbars(rows) {
-    const box = el("div", null, "hbar");
-    const max = Math.max(1, ...rows.map((r) => r.value));
-    for (const r of rows) {
-      const line = el("div", null, "hrow");
-      const track = el("i");
-      const fill = el("b");
-      fill.style.setProperty("--w", `${Math.round((100 * r.value) / max)}%`);
-      fill.style.setProperty("--c", r.color);
-      track.appendChild(fill);
-      const idx = box.children.length;
-      line.style.setProperty("--d", `${idx * 90}ms`);
-      const num = el("span", "0", "mono");
-      line.append(el("span", r.label), track, num);
-      countUp(num, r.value, "", idx * 90 + 200);
-      box.appendChild(line);
-    }
-    return box;
+  // The findings by area, as a squarified treemap. Each tile's area is in proportion to its count. Tiles grow in turn,
+  // their counts rise as they appear, and a tile lifts under the pointer. The tooltip gives the exact count.
+  function treemap(rows) {
+    const W = 400;
+    const H = 220;
+    const wrap = el("div", null, "tmap-wrap");
+    const svg = svgEl("svg", { viewBox: `0 0 ${W} ${H}`, role: "img", class: "tmap", "aria-label": rows.map((r) => `${r.label}: ${r.value}`).join(", ") });
+    const pad = 3;
+    const inset = 12;
+    TreeMap.layout(rows, W, H).forEach((t, i) => {
+      const g = svgEl("g", { class: "tm-tile" });
+      g.style.setProperty("--d", `${i * 110}ms`);
+      const title = svgEl("title", {});
+      title.textContent = `${t.label}: ${t.value}`;
+      g.appendChild(title);
+      const rect = svgEl("rect", { x: t.x + pad, y: t.y + pad, width: Math.max(0, t.w - 2 * pad), height: Math.max(0, t.h - 2 * pad), rx: 10 });
+      rect.style.fill = t.color;
+      g.appendChild(rect);
+      if (t.w > 70 && t.h > 40) {
+        const room = Math.max(4, Math.floor((t.w - 2 * inset) / 7.5));
+        const label = t.label.length > room ? `${t.label.slice(0, room - 1)}…` : t.label;
+        g.appendChild(svgEl("text", { x: t.x + inset, y: t.y + inset + 12, class: "tm-label" })).textContent = label;
+      }
+      const count = svgEl("text", { x: t.x + inset, y: t.y + t.h - inset, class: "tm-count" });
+      g.appendChild(count);
+      countUp(count, t.value, "", i * 110 + 200);
+      svg.appendChild(g);
+    });
+    wrap.appendChild(svg);
+    return wrap;
   }
 
   // Ring chart with a legend. Parts are {label, value, color}.
@@ -7381,10 +7404,10 @@ a{color:#6d28d9;font-weight:600}`;
     const charts = el("div", null, "charts");
     const byCat = {};
     for (const i of all) byCat[i.category] = (byCat[i.category] || 0) + 1;
-    const catRows = Object.keys(byCat).map((c) => ({ label: `${CAT_TITLE[c] || c} findings`, value: byCat[c], color: CAT_COLOR[c] || "var(--accent)" }));
+    const catRows = Object.keys(byCat).map((c) => ({ label: CAT_TITLE[c] || c, value: byCat[c], color: CAT_COLOR[c] || "var(--accent)" }));
     if (catRows.length) {
       const p = panel("Findings by area", "Overview");
-      p.appendChild(hbars(catRows));
+      p.appendChild(treemap(catRows));
       charts.appendChild(p);
     }
     if (all.length) {
