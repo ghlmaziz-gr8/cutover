@@ -51,12 +51,14 @@ test("the score ends in one of three bands", () => {
   }
 });
 
-test("the deep card shows the score with a halo that animates, and respects reduced motion", () => {
+test("the deep card shows the score at once, with a static halo: no animation", () => {
   assert.match(html, /Confidence\.confidenceOf\(content, dropped\)/);
   assert.match(html, /appendHalo\(c, content, a\.dropped\);/);
   assert.match(html, /function deepHalo\(/);
-  assert.match(html, /\.dh-arc\s*\{[^}]*transition:\s*stroke-dashoffset/);
-  assert.match(html, /@keyframes dhPulse/);
-  assert.match(html, /@keyframes dhSpin/);
-  assert.match(html, /prefers-reduced-motion: reduce\)\{[^}]*\.dh-dash/);
+  assert.doesNotMatch(html, /\.dh-arc\s*\{[^}]*transition:/);
+  assert.doesNotMatch(html, /@keyframes dhPulse/);
+  assert.doesNotMatch(html, /@keyframes dhSpin/);
+  const ring = html.slice(html.indexOf("function deepHalo("), html.indexOf("  // The step after an approved file"));
+  assert.doesNotMatch(ring, /requestAnimationFrame/);
+  assert.match(html, /arc\.style\.strokeDashoffset = String\(target\);/);
 });
