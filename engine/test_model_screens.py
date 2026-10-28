@@ -257,6 +257,13 @@ class ScreensDoneTests(unittest.TestCase):
         self.assertEqual(seen["secret"], "s3cret")
 
 
+class ScreenPathsTests(unittest.TestCase):
+    def test_a_path_list_that_cannot_be_read_means_no_file_is_skipped(self):
+        def opener(req, timeout):
+            raise urllib.error.URLError("down")
+        self.assertEqual(ms.fetch_screen_paths("https://api.test", "11111111-1111-1111-1111-111111111111", "s", opener=opener), set())
+
+
 if __name__ == "__main__":
     unittest.main()
 

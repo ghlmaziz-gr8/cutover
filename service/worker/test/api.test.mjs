@@ -2191,6 +2191,16 @@ test("a redraw adds the screens it draws and keeps the ones already on the card"
   assert.deepEqual(kept, ["a.html", "b.html", "c.html"]);
 });
 
+test("the runner reads the paths that already have a screen, and only with the shared secret", async () => {
+  runningAnalysis();
+  await call(`/api/runner/${AN_RUNNING}/screens`, { method: "POST", body: { screens: [screen("a.html"), screen("b.html")] }, secret: env.RUNNER_SECRET });
+  const wrong = await call(`/api/runner/${AN_RUNNING}/screen-paths`, { method: "GET", secret: "wrong" });
+  assert.equal(wrong.status, 401);
+  const res = await call(`/api/runner/${AN_RUNNING}/screen-paths`, { method: "GET", secret: env.RUNNER_SECRET });
+  assert.equal(res.status, 200);
+  assert.deepEqual([...res.body.paths].sort(), ["a.html", "b.html"]);
+});
+
 test("a screen that runs code, loads from elsewhere, or sends a form is refused, and nothing is saved", async () => {
   runningAnalysis();
   const refused = [

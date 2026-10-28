@@ -34,7 +34,9 @@ from typing import Callable
 
 from model_origin import ORIGIN_MAX_TOKENS, ORIGIN_SYSTEM, run_origin
 from model_screens import (SCREEN_MAX_TOKENS, SCREEN_PROMPT, ScreenError, StopDrawing, build_screen_text,
-                           draw_screens, expand_control_screens, post_screens, post_screens_done, screen_context)
+                           draw_screens, expand_control_screens, fetch_screen_paths, post_screens, post_screens_done,
+                           screen_context)
+from model_screens import choose_screen_files
 
 MODEL_CATEGORIES = {"source", "template", "database", "integration"}
 MAX_MODEL_FILES = 200
@@ -358,7 +360,12 @@ def main(argv=None, opener=urllib.request.urlopen) -> int:
 
         screen_reasons: list[str] = []
         screen_records, screen_source = expand_control_screens(records, read_source)
-        screens, screen_stats = draw_screens(screen_records, screen_source, draw, reasons=screen_reasons)
+        # A redraw draws only the files that have no screen yet; the screens already on the card are kept.
+        have = fetch_screen_paths(args.callback, args.analysis_id, secret, opener=opener) if args.screens_only else set()
+        already = sum(1 for r in choose_screen_files(screen_records) if r["path"] in have)
+        if already:
+            print(f"{already} files already have a screen and are not drawn again.")
+        screens, screen_stats = draw_screens(screen_records, screen_source, draw, reasons=screen_reasons, skip=have)
         if screen_stats["stopped"]:
             print(f"The provider refused the key or limited requests while drawing screens (HTTP {screen_stats['stopped']}).")
         if screen_reasons:

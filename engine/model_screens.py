@@ -233,12 +233,15 @@ def clean_reply(reply: str) -> str | None:
 
 
 def draw_screens(records: list[dict], read_source: Callable[[str], str | None], ask: Callable[[dict, str], str],
-                 reasons: list[str] | None = None) -> tuple[list[dict], dict]:
+                 reasons: list[str] | None = None, skip: set[str] | None = None) -> tuple[list[dict], dict]:
     """Draws one screen per chosen template file. Returns the screens and counts only.
-    When a list is given, the reason each screen was refused is added to it (no file names, no code)."""
+    When a list is given, the reason each screen was refused is added to it (no file names, no code).
+    Files whose path is in skip already have a screen, so they are not drawn again."""
     screens: list[dict] = []
     stats = {"drawn": 0, "refused": 0, "stopped": None}
     for record in choose_screen_files(records):
+        if skip and record["path"] in skip:
+            continue
         code = read_source(record["path"])
         if code is None:
             stats["refused"] += 1
@@ -264,6 +267,20 @@ def draw_screens(records: list[dict], read_source: Callable[[str], str | None], 
         screens.append({"path": record["path"], "name": record.get("name") or screen_name(record["path"]), "html": html})
         stats["drawn"] += 1
     return screens, stats
+
+
+def fetch_screen_paths(callback: str, analysis_id: str, secret: str, opener=urllib.request.urlopen) -> set[str]:
+    """The paths that already have a screen on the card. Empty when they cannot be read: the redraw then draws the
+    files again, and the API keeps the screens it already has."""
+    url = f"{callback.rstrip('/')}/api/runner/{analysis_id}/screen-paths"
+    req = urllib.request.Request(url, method="GET", headers={"x-runner-secret": secret, "user-agent": "cutover-runner"})
+    try:
+        with opener(req, timeout=60) as res:
+            body = json.loads(res.read().decode("utf-8"))
+    except (urllib.error.HTTPError, urllib.error.URLError, OSError, ValueError):
+        return set()
+    paths = body.get("paths") if isinstance(body, dict) else None
+    return {p for p in paths if isinstance(p, str)} if isinstance(paths, list) else set()
 
 
 def post_screens_done(callback: str, analysis_id: str, secret: str, opener=urllib.request.urlopen) -> int:
