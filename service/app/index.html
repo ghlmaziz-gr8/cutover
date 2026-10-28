@@ -2650,7 +2650,8 @@ button:not(:disabled):active{transform:scale(.965)}
     // The footer: a gold star with the points for a level, or "Earned" for time on the system.
     svg.appendChild(svgEl("path", { d: "M56 215 L59 221 L66 222 L61 227 L62 234 L56 230 L50 234 L51 227 L46 222 L53 221 Z", fill: GOLD }));
     const foot = svgEl("text", { x: "72", y: "232", class: "bplate-foot" });
-    if (lvl) {
+    // Only the current level shows its points. An earlier level says it was earned.
+    if (lvl && level && Number(lvl[1]) === level.number) {
       const num = svgEl("tspan", { class: "bplate-num" });
       num.textContent = String(level && typeof level.points === "number" ? level.points : 0);
       const word = svgEl("tspan", { class: "bplate-word" });

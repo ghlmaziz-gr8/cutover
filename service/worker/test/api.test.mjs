@@ -3408,3 +3408,17 @@ test("the worked examples are scrubbed before they reach the module spec: e-mail
   assert.equal(example.expect, "refused for 555-0100");
   assert.doesNotMatch(JSON.stringify(res.body), /clinic\.org|4567|98765432/);
 });
+
+test("every level reached stays on the badge list, each with the day it was reached", async () => {
+  state.engagement = [{ user_id: PEOPLE.eng_a.id, total_seconds: 6100, last_seen: null, previous_seen: null, previous_visit_seconds: 0 }];
+  state.screen_time = [
+    { user_id: PEOPLE.eng_a.id, day: "2026-10-20", screen: "s-home", seconds: 3000 },
+    { user_id: PEOPLE.eng_a.id, day: "2026-10-21", screen: "s-home", seconds: 3100 },
+  ];
+  const summary = await call("/api/me/engagement", { as: "eng_a" });
+  assert.equal(summary.body.level.name, "Explorer");
+  assert.deepEqual(summary.body.badges.map((b) => b.name), ["Starter badge", "Explorer badge", "1 hour on the system"]);
+  const byId = Object.fromEntries(summary.body.badges.map((b) => [b.id, b]));
+  assert.equal(byId["level-1"].earned_on, "2026-10-20");
+  assert.equal(byId["level-2"].earned_on, "2026-10-21");
+});
