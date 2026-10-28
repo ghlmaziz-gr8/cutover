@@ -34,13 +34,20 @@ INSTRUCTIONS = (
     "data_used (kinds of information it reads or writes, never values), "
     "risks (things a modernization must keep safe), "
     "questions (things this file alone does not show), "
-    "functions (the functions or procedures the statements above rest on: a list of objects, each with name, exactly as "
-    "the code writes it, and lines, the first and last line numbers of the function in the file). "
+    "rules (the rules the code enforces, each an object: id (R1, R2 and so on), statement (one plain sentence), "
+    "function (the function that enforces it, exactly as the code writes it), lines (the first and last line numbers of "
+    "that code in the file)). "
+    "examples (up to two per rule, each an object: rule (the rule's id), given (a plain input or state, never a real value), "
+    "expect (the plain result)). "
     "Never include code, file contents, names of people, or real values such as IDs, addresses or keys."
 )
 
-# The functions the statements rest on: the most kept, and the longest name. Each name must occur in the file.
-FUNCTION_LIMIT = (12, 120)
+# The rules the statements rest on, and the worked examples for them. Each function name must occur in the file.
+MAX_RULES = 10
+MAX_EXAMPLES = 20
+RULE_TEXT = 240
+EXAMPLE_TEXT = 160
+FUNCTION_NAME = 120
 
 FENCE = re.compile(r"^```[A-Za-z]*\s*\n|\n?```\s*$")
 
@@ -49,33 +56,63 @@ def build_user_text(path: str, code: str) -> str:
     return f"{INSTRUCTIONS}\n\nFile: {path}\n\n```\n{code}\n```"
 
 
-def _functions(value, code: str) -> tuple[list[dict], int]:
-    """The functions the code contains, with their line numbers where the reply gives them, and how many names were dropped."""
+def _lines(raw) -> list[int] | None:
+    if isinstance(raw, list) and len(raw) == 2 and all(isinstance(n, int) and not isinstance(n, bool) for n in raw):
+        first, last = raw
+        if 1 <= first <= last:
+            return [first, last]
+    return None
+
+
+def _rules(value, code: str) -> tuple[list[dict], int, list[dict]]:
+    """The rules whose function the code contains, the count of names dropped, and the functions they name."""
     if not isinstance(value, list):
-        return [], 0
-    count, limit = FUNCTION_LIMIT
+        return [], 0, []
     kept: list[dict] = []
-    seen: set[str] = set()
+    functions: list[dict] = []
+    seen_ids: set[str] = set()
+    seen_functions: set[str] = set()
     dropped = 0
-    for item in value:
+    for item in value[:MAX_RULES * 2]:
         if not isinstance(item, dict):
             dropped += 1
             continue
-        name = str(item.get("name") or "").strip()[:limit]
-        if not name or not appears_in(name, code):
+        function = str(item.get("function") or "").strip()[:FUNCTION_NAME]
+        statement = str(item.get("statement") or "").strip()[:RULE_TEXT]
+        if not statement:
+            continue
+        if not function or not appears_in(function, code):
             dropped += 1
             continue
-        if name in seen:
+        rule_id = str(item.get("id") or "").strip()[:12] or f"R{len(kept) + 1}"
+        if rule_id in seen_ids:
             continue
-        seen.add(name)
-        lines = None
-        raw = item.get("lines")
-        if isinstance(raw, list) and len(raw) == 2 and all(isinstance(n, int) and not isinstance(n, bool) for n in raw):
-            first, last = raw
-            if 1 <= first <= last:
-                lines = [first, last]
-        kept.append({"name": name, "lines": lines})
-    return kept[:count], dropped
+        seen_ids.add(rule_id)
+        lines = _lines(item.get("lines"))
+        kept.append({"id": rule_id, "statement": statement, "function": function, "lines": lines})
+        if function not in seen_functions:
+            seen_functions.add(function)
+            functions.append({"name": function, "lines": lines})
+        if len(kept) == MAX_RULES:
+            break
+    return kept, dropped, functions
+
+
+def _examples(value, rule_ids: set[str]) -> list[dict]:
+    """The worked examples for the kept rules. An example for a rule that is not kept is left out."""
+    if not isinstance(value, list):
+        return []
+    kept: list[dict] = []
+    for item in value[:MAX_EXAMPLES * 2]:
+        if not isinstance(item, dict) or str(item.get("rule") or "") not in rule_ids:
+            continue
+        given = str(item.get("given") or "").strip()[:EXAMPLE_TEXT]
+        expect = str(item.get("expect") or "").strip()[:EXAMPLE_TEXT]
+        if given and expect:
+            kept.append({"rule": str(item["rule"]), "given": given, "expect": expect})
+        if len(kept) == MAX_EXAMPLES:
+            break
+    return kept
 
 
 def clean_reply(reply, code: str = "") -> dict | None:
@@ -101,8 +138,10 @@ def clean_reply(reply, code: str = "") -> dict | None:
             return None
         items = [str(item).strip()[:limit] for item in value if isinstance(item, (str, int, float))]
         out[key] = [item for item in items if item][:count]
-    functions, dropped = _functions(data.get("functions"), code)
+    rules, dropped, functions = _rules(data.get("rules"), code)
+    out["rules"] = rules
     out["functions"] = functions
+    out["examples"] = _examples(data.get("examples"), {rule["id"] for rule in rules})
     out["dropped"] = dropped
     return out
 

@@ -31,17 +31,5 @@
       },
     };
   }
-  // The business result is scored on two things only: the function names the code contains (against the names
-  // the model dropped) and how many of those functions have line numbers. No worked examples, so the weights differ.
-  function businessConfidenceOf(content) {
-    const c = content || {};
-    const functions = Array.isArray(c.functions) ? c.functions : [];
-    const lost = Math.max(0, Number(c.dropped) || 0);
-    const names = share(functions.length, functions.length + lost, 0.5);
-    const lines = share(functions.filter((fn) => Array.isArray(fn && fn.lines)).length, functions.length, 0.5);
-    const score = Math.round((0.6 * names + 0.4 * lines) * 100);
-    const band = score >= 80 ? "high" : score >= 55 ? "medium" : "low";
-    return { score, band, parts: { names: Math.round(names * 100), lines: Math.round(lines * 100) } };
-  }
-  root.Confidence = { confidenceOf, businessConfidenceOf };
+  root.Confidence = { confidenceOf };
 })(typeof globalThis !== "undefined" ? globalThis : this);

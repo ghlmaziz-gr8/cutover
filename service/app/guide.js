@@ -11,6 +11,7 @@
 window.CUTOVER_GUIDE = {
   updated: "2026-10-22",
   whatsNew: [
+    "2026-10-27: The business assessment shows the same halo and checks as the deep result: names checked against the code, rules with line numbers, and rules with worked examples.",
     "2026-10-27: The business assessment shows a confidence halo. A new run names the functions behind its statements, with their line numbers, and names not in the file are left out and counted.",
     "2026-10-27: Business view on a file in the file-level results opens the full file view: its related files, the order to assess and the business assessment.",
     "2026-10-27: Every level you have reached stays on your badges, from the Starter badge. Earlier badges show Earned; the current level shows its points.",
