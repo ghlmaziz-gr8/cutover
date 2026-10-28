@@ -9601,22 +9601,8 @@ const REGION_OPTS = {
   }
   const RESULTS_READ_ONLY_NOTE = "You can read every result here. Only platform engineers run, approve or discard file results, or change the model. Your part is the scope and the approach, and approving the features.";
 
-  function deepPanel(li, f, onClose = () => renderFiles(), actionSlot = null) {
-    const panel = el("div", null, "biz-panel");
-    panel.style.marginTop = "10px";
-    const msg = el("p", null, "muted small");
-    msg.setAttribute("role", "status");
-    const list = el("div");
-    const top = el("div", null, "row");
-    top.style.gap = "8px";
-    const start = el("button", "Run deep assessment", "small-btn");
-    start.type = "button";
-    const refresh = el("button", "Refresh", "ghost small-btn");
-    refresh.type = "button";
-    const close = el("button", "Close", "ghost small-btn");
-    close.type = "button";
-    close.addEventListener("click", onClose);
-    // The model for this analysis. An engineer can switch it to an active key once the analysis has finished.
+  // The model for this analysis, shown in the Business and Deep views. An engineer can switch it once the analysis has finished.
+  function analysisModelRow(msg) {
     const modelRow = el("div", null, "row");
     modelRow.style.gap = "8px";
     modelRow.style.marginTop = "8px";
@@ -9656,6 +9642,25 @@ const REGION_OPTS = {
         loadModels();
       }
     });
+    return { modelRow, modelPick, loadModels };
+  }
+
+  function deepPanel(li, f, onClose = () => renderFiles(), actionSlot = null) {
+    const panel = el("div", null, "biz-panel");
+    panel.style.marginTop = "10px";
+    const msg = el("p", null, "muted small");
+    msg.setAttribute("role", "status");
+    const list = el("div");
+    const top = el("div", null, "row");
+    top.style.gap = "8px";
+    const start = el("button", "Run deep assessment", "small-btn");
+    start.type = "button";
+    const refresh = el("button", "Refresh", "ghost small-btn");
+    refresh.type = "button";
+    const close = el("button", "Close", "ghost small-btn");
+    close.type = "button";
+    close.addEventListener("click", onClose);
+    const { modelRow, modelPick, loadModels } = analysisModelRow(msg);
     let waitCard = null;
     let pollTimer = null;
     let wasRunning = false;
@@ -10257,8 +10262,10 @@ const REGION_OPTS = {
     if (!canActOnResults()) start.hidden = true;
     top.append(start, refresh, close);
     if (!canActOnResults()) panel.append(el("p", RESULTS_READ_ONLY_NOTE, "muted small"));
-    panel.append(top, msg, list);
+    const { modelRow, loadModels } = analysisModelRow(msg);
+    panel.append(top, modelRow, msg, list);
     li.appendChild(panel);
+    loadModels();
     load();
     return panel;
   }
