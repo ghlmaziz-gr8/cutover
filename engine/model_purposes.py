@@ -300,6 +300,8 @@ def main(argv=None, opener=urllib.request.urlopen) -> int:
     ap.add_argument("--source", required=True, help="Folder the records' paths are relative to")
     ap.add_argument("--callback", required=True, help="Base URL of the Cutover API")
     ap.add_argument("--analysis-id", required=True)
+    ap.add_argument("--screens-only", action="store_true",
+                    help="Draw the screens only. The file purposes, the origin estimate and the findings stay as they are.")
     args = ap.parse_args(argv)
 
     if not UUID.match(args.analysis_id):
@@ -328,6 +330,51 @@ def main(argv=None, opener=urllib.request.urlopen) -> int:
     provider, model, api_key = release["provider"], release["model"], release["api_key"]
     base_url, token_field = release.get("base_url"), release.get("token_field", "max_tokens")
     read_source = make_source_reader(Path(args.source))
+
+    def screens_on() -> bool:
+        # Screens only when the workspace has turned them on. The API sends DRAW_SCREENS with each run; off by default.
+        return os.environ.get("DRAW_SCREENS", "").strip().lower() == "true"
+
+    def draw_and_save() -> int:
+        # Screens: the same key, the same run. Only when the provider has not refused the key.
+        def draw(record, code):
+            text = build_screen_text(record["path"], code, screen_context(records, record["path"]))
+            try:
+                return call_provider(provider, model, api_key, text, opener=opener,
+                                     base_url=base_url, token_field=token_field,
+                                     system=SCREEN_PROMPT, max_tokens=SCREEN_MAX_TOKENS)
+            except ProviderStopped as err:
+                raise StopDrawing(err.status)
+            except ProviderError as err:
+                raise ScreenError(str(err) or "request failed")
+
+        screen_reasons: list[str] = []
+        screen_records, screen_source = expand_control_screens(records, read_source)
+        screens, screen_stats = draw_screens(screen_records, screen_source, draw, reasons=screen_reasons)
+        if screen_stats["stopped"]:
+            print(f"The provider refused the key or limited requests while drawing screens (HTTP {screen_stats['stopped']}).")
+        if screen_reasons:
+            print("Screens refused because: " + "; ".join(f"{n} x {r}" for r, n in Counter(screen_reasons).most_common()))
+        if screens:
+            status = post_screens(args.callback, args.analysis_id, secret, screens, opener=opener)
+            if status == 201:
+                print(f"{len(screens)} screens drawn from the code and saved; {screen_stats['refused']} refused.")
+            else:
+                print(f"The screens could not be saved (HTTP {status}). The analysis continues without them.")
+        else:
+            print(f"No screens drawn; {screen_stats['refused']} refused.")
+        return 0
+
+    if args.screens_only:
+        # Only the screens are drawn again. Nothing else from the first run is written.
+        if not screens_on():
+            print("Screens are off for this workspace. No screens drawn.")
+            del release, api_key
+            return 0
+        result = draw_and_save()
+        del release, api_key
+        return result
+
     purpose_reasons: list[str] = []
     stats = apply_purposes(
         records,
@@ -356,41 +403,13 @@ def main(argv=None, opener=urllib.request.urlopen) -> int:
     )
     print(origin_message)
 
-    # Screens only when the workspace has turned them on. The API sends DRAW_SCREENS with each run; off by default.
-    if os.environ.get("DRAW_SCREENS", "").strip().lower() != "true":
+    if not screens_on():
         print("Screens are off for this workspace. Only the file purposes are written.")
         del release, api_key
         return 0
-
-    # Screens: the same key, the same run. Only when the provider has not refused the key.
-    def draw(record, code):
-        text = build_screen_text(record["path"], code, screen_context(records, record["path"]))
-        try:
-            return call_provider(provider, model, api_key, text, opener=opener,
-                                 base_url=base_url, token_field=token_field,
-                                 system=SCREEN_PROMPT, max_tokens=SCREEN_MAX_TOKENS)
-        except ProviderStopped as err:
-            raise StopDrawing(err.status)
-        except ProviderError as err:
-            raise ScreenError(str(err) or "request failed")
-
-    screen_reasons: list[str] = []
-    screen_records, screen_source = expand_control_screens(records, read_source)
-    screens, screen_stats = draw_screens(screen_records, screen_source, draw, reasons=screen_reasons)
+    result = draw_and_save()
     del release, api_key
-    if screen_stats["stopped"]:
-        print(f"The provider refused the key or limited requests while drawing screens (HTTP {screen_stats['stopped']}).")
-    if screen_reasons:
-        print("Screens refused because: " + "; ".join(f"{n} x {r}" for r, n in Counter(screen_reasons).most_common()))
-    if screens:
-        status = post_screens(args.callback, args.analysis_id, secret, screens, opener=opener)
-        if status == 201:
-            print(f"{len(screens)} screens drawn from the code and saved; {screen_stats['refused']} refused.")
-        else:
-            print(f"The screens could not be saved (HTTP {status}). The analysis continues without them.")
-    else:
-        print(f"No screens drawn; {screen_stats['refused']} refused.")
-    return 0
+    return result
 
 
 if __name__ == "__main__":

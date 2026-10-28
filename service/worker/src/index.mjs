@@ -67,6 +67,7 @@ import { validateDbMetadata } from "./db-metadata.mjs";
 //   POST   /api/runner/:id/model-key                      one-time exchange of a model token for the key (shared secret + token)
 //   POST   /api/runner/:id/screens                        screens drawn from the code by the model (shared secret)
 //   POST   /api/analyses/:id/rerun                        run a finished analysis again with the same settings (platform engineers)
+//   POST   /api/analyses/:id/screens/redraw               draw the screens again with the same model, without a new assessment (platform engineers)
 //   GET    /api/analyses/:id/db-metadata                  whether a database structure is saved, and its counts (members)
 //   PUT    /api/analyses/:id/db-metadata                  save a database structure file from access_metadata.py (platform engineers)
 //   DELETE /api/analyses/:id/db-metadata                  remove it (platform engineers)
@@ -1748,8 +1749,8 @@ async function runnerDbMetadata(request, env, id) {
 }
 
 // Starts the analysis workflow with the given inputs. Returns the GitHub response.
-function dispatchRunner(env, inputs) {
-  return fetch(`https://api.github.com/repos/${env.RUNNER_REPO}/actions/workflows/analyze.yml/dispatches`, {
+function dispatchRunner(env, inputs, workflow = "analyze.yml") {
+  return fetch(`https://api.github.com/repos/${env.RUNNER_REPO}/actions/workflows/${workflow}/dispatches`, {
     method: "POST",
     headers: {
       authorization: `Bearer ${env.GITHUB_DISPATCH_TOKEN}`,
@@ -1823,6 +1824,43 @@ async function rerunAnalysis(request, env, id) {
     analysis_id: id,
   });
   return json({ id, status: "queued" }, 202);
+}
+
+// Draws the screens of a finished analysis again, with the same model and the same code, without a new assessment.
+// The findings, the file purposes and the status stay as they are. Only the drawn screens are replaced, and only
+// when the new run saves some. The workspace must still allow screens from the model.
+async function redrawScreens(request, env, id) {
+  const access = await analysisAccess(env, request, id);
+  if (access.response) return access.response;
+  if (!canStart(access.member)) return json({ error: "Only platform engineers can draw the screens again." }, 403);
+  const row = access.row;
+  if (row.status !== "complete" && row.status !== "failed") {
+    return json({ error: "This analysis is still running." }, 409);
+  }
+  if (row.source_kind === "upload") {
+    return json({ error: "The uploaded code was deleted after the first run. Upload the code again to draw the screens." }, 409);
+  }
+  if (!row.model_key_id) {
+    return json({ error: "This assessment was made without a model, so there are no screens to draw." }, 409);
+  }
+  if (!(await workspaceDrawsScreens(env, row.workspace_id))) {
+    return json({ error: "Turn on screens from the model in the Privacy tab, under Language model, first." }, 409);
+  }
+
+  const busyResp = await refuseIfBusy(env, access.user, row.workspace_id, row.repo, id);
+  if (busyResp) return busyResp;
+
+  const chosen = await chooseAnalysisModel(env, row.workspace_id, row.model_key_id);
+  if (chosen.response) return chosen.response;
+  const modelToken = (await issueModelToken(env, row.id, chosen.key.id)) || "";
+  if (!modelToken) return json({ error: "Could not prepare the model for the run. Try again in a minute." }, 502);
+
+  const refused = await logFirst(env, { workspace_id: row.workspace_id, user: access.user, action: "redraw_screens", analysis_id: id, repo: row.repo, detail: "AI model" });
+  if (refused) return refused;
+
+  const dispatch = await dispatchRunner(env, { analysis_id: row.id, repo: row.repo, ref: row.ref || "", model_token: modelToken, draw_screens: true }, "screens.yml");
+  if (!dispatch.ok) return json({ error: "Could not start the screens run. Try again in a minute." }, 502);
+  return json({ id, status: row.status, screens: "drawing" }, 202);
 }
 
 // The branch's current commit, asked of GitHub at most every six hours per analysis. If GitHub cannot say,
@@ -1961,7 +1999,8 @@ async function runnerScreens(request, env, id) {
   if (!found.ok) return json({ error: "Could not load the analysis." }, 502);
   const [analysis] = await found.json();
   if (!analysis) return json({ error: "Not found." }, 404);
-  if (analysis.status !== "queued" && analysis.status !== "running") {
+  // A screens-only run (see redrawScreens) saves its screens on a finished analysis.
+  if (!["queued", "running", "complete", "failed"].includes(analysis.status)) {
     return json({ error: "This analysis is no longer taking results." }, 409);
   }
   const parsed = await readJson(request, 4_000_000);
@@ -4731,6 +4770,8 @@ async function route(request, env) {
     if (analysisIntakeConfirm && UUID_PATTERN.test(analysisIntakeConfirm[1]) && method === "POST") return confirmIntake(request, env, analysisIntakeConfirm[1]);
     const analysisRerun = path.match(/^\/api\/analyses\/([^/]+)\/rerun$/);
     if (analysisRerun && UUID_PATTERN.test(analysisRerun[1]) && method === "POST") return rerunAnalysis(request, env, analysisRerun[1]);
+    const analysisRedraw = path.match(/^\/api\/analyses\/([^/]+)\/screens\/redraw$/);
+    if (analysisRedraw && UUID_PATTERN.test(analysisRedraw[1]) && method === "POST") return redrawScreens(request, env, analysisRedraw[1]);
     const analysisDbMetadata = path.match(/^\/api\/analyses\/([^/]+)\/db-metadata$/);
     if (analysisDbMetadata && UUID_PATTERN.test(analysisDbMetadata[1])) {
       if (method === "GET") return getDbMetadataSummary(request, env, analysisDbMetadata[1]);
