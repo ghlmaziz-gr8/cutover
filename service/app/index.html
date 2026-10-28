@@ -1411,12 +1411,13 @@ button:not(:disabled):active{transform:scale(.965)}
     .fg-ready-empty{margin-top:16px;padding:12px 14px;border-radius:14px;border:1px dashed var(--line,#ddd);color:var(--muted);font:500 13px var(--body)}
     @media (prefers-reduced-motion: reduce){.fg-ready-bar>span{transition:none}}
     .fg-cap-head{display:flex;align-items:center;gap:10px;margin:16px 0 6px}
-    .fg-cap-name{flex:1;min-width:0;font:700 14px var(--body,sans-serif);color:#2b2540;background:transparent;border:1px dashed transparent;border-radius:8px;padding:4px 6px}
+    .fg-cap-name{flex:1;min-width:0;font:800 16px var(--body,sans-serif);color:#2b2540;background:transparent;border:1px dashed transparent;border-radius:8px;padding:4px 6px}
     .fg-cap-name:hover,.fg-cap-name:focus{border-color:#c9bff0;background:#fff;outline:none}
     .fg-cap-count{font:600 11px var(--body,sans-serif);color:#6b6585;white-space:nowrap}
     .fg-ready-groups{display:grid;gap:4px}
     .fg-cap polygon{fill:none;stroke:#2b2540;stroke-width:3;stroke-linejoin:round}
-    .fg-cap-label{fill:#2b2540;font:700 12px/1.2 var(--body,sans-serif);paint-order:stroke;stroke:#fff;stroke-width:3px}
+    .fg-cap-pill{fill:#fff;stroke:#2b2540;stroke-width:1.5}
+    .fg-cap-label{fill:#2b2540;font:800 15px var(--body,sans-serif)}
     .fg-tree-wrap{margin-top:14px}
     .fg-tree{width:100%;border-radius:14px;background:var(--soft,#f7f6fd);overflow:hidden;line-height:0}
     .fg-svg{display:block;width:100%;height:auto}
@@ -9799,11 +9800,15 @@ const REGION_OPTS = {
           const outline = svgEl("g", { class: "fg-cap" });
           outline.append(svgEl("polygon", { points: region.points.map((p) => p[0].toFixed(1) + "," + p[1].toFixed(1)).join(" ") }));
           const top = region.points.reduce((best, p) => (p[1] < best[1] || (p[1] === best[1] && p[0] < best[0]) ? p : best), region.points[0]);
-          const label = svgEl("text", { x: (top[0] + 10).toFixed(1), y: (top[1] + 18).toFixed(1), class: "fg-cap-label" });
-          label.textContent = shortName(sec.name, 28);
+          // The name sits on a white pill, so it reads clearly over any colour.
+          const text = shortName(sec.name, 32);
+          const bx = top[0] + 10, by = top[1] + 10, bw = text.length * 8.6 + 22, bh = 30;
+          const pill = svgEl("rect", { x: bx.toFixed(1), y: by.toFixed(1), width: bw.toFixed(1), height: bh, rx: 9, class: "fg-cap-pill" });
+          const label = svgEl("text", { x: (bx + 11).toFixed(1), y: (by + 20).toFixed(1), class: "fg-cap-label" });
+          label.textContent = text;
           const title = svgEl("title", {});
           title.textContent = `Capability: ${sec.name}, ${sec.features.length} ${sec.features.length === 1 ? "feature" : "features"}`;
-          outline.append(title, label);
+          outline.append(title, pill, label);
           svg.append(outline);
         }
       }
