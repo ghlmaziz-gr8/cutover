@@ -11,6 +11,7 @@
 window.CUTOVER_GUIDE = {
   updated: "2026-10-22",
   whatsNew: [
+    "2026-10-28: The live card for a deep assessment starts with Connected to the AI engine. It ticks only when the model has been reached, so a run that cannot connect shows that.",
     "2026-10-28: Run deep assessment keeps the page where it is, and brings the running assessment into view.",
     "2026-10-28: The notification bell is hidden on every screen.",
     "2026-10-28: The screens drawn from the code also show on File-level results. A business draft made before the rules were added says to run the assessment again.",

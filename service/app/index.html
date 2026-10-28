@@ -9819,7 +9819,7 @@ const REGION_OPTS = {
       }
       for (const a of assessments) {
         if (a.status === "running") {
-          waitCard = deepWait(a);
+          waitCard = deepWait(a, { connection: true });
           list.appendChild(waitCard);
         } else {
           list.appendChild(deepCard(a, () => refreshAfterChange(f.path), msg, f.path));
@@ -10118,6 +10118,9 @@ const REGION_OPTS = {
     mark.hidden = true;
     track.append(fill, mark);
     const stages = el("ol", null, "dw-stages");
+    // The first step is the connection to the model. Only the deep run reports it, so only the deep run shows it.
+    const connectItem = opts.connection ? el("li", "Connected to the AI engine") : null;
+    if (connectItem) stages.appendChild(connectItem);
     const stageItems = DW_STAGES.map(([label]) => { const li = el("li", label); stages.appendChild(li); return li; });
     const facts = el("div", null, "dw-facts");
     const note = el("p", "", "dw-note");
@@ -10129,6 +10132,17 @@ const REGION_OPTS = {
       const elapsed = Math.max(0, (Date.now() - started) / 1000);
       const estimate = progress ? progress.estimate_seconds : fallback;
       clock.textContent = deepFmt(elapsed);
+      // Until the runner reports that the model was reached, the card says so and ticks nothing else.
+      const connected = !!(progress && progress.connected_at);
+      if (connectItem) connectItem.className = connected ? "done" : "now";
+      if (connectItem && !connected) {
+        stageItems.forEach((li) => { li.className = ""; });
+        stageText.textContent = "Connecting to the AI engine";
+        est.textContent = "Waiting for the model…";
+        note.textContent = "The steps appear once the model is reached. Leave this open.";
+        facts.replaceChildren();
+        return;
+      }
       if (estimate) {
         const share = Math.min(elapsed / estimate, 1);
         const shown = Math.min(share, 0.95);
