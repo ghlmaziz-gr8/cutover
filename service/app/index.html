@@ -2617,7 +2617,9 @@ button:not(:disabled):active{transform:scale(.965)}
     // Each level has its own colours, so the badge shows progress. Time badges keep the blue.
     const colours = PLATE_COLOURS[lvl ? lvl[1] : "time"] || PLATE_COLOURS.time;
     // Gradient ids carry the colour key, so two plates in different colours do not share one gradient.
-    const k = lvl ? lvl[1] : "time";
+    // Each plate gets its own gradient ids. Plates in the same colour on one page (the home badge and the rewards card)
+    // would otherwise share ids, and a gradient inside a hidden card stops drawing for the badge still on screen.
+    const k = `${lvl ? lvl[1] : "time"}-${(badgeArt.seq = (badgeArt.seq || 0) + 1)}`;
     const svg = svgEl("svg", { viewBox: "0 0 200 290", class: "bplate-svg", "aria-hidden": "true", focusable: "false" });
     const defs = svgEl("defs", {});
     const linear = (gid, x2, y2, stops) => {
