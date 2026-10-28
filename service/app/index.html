@@ -1418,6 +1418,7 @@ button:not(:disabled):active{transform:scale(.965)}
     .fg-cap-eyebrow{font:700 10px/1 var(--body);letter-spacing:.14em;text-transform:uppercase;color:var(--accent);white-space:nowrap}
     .fg-cap-name{flex:1;min-width:0;font:700 18px/1.2 var(--display);color:var(--fg);background:transparent;border:0;border-radius:8px;padding:2px 6px;outline:none}
     .fg-cap-name:focus{background:var(--card);box-shadow:0 0 0 2px var(--accent)}
+    .fg-cap-saving{font:700 11px var(--body);color:var(--ok);background:color-mix(in srgb,var(--ok) 12%,var(--card));border:1px solid color-mix(in srgb,var(--ok) 35%,var(--line));border-radius:999px;padding:4px 10px;white-space:nowrap}
     .fg-cap-count{font:700 11px var(--body);color:var(--accent);background:var(--card);border:1px solid var(--line);border-radius:999px;padding:4px 10px;white-space:nowrap}
     .fg-ready-groups{display:grid;gap:4px}
     .fg-cap polygon{fill:none;stroke:var(--accent);stroke-width:3;stroke-linejoin:round}
@@ -2382,6 +2383,7 @@ button:not(:disabled):active{transform:scale(.965)}
 <script src="architecture.js"></script>
 <script src="plan.js"></script>
 <script src="effort.js"></script>
+<script src="feature-effort.js"></script>
 <script src="starter.js"></script>
 <script>
 (() => {
@@ -9554,6 +9556,13 @@ const REGION_OPTS = {
         input.setAttribute("aria-label", "Capability name");
         input.addEventListener("change", () => renameCapability(data.grouping.id, ci, input.value, () => loadFeatureView()));
         head.append(capIcon(), el("span", "Capability", "fg-cap-eyebrow"), input, el("span", `${approvedCaps[ci].features.length} ${approvedCaps[ci].features.length === 1 ? "feature" : "features"}`, "fg-cap-count"));
+        // The saving from Cutover's AI-assisted delivery, estimated from the approved files of this capability.
+        const eff = window.FeatureEffort ? window.FeatureEffort.forCapability(approvedCaps[ci].features.map((fi) => data.features[fi]).filter(Boolean), "web-modern") : null;
+        if (eff && eff.manualHours > 0) {
+          const chip = el("span", `${eff.savedHours} h saved · ${eff.savedPercent}%`, "fg-cap-saving");
+          chip.title = `Estimate: about ${eff.manualHours} hours by hand, and ${eff.cutoverHours} hours with Cutover's AI-assisted delivery, for the ${eff.features} ${eff.features === 1 ? "feature" : "features"} in this capability.`;
+          head.append(chip);
+        }
         list.append(head);
       }
       const wrap = el("section", null, "fv-feature");
