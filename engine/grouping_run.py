@@ -55,7 +55,7 @@ def post_result(callback: str, analysis_id: str, secret: str, payload: dict,
 def payload_for(result: dict) -> dict:
     """What the API receives: the outcome and the features, never the key."""
     if result.get("status") == "ok":
-        return {"status": "ok", "groups": result["groups"]}
+        return {"status": "ok", "groups": result["groups"], "capabilities": result.get("capabilities")}
     return {"status": "failed", "reason": result.get("reason", "The features were not grouped.")}
 
 
