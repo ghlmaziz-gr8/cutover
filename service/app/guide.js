@@ -11,6 +11,7 @@
 window.CUTOVER_GUIDE = {
   updated: "2026-10-22",
   whatsNew: [
+    "2026-10-28: Feature groups are now called capabilities. The card, its steps and buttons, the readiness list, the map, the module specs and the messages use the word capability. Nothing else changes.",
     "2026-10-28: The feature groups card has a complexity treemap under the readiness list. Each feature is a convex cell sized by its complexity (its stories, the distinct rules they cite, and its files), and in its own colour, matching its row above, so each feature can be found on the map.",
     "2026-10-28: The feature groups card shows how ready the draft is for a vibe-coding tool, once the user stories are generated. A feature is ready when its stories cite rules with source lines and no rule is shared with another feature. Each module spec also lists the rules shared between features, the questions to answer before building (such as a rule that depends on today's date), and the decisions still open.",
     "2026-10-28: While the AI drafts the user stories, the draft shows an animated indicator, and its Draft user stories button is disabled until the stories are ready.",
@@ -521,7 +522,7 @@ window.CUTOVER_GUIDE = {
     { q: "Which models can I use for free?", step: "model",
       a: "Groq has free models, such as openai/gpt-oss-120b. OpenRouter has free models whose names end in :free, such as openai/gpt-oss-120b:free. Mistral's Experiment plan is free but needs a phone number, and its requests may be used for training, so do not use it for client code. Free models can be slow or removed, so check the name before you save." },
     { q: "The business assessment of a file keeps failing. Can I move on?", step: "deeper",
-      a: "Yes. Press Skip for now under the failure. The file is left out of the feature groups, and the reason stays on the file. When the model works again, press Assess for the business to do it, and approve the draft. The feature step shows how many approved files have an approved business view." },
+      a: "Yes. Press Skip for now under the failure. The file is left out of the capabilities, and the reason stays on the file. When the model works again, press Assess for the business to do it, and approve the draft. The capability step shows how many approved files have an approved business view." },
     { q: "A model test failed with HTTP 402 or 503. What does that mean?", step: "model",
       a: "HTTP 402 means the provider wants payment for the account behind the key. Turn on billing for that account, or create the key in a project that has it. HTTP 503 means the provider is overloaded. Wait a few minutes and try the analysis again, or choose another provider." },
     { q: "My provider is not in the list. What do I do?", step: "model",

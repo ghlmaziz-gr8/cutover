@@ -68,7 +68,7 @@
     return {
       kind: "root",
       label: appName || "Application",
-      meta: `${features.length} approved ${features.length === 1 ? "feature" : "features"}`,
+      meta: `${features.length} approved ${features.length === 1 ? "capability" : "capabilities"}`,
       children: features,
     };
   }
