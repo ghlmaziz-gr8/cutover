@@ -66,6 +66,7 @@ import { validateDbMetadata } from "./db-metadata.mjs";
 //   POST   /api/runner/:id/result                         runner callback with findings (shared secret)
 //   POST   /api/runner/:id/model-key                      one-time exchange of a model token for the key (shared secret + token)
 //   POST   /api/runner/:id/screens                        screens drawn from the code by the model (shared secret)
+//   POST   /api/runner/:id/screens-done                   a screens run has finished, with or without screens (shared secret)
 //   POST   /api/analyses/:id/rerun                        run a finished analysis again with the same settings (platform engineers)
 //   POST   /api/analyses/:id/screens/redraw               draw the screens again with the same model, without a new assessment (platform engineers)
 //   GET    /api/analyses/:id/db-metadata                  whether a database structure is saved, and its counts (members)
@@ -1858,8 +1859,19 @@ async function redrawScreens(request, env, id) {
   const refused = await logFirst(env, { workspace_id: row.workspace_id, user: access.user, action: "redraw_screens", analysis_id: id, repo: row.repo, detail: "AI model" });
   if (refused) return refused;
 
+  // The page shows the drawing while this is set. The runner clears it when it has finished (screens-done).
+  const marked = await serviceRest(env, `analyses?id=eq.${id}`, {
+    method: "PATCH",
+    headers: { prefer: "return=minimal" },
+    body: JSON.stringify({ screens_started_at: new Date().toISOString() }),
+  });
+  if (!marked.ok) return json({ error: "Could not start the screens run. Try again in a minute." }, 502);
+
   const dispatch = await dispatchRunner(env, { analysis_id: row.id, repo: row.repo, ref: row.ref || "", model_token: modelToken, draw_screens: true }, "screens.yml");
-  if (!dispatch.ok) return json({ error: "Could not start the screens run. Try again in a minute." }, 502);
+  if (!dispatch.ok) {
+    await serviceRest(env, `analyses?id=eq.${id}`, { method: "PATCH", headers: { prefer: "return=minimal" }, body: JSON.stringify({ screens_started_at: null }) });
+    return json({ error: "Could not start the screens run. Try again in a minute." }, 502);
+  }
   return json({ id, status: row.status, screens: "drawing" }, 202);
 }
 
@@ -2027,6 +2039,20 @@ async function runnerScreens(request, env, id) {
   const made = await serviceRest(env, "analysis_screens", { method: "POST", headers: { prefer: "return=minimal" }, body: JSON.stringify(rows) });
   if (!made.ok) return json({ error: "Could not save the screens." }, 502);
   return json({ saved: rows.length }, 201);
+}
+
+// The runner reports that a screens run has finished, whether or not it drew any. Clears the drawing state.
+async function runnerScreensDone(request, env, id) {
+  if (!timingSafeEqual(request.headers.get("x-runner-secret") || "", env.RUNNER_SECRET || "")) {
+    return json({ error: "Unauthorized." }, 401);
+  }
+  const cleared = await serviceRest(env, `analyses?id=eq.${id}`, {
+    method: "PATCH",
+    headers: { prefer: "return=minimal" },
+    body: JSON.stringify({ screens_started_at: null }),
+  });
+  if (!cleared.ok) return json({ error: "Could not record the end of the run." }, 502);
+  return json({ done: true }, 200);
 }
 
 async function deleteAnalysis(request, env, id) {
@@ -4925,6 +4951,10 @@ async function route(request, env) {
     const screensUpload = path.match(/^\/api\/runner\/([^/]+)\/screens$/);
     if (screensUpload && UUID_PATTERN.test(screensUpload[1]) && method === "POST") {
       return runnerScreens(request, env, screensUpload[1]);
+    }
+    const screensDone = path.match(/^\/api\/runner\/([^/]+)\/screens-done$/);
+    if (screensDone && UUID_PATTERN.test(screensDone[1]) && method === "POST") {
+      return runnerScreensDone(request, env, screensDone[1]);
     }
 
     const callback = path.match(/^\/api\/runner\/([^/]+)\/result$/);

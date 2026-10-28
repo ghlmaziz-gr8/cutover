@@ -2684,6 +2684,21 @@ test("a platform engineer draws the screens again: the screens run starts, and t
   assert.equal(JSON.stringify(row.findings), findingsBefore, "the findings are not changed");
 });
 
+test("drawing the screens again marks the analysis as drawing, and the runner's finished signal clears the mark", async () => {
+  await call(`/api/workspaces/${W_ACME}/model-screens`, { as: "admin_a", method: "PUT", body: { enabled: true } });
+  const row = state.analyses.find((a) => a.id === AN_ACME);
+  row.model_key_id = await addGoogleKey();
+  row.screens_started_at = null;
+  const res = await call(`/api/analyses/${AN_ACME}/screens/redraw`, { as: "eng_a", method: "POST" });
+  assert.equal(res.status, 202);
+  assert.ok(row.screens_started_at, "the page can show the drawing");
+  const done = await call(`/api/runner/${AN_ACME}/screens-done`, { method: "POST", secret: env.RUNNER_SECRET, body: {} });
+  assert.equal(done.status, 200);
+  assert.equal(row.screens_started_at, null, "the mark is cleared when the run ends");
+  const wrong = await call(`/api/runner/${AN_ACME}/screens-done`, { method: "POST", secret: "wrong", body: {} });
+  assert.equal(wrong.status, 401);
+});
+
 test("drawing the screens again is refused for auditors, while the analysis runs, with screens off, and without a model", async () => {
   const keyId = await addGoogleKey();
   state.analyses.find((a) => a.id === AN_ACME).model_key_id = keyId;

@@ -11,6 +11,7 @@
 window.CUTOVER_GUIDE = {
   updated: "2026-10-22",
   whatsNew: [
+    "2026-10-28: Draw the screens again lets a platform engineer choose the model, shows the drawing while it runs, and shows the screens when they are ready. The assessment itself is not changed.",
     "2026-10-28: The model setup explains the exact model names, the OpenAI-compatible addresses for Gemini, Groq and OpenRouter, the free options, and how to add a second key from a provider that is already listed.",
     "2026-10-28: When an assessment drew no screens, a platform engineer can Draw the screens again. It uses the same model and code and leaves the assessment as it is.",
     "2026-10-28: A business assessment shows Connected to the AI engine when it starts. If it fails, the card says the AI assessment for the business failed, with the reason, and how to try again.",

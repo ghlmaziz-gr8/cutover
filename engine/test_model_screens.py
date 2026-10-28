@@ -233,6 +233,30 @@ class RunTests(unittest.TestCase):
                 self.assertTrue(all("/screens" not in u for u in calls), "no screens are sent")
 
 
+class ScreensDoneTests(unittest.TestCase):
+    def test_the_done_signal_goes_to_the_run_with_the_secret_in_a_header(self):
+        seen = {}
+
+        class Ok:
+            status = 200
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *exc):
+                return False
+
+        def opener(req, timeout):
+            seen["url"] = req.full_url
+            seen["secret"] = req.get_header("X-runner-secret")
+            return Ok()
+
+        status = ms.post_screens_done("https://api.test/", "11111111-1111-1111-1111-111111111111", "s3cret", opener=opener)
+        self.assertEqual(status, 200)
+        self.assertEqual(seen["url"], "https://api.test/api/runner/11111111-1111-1111-1111-111111111111/screens-done")
+        self.assertEqual(seen["secret"], "s3cret")
+
+
 if __name__ == "__main__":
     unittest.main()
 

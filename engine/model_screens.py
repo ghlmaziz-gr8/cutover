@@ -266,6 +266,23 @@ def draw_screens(records: list[dict], read_source: Callable[[str], str | None], 
     return screens, stats
 
 
+def post_screens_done(callback: str, analysis_id: str, secret: str, opener=urllib.request.urlopen) -> int:
+    """Tells the API the screens run has finished, with or without screens. Returns the HTTP status (200 when recorded)."""
+    url = f"{callback.rstrip('/')}/api/runner/{analysis_id}/screens-done"
+    req = urllib.request.Request(url, data=b"{}", method="POST", headers={
+        "content-type": "application/json",
+        "x-runner-secret": secret,
+        "user-agent": "cutover-runner",
+    })
+    try:
+        with opener(req, timeout=60) as res:
+            return res.status
+    except urllib.error.HTTPError as err:
+        return err.code
+    except (urllib.error.URLError, OSError):
+        return 0
+
+
 def post_screens(callback: str, analysis_id: str, secret: str, screens: list[dict], opener=urllib.request.urlopen) -> int:
     """Sends the drawings to the API. Returns the HTTP status (201 when saved)."""
     url = f"{callback.rstrip('/')}/api/runner/{analysis_id}/screens"
