@@ -11,6 +11,7 @@
 window.CUTOVER_GUIDE = {
   updated: "2026-10-22",
   whatsNew: [
+    "2026-10-28: The model setup explains the exact model names, the OpenAI-compatible addresses for Gemini, Groq and OpenRouter, the free options, and how to add a second key from a provider that is already listed.",
     "2026-10-28: When an assessment drew no screens, a platform engineer can Draw the screens again. It uses the same model and code and leaves the assessment as it is.",
     "2026-10-28: A business assessment shows Connected to the AI engine when it starts. If it fails, the card says the AI assessment for the business failed, with the reason, and how to try again.",
     "2026-10-28: The live card for a deep assessment starts with Connected to the AI engine. It ticks only when the model has been reached, so a run that cannot connect shows that.",
@@ -416,7 +417,8 @@ window.CUTOVER_GUIDE = {
       who: "admins",
       body: [
         "After the privacy notice is signed off, choose a provider from the list, such as OpenAI (ChatGPT), Anthropic (Claude), Google (Gemini), Mistral, xAI (Grok), DeepSeek, Groq, OpenRouter or Together AI. Each has a quest that walks you through making a key on that provider's own page. You can add as many as you need. A listed provider is saved once; remove its key first to replace it.",
-        "Not listed? Choose Your own provider. Give it a name, its API address (a secure address beginning with https) and the model name the provider gives you. Cutover adds /chat/completions to the address, so the provider must offer a chat API in that shape.",
+        "Not listed? Choose Your own provider. Give it a name, its API address (a secure address beginning with https) and the model name the provider gives you. Cutover adds /chat/completions to the address, so the provider must offer a chat API in that shape. Use the OpenAI-compatible address: for Gemini, https://generativelanguage.googleapis.com/v1beta/openai; for Groq, https://api.groq.com/openai/v1; for OpenRouter, https://openrouter.ai/api/v1. This is also how to add a second key from a provider that is already listed.",
+        "Free options: Groq has free models, such as openai/gpt-oss-120b. OpenRouter has models whose names end in :free, such as openai/gpt-oss-120b:free; a small balance may be needed to avoid HTTP 402 errors. Mistral's Experiment plan is free but needs a phone number, and Mistral may use its requests for training, so do not use it for client code. Free models can slow down or be removed, so check the model name before you save.",
         "The model box is filled in with a default for each listed provider. Change it if you want a different model. Then paste the whole key and press Test and save. Cutover tests the address, the key and the model with the provider before saving, and shows only the last four characters afterwards.",
         "Keys are kept encrypted. The key is never shown again and is never sent to the browser.",
       ],
@@ -503,8 +505,12 @@ window.CUTOVER_GUIDE = {
       a: "Cutover identifies a database file from its first bytes, and it never opens the database. Table and field names come from a metadata file that the platform engineer creates with the read-only script, inside their own environment. The file holds names, types, nullability and row counts only. Anything else in the file is refused. Tables used in SQL in the code are listed as names the code uses, not as a confirmed schema." },
     { q: "What does the assessment do with a language it does not know?", step: "deeper",
       a: "It lists every file with its kind and says what it could not identify. Files in a language with no reader are named as detected but not analysed, and nothing is guessed about their contents. The inventory file in each report holds one line per file, with its kind, language, age range and encoding." },
+    { q: "Which models can I use for free?", step: "model",
+      a: "Groq has free models, such as openai/gpt-oss-120b. OpenRouter has free models whose names end in :free, such as openai/gpt-oss-120b:free. Mistral's Experiment plan is free but needs a phone number, and its requests may be used for training, so do not use it for client code. Free models can be slow or removed, so check the name before you save." },
+    { q: "A model test failed with HTTP 402 or 503. What does that mean?", step: "model",
+      a: "HTTP 402 means the provider wants payment for the account behind the key. Turn on billing for that account, or create the key in a project that has it. HTTP 503 means the provider is overloaded. Wait a few minutes and try the analysis again, or choose another provider." },
     { q: "My provider is not in the list. What do I do?", step: "model",
-      a: "Choose Your own provider. Give it a name, its API address (a secure address beginning with https, for example https://api.example.com/v1) and the exact model name. The provider must offer a chat API in the OpenAI chat-completions shape. Then paste the key and press Test and save." },
+      a: "Choose Your own provider. Give it a name, its API address (a secure address beginning with https, for example https://api.example.com/v1) and the exact model name. The provider must offer a chat API in the OpenAI chat-completions shape. Use the OpenAI-compatible address, not the provider's native one. Then paste the key and press Test and save." },
     { q: "Where is the Terraform draft?", step: "migrate",
       a: "Under the intake form on What next, once the intake is confirmed. Press Make the Terraform draft. Open Show the code to read it, or Download .tf to save it. Each draft is a DRAFT for review, with sample values to replace." },
     { q: "What does Migrate ask me?", step: "migrate",
