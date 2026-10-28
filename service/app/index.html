@@ -2199,8 +2199,12 @@ button:not(:disabled):active{transform:scale(.965)}
     <div class="card" id="deeperArch"></div>
     <div id="deeperSections"></div>
     <div class="card" id="deeperFiles" hidden style="margin-top:18px">
-      <h2>Files for the business assessment</h2>
+      <div class="row between" style="gap:10px;flex-wrap:wrap">
+        <h2 style="margin:0">Files for the business assessment</h2>
+        <button type="button" class="ghost small-btn" id="deeperReviewFiles">Review file results</button>
+      </div>
       <p class="muted small" id="deeperFilesNote" style="margin-top:6px"></p>
+      <p class="muted small" style="margin:6px 0 0">Feature groups are made from the files whose business assessment you approve here. File results are reviewed on Review file results.</p>
       <div class="mmap file-map" id="deeperFilesMap" aria-label="Map of the files in this application"></div>
       <div class="card" id="deeperFileDetail" hidden style="margin-top:14px"></div>
     </div>
@@ -10256,7 +10260,8 @@ const REGION_OPTS = {
       await api(`/api/analyses/${cur.id}/groupings/start`, { method: "POST" });
       setMsg("groupMsg", "Grouping started. It takes a few minutes; reload this list to see the draft.", false);
     } catch (err) {
-      setMsg("groupMsg", err.message, true);
+      const blocked = /Approve some file business assessments first/.test(err.message);
+      setMsg("groupMsg", blocked ? `${err.message} Approve them under Files for the business assessment on the Deeper assessment screen.` : err.message, true);
     }
   });
 
@@ -10270,6 +10275,7 @@ const REGION_OPTS = {
     }
   });
   $("reviewFilesTop").addEventListener("click", () => showFiles());
+  $("deeperReviewFiles").addEventListener("click", () => showFiles());
   $("filesBackReview").addEventListener("click", () => showReview());
   $("filesBackReviewBottom").addEventListener("click", () => showReview());
 
