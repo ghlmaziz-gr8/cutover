@@ -32,7 +32,8 @@ test("the card draws each capability's name and outline, and renames it through 
   assert.match(html, /function renameCapability\(groupingId, index, name, reload\)/);
   assert.match(html, /method: "PATCH", body: JSON\.stringify\(\{ grouping_id: groupingId, index, name: next \}\)/);
   assert.match(html, /\/api\/analyses\/\$\{cur\.id\}\/capabilities/);
-  assert.match(html, /class: "fg-cap"/);
+  assert.match(html, /class: "fg-cap fg-cell-in"/);
+  assert.match(html, /fg-cap-eyebrow/);
   assert.match(html, /class: "fg-cap-label"/);
   assert.match(html, /aria-label", "Capability name"/);
   assert.match(html, /T\.convex\(sections\.map/);
