@@ -35,7 +35,7 @@ test("without a deep state, the conversion status stays", () => {
   assert.ok(leaf.label.endsWith("C.asp · Not started"));
 });
 
-test("the states are read from the summary, for engineers, and the map is redrawn when a run ends", () => {
+test("the states are read from the summary, and the colours hold still while a file is open", () => {
   assert.ok(html.includes("api(`/api/analyses/${cur.id}/deep-files/summary`)"));
-  assert.ok(html.includes("if (wasRunning && !running && businessFiles.analysis === cur.id) renderBusinessFiles();"));
+  assert.ok(!html.includes("if (wasRunning && !running && businessFiles.analysis === cur.id) renderBusinessFiles();"));
 });

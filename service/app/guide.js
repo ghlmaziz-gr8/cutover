@@ -11,6 +11,7 @@
 window.CUTOVER_GUIDE = {
   updated: "2026-10-22",
   whatsNew: [
+    "2026-10-27: The file colours hold still while you have a file open. A run that finishes does not change them until you press Refresh, start, approve or discard, or open the file again.",
     "2026-10-27: After you approve or discard a deep assessment, the order to assess and the file map update at once, so an approved file no longer shows as draft ready.",
     "2026-10-27: Your level stays on the workspace home as a chip, so you can see it without waiting for the login card. Click it to open your rewards. If your rewards cannot load, the card now says so.",
     "2026-10-27: The order to assess shows where each file stands. Approved files are green, draft ready files are indigo, and assessing, failed or replaced files have their own colours, so you can skip the files already worked on.",
