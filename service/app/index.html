@@ -9960,8 +9960,26 @@ const REGION_OPTS = {
     // A working copy, so an engineer can change it before saving.
     const groups = (Array.isArray(g.groups) ? g.groups : []).map((x) => ({ name: x.name, summary: x.summary || "", paths: [...(x.paths || [])], stories: x.stories || [] }));
     const drawGroups = () => {
-      box.querySelectorAll(".gr-feature").forEach((n) => n.remove());
-      groups.forEach((item) => {
+      box.querySelectorAll(".gr-feature, .gr-cap-head").forEach((n) => n.remove());
+      // The capability heading comes before its first feature. Any signed-in user can rename it.
+      const capOf = new Map();
+      const draftCaps = Array.isArray(g.capabilities) && g.capabilities.length ? g.capabilities : null;
+      if (draftCaps) draftCaps.forEach((c, ci) => c.features.forEach((fi) => capOf.set(fi, ci)));
+      let shownCap = -1;
+      groups.forEach((item, index) => {
+        const ci = capOf.get(index);
+        if (draftCaps && ci !== undefined && ci !== shownCap) {
+          shownCap = ci;
+          const head = el("div", null, "gr-cap-head fg-cap-head");
+          const input = el("input", null, "fg-cap-name");
+          input.value = draftCaps[ci].name;
+          input.maxLength = 80;
+          input.setAttribute("aria-label", "Capability name");
+          input.addEventListener("change", () => renameCapability(g.id, ci, input.value, loadGroupings));
+          const n = draftCaps[ci].features.length;
+          head.append(input, el("span", `${n} ${n === 1 ? "feature" : "features"}`, "fg-cap-count"));
+          box.insertBefore(head, actions);
+        }
         const wrap = el("div", null, "gr-feature");
         if (editable) {
           const name = el("input", null, "gr-name");

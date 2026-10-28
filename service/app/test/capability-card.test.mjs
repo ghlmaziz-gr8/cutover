@@ -52,3 +52,9 @@ test("the Worker returns the capabilities with the features", () => {
 test("the two levels are in What's new", () => {
   assert.match(guide, /Feature groups now have two levels/);
 });
+
+test("the draft editor shows a heading for each capability above its features", () => {
+  assert.match(html, /const draftCaps = Array\.isArray\(g\.capabilities\)/);
+  assert.match(html, /renameCapability\(g\.id, ci, input\.value, loadGroupings\)/);
+  assert.match(html, /box\.querySelectorAll\("\.gr-feature, \.gr-cap-head"\)/);
+});
