@@ -29,3 +29,11 @@ test("a sent-back grouping shows its note", () => {
 test("the change is listed in What's new", () => {
   assert.match(guide, /The application owner approves the feature grouping/);
 });
+
+test("an engineer drafts the user stories, and the stories show under each feature with the rules they cite", () => {
+  assert.match(html, /function draftStories\(g\) \{/);
+  assert.match(html, /groupings\/stories`, \{ method: "POST"/);
+  assert.match(html, /function watchStories\(groupingId, before\) \{/);
+  assert.match(html, /The user stories are ready\. They are drafts until the application owner approves the grouping\./);
+  assert.match(html, /\$\{r\.file\} · \$\{r\.id\}/);
+});

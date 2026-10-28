@@ -11,6 +11,7 @@
 window.CUTOVER_GUIDE = {
   updated: "2026-10-22",
   whatsNew: [
+    "2026-10-27: An engineer can draft the user stories for each feature of a draft grouping. Each story cites the approved business rules it is written from, with their line numbers. The owner approves the features and their stories together.",
     "2026-10-27: The application owner approves the feature grouping, or sends it back with a note. A platform engineer can rename a feature and take files out of a draft before it goes to the owner. A file can be in more than one feature.",
     "2026-10-27: Related files now draw as a chord diagram: each line joins the chosen file to a related file and draws in turn. The order to assess files in is a tree that grows one step at a time.",
     "2026-10-27: The deep assessment now lists the database tables and queries in each file, with the operations and fields it uses. The buttons sit beside the file name, the model choice sits above the results, and Approve explains what it does.",

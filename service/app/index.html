@@ -1320,6 +1320,10 @@ button:not(:disabled):active{transform:scale(.965)}
     .dp-title-row h3{margin:0}
     .dp-actions{display:flex;gap:8px;flex-wrap:wrap}
     .gr-note{margin-top:6px;padding:8px 10px;border-radius:10px;background:var(--soft,#f1f0fb)}
+    .fs-list{margin-top:6px;display:grid;gap:8px}
+    .fs-story{padding:8px 10px;border-radius:10px;border-left:3px solid #1d4ed8;background:var(--soft,#f1f0fb)}
+    .fs-cites{display:flex;gap:6px;flex-wrap:wrap;margin-top:6px}
+    .fs-cite{font-size:11px;padding:2px 8px;border-radius:99px;border:1px solid var(--line,#ddd);color:var(--muted)}
     .gr-feature{margin-top:8px}
     .gr-name{font:600 13.5px var(--body);padding:4px 8px;border-radius:8px;border:1px solid var(--line,#ddd);width:100%;max-width:340px}
     .gr-file{display:inline-flex;align-items:center;gap:4px;margin:4px 6px 0 0;padding:2px 8px;border-radius:99px;border:1px solid var(--line,#ddd);font-size:12px}
@@ -8757,14 +8761,45 @@ const REGION_OPTS = {
     const card = $("groupCard");
     const isEngineer = !!ws && ws.role === "platform_engineer";
     card.hidden = !(isEngineer || canReviewGrouping());
-    if (card.hidden) return;
+    if (card.hidden) return [];
     $("groupStart").hidden = !isEngineer;
     try {
       const data = await api(`/api/analyses/${cur.id}/groupings`);
       renderGroupings(data.groupings || []);
+      return data.groupings || [];
+    } catch (err) {
+      setMsg("groupMsg", err.message, true);
+      return [];
+    }
+  }
+
+  // The stories of a grouping, as one signature. A change in it means the drafting has finished.
+  const storySignature = (g) => JSON.stringify((g.groups || []).map((x) => (x.stories || []).map((st) => st.id + st.story)));
+  async function draftStories(g) {
+    setMsg("groupMsg", "", false);
+    const before = storySignature(g);
+    try {
+      await api(`/api/analyses/${cur.id}/groupings/stories`, { method: "POST", body: JSON.stringify({ grouping_id: g.id }) });
+      setMsg("groupMsg", "Drafting the user stories. They appear under each feature when they are ready.", false);
+      watchStories(g.id, before);
     } catch (err) {
       setMsg("groupMsg", err.message, true);
     }
+  }
+  // Checks every few seconds for up to four minutes, and stops when the stories change.
+  function watchStories(groupingId, before) {
+    const until = Date.now() + 4 * 60 * 1000;
+    const tick = async () => {
+      const rows = await loadGroupings();
+      const g = rows.find((x) => x.id === groupingId);
+      if (g && storySignature(g) !== before) {
+        setMsg("groupMsg", "The user stories are ready. They are drafts until the application owner approves the grouping.", false);
+        return;
+      }
+      if (Date.now() < until) setTimeout(tick, 5000);
+      else setMsg("groupMsg", "The drafting is taking longer than expected. Refresh in a minute to see the stories.", false);
+    };
+    setTimeout(tick, 5000);
   }
 
   function renderGroupings(rows) {
@@ -8794,7 +8829,7 @@ const REGION_OPTS = {
       box.append(note);
     }
     // A working copy, so an engineer can change it before saving.
-    const groups = (Array.isArray(g.groups) ? g.groups : []).map((x) => ({ name: x.name, summary: x.summary || "", paths: [...(x.paths || [])] }));
+    const groups = (Array.isArray(g.groups) ? g.groups : []).map((x) => ({ name: x.name, summary: x.summary || "", paths: [...(x.paths || [])], stories: x.stories || [] }));
     const drawGroups = () => {
       box.querySelectorAll(".gr-feature").forEach((n) => n.remove());
       groups.forEach((item) => {
@@ -8810,6 +8845,21 @@ const REGION_OPTS = {
           wrap.append(el("div", `${item.name} (${item.paths.length} file${item.paths.length === 1 ? "" : "s"})`, "small"));
         }
         if (item.summary) wrap.append(el("div", item.summary, "muted small"));
+        if (item.stories && item.stories.length) {
+          const list = el("div", null, "fs-list");
+          for (const st of item.stories) {
+            const row = el("div", null, "fs-story");
+            row.append(el("div", st.story, "small"));
+            const cites = el("div", null, "fs-cites");
+            for (const r of st.rules || []) {
+              const lines = Array.isArray(r.lines) ? ` · lines ${r.lines[0]}–${r.lines[1]}` : "";
+              cites.append(el("span", `${r.file} · ${r.id}${lines}`, "fs-cite"));
+            }
+            row.append(cites);
+            list.append(row);
+          }
+          wrap.append(list);
+        }
         for (const path of item.paths) {
           const chip = el("span", null, "gr-file");
           chip.append(el("span", path));
@@ -8831,6 +8881,10 @@ const REGION_OPTS = {
     actions.style.flexWrap = "wrap";
     box.append(actions);
     if (editable) {
+      const draft = el("button", "Draft user stories", "ghost small-btn");
+      draft.type = "button";
+      draft.addEventListener("click", () => draftStories(g));
+      actions.append(draft);
       const save = el("button", "Save changes", "small-btn");
       save.type = "button";
       save.addEventListener("click", () => groupAction("edit", g.id, { groups }));
