@@ -7960,6 +7960,15 @@ a{color:#6d28d9;font-weight:600}`;
     const titleRow = el("div", null, "dp-title-row");
     titleRow.append(el("h3", f.path, null));
     const actions = el("div", null, "dp-actions");
+    // The business view opens in its own slot above the deep view, so both can be open from this tree.
+    const bizSlot = el("div");
+    const bizButton = el("button", "Business view", "ghost small-btn");
+    bizButton.type = "button";
+    bizButton.addEventListener("click", () => {
+      bizSlot.replaceChildren();
+      businessPanel(bizSlot, f, () => bizSlot.replaceChildren());
+    });
+    actions.append(bizButton);
     titleRow.append(actions);
     box.appendChild(titleRow);
     box.appendChild(el("div", `${f.category} · ${FILE_STATUS[f.review_status] || f.review_status}`, "muted small"));
@@ -7981,6 +7990,7 @@ a{color:#6d28d9;font-weight:600}`;
     void box.offsetWidth;
     box.classList.add("dp-enter");
     if (!window.matchMedia("(prefers-reduced-motion: reduce)").matches) box.scrollIntoView({ behavior: "smooth", block: "nearest" });
+    box.appendChild(bizSlot);
     const panel = deepPanel(box, f, () => panel.remove(), actions);
   }
 
@@ -9652,7 +9662,15 @@ const REGION_OPTS = {
     function rebuild(assessments) {
       list.innerHTML = "";
       waitCard = null;
-      if (!assessments.length) list.appendChild(el("p", "No deep assessment yet.", "muted small"));
+      if (!assessments.length) {
+        list.appendChild(firstRunCard(
+          "No deep assessment has run for this file",
+          "Reads the file, traces its functions and calls, and writes the user stories.",
+          canActOnResults()
+            ? "Press Run deep assessment to start. The live view appears here and follows the run."
+            : "An engineer starts the run. The result appears here once it is ready."
+        ));
+      }
       for (const a of assessments) {
         if (a.status === "running") {
           waitCard = deepWait(a);
@@ -9891,7 +9909,33 @@ const REGION_OPTS = {
     const s = Math.max(0, Math.round(sec));
     return s < 60 ? `${s} s` : `${Math.floor(s / 60)} min ${s % 60} s`;
   }
-  function deepWait(a) {
+  // A business run has no measured size, so it passes fallbackSeconds: the card then shows an estimate, not a measurement.
+  // The first-run card: shown when a panel has no assessment yet. It has the same orb and code scan as the live card,
+  // with no clock, so the user sees what the run will do before pressing the button.
+  function firstRunCard(title, text, note) {
+    const card = el("div", null, "dw-card dw-intro");
+    const head = el("div", null, "dw-head");
+    const orb = el("div", null, "dw-orb");
+    orb.append(el("i"), el("i"), el("i"), el("b"));
+    const titles = el("div", null, "dw-titles");
+    titles.append(el("div", title, "dw-title"), el("div", text, "dw-stage"));
+    head.append(orb, titles);
+    const scan = el("div", null, "dw-scan");
+    const code = el("div", null, "dw-code");
+    for (let i = 0; i < 18; i++) {
+      const line = el("span", null, "dw-line lit");
+      line.style.width = `${34 + ((i * 37) % 58)}%`;
+      line.style.marginLeft = `${((i * 7) % 3) * 14}px`;
+      code.appendChild(line);
+    }
+    scan.append(code, el("span", null, "dw-sweep"));
+    card.append(head, scan, el("p", note, "dw-note"));
+    return card;
+  }
+  // Business runs take about this long on a typical file; the live card shows it as an estimate.
+  const BIZ_FALLBACK_SECONDS = 120;
+  function deepWait(a, opts = {}) {
+    const fallback = opts.fallbackSeconds || null;
     const card = el("div", null, "dw-card");
     const jobNodes = deepJobHead(a);
     const head = el("div", null, "dw-head");
@@ -9932,7 +9976,7 @@ const REGION_OPTS = {
       const progress = (data.content || {}).progress || null;
       const started = Date.parse(data.created_at) || Date.now();
       const elapsed = Math.max(0, (Date.now() - started) / 1000);
-      const estimate = progress ? progress.estimate_seconds : null;
+      const estimate = progress ? progress.estimate_seconds : fallback;
       clock.textContent = deepFmt(elapsed);
       if (estimate) {
         const share = Math.min(elapsed / estimate, 1);
@@ -9950,11 +9994,10 @@ const REGION_OPTS = {
         DW_STAGES.forEach(([, at], i) => { if (share >= at) current = i; });
         stageItems.forEach((li, i) => { li.className = i < current ? "done" : i === current ? "now" : ""; });
         stageText.textContent = DW_STAGES[current][0];
-        facts.replaceChildren(
-          el("span", `${progress.lines.toLocaleString()} lines`),
-          el("span", `${progress.chars.toLocaleString()} characters`),
-          el("span", `Estimate ${deepFmt(estimate)}`)
-        );
+        const facts_ = progress
+          ? [el("span", `${progress.lines.toLocaleString()} lines`), el("span", `${progress.chars.toLocaleString()} characters`)]
+          : [];
+        facts.replaceChildren(...facts_, el("span", `Estimate ${deepFmt(estimate)}`));
       } else {
         est.textContent = "Measuring the file to estimate the time…";
         note.textContent = "The time estimate appears once the file has been read.";
@@ -10147,7 +10190,7 @@ const REGION_OPTS = {
     return c;
   }
 
-  function businessPanel(li, f) {
+  function businessPanel(li, f, onClose = () => renderFiles()) {
     const panel = el("div", null, "biz-panel");
     panel.style.marginTop = "10px";
     const msg = el("p", null, "muted small");
@@ -10161,13 +10204,41 @@ const REGION_OPTS = {
     refresh.type = "button";
     const close = el("button", "Close", "ghost small-btn");
     close.type = "button";
-    close.addEventListener("click", () => renderFiles());
+    close.addEventListener("click", onClose);
+    let waitCard = null;
+    let pollTimer = null;
+    // Lists the business assessments of this file. A run in progress shows the live card and is checked again every few seconds.
     async function load() {
-      list.innerHTML = "";
+      clearTimeout(pollTimer);
+      if (!panel.isConnected) return;
       try {
         const res = await api(`/api/analyses/${cur.id}/business?path=${encodeURIComponent(f.path)}`);
-        if (!res.assessments.length) list.appendChild(el("p", "No business assessment yet.", "muted small"));
-        for (const a of res.assessments) list.appendChild(bizCard(a, load, msg));
+        const running = res.assessments.find((a) => a.review_status === "running") || null;
+        if (running && waitCard && waitCard.isConnected) {
+          // The live card stays in place between checks, so its animation keeps going.
+          waitCard.update({ ...running, status: "running", file_path: f.path });
+        } else {
+          list.innerHTML = "";
+          waitCard = null;
+          if (!res.assessments.length) {
+            list.appendChild(firstRunCard(
+              "No business assessment has run for this file",
+              "Reads the file and writes what it does for the business, in plain language.",
+              canActOnResults()
+                ? "Press Assess for the business to start. The live view appears here and follows the run."
+                : "An engineer starts the run. The draft appears here once it is ready."
+            ));
+          }
+          for (const a of res.assessments) {
+            if (a.review_status === "running") {
+              waitCard = deepWait({ ...a, status: "running", file_path: f.path }, { fallbackSeconds: BIZ_FALLBACK_SECONDS });
+              list.appendChild(waitCard);
+            } else {
+              list.appendChild(bizCard(a, load, msg));
+            }
+          }
+        }
+        if (running) pollTimer = setTimeout(load, 4000);
       } catch (err) {
         msg.textContent = err.message;
       }
@@ -10176,7 +10247,7 @@ const REGION_OPTS = {
       msg.textContent = "";
       try {
         await api(`/api/analyses/${cur.id}/business/start`, { method: "POST", body: JSON.stringify({ path: f.path }) });
-        msg.textContent = "Started. Refresh in a minute to see the draft.";
+        msg.textContent = "Started. The live view below follows the assessment and shows the draft when it is ready.";
         load();
       } catch (err) {
         msg.textContent = err.message;
@@ -10189,6 +10260,7 @@ const REGION_OPTS = {
     panel.append(top, msg, list);
     li.appendChild(panel);
     load();
+    return panel;
   }
 
   function bizCard(a, reload, msg) {
