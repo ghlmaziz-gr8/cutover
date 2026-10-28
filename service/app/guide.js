@@ -11,6 +11,7 @@
 window.CUTOVER_GUIDE = {
   updated: "2026-10-22",
   whatsNew: [
+    "2026-10-28: The feature step names each approved file that has no approved business view, and a feature that names one cannot be saved until it is approved or taken out. Those file chips are marked in red.",
     "2026-10-28: A platform engineer can delete one drawn screen, for example one that came out empty. The screens section folds, so its heading can be kept open or closed.",
     "2026-10-28: A failed business view can be skipped for now. The failure and its reason stay on the file, the file is left out of the feature groups, and Assess for the business does it again when you are ready.",
     "2026-10-28: The feature groups step says how many approved files have an approved business view, and lists the files skipped for now with their reasons.",
