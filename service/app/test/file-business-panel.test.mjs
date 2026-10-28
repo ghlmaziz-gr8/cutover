@@ -22,7 +22,7 @@ test("the panel starts an assessment and reads the file's assessments", () => {
 test("drafts can be approved or discarded, and approving names the assessment", () => {
   assert.match(section, /\/business\/approve`, \{ method: "POST", body: JSON\.stringify\(\{ assessment_id: a\.id \}\)/);
   assert.match(section, /\/business\/discard`, \{ method: "POST", body: JSON\.stringify\(\{ assessment_id: a\.id \}\)/);
-  assert.match(section, /if \(a\.review_status === "draft"\)/);
+  assert.match(section, /if \(a\.review_status === "draft" && canActOnResults\(\)\)/);
 });
 
 test("the model's text is written as plain text, never as markup", () => {
@@ -32,4 +32,10 @@ test("the model's text is written as plain text, never as markup", () => {
 
 test("the change is listed in What's new", () => {
   assert.match(guide, /Business view, on a file's card, starts a business assessment/);
+});
+
+test("only platform engineers see Run, approve, discard or the model change; others get a plain note", () => {
+  assert.match(html, /function canActOnResults\(\) \{\n    return !!ws && ws\.role === "platform_engineer";/);
+  assert.match(html, /if \(!canActOnResults\(\)\) \{\n      start\.hidden = true;\n      modelPick\.disabled = true;/);
+  assert.match(html, /Only platform engineers run, approve or discard file results/);
 });
