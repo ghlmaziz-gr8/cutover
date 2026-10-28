@@ -3189,6 +3189,27 @@ async function discardBusiness(request, env, id) {
 }
 
 // The runner saves one draft. The analysis may already be complete: the draft is not part of its run.
+// The runner has reached the model for a business run. The running row says so, and the portal ticks the connection step.
+async function saveBusinessProgress(request, env, id) {
+  if (!timingSafeEqual(request.headers.get("x-runner-secret") || "", env.RUNNER_SECRET || "")) {
+    return json({ error: "Unauthorized." }, 401);
+  }
+  const parsed = await readJson(request, 2000);
+  if (parsed.error) return json({ error: parsed.error }, 400);
+  const body = parsed.value || {};
+  const path = typeof body.path === "string" ? body.path : "";
+  if (!CONVERT_PATH.test(path)) return json({ error: "Choose a file." }, 400);
+  if (body.connected !== true) return json({ error: "connected must be true." }, 400);
+  const now = new Date().toISOString();
+  const res = await serviceRest(env, `file_business_assessments?analysis_id=eq.${id}&path=eq.${encodeURIComponent(path)}&review_status=eq.running`, {
+    method: "PATCH",
+    headers: { prefer: "return=minimal" },
+    body: JSON.stringify({ content: { progress: { connected_at: now, reported_at: now } } }),
+  });
+  if (!res.ok) return json({ error: "Could not save the progress." }, 502);
+  return json({ saved: true }, 200);
+}
+
 async function saveBusiness(request, env, id) {
   if (!timingSafeEqual(request.headers.get("x-runner-secret") || "", env.RUNNER_SECRET || "")) {
     return json({ error: "Unauthorized." }, 401);
@@ -3208,8 +3229,16 @@ async function saveBusiness(request, env, id) {
     // The run did not produce a usable draft. Its running row is cleared, and the failure is logged.
     const refusedFail = await logFirst(env, { workspace_id: analysis.workspace_id, user: null, action: "business_fail", analysis_id: id, repo: analysis.repo, detail: path });
     if (refusedFail) return refusedFail;
-    await serviceRest(env, `file_business_assessments?${pathFilter}`, { method: "DELETE", headers: { prefer: "return=minimal" } });
-    return json({ saved: false, reason: typeof body.reason === "string" ? body.reason.slice(0, 300) : "The file was not assessed." });
+    const reason = typeof body.reason === "string" ? body.reason.slice(0, 300) : "The file was not assessed.";
+    // The failure stays on the file, with its reason, so the portal can say so. If the database does not allow the
+    // failed status yet (add-business-failed.sql), the row is removed as before.
+    const kept = await serviceRest(env, `file_business_assessments?${pathFilter}`, {
+      method: "PATCH",
+      headers: { prefer: "return=minimal" },
+      body: JSON.stringify({ review_status: "failed", content: { failure: { reason, at: new Date().toISOString() } } }),
+    });
+    if (!kept.ok) await serviceRest(env, `file_business_assessments?${pathFilter}`, { method: "DELETE", headers: { prefer: "return=minimal" } });
+    return json({ saved: false, reason });
   }
   const content = body.content;
   if (!content || typeof content !== "object" || Array.isArray(content)) return json({ error: "content must be an object." }, 400);
@@ -3254,7 +3283,7 @@ async function startBusiness(request, env, id) {
   if (!modelToken) return json({ error: "Could not prepare the model. Try again in a minute." }, 502);
   const refusedStart = await logFirst(env, { workspace_id: row.workspace_id, user: access.user, action: "business_start", analysis_id: id, repo: row.repo, detail: path });
   if (refusedStart) return refusedStart;
-  await serviceRest(env, `file_business_assessments?analysis_id=eq.${id}&path=eq.${encodeURIComponent(path)}&review_status=eq.running`, { method: "DELETE", headers: { prefer: "return=minimal" } });
+  await serviceRest(env, `file_business_assessments?analysis_id=eq.${id}&path=eq.${encodeURIComponent(path)}&review_status=in.(running,failed)`, { method: "DELETE", headers: { prefer: "return=minimal" } });
   const made = await serviceRest(env, "file_business_assessments", {
     method: "POST",
     headers: { prefer: "return=minimal" },
@@ -4823,6 +4852,8 @@ async function route(request, env) {
     if (deepStart && UUID_PATTERN.test(deepStart[1]) && method === "POST") return startDeepFile(request, env, deepStart[1]);
     const deepProgress = path.match(/^\/api\/runner\/([^/]+)\/deep-file-progress$/);
     if (deepProgress && UUID_PATTERN.test(deepProgress[1]) && method === "POST") return saveDeepProgress(request, env, deepProgress[1]);
+    const businessProgress = path.match(/^\/api\/runner\/([^/]+)\/business-progress$/);
+    if (businessProgress && UUID_PATTERN.test(businessProgress[1]) && method === "POST") return saveBusinessProgress(request, env, businessProgress[1]);
     const deepSave = path.match(/^\/api\/runner\/([^/]+)\/deep-file$/);
     if (deepSave && UUID_PATTERN.test(deepSave[1]) && method === "POST") return saveDeepFile(request, env, deepSave[1]);
     const businessSave = path.match(/^\/api\/runner\/([^/]+)\/business$/);

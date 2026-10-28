@@ -1292,14 +1292,28 @@ test("a business assessment is refused while another run is going in the workspa
   assert.match(res.body.error, /business assessment of one file is running/);
 });
 
-test("a failed run clears its running row and is logged, and saves no draft", async () => {
+test("a failed run keeps its row as failed, with the reason, and is logged; no draft is saved", async () => {
   state.file_business_assessments.push({ id: uid(991), analysis_id: AN_ACME, path: "src/A.java", content: {}, review_status: "running", created_by_email: "eng@acme.test", created_at: NOW });
   const res = await call(`/api/runner/${AN_ACME}/business`, { method: "POST", body: { status: "failed", path: "src/A.java", reason: "The model did not answer." }, secret: env.RUNNER_SECRET });
   assert.equal(res.status, 200);
   assert.equal(res.body.saved, false);
-  assert.equal(state.file_business_assessments.some((r) => r.id === uid(991)), false);
+  const row = state.file_business_assessments.find((r) => r.id === uid(991));
+  assert.equal(row.review_status, "failed");
+  assert.equal(row.content.failure.reason, "The model did not answer.");
   assert.equal(state.file_business_assessments.filter((r) => r.analysis_id === AN_ACME && r.review_status === "draft").length, 0);
   assert.ok(state.assessment_log.some((e) => e.action === "business_fail" && e.detail === "src/A.java"));
+});
+
+test("the runner says it reached the model for a business run, and the row keeps that time", async () => {
+  state.file_business_assessments.push({ id: uid(993), analysis_id: AN_ACME, path: "src/A.java", content: {}, review_status: "running", created_by_email: "eng@acme.test", created_at: NOW });
+  const bad = await call(`/api/runner/${AN_ACME}/business-progress`, { method: "POST", body: { path: "src/A.java", connected: "yes" }, secret: env.RUNNER_SECRET });
+  assert.equal(bad.status, 400);
+  const wrong = await call(`/api/runner/${AN_ACME}/business-progress`, { method: "POST", body: { path: "src/A.java", connected: true }, secret: "wrong" });
+  assert.equal(wrong.status, 401);
+  const res = await call(`/api/runner/${AN_ACME}/business-progress`, { method: "POST", body: { path: "src/A.java", connected: true }, secret: env.RUNNER_SECRET });
+  assert.equal(res.status, 200);
+  const row = state.file_business_assessments.find((r) => r.id === uid(993));
+  assert.ok(row.content.progress.connected_at);
 });
 
 test("a successful run replaces its running row with the draft", async () => {
