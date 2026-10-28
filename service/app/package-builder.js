@@ -16,6 +16,10 @@
         approvedBy: grouping.approved_by_email,
         approvedAt: grouping.approved_at,
         confidenceOf: ctx.confidenceOf,
+        allFeatures: data.features,
+        targetLanguage: ctx.targetLanguage,
+        targetChosenBy: ctx.targetChosenBy,
+        approach: ctx.approach,
       });
       let name = spec.file;
       for (let n = 2; usedNames.has(name); n++) name = spec.file.replace(/\.md$/, `-${n}.md`);
