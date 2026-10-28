@@ -1414,9 +1414,6 @@ button:not(:disabled):active{transform:scale(.965)}
     .fg-tree{width:100%;border-radius:14px;background:var(--soft,#f7f6fd);overflow:hidden;line-height:0}
     .fg-svg{display:block;width:100%;height:auto}
     .fg-cell polygon{stroke:#fff;stroke-width:2;stroke-linejoin:round}
-    .fg-cell.is-high polygon{fill:#2f9e6b}
-    .fg-cell.is-medium polygon{fill:#d89a1c}
-    .fg-cell.is-low polygon{fill:#d0524a}
     .fg-cell-name{fill:#fff;font:700 13px/1.2 var(--body,sans-serif);paint-order:stroke;stroke:rgba(0,0,0,.18);stroke-width:2px}
     .fg-cell-value{fill:#fff;opacity:.92;font:600 11px var(--body,sans-serif);paint-order:stroke;stroke:rgba(0,0,0,.18);stroke-width:2px}
     .fg-tree-legend{margin:8px 0 0}
@@ -9709,7 +9706,11 @@ const REGION_OPTS = {
     setTimeout(tick, 5000);
   }
 
-  // The complexity map: each feature is a convex cell whose area is its complexity, coloured by its readiness.
+  // One colour per feature. The row above the map and the cell use the same colour, so they can be matched.
+  const FEATURE_COLOURS = ["#6d5bd0", "#2f9e6b", "#c9821a", "#c2453d", "#2b7bb9", "#b8457a", "#2f8a8a", "#7a5a2e"];
+  const featureColour = (i) => FEATURE_COLOURS[i % FEATURE_COLOURS.length];
+
+  // The complexity map: each feature is a convex cell whose area is its complexity, in its own colour.
   let treeResize = null;
   function complexityMap(groups, r) {
     const T = window.ComplexityTreemap;
@@ -9718,7 +9719,7 @@ const REGION_OPTS = {
     const wrap = el("div", null, "fg-tree-wrap");
     const host = el("div", null, "fg-tree");
     wrap.append(host);
-    wrap.append(el("p", "Size: the user stories, the distinct rules they cite, and the files in each feature. Colour: readiness, green when every check passes.", "muted small fg-tree-legend"));
+    wrap.append(el("p", "Size: the user stories, the distinct rules they cite, and the files in each feature. Colour: each feature has its own colour, the same as its row above.", "muted small fg-tree-legend"));
     const nameOf = (g, i) => g.name || `Feature ${i + 1}`;
     const shortName = (t, max) => (t.length > max ? t.slice(0, max - 1) + "\u2026" : t);
     const items = groups.map((g, i) => ({ key: i, value: Math.max(1, T.complexityOf(g).total) }));
@@ -9732,11 +9733,11 @@ const REGION_OPTS = {
         const f = r.features[cell.key];
         const c = T.complexityOf(g);
         const name = nameOf(g, cell.key);
-        const grp = svgEl("g", { class: `fg-cell is-${T.band(f.passed, f.total)}` });
+        const grp = svgEl("g", { class: "fg-cell" });
         const title = svgEl("title", {});
         title.textContent = `${name}: ${c.stories} stories, ${c.rules} rules, ${c.files} files. ${f.passed} of ${f.total} checks pass.`;
         grp.append(title);
-        grp.append(svgEl("polygon", { points: cell.points.map((p) => p[0].toFixed(1) + "," + p[1].toFixed(1)).join(" ") }));
+        grp.append(svgEl("polygon", { points: cell.points.map((p) => p[0].toFixed(1) + "," + p[1].toFixed(1)).join(" "), fill: featureColour(cell.key) }));
         // The label goes in a cell big enough to hold it.
         if (cell.area > 2200) {
           const max = Math.max(6, Math.floor(Math.sqrt(cell.area) / 6.2));
@@ -9779,13 +9780,14 @@ const REGION_OPTS = {
     bar.append(fill);
     card.append(head, bar);
     const list = el("ul", null, "fg-ready-list");
-    for (const f of r.features) {
+    r.features.forEach((f, i) => {
       const li = el("li", null, f.passed === f.total ? "is-ok" : "is-gap");
+      li.style.borderLeft = `4px solid ${featureColour(i)}`;
       li.append(el("span", f.name, "fg-ready-name"), el("span", `${f.passed} of ${f.total} checks`, "fg-ready-count"));
       const gaps = f.checks.filter((c) => !c.ok).map((c) => c.text);
       if (gaps.length) li.append(el("div", gaps.join(" · "), "fg-ready-gap"));
       list.append(li);
-    }
+    });
     card.append(list);
     card.append(complexityMap(draft.groups || [], r));
     box.append(card);
