@@ -77,6 +77,8 @@ button.danger{background:transparent;color:var(--bad);box-shadow:none;border:1.5
 .bell-count{position:absolute;top:-7px;right:-7px;min-width:21px;height:21px;padding:0 6px;border-radius:99px;display:grid;place-items:center;background:linear-gradient(135deg,#e11d48,#f59e0b);color:#fff;font:800 11px system-ui;box-shadow:0 0 0 3px var(--bg);animation:countPop .5s cubic-bezier(.2,1.6,.4,1)}
 .bell-count[hidden]{display:none}
 .no-bell .bell{display:none}
+/* The notification bell is hidden on every screen. Its code stays, so it can come back by removing this rule. */
+.bell,.bell-count{display:none!important}
 @keyframes bellRing{0%,100%{transform:rotate(0)}15%{transform:rotate(14deg)}30%{transform:rotate(-12deg)}45%{transform:rotate(9deg)}60%{transform:rotate(-6deg)}75%{transform:rotate(3deg)}}
 @keyframes countPop{0%{transform:scale(.2);opacity:0}100%{transform:scale(1);opacity:1}}
 .notif-panel{position:fixed;top:96px;right:16px;width:min(380px,calc(100vw - 32px));max-height:70vh;overflow:auto;background:var(--card);border:1px solid var(--line);border-radius:20px;box-shadow:0 30px 60px -20px #1e1b4b66;padding:14px;z-index:50;animation:panelIn .35s cubic-bezier(.2,.8,.2,1)}
