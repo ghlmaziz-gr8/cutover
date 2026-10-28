@@ -34,7 +34,7 @@ from typing import Callable
 
 from model_origin import ORIGIN_MAX_TOKENS, ORIGIN_SYSTEM, run_origin
 from model_screens import (SCREEN_MAX_TOKENS, SCREEN_PROMPT, ScreenError, StopDrawing, build_screen_text,
-                           draw_screens, expand_control_screens, post_screens, screen_context)
+                           draw_screens, expand_control_screens, post_screens, post_screens_done, screen_context)
 
 MODEL_CATEGORIES = {"source", "template", "database", "integration"}
 MAX_MODEL_FILES = 200
@@ -363,6 +363,8 @@ def main(argv=None, opener=urllib.request.urlopen) -> int:
                 print(f"The screens could not be saved (HTTP {status}). The analysis continues without them.")
         else:
             print(f"No screens drawn; {screen_stats['refused']} refused.")
+        # Always tell the API the run has finished, so the page stops showing it working.
+        post_screens_done(args.callback, args.analysis_id, secret, opener=opener)
         return 0
 
     if args.screens_only:

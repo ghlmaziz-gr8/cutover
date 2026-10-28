@@ -304,7 +304,7 @@ class MainTests(unittest.TestCase):
         def opener(req, timeout):
             if "/model-key" in req.full_url:
                 return FakeResponse(json.dumps({"provider": "google", "model": "gemini-3.5-flash", "api_key": KEY}).encode())
-            if req.full_url.endswith("/screens"):
+            if "/screens" in req.full_url:
                 return Created(b"{}")
             provider_calls.append(req.full_url)
             return FakeResponse(json.dumps({"candidates": [{"content": {"parts": [{"text": html}]}}]}).encode())

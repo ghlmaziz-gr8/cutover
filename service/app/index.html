@@ -5001,6 +5001,56 @@ button:not(:disabled):active{transform:scale(.965)}
 
   // Three summary cards from the demo: age and history, data structure.
   // Built only from findings this viewer may see, and from the history (shown to every role).
+  // A screens run that started within this window is still drawing. The runner clears the mark when it finishes.
+  const SCREENS_RUN_WINDOW_MS = 35 * 60 * 1000;
+  function screensDrawing(row) {
+    if (!row || !row.screens_started_at) return false;
+    return Date.now() - Date.parse(row.screens_started_at) < SCREENS_RUN_WINDOW_MS;
+  }
+
+  // While the screens are drawn, the page checks every 15 seconds. It redraws only when the run ends or new screens arrive.
+  let screensPollTimer = null;
+  function scheduleScreensPoll() {
+    clearTimeout(screensPollTimer);
+    const before = ((cur && cur.screens) || []).length;
+    screensPollTimer = setTimeout(async () => {
+      try {
+        cur = await api(`/api/analyses/${cur.id}`);
+        if (!screensDrawing(cur) || ((cur.screens || []).length !== before)) return renderReview(cur);
+        scheduleScreensPoll();
+      } catch {
+        scheduleScreensPoll();
+      }
+    }, 15000);
+  }
+
+  // Draws the screens again. The model is chosen here, as on the Business and Deep views, and the choice applies to the analysis.
+  function redrawControl(drawing) {
+    const wrap = el("div", null, "redraw-control");
+    wrap.style.marginTop = "10px";
+    const status = el("p", "", "muted small");
+    const pick = analysisModelRow(status);
+    pick.loadModels();
+    const btn = el("button", "Draw the screens again", "ghost small-btn");
+    btn.disabled = drawing || !(cur.status === "complete" || cur.status === "failed");
+    btn.addEventListener("click", async () => {
+      btn.disabled = true;
+      status.className = "muted small";
+      status.textContent = "";
+      try {
+        await api(`/api/analyses/${cur.id}/screens/redraw`, { method: "POST" });
+        cur.screens_started_at = new Date().toISOString();
+        renderReview(cur);
+      } catch (err) {
+        status.className = "err small";
+        status.textContent = err.message;
+        btn.disabled = false;
+      }
+    });
+    wrap.append(pick.modelRow, btn, status);
+    return wrap;
+  }
+
   function componentCards(shown, history, role) {
     const val = (id) => (shown[id] ? shown[id].value : undefined);
     const out = [];
@@ -5186,12 +5236,22 @@ button:not(:disabled):active{transform:scale(.965)}
     }
 
     // Deep AI assessment results: screens the workspace's own model drew from the code, with sample data only.
-    // The same card is shown on the file-level results screen.
+    // The same card is shown on the file-level results screen. While a run draws them again, it shows the drawing.
     {
       const screens = (cur && cur.screens) || [];
+      const drawing = screensDrawing(cur);
+      if (sees(role, "ui_portal") && drawing) {
+        const live = firstRunCard("Drawing the screens",
+          "The model is drawing the screens from the code again, with sample data. The assessment itself is not changed.",
+          "This takes a few minutes. The page checks every 15 seconds and shows the screens when they are ready.");
+        live.style.gridColumn = "1 / -1";
+        out.push(live);
+        scheduleScreensPoll();
+      }
       if (sees(role, "ui_portal") && screens.length) {
         const c = drawnScreensCard(screens);
         c.style.gridColumn = "1 / -1";
+        if (cur.model_provider && canActOnResults()) c.appendChild(redrawControl(drawing));
         out.push(c);
       } else if (sees(role, "ui_portal")) {
         const c = shell("Deep AI assessment results", "No screens drawn");
@@ -5200,27 +5260,7 @@ button:not(:disabled):active{transform:scale(.965)}
           ? "No screens were drawn. Screens from the model are drawn only when the workspace has turned them on (Privacy tab, Language model). If they are on, the provider may have stopped the model; the workflow log for this run shows the reason."
           : "No screens were drawn, because no model was chosen for this analysis. Turn on screens from the model in the Privacy tab, under Language model, then start an analysis with a model.";
         c.appendChild(el("p", note, "muted small"));
-        // An engineer can draw them again with the same model and code, without a new assessment.
-        if (cur.model_provider && canActOnResults() && (cur.status === "complete" || cur.status === "failed")) {
-          const again = el("div", null, "row");
-          const btn = el("button", "Draw the screens again", "ghost small-btn");
-          const status = el("p", "", "muted small");
-          btn.addEventListener("click", async () => {
-            btn.disabled = true;
-            status.className = "muted small";
-            status.textContent = "";
-            try {
-              await api(`/api/analyses/${cur.id}/screens/redraw`, { method: "POST" });
-              status.textContent = "Drawing the screens again from the code. This takes a few minutes and leaves the assessment as it is. Refresh the page to see them.";
-            } catch (err) {
-              status.className = "err small";
-              status.textContent = err.message;
-              btn.disabled = false;
-            }
-          });
-          again.append(btn, status);
-          c.appendChild(again);
-        }
+        if (cur.model_provider && canActOnResults()) c.appendChild(redrawControl(drawing));
         out.push(c);
       }
     }
