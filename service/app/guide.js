@@ -11,6 +11,7 @@
 window.CUTOVER_GUIDE = {
   updated: "2026-10-22",
   whatsNew: [
+    "2026-10-27: The file-level results list shows a file once its deep assessment is approved. Approve all drafts approves only the files listed.",
     "2026-10-27: The Business view shows the model for this analysis, as the Deep view does, and an engineer can switch it there.",
     "2026-10-27: Business view and Deep view open with a first-run card when nothing has run yet. A business run shows the same live card as a deep run. Both views open from the Deeper assessment file tree too.",
     "2026-10-27: Review file results is on the Deeper assessment screen, next to Files for the business assessment. A blocked feature grouping says where to approve the business assessments.",

@@ -9096,11 +9096,12 @@ const REGION_OPTS = {
   async function showFiles() {
     show("s-files");
     $("filesMeta").textContent = `${cur.app_name || cur.repo} · ${cur.repo}`;
-    $("filesNote").textContent = "Each file's purpose and suggestions are drafts until a platform engineer approves them. Only approved files are final.";
+    $("filesNote").textContent = "A file appears here after its deep assessment is approved. Its purpose and suggestions are drafts until a platform engineer approves them.";
     $("filesList").innerHTML = "";
     setMsg("filesMsg", "", false);
     try {
       fileRows = await loadFiles();
+      deepFileStates = await loadDeepStates();
     } catch (err) {
       fileRows = [];
       setMsg("filesMsg", err.message, true);
@@ -9482,16 +9483,22 @@ const REGION_OPTS = {
     }
   }
 
+  // Deep assessment states by file path, loaded with the files. A file is listed here only once its deep assessment is approved.
+  let deepFileStates = {};
+  function filesAfterDeep() {
+    return fileRows.filter((f) => (deepFileStates[f.path] || {}).state === "approved");
+  }
   function renderFiles() {
+    const shown = filesAfterDeep();
     const counts = { draft: 0, approved: 0, edited: 0 };
-    fileRows.forEach((f) => { counts[f.review_status] = (counts[f.review_status] || 0) + 1; });
-    $("filesCounts").textContent = fileRows.length
-      ? `${fileRows.length} files: ${counts.draft} draft, ${counts.approved} approved, ${counts.edited} edited and approved.`
-      : "No file-level results yet. They appear here once the analysis sends them.";
+    shown.forEach((f) => { counts[f.review_status] = (counts[f.review_status] || 0) + 1; });
+    $("filesCounts").textContent = shown.length
+      ? `${shown.length} of ${fileRows.length} files have an approved deep assessment: ${counts.draft} draft, ${counts.approved} approved, ${counts.edited} edited and approved.`
+      : `No file has an approved deep assessment yet. Run and approve a deep assessment on a file under Deeper assessment; the file then appears here.`;
     const list = $("filesList");
     list.innerHTML = "";
-    updateFlow(counts);
-    for (const f of fileRows) list.appendChild(fileItem(f));
+    updateFlow(counts, shown.length);
+    for (const f of shown) list.appendChild(fileItem(f));
   }
 
   // Shows where the file review sits in the workflow: scanning, writing, engineer review, or final.
@@ -9500,8 +9507,7 @@ const REGION_OPTS = {
 
   // Shows where the file review sits in the workflow, as a level bar with stage nodes.
   // Moving to a later stage in the same visit plays the "stage cleared" burst.
-  function updateFlow(counts) {
-    const total = fileRows.length;
+  function updateFlow(counts, total) {
     const approved = (counts.approved || 0) + (counts.edited || 0);
     let now = 0;
     let pct = 5;
@@ -10344,9 +10350,12 @@ const REGION_OPTS = {
     }
   });
 
+  // Approves only the drafts listed here, the files whose deep assessment is approved.
   $("filesApproveAll").addEventListener("click", async () => {
     try {
-      await api(`/api/analyses/${cur.id}/files/approve-all`, { method: "POST" });
+      for (const f of filesAfterDeep().filter((x) => x.review_status === "draft")) {
+        await api(`/api/file-findings/${f.id}`, { method: "PATCH", body: JSON.stringify({ review_status: "approved" }) });
+      }
       fileRows = await loadFiles();
       renderFiles();
     } catch (err) {
