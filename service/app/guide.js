@@ -11,6 +11,7 @@
 window.CUTOVER_GUIDE = {
   updated: "2026-10-22",
   whatsNew: [
+    "2026-10-27: Business view on a file in the file-level results opens the full file view: its related files, the order to assess and the business assessment.",
     "2026-10-27: Every level you have reached stays on your badges, from the Starter badge. Earlier badges show Earned; the current level shows its points.",
     "2026-10-27: The business assessment of a file has the same layout as its deep result. Once a file's deep result is approved, its Run deep assessment button is hidden.",
     "2026-10-27: The file-level results rows have Business view only. The deep result of a file opens from the Deeper assessment file tree.",
