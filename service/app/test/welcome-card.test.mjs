@@ -41,3 +41,14 @@ test("the card shows time per workspace, and the portal sends the workspace with
 test("the change is listed in What's new", () => {
   assert.match(guide, /A card on the home screen greets you when you sign in/);
 });
+
+test("the level stays on the home screen as a chip that reopens the rewards card", () => {
+  assert.match(html, /<button type="button" id="levelChip" class="wc-badge wc-badge-level level-chip" hidden><\/button>/);
+  assert.match(html, /async function loadLevelChip\(\) \{/);
+  assert.match(html, /chip\.onclick = \(\) => showWelcome\(\);/);
+  assert.match(html, /loadLevelChip\(\);\n/);
+});
+
+test("a failed rewards load says so in the card instead of staying silent", () => {
+  assert.match(html, /Your time and rewards could not be loaded just now/);
+});

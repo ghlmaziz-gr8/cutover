@@ -11,6 +11,7 @@
 window.CUTOVER_GUIDE = {
   updated: "2026-10-22",
   whatsNew: [
+    "2026-10-27: Your level stays on the workspace home as a chip, so you can see it without waiting for the login card. Click it to open your rewards. If your rewards cannot load, the card now says so.",
     "2026-10-27: The order to assess shows where each file stands. Approved files are green, draft ready files are indigo, and assessing, failed or replaced files have their own colours, so you can skip the files already worked on.",
     "2026-10-27: The features the application owner approved now have a read-only view. Each feature lists its files and stories in plain language, and each story opens to the business rules it is written from, with their lines of code. Auditors do not see it.",
     "2026-10-27: An engineer can draft the user stories for each feature of a draft grouping. Each story cites the approved business rules it is written from, with their line numbers. The owner approves the features and their stories together.",
