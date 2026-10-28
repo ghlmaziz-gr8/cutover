@@ -22,7 +22,7 @@ test("the panel reads the list, starts a run, and approves or discards by assess
 });
 
 test("only drafts show approve and discard", () => {
-  assert.match(html, /if \(a\.status === "draft"\) \{[\s\S]*?const row = el\("div", null, "row"\);/);
+  assert.match(html, /if \(a\.status === "draft" && canActOnResults\(\)\) \{[\s\S]*?const row = el\("div", null, "row"\);/);
 });
 
 test("the account is written as plain text, never as markup", () => {

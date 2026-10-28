@@ -9418,6 +9418,11 @@ const REGION_OPTS = {
   // Opens under one file. The text comes from the model, so it is always written as plain text, never as markup.
   // ---- Deep file view: one file's purpose, user stories, functions, what they call. Drafts are approved here. ----
   const DEEP_STATUS = { running: "Running", draft: "Draft to review", approved: "Approved", superseded: "Replaced by a later approval", failed: "Failed" };
+  // Only platform engineers run, approve, discard or change the model for file-level results. Everyone else reads them.
+  function canActOnResults() {
+    return !!ws && ws.role === "platform_engineer";
+  }
+  const RESULTS_READ_ONLY_NOTE = "You can read every result here. Only platform engineers run, approve or discard file results, or change the model. Your part is the scope and the approach, and approving the features.";
 
   function deepPanel(li, f, onClose = () => renderFiles(), actionSlot = null) {
     const panel = el("div", null, "biz-panel");
@@ -9524,9 +9529,14 @@ const REGION_OPTS = {
       if (businessFiles.analysis === cur.id) await renderBusinessFiles();
       load();
     });
+    if (!canActOnResults()) {
+      start.hidden = true;
+      modelPick.disabled = true;
+    }
     top.append(start, refresh, close);
     if (actionSlot) actionSlot.append(top);
     else panel.append(top);
+    if (!canActOnResults()) panel.append(el("p", RESULTS_READ_ONLY_NOTE, "muted small"));
     panel.append(modelRow, msg, list);
     li.appendChild(panel);
     loadModels();
@@ -9917,7 +9927,7 @@ const REGION_OPTS = {
     }
     if (a.dropped) c.append(el("div", `${a.dropped} ${a.dropped === 1 ? "name was" : "names were"} not found in the file and left out.`, "muted small"));
     c.append(el("div", "Read by the model, so its confidence is lower than a rule-based result. An engineer checks it before it is final.", "muted small"));
-    if (a.status === "draft") {
+    if (a.status === "draft" && canActOnResults()) {
       c.append(el("div", "Approving makes this the account for the file, and replaces any earlier approved account. It does not change the code. Discard removes this draft.", "muted small"));
       const row = el("div", null, "row");
       row.style.gap = "8px";
@@ -9985,7 +9995,9 @@ const REGION_OPTS = {
       }
     });
     refresh.addEventListener("click", load);
+    if (!canActOnResults()) start.hidden = true;
     top.append(start, refresh, close);
+    if (!canActOnResults()) panel.append(el("p", RESULTS_READ_ONLY_NOTE, "muted small"));
     panel.append(top, msg, list);
     li.appendChild(panel);
     load();
@@ -10003,7 +10015,7 @@ const REGION_OPTS = {
       if (value === undefined || value === null || value === "" || (Array.isArray(value) && !value.length)) continue;
       card.append(el("div", `${label}: ${Array.isArray(value) ? value.join("; ") : value}`, "small"));
     }
-    if (a.review_status === "draft") {
+    if (a.review_status === "draft" && canActOnResults()) {
       const row = el("div", null, "row");
       row.style.gap = "8px";
       const approve = el("button", "Approve this draft", "small-btn");
