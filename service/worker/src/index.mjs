@@ -454,7 +454,6 @@ async function engagementSummary(request, env) {
     return total >= seconds && days.length ? days[days.length - 1] : null;
   };
   const level = levelFor(points);
-  const levelAt = LEVELS.find((l) => l.name === level.name).at;
   const previous = eng?.previous_seen || null;
   return json({
     total_seconds: total,
@@ -463,9 +462,9 @@ async function engagementSummary(request, env) {
     favourite,
     workspaces,
     level,
-    // The level badge is always shown, from the first point (Starter at zero). Each badge says the day it was reached.
+    // Every level reached stays on the list, from Starter at zero, so earlier badges are not lost. Each says the day it was reached.
     badges: [
-      { id: `level-${level.number}`, name: `${level.name} badge`, kind: "level", earned_on: reachedOn(Math.ceil(levelAt / POINTS_PER_MINUTE) * 60) },
+      ...LEVELS.slice(0, level.number).map((l, i) => ({ id: `level-${i + 1}`, name: `${l.name} badge`, kind: "level", earned_on: reachedOn(Math.ceil(l.at / POINTS_PER_MINUTE) * 60) })),
       ...HOUR_BADGES.filter((h) => total >= h * 3600).map((h) => ({ id: `hours-${h}`, name: `${h} ${h === 1 ? "hour" : "hours"} on the system`, kind: "hours", earned_on: reachedOn(h * 3600) })),
     ],
   });
