@@ -1391,6 +1391,10 @@ button:not(:disabled):active{transform:scale(.965)}
     .rel-reason{font-size:11.5px;color:var(--muted);margin-top:1px}
     .rel-reason::before{content:"";display:inline-block;width:7px;height:7px;border-radius:50%;background:var(--k,var(--muted));margin-right:6px;vertical-align:middle}
     .rel-title{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+    button.ghost.small-btn.is-active{background:#7c3aed;border-color:#7c3aed;color:#fff}
+    li.is-biz-open{box-shadow:inset 4px 0 0 #7c3aed}
+    .biz-code{margin:8px 0 12px}
+    .biz-code>summary{cursor:pointer;font:600 13px var(--body);margin-bottom:6px}
     .rel-state{font:600 11px var(--body);padding:2px 8px;border-radius:99px;border:1px solid currentColor;white-space:nowrap;background:color-mix(in srgb,currentColor 10%,transparent)}
     .rel-state.is-running::before{content:"";display:inline-block;width:6px;height:6px;border-radius:50%;background:currentColor;margin-right:5px;vertical-align:middle;animation:relPulse 1.2s ease-in-out infinite}
     @keyframes relPulse{50%{opacity:.25}}
@@ -9761,21 +9765,23 @@ const REGION_OPTS = {
       b.type = "button";
       b.addEventListener("click", fn);
       buttons.appendChild(b);
+      return b;
     };
     if (canActOnResults()) {
       if (f.review_status !== "approved") button("Approve", () => reviewFile(f.id, { review_status: "approved" }));
       button("Edit purpose", () => openFileEditor(li, f));
     }
-    button("Business view", () => openBusinessView(li, f));
+    const bizBtn = button("Business view", () => openBusinessView(li, f, bizBtn));
     li.appendChild(buttons);
     return li;
   }
 
   // The Business view from the file-level results: the same full view as the Deeper screen, under the file's row.
   // It shows the file, the related files with the order to assess, and the business assessment. Clicking it again closes it.
-  async function openBusinessView(li, f) {
+  async function openBusinessView(li, f, btn) {
     const open = li.querySelector(".file-biz-view");
-    if (open) { open.remove(); return; }
+    if (open) { open.remove(); setBizOpen(btn, li, false); return; }
+    setBizOpen(btn, li, true);
     const box = el("div", null, "file-biz-view dp-enter");
     box.style.marginTop = "10px";
     li.appendChild(box);
@@ -9789,6 +9795,7 @@ const REGION_OPTS = {
       }
     } catch (err) {
       box.replaceChildren(el("p", `Could not load the file: ${err.message}`, "small"));
+      setBizOpen(btn, li, false);
       return;
     }
     box.replaceChildren();
@@ -9797,7 +9804,8 @@ const REGION_OPTS = {
     const actions = el("div", null, "dp-actions");
     const close = el("button", "Close", "ghost small-btn");
     close.type = "button";
-    close.addEventListener("click", () => box.remove());
+    const closeView = () => { box.remove(); setBizOpen(btn, li, false); };
+    close.addEventListener("click", closeView);
     actions.append(close);
     titleRow.append(actions);
     box.append(titleRow);
@@ -9807,7 +9815,16 @@ const REGION_OPTS = {
     const links = businessFiles.links || {};
     const near = window.FileMap.related(f.path, paths, 6, links);
     if (near.length) box.appendChild(relatedView(f, near, paths, links, businessFiles.deep || {}));
-    businessPanel(box, f, () => box.remove());
+    businessPanel(box, f, closeView);
+  }
+
+  // The file whose business view is open is marked: its button and its row take the highlight colour.
+  function setBizOpen(btn, li, on) {
+    if (btn) {
+      btn.classList.toggle("is-active", on);
+      btn.setAttribute("aria-pressed", on ? "true" : "false");
+    }
+    li.classList.toggle("is-biz-open", on);
   }
 
   async function reviewFile(id, change) {
@@ -10521,10 +10538,33 @@ const REGION_OPTS = {
     top.append(start, refresh, close);
     if (!canActOnResults()) panel.append(el("p", RESULTS_READ_ONLY_NOTE, "muted small"));
     const { modelRow, loadModels } = analysisModelRow(msg);
-    panel.append(top, modelRow, msg, list);
+    // The code view: the file's deep assessment, the same card as on the Deeper screen, so the reader sees what the code does.
+    const codeBox = document.createElement("details");
+    codeBox.className = "biz-code";
+    codeBox.open = true;
+    const codeSummary = document.createElement("summary");
+    codeSummary.textContent = "What the code does (deep assessment)";
+    codeBox.append(codeSummary);
+    async function loadCode() {
+      try {
+        const res = await api(`/api/analyses/${cur.id}/deep-files?path=${encodeURIComponent(f.path)}`);
+        const rows = res.assessments || [];
+        // Only the approved account is shown here. A draft is approved on the Deeper screen, where its buttons are.
+        const pick = rows.find((a) => a.status === "approved") || null;
+        codeBox.querySelectorAll(".biz-code-body").forEach((x) => x.remove());
+        const body = el("div", null, "biz-code-body");
+        if (!pick) body.append(el("p", "No approved deep assessment for this file yet. Approve one on the Deeper screen to see its functions and rules here.", "muted small"));
+        else body.append(deepCard(pick, () => {}, msg, f.path));
+        codeBox.append(body);
+      } catch (err) {
+        codeBox.append(el("p", err.message, "muted small"));
+      }
+    }
+    panel.append(top, modelRow, msg, codeBox, list);
     li.appendChild(panel);
     loadModels();
     load();
+    loadCode();
     return panel;
   }
 

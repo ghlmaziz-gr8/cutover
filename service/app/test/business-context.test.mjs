@@ -1,0 +1,27 @@
+// The business view shows the approved deep assessment of the file, and the open file's Business view button is highlighted.
+import { test } from "node:test";
+import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
+
+const here = dirname(fileURLToPath(import.meta.url));
+const html = readFileSync(join(here, "..", "index.html"), "utf8");
+
+test("the business view shows the approved deep assessment of the file, read only", () => {
+  assert.match(html, /codeBox\.className = "biz-code";/);
+  assert.match(html, /What the code does \(deep assessment\)/);
+  assert.match(html, /api\(`\/api\/analyses\/\$\{cur\.id\}\/deep-files\?path=\$\{encodeURIComponent\(f\.path\)\}`\)/);
+  assert.match(html, /rows\.find\(\(a\) => a\.status === "approved"\) \|\| null/);
+  assert.match(html, /else body\.append\(deepCard\(pick, \(\) => \{\}, msg, f\.path\)\);/);
+  assert.match(html, /panel\.append\(top, modelRow, msg, codeBox, list\);/);
+});
+
+test("the Business view button of the open file is highlighted, and so is its row", () => {
+  assert.match(html, /const bizBtn = button\("Business view", \(\) => openBusinessView\(li, f, bizBtn\)\);/);
+  assert.match(html, /function setBizOpen\(btn, li, on\) \{/);
+  assert.match(html, /btn\.classList\.toggle\("is-active", on\);/);
+  assert.match(html, /li\.classList\.toggle\("is-biz-open", on\);/);
+  assert.match(html, /button\.ghost\.small-btn\.is-active\{background:#7c3aed;border-color:#7c3aed;color:#fff\}/);
+  assert.match(html, /const closeView = \(\) => \{ box\.remove\(\); setBizOpen\(btn, li, false\); \};/);
+});
