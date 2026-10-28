@@ -36,3 +36,9 @@ test("the Deeper file tree opens the business view and the deep view", () => {
   assert.ok(tree.includes("businessPanel(bizSlot, f, () => bizSlot.replaceChildren())"));
   assert.ok(tree.includes("deepPanel(box, f, () => panel.remove(), actions)"));
 });
+
+test("the business view shows the model for this analysis, from the same picker as the deep view", () => {
+  assert.ok(biz.includes("analysisModelRow(msg)"));
+  assert.ok(biz.includes("loadModels();"));
+  assert.ok(slice("  function analysisModelRow(msg) {", "  function deepPanel(li, f, onClose").includes('"Model for this analysis"'));
+});

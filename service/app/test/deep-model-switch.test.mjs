@@ -7,7 +7,8 @@ import { fileURLToPath } from "node:url";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const html = readFileSync(join(here, "..", "index.html"), "utf8");
-const panel = html.slice(html.indexOf("  function deepPanel(li, f, onClose"), html.indexOf("  function businessPanel(li, f) {"));
+// The model picker is shared by the Business and Deep views: it lives in analysisModelRow.
+const panel = html.slice(html.indexOf("  function analysisModelRow(msg) {"), html.indexOf("  function deepPanel(li, f, onClose"));
 
 test("the panel lists the workspace's active model keys", () => {
   assert.ok(panel.includes("api(`/api/workspaces/${ws.id}/model-keys`)"));
