@@ -9417,6 +9417,7 @@ const REGION_OPTS = {
       actions.append(save, discard);
       box.insertBefore(addFileRow(groups, () => drawGroups()), actions);
     }
+    if (reviewer) {
       const approve = el("button", "Approve this grouping", "small-btn");
       approve.type = "button";
       approve.addEventListener("click", () => groupAction("approve", g.id));
