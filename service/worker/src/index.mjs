@@ -3655,7 +3655,15 @@ async function listFeatures(request, env, id) {
   const features = groups.map((g) => ({
     name: g.name || "",
     summary: g.summary || "",
-    files: [...new Set(g.paths || [])].map((path) => ({ path, purpose: (approved.found.get(path) || {}).file_purpose || "" })),
+    files: [...new Set(g.paths || [])].map((path) => {
+      const a = approved.found.get(path);
+      return {
+        path,
+        purpose: a ? a.file_purpose : "",
+        // The approved assessment behind the map. Null when the file has no approved assessment yet.
+        assessment: a ? { dropped: a.dropped, functions: a.functions, rules: a.rules, examples: a.examples, database: a.database } : null,
+      };
+    }),
     stories: (Array.isArray(g.stories) ? g.stories : []).map((st) => ({
       id: st.id,
       story: st.story,
@@ -3915,18 +3923,43 @@ async function approvedRulesFor(env, id, paths) {
   const unique = [...new Set(paths)];
   for (let i = 0; i < unique.length; i += 50) {
     const batch = unique.slice(i, i + 50).map((p) => `"${p.replace(/"/g, "")}"`).join(",");
-    const res = await serviceRest(env, `file_deep_assessments?analysis_id=eq.${id}&status=eq.approved&file_path=in.(${encodeURIComponent(batch)})&select=file_path,content&limit=10000`);
+    const res = await serviceRest(env, `file_deep_assessments?analysis_id=eq.${id}&status=eq.approved&file_path=in.(${encodeURIComponent(batch)})&select=file_path,content,dropped&limit=10000`);
     if (!res.ok) return { failed: true };
     for (const r of await res.json()) {
       const content = r.content || {};
       const rules = (Array.isArray(content.rules) ? content.rules : []).slice(0, 60).filter((x) => x && typeof x.id === "string").map((x) => ({
         id: x.id, statement: x.statement || "", condition: x.condition || "", outcome: x.outcome || "",
+        function: typeof x.function === "string" ? x.function : "",
         lines: Array.isArray(x.lines) && x.lines.length === 2 ? x.lines : null,
       }));
+      // The map needs the functions, the worked-example links, the data and how many names were left out.
+      const functions = (Array.isArray(content.functions) ? content.functions : []).slice(0, 60).filter((f) => f && typeof f.name === "string").map((f) => ({
+        name: f.name,
+        purpose: String(f.purpose || "").slice(0, 300),
+        calls: (Array.isArray(f.calls) ? f.calls : []).filter((c) => typeof c === "string").slice(0, 30),
+      }));
+      const examples = (Array.isArray(content.examples) ? content.examples : []).slice(0, 120).filter((e) => e && typeof e.rule === "string").map((e) => ({ rule: e.rule }));
+      const db = content.database && typeof content.database === "object" ? content.database : {};
+      const database = {
+        tables: (Array.isArray(db.tables) ? db.tables : []).slice(0, 40).filter((t) => t && typeof t.name === "string").map((t) => ({
+          name: t.name,
+          operations: (Array.isArray(t.operations) ? t.operations : []).filter((o) => typeof o === "string").slice(0, 4),
+          fields: (Array.isArray(t.fields) ? t.fields : []).filter((x) => typeof x === "string").slice(0, 60),
+        })),
+        queries: (Array.isArray(db.queries) ? db.queries : []).slice(0, 60).filter((q) => q && typeof q.operation === "string").map((q) => ({
+          function: String(q.function || "").slice(0, 80),
+          operation: q.operation,
+          tables: (Array.isArray(q.tables) ? q.tables : []).filter((x) => typeof x === "string").slice(0, 10),
+        })),
+      };
       found.set(r.file_path, {
         file_purpose: content.file_purpose || "",
         file_user_stories: (Array.isArray(content.file_user_stories) ? content.file_user_stories : []).slice(0, 5),
         rules,
+        functions,
+        examples,
+        database,
+        dropped: Math.max(0, Number(r.dropped) || 0),
       });
     }
   }

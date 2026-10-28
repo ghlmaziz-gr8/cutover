@@ -3347,3 +3347,28 @@ test("when a table cannot be read, the rewards say which one and the status, so 
     failTable = null;
   }
 });
+
+test("the feature view carries each approved file's functions, worked examples, data and dropped names for the mind map", async () => {
+  readyForBusiness();
+  const stories = [{ id: "S1", story: "As a clerk I can place an order so that it is checked.", status: "draft", rules: [{ file: "src/Orders.asp", id: "R1", lines: [4, 9] }] }];
+  state.feature_groupings.push({ ...groupingRow(1150, "approved", [{ name: "Ordering", summary: "x", paths: ["src/Orders.asp", "src/Pending.asp"], stories }]), reviewed_by_email: "cio@acme.test", reviewed_at: NOW });
+  state.file_deep_assessments.push(storyDeepRow(1151, "src/Orders.asp", {
+    file_purpose: "Takes orders.",
+    functions: [{ name: "SaveOrder", purpose: "Stores an order.", calls: ["CheckCustomer"] }],
+    rules: [{ id: "R1", statement: "An order needs a customer.", function: "SaveOrder", lines: [4, 9] }],
+    examples: [{ rule: "R1", given: "no customer", expect: "refused" }, { rule: "R9", given: "x", expect: "y" }],
+    database: { tables: [{ name: "orders", operations: ["INSERT", "SELECT"], fields: ["customer_id"] }], queries: [{ function: "SaveOrder", operation: "INSERT", tables: ["orders"], purpose: "Saves" }] },
+  }));
+  state.file_deep_assessments[state.file_deep_assessments.length - 1].dropped = 2;
+  const res = await call(`/api/analyses/${AN_ACME}/features`, { as: "eng_a" });
+  assert.equal(res.status, 200);
+  const [orders, pending] = res.body.features[0].files;
+  assert.equal(orders.assessment.dropped, 2);
+  assert.deepEqual(orders.assessment.functions.map((f) => f.name), ["SaveOrder"]);
+  assert.deepEqual(orders.assessment.functions[0].calls, ["CheckCustomer"]);
+  assert.equal(orders.assessment.rules[0].function, "SaveOrder");
+  assert.deepEqual(orders.assessment.examples, [{ rule: "R1" }, { rule: "R9" }]);
+  assert.equal(orders.assessment.database.tables[0].name, "orders");
+  assert.equal(orders.assessment.database.queries[0].operation, "INSERT");
+  assert.equal(pending.assessment, null, "a file with no approved assessment is marked, not invented");
+});

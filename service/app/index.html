@@ -2058,6 +2058,7 @@ button:not(:disabled):active{transform:scale(.965)}
       <h3 style="margin:0 0 6px">Features</h3>
       <p class="muted small" style="margin:0">The features the application owner approved. Read-only. Open a story's rules to see each business rule behind it and the lines of code it comes from.</p>
       <p class="small hint" id="featureMeta" style="margin:8px 0 0"></p>
+      <div class="mmap feature-map" id="featureMap" aria-label="Mind map of the approved features"></div>
       <div id="featureList"></div>
       <p class="small hint" id="featureMsg"></p>
     </div>
@@ -2204,6 +2205,7 @@ button:not(:disabled):active{transform:scale(.965)}
 <script src="findings-map.js"></script>
 <script src="file-map.js"></script>
 <script src="confidence.js"></script>
+<script src="feature-map.js"></script>
 <script src="radial.js"></script>
 <script src="architecture.js"></script>
 <script src="plan.js"></script>
@@ -8815,10 +8817,29 @@ const REGION_OPTS = {
     }
   }
 
+  // The mind map of the approved features: each feature, its files with their confidence, functions, rules and data.
+  function drawFeatureMap(data) {
+    const box = $("featureMap");
+    const tree = window.FeatureTree.build(data, window.Confidence.confidenceOf, cur.app_name || cur.repo);
+    if (!tree) {
+      box.replaceChildren();
+      return;
+    }
+    drawMap(tree, box, {
+      title: "Mind map of the approved features",
+      toolbar: true,
+      legend: {
+        tones: [["pro", "High confidence"], ["possible", "Medium confidence"], ["con", "Low confidence"], ["plain", "No approved assessment"]],
+        icons: [],
+      },
+    });
+  }
+
   function renderFeatureView(data) {
     const card = $("featureCard");
     const list = $("featureList");
     list.innerHTML = "";
+    drawFeatureMap(data);
     if (!data.grouping) {
       card.hidden = true;
       return;
