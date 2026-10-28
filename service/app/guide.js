@@ -11,6 +11,8 @@
 window.CUTOVER_GUIDE = {
   updated: "2026-10-22",
   whatsNew: [
+    "2026-10-27: An engineer can add an approved file to a feature in the draft grouping. Saving checks the file is approved.",
+    "2026-10-27: Things the reviewer should look at are amber: names not found in the file, names not yet checked against the code, and the model's read of the file.",
     "2026-10-27: Findings by area is a radar chart now. Each category has its own bright colour, the shape grows from the centre, the points pop in, the counts count up, and a sweep turns over the field.",
     "2026-10-27: An approved file says what comes next: the feature it is in, or that it still needs grouping into one.",
     "2026-10-27: The buttons that change file results (Run deep assessment, approve, discard, and the model) show only to platform engineers. Everyone else sees a note saying what their part is.",

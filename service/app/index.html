@@ -527,7 +527,8 @@ pre{white-space:pre-wrap;word-break:break-word;background:var(--soft);padding:12
 .panel{background:var(--card);border:1px solid var(--line);border-radius:20px;padding:18px}
 .eyebrow-sm{font-size:12px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:var(--accent)}
 .panel h3,.rcard h3{color:var(--accent);margin-top:6px}
-.radar-wrap{margin-top:12px;border-radius:18px;background:radial-gradient(ellipse at 50% 40%,#1e1b4b 0%,#0b1024 70%);padding:6px 0 4px;box-shadow:0 10px 30px -12px rgba(76,29,149,.55)}
+.attn{color:#92400e;background:#fef3c7;border-left:3px solid #f59e0b;border-radius:8px;padding:6px 10px;margin-top:6px}
+    .radar-wrap{margin-top:12px;border-radius:18px;background:radial-gradient(ellipse at 50% 40%,#1e1b4b 0%,#0b1024 70%);padding:6px 0 4px;box-shadow:0 10px 30px -12px rgba(76,29,149,.55)}
 .radar{display:block;width:100%;height:auto;overflow:visible}
 .radar-label{font:700 13px var(--body);opacity:0;animation:radarFade .6s ease forwards;animation-delay:1000ms}
 .radar-count{fill:#fff;font:800 15px var(--body);opacity:0;animation:radarFade .6s ease forwards;animation-delay:1100ms}
@@ -9279,7 +9280,62 @@ const REGION_OPTS = {
     for (const g of rows) list.append(groupingBox(g));
   }
 
-  // One grouping. A draft is editable by a platform engineer: rename a feature, or take a file out of it.
+  // Adds an approved file that is not in the draft to one of its features. Saving the draft checks the file is approved.
+  function addFileRow(groups, redraw) {
+    const row = el("div", null, "gr-add row");
+    row.style.gap = "8px";
+    row.style.marginTop = "8px";
+    row.style.flexWrap = "wrap";
+    const pick = el("select", null, "small-btn");
+    pick.setAttribute("aria-label", "Approved file to add");
+    const into = el("select", null, "small-btn");
+    into.setAttribute("aria-label", "Feature to add it to");
+    const add = el("button", "Add to feature", "ghost small-btn");
+    add.type = "button";
+    const note = el("span", "Loading the approved files…", "muted small");
+    let approvedPaths = [];
+    const fill = () => {
+      const inDraft = new Set(groups.flatMap((x) => x.paths));
+      const free = approvedPaths.filter((p) => !inDraft.has(p));
+      pick.replaceChildren();
+      if (free.length) {
+        for (const p of free) {
+          const o = el("option", p);
+          o.value = p;
+          pick.appendChild(o);
+        }
+      } else {
+        pick.appendChild(el("option", "Every approved file is in a feature"));
+      }
+      into.replaceChildren();
+      groups.forEach((x, i) => {
+        const o = el("option", x.name || `Feature ${i + 1}`);
+        o.value = String(i);
+        into.appendChild(o);
+      });
+      add.disabled = !free.length || !groups.length;
+    };
+    loadFiles()
+      .then((rows) => {
+        approvedPaths = rows.filter((x) => x.review_status === "approved").map((x) => x.path);
+        note.textContent = "";
+        fill();
+      })
+      .catch(() => {
+        note.textContent = "Could not load the approved files.";
+      });
+    add.addEventListener("click", () => {
+      const target = groups[Number(into.value)];
+      if (!target || !pick.value || add.disabled) return;
+      target.paths.push(pick.value);
+      redraw();
+      fill();
+    });
+    row.append(el("span", "Add an approved file to a feature:", "muted small"), pick, el("span", "→", "muted small"), into, add, note);
+    return row;
+  }
+
+  // One grouping. A draft is editable by a platform engineer: rename a feature, take a file out of it, or add one.
   function groupingBox(g) {
     const isEngineer = !!ws && ws.role === "platform_engineer";
     const draft = g.status === "draft";
@@ -9359,8 +9415,8 @@ const REGION_OPTS = {
       discard.type = "button";
       discard.addEventListener("click", () => groupAction("discard", g.id));
       actions.append(save, discard);
+      box.insertBefore(addFileRow(groups, () => drawGroups()), actions);
     }
-    if (reviewer) {
       const approve = el("button", "Approve this grouping", "small-btn");
       approve.type = "button";
       approve.addEventListener("click", () => groupAction("approve", g.id));
@@ -9934,7 +9990,7 @@ const REGION_OPTS = {
         if (names.length) {
           note.textContent = `Next step: this file is in ${names.join(", ")}. Its rules feed those features' user stories, shown on the Features card.`;
         } else if (canActOnResults()) {
-          note.textContent = "Next step: group this file into a feature. Start the grouping on the Features card, then send it to the owner for approval.";
+          note.textContent = "Next step: add this file to a feature in the draft on the Features card. If there is no draft, propose the groups again. Then send it to the owner for approval.";
         } else {
           note.textContent = "Next step: an engineer groups this file into a feature, and the owner approves it.";
         }
@@ -9968,7 +10024,7 @@ const REGION_OPTS = {
       const band = { high: "High", medium: "Medium", low: "Low" }[conf.band];
       const text = el("div", null, "dh-text");
       text.append(el("b", `Confidence: ${band}`));
-      text.append(el("div", `Names checked against the code: ${conf.parts.names}%`, "muted small"));
+      text.append(el("div", `Names checked against the code: ${conf.parts.names}%`, conf.parts.names < 100 ? "attn small" : "muted small"));
       text.append(el("div", `Rules with line numbers: ${conf.parts.lines}%`, "muted small"));
       text.append(el("div", `Rules with a worked example: ${conf.parts.examples}%`, "muted small"));
       row.append(deepHalo(conf.score, conf.band), text);
@@ -10034,8 +10090,8 @@ const REGION_OPTS = {
         c.append(box);
       }
     }
-    if (a.dropped) c.append(el("div", `${a.dropped} ${a.dropped === 1 ? "name was" : "names were"} not found in the file and left out.`, "muted small"));
-    c.append(el("div", "Read by the model, so its confidence is lower than a rule-based result. An engineer checks it before it is final.", "muted small"));
+    if (a.dropped) c.append(el("div", `${a.dropped} ${a.dropped === 1 ? "name was" : "names were"} not found in the file and left out.`, "attn small"));
+    c.append(el("div", "Read by the model, so its confidence is lower than a rule-based result. An engineer checks it before it is final.", "attn small"));
     if (a.status === "draft" && canActOnResults()) {
       c.append(el("div", "Approving makes this the account for the file, and replaces any earlier approved account. It does not change the code. Discard removes this draft.", "muted small"));
       const row = el("div", null, "row");

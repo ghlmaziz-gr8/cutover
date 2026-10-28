@@ -45,8 +45,23 @@ test("choosing a file opens its deep view under it by itself, with an entrance, 
 test("an approved file says its next step: its feature, or grouping it", () => {
   assert.match(html, /list\.appendChild\(deepCard\(a, \(\) => refreshAfterChange\(f\.path\), msg, f\.path\)\);/);
   assert.match(html, /if \(a\.status === "approved" && path\) c\.append\(nextStepNote\(path\)\);/);
-  assert.match(html, /Next step: group this file into a feature\./);
+  assert.match(html, /Next step: add this file to a feature in the draft on the Features card\./);
   assert.match(html, /Next step: an engineer groups this file into a feature, and the owner approves it\./);
   assert.match(html, /api\(`\/api\/analyses\/\$\{cur\.id\}\/features`\)/);
+});
+
+test("the reviewer's items are amber: names not found, names unchecked, and the model's read", () => {
+  assert.match(html, /\.attn\{color:#92400e;background:#fef3c7;border-left:3px solid #f59e0b/);
+  assert.match(html, /not found in the file and left out\.`, "attn small"\)/);
+  assert.match(html, /Read by the model, so its confidence is lower than a rule-based result\. An engineer checks it before it is final\.", "attn small"\)/);
+  assert.match(html, /conf\.parts\.names < 100 \? "attn small" : "muted small"/);
+});
+
+test("an engineer can add an approved file that is not in the draft to one of its features, and saving checks it", () => {
+  assert.match(html, /function addFileRow\(groups, redraw\) \{/);
+  assert.match(html, /box\.insertBefore\(addFileRow\(groups, \(\) => drawGroups\(\)\), actions\);/);
+  assert.match(html, /const free = approvedPaths\.filter\(\(p\) => !inDraft\.has\(p\)\);/);
+  assert.match(html, /target\.paths\.push\(pick\.value\);/);
+  assert.match(html, /Add to feature/);
 });
 
