@@ -11,7 +11,7 @@ const guide = readFileSync(join(here, "..", "guide.js"), "utf8");
 const panel = html.slice(html.indexOf("  function deepPanel(li, f, onClose"), html.indexOf("  function businessPanel(li, f) {"));
 
 test("the file-level rows have Business view only; the deep result opens from the Deeper assessment tree", () => {
-  assert.match(html, /button\("Business view", \(\) => businessPanel\(li, f\)\);\s*li\.appendChild\(buttons\);/);
+  assert.match(html, /button\("Business view", \(\) => openBusinessView\(li, f\)\);\s*li\.appendChild\(buttons\);/);
   assert.ok(!html.includes('button("Deep view", () => deepPanel(li, f));'));
 });
 

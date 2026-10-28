@@ -9578,9 +9578,48 @@ const REGION_OPTS = {
       if (f.review_status !== "approved") button("Approve", () => reviewFile(f.id, { review_status: "approved" }));
       button("Edit purpose", () => openFileEditor(li, f));
     }
-    button("Business view", () => businessPanel(li, f));
+    button("Business view", () => openBusinessView(li, f));
     li.appendChild(buttons);
     return li;
+  }
+
+  // The Business view from the file-level results: the same full view as the Deeper screen, under the file's row.
+  // It shows the file, the related files with the order to assess, and the business assessment. Clicking it again closes it.
+  async function openBusinessView(li, f) {
+    const open = li.querySelector(".file-biz-view");
+    if (open) { open.remove(); return; }
+    const box = el("div", null, "file-biz-view dp-enter");
+    box.style.marginTop = "10px";
+    li.appendChild(box);
+    box.append(el("p", "Loading the file…", "muted small"));
+    try {
+      if (businessFiles.analysis !== cur.id) {
+        const rows = await loadFiles();
+        const deep = await loadDeepStates();
+        const links = await loadDeepLinks();
+        businessFiles = { analysis: cur.id, rows, deep, links };
+      }
+    } catch (err) {
+      box.replaceChildren(el("p", `Could not load the file: ${err.message}`, "small"));
+      return;
+    }
+    box.replaceChildren();
+    const titleRow = el("div", null, "dp-title-row");
+    titleRow.append(el("h3", f.path, null));
+    const actions = el("div", null, "dp-actions");
+    const close = el("button", "Close", "ghost small-btn");
+    close.type = "button";
+    close.addEventListener("click", () => box.remove());
+    actions.append(close);
+    titleRow.append(actions);
+    box.append(titleRow);
+    box.append(el("div", `${f.category} · ${FILE_STATUS[f.review_status] || f.review_status}`, "muted small"));
+    box.append(el("p", f.purpose || "No purpose written yet.", "small"));
+    const paths = businessFiles.rows.map((x) => x.path);
+    const links = businessFiles.links || {};
+    const near = window.FileMap.related(f.path, paths, 6, links);
+    if (near.length) box.appendChild(relatedView(f, near, paths, links, businessFiles.deep || {}));
+    businessPanel(box, f, () => box.remove());
   }
 
   async function reviewFile(id, change) {
