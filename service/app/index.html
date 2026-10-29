@@ -2006,6 +2006,7 @@ button:not(:disabled):active{transform:scale(.965)}
       <h3 style="margin:4px 0 6px">Choose the scope</h3>
       <p class="muted small" id="scopeNote" style="margin:0"></p>
       <div class="scope-opts" id="scopeOpts"></div>
+      <div class="row" style="margin-top:10px"><button type="button" class="ghost small-btn" id="scopeClear" hidden>Clear the scope</button></div>
       <p class="small hint" id="scopeMsg" role="status"></p>
       <div class="row" id="scopeLockBox" hidden style="margin-top:10px"><button type="button" class="ghost" id="scopeToDeeper">Open the deeper assessment</button></div>
       <div class="migrate-box" id="migrateBox" hidden>
@@ -8529,6 +8530,7 @@ a{color:#6d28d9;font-weight:600}`;
   $("deeperNext").addEventListener("click", () => showNext());
   $("deeperNextBottom").addEventListener("click", () => showNext());
   $("scopeToDeeper").addEventListener("click", () => showDeeper());
+  $("scopeClear").addEventListener("click", () => setScope(null));
   $("lensAll").addEventListener("click", () => showAllLenses());
 
   // The scope is chosen before the deeper assessment runs. Each option is the deeper assessment plus the stages it names.
@@ -8561,6 +8563,7 @@ a{color:#6d28d9;font-weight:600}`;
       : "No scope chosen yet.";
     $("scopeNote").textContent = `${note} Choose the scope for this analysis. Any role can choose it for now.`;
     $("scopeLockBox").hidden = deeperDone;
+    $("scopeClear").hidden = !(canChoose && cur.scope);
     for (const o of SCOPE_OPTIONS) {
       const selected = cur.scope === o.key;
       const card = el("div", null, "scope-opt" + (selected ? " selected" : ""));
@@ -8927,13 +8930,13 @@ const REGION_OPTS = {
     return svg;
   }
 
+  // key is a scope, or null to clear the scope. Every card on What next is redrawn from the saved scope.
   async function setScope(key) {
     try {
       await api(`/api/analyses/${cur.id}/scope`, { method: "PATCH", body: JSON.stringify({ scope: key }) });
       cur = await api(`/api/analyses/${cur.id}`);
-      renderScope();
-      renderMigrate();
-      setMsg("scopeMsg", `${SCOPE_LABEL[key]} is now the next stage.`);
+      showNext();
+      setMsg("scopeMsg", key ? `${SCOPE_LABEL[key]} is now the next stage.` : "The scope is cleared. Choose one again.");
     } catch (err) {
       setMsg("scopeMsg", err.message, true);
     }
