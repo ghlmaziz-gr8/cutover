@@ -42,3 +42,11 @@ test("a person with a platform role can reach the staff area without choosing a 
   assert.ok(html.includes('!(me.staff_roles || []).length) {\n      show("s-denied");'));
   assert.ok(html.includes('$("toStaff").hidden = !(me.staff_roles || []).length;'));
 });
+
+test("the My calendar tab shows the connect steps and is hidden from people who cannot invite", () => {
+  for (const id of ["staffTabCalendar", "staffCalendar", "calStatus", "calConnect", "calDisconnect", "calMsg"]) {
+    assert.ok(html.includes(`id="${id}"`), `missing #${id}`);
+  }
+  assert.ok(html.includes('$("staffTabCalendar").hidden = !staffRoles.some((r) => ["super_user", "admin", "sales"].includes(r));'));
+  assert.ok(html.includes('api("/api/calendar/connect-url", { method: "POST" })'));
+});

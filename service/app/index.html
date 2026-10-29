@@ -1960,6 +1960,7 @@ button:not(:disabled):active{transform:scale(.965)}
       <p class="muted small" style="margin-top:6px">For Cutover staff. This area covers demo spaces only. A customer workspace is never shown here, unless you are a member of it.</p>
       <div class="row" role="tablist" aria-label="Staff views" style="gap:8px;flex-wrap:wrap;margin-top:12px">
         <button type="button" class="small-btn" id="staffTabTracker" role="tab" aria-selected="true">Demo invitations</button>
+        <button type="button" class="ghost small-btn" id="staffTabCalendar" role="tab" aria-selected="false" hidden>My calendar</button>
         <button type="button" class="ghost small-btn" id="staffTabAccess" role="tab" aria-selected="false" hidden>Staff access</button>
       </div>
 
@@ -1979,6 +1980,34 @@ button:not(:disabled):active{transform:scale(.965)}
         </div>
         <div id="staffRows"></div>
         <p id="staffMsg" class="muted small hint" role="status"></p>
+      </div>
+
+      <div id="staffCalendar" hidden>
+        <h3 style="margin:14px 0 6px">Connect your Google Calendar</h3>
+        <p class="muted small" style="margin:0 0 10px">Once connected, a meeting booked by a guest goes on your Google Calendar, and guests see only your free times. Cutover reads when you are free or busy. It never reads what your events say.</p>
+        <p class="small" id="calStatus" style="margin:0 0 12px"></p>
+        <ol class="cal-steps" style="margin:0 0 14px;padding-left:20px;line-height:1.6">
+          <li><b>Check your account.</b> Use the Google account you use for customer meetings, not a personal one. Make sure it is the account signed in on this browser.</li>
+          <li><b>Press Connect Google Calendar.</b> Google opens in this tab. Cutover brings you back here when Google finishes.</li>
+          <li><b>Choose your account.</b> On Google's page, pick the same account you use for customer meetings.</li>
+          <li><b>Tick both permissions.</b> Google asks Cutover to see your free and busy times, and to view and edit events on your calendars. Keep both ticked, then press Continue.</li>
+          <li><b>Check the result.</b> Cutover shows "Connected as" with your address. If it does, you are done.</li>
+        </ol>
+        <div class="row" style="gap:8px;flex-wrap:wrap">
+          <button type="button" id="calConnect">Connect Google Calendar</button>
+          <button type="button" class="ghost" id="calDisconnect" hidden>Disconnect</button>
+        </div>
+        <p id="calMsg" class="small hint" role="status"></p>
+        <details style="margin-top:14px">
+          <summary>Something went wrong?</summary>
+          <ul style="margin:8px 0 0;padding-left:20px;line-height:1.6">
+            <li><b>Google says the app is not verified, or access is blocked.</b> Ask a super user to add your work address as a test user in the Google Cloud project. Then connect again.</li>
+            <li><b>The connect button is greyed out.</b> The Google setup is not finished yet. A super user needs to complete it.</li>
+            <li><b>You connected the wrong account.</b> Press Disconnect here, then connect again and pick the right account on Google's page.</li>
+            <li><b>Cutover says a permission was not ticked.</b> Press Connect again and tick both permissions on Google's page.</li>
+            <li><b>You want to remove the connection completely.</b> Press Disconnect here. You can also remove Cutover in your Google account under Security, then Third-party access.</li>
+          </ul>
+        </details>
       </div>
 
       <div id="staffAccess" hidden>
@@ -3344,6 +3373,7 @@ button:not(:disabled):active{transform:scale(.965)}
     setTab("tabGuide", "guide");
     $("staffCard").hidden = !(staffRoles.length && homeTab === "staff");
     $("staffTabAccess").hidden = !staffRoles.some((r) => ["super_user", "admin", "sales"].includes(r));
+    $("staffTabCalendar").hidden = !staffRoles.some((r) => ["super_user", "admin", "sales"].includes(r));
     if (homeTab === "staff") showStaffTab(staffTab);
     $("analysesCard").hidden = homeTab !== "analyses";
     $("privacyCard").hidden = !(ws && homeTab === "privacy");
@@ -3659,7 +3689,7 @@ button:not(:disabled):active{transform:scale(.965)}
 
   function showStaffTab(which) {
     staffTab = which;
-    const tabs = { tracker: ["staffTabTracker", "staffTracker"], access: ["staffTabAccess", "staffAccess"] };
+    const tabs = { tracker: ["staffTabTracker", "staffTracker"], calendar: ["staffTabCalendar", "staffCalendar"], access: ["staffTabAccess", "staffAccess"] };
     for (const [key, [btn, panel]] of Object.entries(tabs)) {
       $(btn).className = key === which ? "small-btn" : "ghost small-btn";
       $(btn).setAttribute("aria-selected", String(key === which));
@@ -3667,6 +3697,7 @@ button:not(:disabled):active{transform:scale(.965)}
     }
     if (which === "tracker") loadStaffTracker();
     if (which === "access") loadStaffAccess();
+    if (which === "calendar") loadStaffCalendar();
   }
 
   $("staffTabTracker").addEventListener("click", () => showStaffTab("tracker"));
@@ -3795,6 +3826,64 @@ button:not(:disabled):active{transform:scale(.965)}
     a.click();
     a.remove();
     setTimeout(() => URL.revokeObjectURL(url), 1000);
+  });
+
+  // ---- My calendar: each staff member connects their own Google Calendar ----
+  const CAL_MESSAGES = {
+    connected: ["Your Google Calendar is connected.", false],
+    denied: ["You chose not to connect. Nothing was changed.", true],
+    expired: ["That connection link expired. Press Connect again.", true],
+    permissions: ["Google did not get both calendar permissions. Press Connect again and tick both.", true],
+    "no-long-term-access": ["Google did not keep access for Cutover. Press Connect again and keep the boxes ticked.", true],
+    "not-set-up": ["The calendar connection is not set up yet. A super user needs to finish the Google setup.", true],
+    failed: ["The connection did not finish. Press Connect again.", true],
+  };
+  // Google returns the browser to the app with #calendar=... in the address.
+  const calendarReturn = new URLSearchParams(location.hash.slice(1));
+  let calendarNotice = null;
+  if (calendarReturn.get("calendar")) {
+    const key = calendarReturn.get("calendar") === "connected" ? "connected" : (calendarReturn.get("reason") || "failed");
+    calendarNotice = CAL_MESSAGES[key] || CAL_MESSAGES.failed;
+    history.replaceState(null, "", location.pathname + location.search);
+    homeTab = "staff";
+    staffTab = "calendar";
+  }
+
+  async function loadStaffCalendar() {
+    if (calendarNotice) {
+      setMsg("calMsg", calendarNotice[0], calendarNotice[1]);
+      calendarNotice = null;
+    }
+    try {
+      const s = await api("/api/calendar");
+      $("calStatus").textContent = s.connected
+        ? `Connected as ${s.email}.`
+        : s.configured ? "Not connected yet." : "Not set up yet. A super user needs to finish the Google setup.";
+      $("calConnect").disabled = !s.configured;
+      $("calConnect").textContent = s.connected ? "Reconnect Google Calendar" : "Connect Google Calendar";
+      $("calDisconnect").hidden = !s.connected;
+    } catch (err) {
+      setMsg("calMsg", err.message, true);
+    }
+  }
+
+  $("calConnect").addEventListener("click", async () => {
+    try {
+      const res = await api("/api/calendar/connect-url", { method: "POST" });
+      location.href = res.url;
+    } catch (err) {
+      setMsg("calMsg", err.message, true);
+    }
+  });
+
+  $("calDisconnect").addEventListener("click", async () => {
+    try {
+      await api("/api/calendar", { method: "DELETE" });
+      setMsg("calMsg", "Disconnected.", false);
+      loadStaffCalendar();
+    } catch (err) {
+      setMsg("calMsg", err.message, true);
+    }
   });
 
   // Platform roles: who holds which. Admins and sales see the demo roles they may grant; super users see all.

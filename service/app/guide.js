@@ -12,6 +12,7 @@
 window.CUTOVER_GUIDE = {
   updated: "2026-10-29",
   whatsNew: [
+    "2026-10-29: My calendar in the Staff area. Sales, admins and super users connect their own Google Calendar with five numbered steps, and can disconnect at any time. Cutover reads only free and busy times.",
     "2026-10-29: The invitation tracker lists each person once, with their workspaces and status underneath. Logins and last visit are shown once per person.",
     "2026-10-29: Staff open on a Cutover view on Who are you today? instead of a workspace. It lists their Cutover roles, and Continue opens the staff area. Each workspace is still one chip away.",
     "2026-10-29: Platform roles: a person can hold super user, admin, sales and support at once. These apply across Cutover, not to a workspace. Only super users set them, and admins and sales people can invite demo users with the sales or support role. The Staff tab is for these people.",
@@ -433,6 +434,19 @@ window.CUTOVER_GUIDE = {
       refs: ["analysisList", "selBar"],
     },
     {
+      id: "calendar",
+      title: "Connect your Google Calendar",
+      who: "staff",
+      body: [
+        "If you invite people or book meetings with them, connect your own Google Calendar once. Then a meeting a guest books goes on your calendar, and the guest sees only your free times.",
+        "Open the Staff area, then My calendar. Follow the five numbered steps there: check your account, press Connect Google Calendar, choose your account on Google's page, tick both permissions, then check that Cutover shows Connected as your address.",
+        "Cutover reads only when you are free or busy, and it creates the meetings you book. It never reads what your events say.",
+        "If the connect button is greyed out, the Google setup is not finished yet. A super user completes it. If Google says the app is not verified, a super user adds your work address as a test user.",
+      ],
+      actions: [],
+      refs: ["staffCalendar"],
+    },
+    {
       id: "bell",
       title: "Follow updates with the bell",
       who: "everyone",
@@ -561,6 +575,12 @@ window.CUTOVER_GUIDE = {
   faq: [
     { q: "Who can see the Staff tab?", step: "staff",
       a: "Anyone with a platform role: super user, admin, sales or support. The roles apply across Cutover, not to one workspace. Workspace admins and customers do not see the tab." },
+    { q: "How do I connect my Google Calendar?", step: "calendar",
+      a: "Open the Staff area, then My calendar. Follow the numbered steps: press Connect Google Calendar, choose your work account on Google's page, and tick both permissions. Cutover then shows Connected as your address." },
+    { q: "Why is the Connect Google Calendar button greyed out?", step: "calendar",
+      a: "The Google setup for Cutover is not finished. A super user needs to complete it before anyone can connect a calendar." },
+    { q: "What does Cutover read from my calendar?", step: "calendar",
+      a: "Only whether you are free or busy, and the meetings Cutover creates for bookings. It never reads what your events say. You can disconnect at any time from My calendar." },
     { q: "What can each platform role do?", step: "staff",
       a: "Super user: everything in the staff area, including choosing roles. Admin: inviting demo users and seeing demo invitations. Sales: inviting demo users and seeing demo invitations. Support: seeing demo invitations only. Cutover roles never open a customer workspace. A person can hold several roles." },
     { q: "Can Cutover staff see a customer's data?", step: "staff",
