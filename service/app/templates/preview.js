@@ -452,13 +452,15 @@
     wrap.appendChild(proposal);
 
     // Run as is, in containers changes no code, so the look, the page flow and the screen layouts do not apply.
-    if (id !== "lift-contain") {
+    // The look changes only when the screens are rebuilt, so only the web front end shows it.
+    if (id === "web-modern") {
       wrap.appendChild(section("How it could look"));
       const look = make("div", null, "proposal");
       look.appendChild(make("p", "Look and feel", "proposal-title"));
       look.appendChild(lookAndFeel());
       wrap.appendChild(look);
-
+    }
+    if (id !== "lift-contain") {
       wrap.appendChild(section("Page flow"));
       const flowCard = make("div", null, "proposal");
       flowCard.appendChild(make("p", "From sign-in to the finished task", "proposal-title"));
@@ -466,7 +468,7 @@
       flowCard.appendChild(make("p", ctx.screens.length ? "Screen names come from the code. Each step is a screen the team rebuilds or keeps." : "No screen names were found, so the steps are placeholders.", "look-note"));
       wrap.appendChild(flowCard);
 
-      wrap.appendChild(section("Wireframes"));
+      wrap.appendChild(section(id === "services-data" ? "Conceptual wireframes for data flow" : "Wireframes"));
       const captions = {
         "web-modern": "Each screen is rebuilt in the new front end, with the same fields and actions.",
         "services-data": "The screens stay as they are, and call the new services behind them.",
