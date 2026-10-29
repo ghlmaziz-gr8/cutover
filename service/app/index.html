@@ -1770,6 +1770,7 @@ button:not(:disabled):active{transform:scale(.965)}
     </section>
     <div class="row wzNav">
       <button type="button" class="ghost" data-signout>Sign out</button>
+      <button type="button" class="ghost" id="toStaff" hidden>Staff area</button>
       <button type="button" id="toHome">Continue</button>
     </div>
   </section>
@@ -3100,7 +3101,7 @@ button:not(:disabled):active{transform:scale(.965)}
       show("s-login");
       return;
     }
-    if (!me.workspaces.length && !me.is_operator) {
+    if (!me.workspaces.length && !me.is_operator && !(me.staff_roles || []).length) {
       show("s-denied");
       return;
     }
@@ -3266,10 +3267,13 @@ button:not(:disabled):active{transform:scale(.965)}
       const r = ROLES[ws.role];
       you.append(el("b", `${r.name} in ${ws.name}: `), document.createTextNode(r.text));
     }
+    // Someone with a platform role can go to the staff area without choosing a workspace.
     $("toHome").disabled = !ws;
+    $("toStaff").hidden = !(me.staff_roles || []).length;
   }
 
   $("toHome").addEventListener("click", () => showHome());
+  $("toStaff").addEventListener("click", () => { homeTab = "staff"; showHome(); });
   $("roleGuide").addEventListener("click", () => openGuideStep("roles"));
   $("connectGuide").addEventListener("click", () => openGuideStep("install"));
   $("changeRole").addEventListener("click", () => {
