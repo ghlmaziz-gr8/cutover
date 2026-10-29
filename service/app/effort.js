@@ -284,8 +284,15 @@
     const deliveryFte = () => team.filter((r) => r.side === "delivery").reduce((a, r) => a + r.fte, 0);
     const autoHeadcount = Math.ceil(deliveryFte());
     if (opt.teamSize && autoHeadcount > 0) {
-      const k = Math.max(1, Math.round(opt.teamSize)) / deliveryFte();
-      for (const r of team) if (r.side === "delivery") r.fte = Math.max(0.5, Math.round(r.fte * k * 2) / 2);
+      const target = Math.max(1, Math.round(opt.teamSize));
+      const k = target / deliveryFte();
+      for (const r of team) if (r.side === "delivery") r.fte = Math.max(0.25, Math.round(r.fte * k * 4) / 4);
+      // The developers take what is left, so the team is the size chosen, unless the other roles already need more.
+      const devRole = team.find((r) => r.side === "delivery" && r.role === "Developers");
+      if (devRole) {
+        const others = deliveryFte() - devRole.fte;
+        devRole.fte = Math.max(0.25, Math.round((target - others) * 4) / 4);
+      }
     }
     const headcount = Math.ceil(deliveryFte());
 
