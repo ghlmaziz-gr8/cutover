@@ -5715,6 +5715,14 @@ a{color:#6d28d9;font-weight:600}`;
         go.className = "ghost";
         go.addEventListener("click", () => document.getElementById(`stage-${s.unlocked_by}`)?.scrollIntoView({ behavior: "smooth", block: "center" }));
         card.appendChild(go);
+      } else if (s.id === "approach") {
+        // The approach is chosen on What next, not reviewed here, so the card points there.
+        card.appendChild(el("p", "Choose one of the three proposals on What next, under the scope.", "stage-lock"));
+        const pick = el("button", "Go to the approach");
+        pick.type = "button";
+        pick.className = "ghost";
+        pick.addEventListener("click", () => document.getElementById("approachCard")?.scrollIntoView({ behavior: "smooth", block: "center" }));
+        card.appendChild(pick);
       } else if (s.ready && row.can_plan) {
         const mark = el("button", "Mark as reviewed");
         mark.type = "button";
