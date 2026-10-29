@@ -1963,8 +1963,7 @@ button:not(:disabled):active{transform:scale(.965)}
       <button type="button" class="ghost" id="exportPdfTop">Export PDF</button>
       <button type="button" class="ghost" id="exportHtmlTop">Export HTML</button>
       <button type="button" class="ghost" id="reviewFilesTop" hidden>Review file results</button>
-      <button type="button" class="ghost" id="toWhatNextTop">What next</button>
-      <button type="button" id="toNextTop">Deeper assessment</button>
+      <button type="button" id="toNextTop">What next</button>
     </div>
     <div class="card" id="outOfDateCard" hidden style="margin-top:12px">
       <h3 style="margin-top:0">The repository has changed</h3>
@@ -1995,8 +1994,7 @@ button:not(:disabled):active{transform:scale(.965)}
 
     <div class="row wzNav">
       <button type="button" class="ghost" id="reviewBack">Back to analyses</button>
-      <button type="button" class="ghost" id="toWhatNext">What next</button>
-      <button type="button" id="toNext">Deeper assessment</button>
+      <button type="button" id="toNext">What next</button>
     </div>
   </section>
 
@@ -8267,9 +8265,8 @@ a{color:#6d28d9;font-weight:600}`;
   });
 
   $("reviewBack").addEventListener("click", () => showHome());
-  $("toNext").addEventListener("click", () => showDeeper());
-  // What next opens straight from the review: the scope is chosen before the deeper assessment runs.
-  $("toWhatNext").addEventListener("click", () => showNext());
+  // What next is the next step from the review: the approach and scope come before the deeper assessment.
+  $("toNext").addEventListener("click", () => showNext());
 
   // ---- Step 8: next steps ----
 
@@ -11353,7 +11350,7 @@ const REGION_OPTS = {
 
   // The buttons at the top repeat the ones at the bottom, and do exactly what they do.
   [["runBackTop", "runBack"], ["viewFindingsTop", "viewFindings"], ["reviewBackTop", "reviewBack"],
-   ["toNextTop", "toNext"], ["toWhatNextTop", "toWhatNext"], ["nextBackReviewTop", "nextBackReview"], ["nextBackHomeTop", "nextBackHome"]]
+   ["toNextTop", "toNext"], ["nextBackReviewTop", "nextBackReview"], ["nextBackHomeTop", "nextBackHome"]]
     .forEach(([top, bottom]) => $(top).addEventListener("click", () => $(bottom).click()));
 
   // ---- Steps 3 to 5: start a new assessment ----

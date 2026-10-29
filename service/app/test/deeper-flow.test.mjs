@@ -7,9 +7,9 @@ const html = readFileSync(new URL("../index.html", import.meta.url), "utf8");
 const guide = readFileSync(new URL("../guide.js", import.meta.url), "utf8");
 
 test("Review findings goes to the deeper assessment, not straight to Next steps", () => {
-  assert.ok(html.includes('$("toNext").addEventListener("click", () => showDeeper());'));
+  assert.ok(html.includes('$("toNext").addEventListener("click", () => showNext());'));
   assert.ok(html.includes('next.addEventListener("click", () => showDeeper());'));
-  assert.ok(!html.includes('$("toNext").addEventListener("click", () => showNext());'));
+  assert.ok(!html.includes('$("toNext").addEventListener("click", () => showDeeper());'));
 });
 
 test("Next steps can only be reached from the deeper assessment, once one of its views is opened", () => {
@@ -73,8 +73,9 @@ test("the files are loaded once per analysis, through the existing files list", 
 
 test("What next opens from the Review screen, so the scope is chosen before the deeper assessment", () => {
   const review = html.slice(html.indexOf('<section id="s-review"'), html.indexOf('<section id="s-deeper"') > 0 ? html.indexOf('<section id="s-deeper"') : html.length);
-  assert.ok(review.includes('id="toWhatNext"') && review.includes('id="toWhatNextTop"'));
-  assert.ok(html.includes('$("toWhatNext").addEventListener("click", () => showNext());'));
+  assert.ok(review.includes('id="toNext"') && review.includes('id="toNextTop"'));
+  assert.ok(!review.includes('id="toWhatNext"') && !review.includes("Deeper assessment</button>"));
+  assert.ok(!html.includes('$("toWhatNext")'));
 });
 
 test("the scope options all draw: no check reads an undefined variable, which stopped the loop after the first option", () => {
