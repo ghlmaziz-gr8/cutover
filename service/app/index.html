@@ -2022,7 +2022,7 @@ button:not(:disabled):active{transform:scale(.965)}
         <button type="button" class="ghost small-btn" id="exportApproachPdf">Export PDF</button>
         <button type="button" class="ghost small-btn" id="exportApproachHtml">Export HTML</button>
       </div>
-      <details class="fold" id="approachFold">
+      <details class="fold" id="approachFold" open>
         <summary>Show the mind map of the three approaches</summary>
         <div id="approachMap" class="mmap" aria-label="Map of the three approaches"></div>
       </details>
@@ -6001,7 +6001,6 @@ a{color:#6d28d9;font-weight:600}`;
 
   function renderApproach(row) {
     const card = $("approachCard");
-    $("approachFold").open = !row || !row.modern_template;
     // The approach comes before the scope, so the card shows until a scope without Modernize is chosen.
     const visible = !!row && (!row.scope || scopeHas(row.scope, "modernize"));
     card.hidden = !visible;
