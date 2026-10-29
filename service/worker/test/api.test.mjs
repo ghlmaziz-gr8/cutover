@@ -4054,6 +4054,7 @@ test("the booking link shows the prospect, offers weekday slots from the sender'
     assert.equal(info.status, 200);
     assert.equal(info.body.first_name, "Pat");
     assert.equal(info.body.status, "invited");
+    assert.equal(info.body.host_name, "Sam Sales");
 
     const slots = await call(`/api/book/${token}/slots`);
     assert.equal(slots.status, 200);

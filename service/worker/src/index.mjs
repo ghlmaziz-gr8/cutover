@@ -956,7 +956,7 @@ async function createProspect(request, env) {
   const res = await serviceRest(env, "prospects", {
     method: "POST",
     headers: { prefer: "return=representation" },
-    body: JSON.stringify({ email, first_name, last_name, company, phone: phone || null, invited_by: caller.user.id, invited_by_email: invitedBy, status: "invited" }),
+    body: JSON.stringify({ email, first_name, last_name, company, phone: phone || null, invited_by: caller.user.id, invited_by_email: invitedBy, invited_by_name: displayName(caller.user) || null, status: "invited" }),
   });
   if (!res.ok) return json({ error: "Could not save the prospect." }, 502);
   const [row] = await res.json();
@@ -1105,6 +1105,7 @@ async function bookingInfo(request, env, token) {
     phone: p.phone,
     status: p.status,
     meeting_at: p.meeting_at,
+    host_name: p.invited_by_name || "the Cutover team",
     time_zone: bookingZone(env),
   });
 }
