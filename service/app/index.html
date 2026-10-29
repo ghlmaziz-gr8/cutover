@@ -1936,6 +1936,7 @@ button:not(:disabled):active{transform:scale(.965)}
       <form id="inviteForm" class="row" style="margin-top:14px;align-items:flex-end">
         <div class="grow"><label for="inviteEmail">Email</label><input id="inviteEmail" type="email" placeholder="name@organization.org" required autocomplete="off"></div>
         <div class="grow"><label for="inviteRole">Role</label><select id="inviteRole"></select></div>
+        <div class="grow"><label for="inviteNote">Personal message (optional)</label><input id="inviteNote" maxlength="200" placeholder="A short welcome" autocomplete="off"></div>
         <label class="check" style="margin-top:0"><input type="checkbox" id="inviteAdmin"> Also a workspace admin</label>
         <button type="submit" id="inviteBtn">Invite</button>
       </form>
@@ -3610,6 +3611,7 @@ button:not(:disabled):active{transform:scale(.965)}
   let staffStatus = "all";
   const STAFF_LABEL = { signed_in: "Signed in", waiting: "Waiting", removed: "Removed" };
   const STAFF_PILL = { signed_in: "in", waiting: "wait", removed: "gone" };
+  const loginsText = (n) => (n === 1 ? "1 login" : `${n} logins`);
   const shortDate = (iso) => (iso ? new Date(iso).toLocaleDateString([], { day: "numeric", month: "short", year: "numeric" }) : "No visit yet");
 
   function showStaffTab(which) {
@@ -3707,7 +3709,8 @@ button:not(:disabled):active{transform:scale(.965)}
       const by = r.invited_by ? `invited by ${r.invited_by}` : r.invited_at ? "" : "joined before tracking";
       const when = r.invited_at ? `· ${shortDate(r.invited_at)}` : "";
       who.append(el("div", `${r.workspace} · ${roleName(r.role)}${r.is_admin ? " (admin)" : ""} ${by ? "· " + by : ""} ${when}`.replace(/\s+/g, " ").trim(), "meta"));
-      who.append(el("div", r.status === "signed_in" ? `Last visit: ${shortDate(r.last_seen)}` : "", "meta"));
+      if (r.note) who.append(el("div", `“${r.note}”`, "meta"));
+      who.append(el("div", r.status === "signed_in" ? `${loginsText(r.logins)} · last visit ${shortDate(r.last_seen)}` : "", "meta"));
       const pill = el("span", STAFF_LABEL[r.status], `staff-pill ${STAFF_PILL[r.status]}`);
       card.append(who, pill);
       rows.append(card);
@@ -3723,7 +3726,7 @@ button:not(:disabled):active{transform:scale(.965)}
   $("staffWs").addEventListener("change", renderStaffTracker);
 
   $("staffCsv").addEventListener("click", () => {
-    const head = ["email", "workspace", "role", "status", "invited_by", "invited_at", "accepted_at", "last_seen"];
+    const head = ["email", "workspace", "role", "status", "invited_by", "invited_at", "accepted_at", "logins", "last_seen", "note"];
     const cell = (v) => `"${String(v ?? "").replace(/"/g, '""')}"`;
     const lines = [head.join(","), ...staffFiltered().map((r) => head.map((k) => cell(k === "role" ? roleName(r.role) : r[k])).join(","))];
     const url = URL.createObjectURL(new Blob([lines.join("\n")], { type: "text/csv" }));
@@ -4863,10 +4866,11 @@ button:not(:disabled):active{transform:scale(.965)}
     try {
       await api(`/api/workspaces/${ws.id}/invitations`, {
         method: "POST",
-        body: JSON.stringify({ email, role: $("inviteRole").value, is_admin: $("inviteAdmin").checked }),
+        body: JSON.stringify({ email, role: $("inviteRole").value, is_admin: $("inviteAdmin").checked, note: $("inviteNote").value.trim() || undefined }),
       });
       setMsg("inviteMsg", `Invited ${email}.`, false);
       $("inviteEmail").value = "";
+      $("inviteNote").value = "";
       $("inviteAdmin").checked = false;
       loadPeople();
     } catch (err) {

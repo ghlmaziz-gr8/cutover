@@ -514,6 +514,7 @@ async function me(request, env) {
       body: JSON.stringify({ name }),
     }).catch(() => {});
   }
+  await recordLogin(env, auth.user).catch(() => {});
   const res = await serviceRest(env,
     `members?user_id=eq.${auth.user.id}&select=workspace_id,role,is_admin,created_at,workspace:workspaces(id,name)&order=created_at.asc`);
   if (!res.ok) return json({ error: "Could not load your workspaces." }, 502);
@@ -609,6 +610,9 @@ async function createInvitation(request, env, workspaceId) {
   if (!email) return json({ error: "Enter a valid email address." }, 400);
   if (!ROLES.includes(body.role)) return json({ error: `Role must be one of: ${ROLES.join(", ")}.` }, 400);
   const isAdmin = body.is_admin === true;
+  if (body.note !== undefined && body.note !== null && typeof body.note !== "string") return json({ error: "The message must be text." }, 400);
+  const note = typeof body.note === "string" ? body.note.trim() : "";
+  if (note.length > 200) return json({ error: "The message can be up to 200 characters." }, 400);
 
   const res = await serviceRest(env, "invitations?on_conflict=workspace_id,email", {
     method: "POST",
@@ -616,7 +620,7 @@ async function createInvitation(request, env, workspaceId) {
     body: JSON.stringify({ workspace_id: workspaceId, email, role: body.role, is_admin: isAdmin, invited_by: access.user.id }),
   });
   if (!res.ok) return json({ error: "Could not save the invitation." }, 502);
-  await logInvitation(env, workspaceId, email, body.role, isAdmin, access.user.id).catch(() => {});
+  await logInvitation(env, workspaceId, email, body.role, isAdmin, access.user.id, note || null).catch(() => {});
   // If this person already has access, update their role now as well.
   await serviceRest(env, `members?workspace_id=eq.${workspaceId}&email=eq.${encodeURIComponent(email)}`, {
     method: "PATCH",
@@ -645,7 +649,7 @@ async function deleteInvitation(request, env, workspaceId, email) {
 }
 
 // One open log row per person and workspace: a second invitation updates the open row rather than adding one.
-async function logInvitation(env, workspaceId, email, role, isAdmin, invitedBy) {
+async function logInvitation(env, workspaceId, email, role, isAdmin, invitedBy, note) {
   const now = new Date().toISOString();
   const open = await serviceRest(env, `invitation_log?workspace_id=eq.${workspaceId}&email=eq.${encodeURIComponent(email)}&accepted_at=is.null&removed_at=is.null&select=id`);
   const rows = open.ok ? await open.json() : [];
@@ -653,18 +657,32 @@ async function logInvitation(env, workspaceId, email, role, isAdmin, invitedBy) 
     await serviceRest(env, `invitation_log?id=eq.${rows[0].id}`, {
       method: "PATCH",
       headers: { prefer: "return=minimal" },
-      body: JSON.stringify({ role, is_admin: isAdmin, invited_by: invitedBy, invited_at: now }),
+      body: JSON.stringify({ role, is_admin: isAdmin, invited_by: invitedBy, invited_at: now, note }),
     });
     return;
   }
   await serviceRest(env, "invitation_log", {
     method: "POST",
     headers: { prefer: "return=minimal" },
-    body: JSON.stringify({ workspace_id: workspaceId, email, role, is_admin: isAdmin, invited_by: invitedBy, invited_at: now }),
+    body: JSON.stringify({ workspace_id: workspaceId, email, role, is_admin: isAdmin, invited_by: invitedBy, invited_at: now, note }),
   });
 }
 
 // ---- Staff: owners and sales people (added by a super user). Not open to customers. ----
+
+// A new login is counted when the last one was more than 30 minutes ago, as in Proof to Profit. Best effort.
+const LOGIN_GAP_MS = 30 * 60 * 1000;
+async function recordLogin(env, user) {
+  const since = encodeURIComponent(new Date(Date.now() - LOGIN_GAP_MS).toISOString());
+  const recent = await serviceRest(env, `login_events?user_id=eq.${user.id}&at=gte.${since}&select=id&limit=1`);
+  if (!recent.ok) return;
+  if ((await recent.json()).length) return;
+  await serviceRest(env, "login_events", {
+    method: "POST",
+    headers: { prefer: "return=minimal" },
+    body: JSON.stringify({ user_id: user.id, email: normalizeEmail(user.email) || String(user.email || "") }),
+  });
+}
 
 // The invitation tracker across every workspace: each invitation, whether it was used, and the last visit.
 async function staffInvitations(request, env) {
@@ -672,14 +690,15 @@ async function staffInvitations(request, env) {
   if (auth.response) return auth.response;
   const role = await staffRoleFor(env, auth.user.email);
   if (!role) return json({ error: "Only Cutover staff can see this." }, 403);
-  const [wsRes, logRes, invRes, memRes, engRes] = await Promise.all([
+  const [wsRes, logRes, invRes, memRes, engRes, loginRes] = await Promise.all([
     serviceRest(env, "workspaces?select=id,name&order=created_at.asc"),
-    serviceRest(env, `invitation_log?select=workspace_id,email,role,is_admin,invited_by,invited_at,accepted_at,removed_at&order=invited_at.desc&limit=${STAFF_ROWS}`),
+    serviceRest(env, `invitation_log?select=workspace_id,email,role,is_admin,invited_by,invited_at,accepted_at,removed_at,note&order=invited_at.desc&limit=${STAFF_ROWS}`),
     serviceRest(env, "invitations?select=workspace_id,email,role,is_admin,invited_by,created_at"),
     serviceRest(env, "members?select=workspace_id,user_id,email,role,is_admin,created_at"),
     serviceRest(env, "engagement?select=user_id,last_seen"),
+    serviceRest(env, "login_events?select=user_id"),
   ]);
-  if (!wsRes.ok || !logRes.ok || !invRes.ok || !memRes.ok || !engRes.ok) {
+  if (!wsRes.ok || !logRes.ok || !invRes.ok || !memRes.ok || !engRes.ok || !loginRes.ok) {
     return json({ error: "Could not load the invitations." }, 502);
   }
   const workspaces = await wsRes.json();
@@ -687,6 +706,8 @@ async function staffInvitations(request, env) {
   const pending = await invRes.json();
   const members = await memRes.json();
   const lastSeen = new Map((await engRes.json()).map((r) => [r.user_id, r.last_seen]));
+  const loginCount = new Map();
+  for (const r of await loginRes.json()) loginCount.set(r.user_id, (loginCount.get(r.user_id) || 0) + 1);
   const wsName = new Map(workspaces.map((w) => [w.id, w.name]));
   const emailOf = new Map(members.map((m) => [m.user_id, m.email]));
   const key = (wsId, email) => `${wsId}|${email}`;
@@ -716,6 +737,9 @@ async function staffInvitations(request, env) {
       accepted_at: r.accepted_at || null,
       status,
       last_seen: member ? lastSeen.get(member.user_id) || null : null,
+      note: r.note || null,
+      // Signed in before logins were counted: shown as at least one, as in Proof to Profit.
+      logins: signedIn ? Math.max(1, loginCount.get(member?.user_id) || 0) : 0,
     };
   });
   // People who joined before any invitation was logged have no invited_at. They are listed, but not counted as sent.
@@ -732,6 +756,8 @@ async function staffInvitations(request, env) {
       accepted_at: null,
       status: "signed_in",
       last_seen: lastSeen.get(m.user_id) || null,
+      note: null,
+      logins: Math.max(1, loginCount.get(m.user_id) || 0),
     });
   }
   rows.sort((a, b) => String(b.invited_at || "").localeCompare(String(a.invited_at || "")));

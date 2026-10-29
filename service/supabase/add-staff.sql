@@ -30,3 +30,20 @@ create index if not exists invitation_log_open_idx on public.invitation_log (wor
 alter table public.invitation_log enable row level security;
 revoke all on public.invitation_log from anon, authenticated;
 grant select, insert, update, delete on public.invitation_log to service_role;
+
+-- The personal message sent with an invitation (up to 200 characters). Shown only to staff.
+alter table public.invitation_log add column if not exists note text check (note is null or char_length(note) <= 200);
+
+-- One row each time someone signs in after more than 30 minutes away, as in Proof to Profit. Holds no page content.
+create table if not exists public.login_events (
+  id      bigint generated always as identity primary key,
+  user_id uuid not null references auth.users (id) on delete cascade,
+  email   text not null,
+  at      timestamptz not null default now()
+);
+create index if not exists login_events_user_idx on public.login_events (user_id, at);
+
+alter table public.login_events enable row level security;
+revoke all on public.login_events from anon, authenticated;
+grant select, insert, delete on public.login_events to service_role;
+

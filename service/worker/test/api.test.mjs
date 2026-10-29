@@ -153,6 +153,7 @@ function seed() {
     workspace_time: [],
     staff: [{ email: "owner@cutover.test", role: "owner", added_by: uid(8), created_at: NOW }, { email: "sales@cutover.test", role: "sales", added_by: uid(8), created_at: NOW }],
     invitation_log: [],
+    login_events: [],
   };
 }
 
@@ -199,6 +200,7 @@ function defaultsFor(table) {
   if (table === "analysis_model_tokens") return { ...base, used_at: null };
   if (table === "analysis_target_approvals") return { ...base, approved_at: NOW };
   if (table === "members" || table === "invitations") return { is_admin: false, ...base };
+  if (table === "login_events") return { ...base, at: new Date().toISOString() };
   return base;
 }
 
@@ -3772,4 +3774,37 @@ test("only super users can see, add or remove staff, and staff cannot be given t
   const removed = await call(`/api/staff/${encodeURIComponent("sales@cutover.test")}`, { as: "operator", method: "DELETE" });
   assert.equal(removed.status, 200);
   assert.equal((await call("/api/staff/invitations", { as: "sales" })).status, 403);
+});
+
+test("a sign-in is counted once per 30 minutes, and again after a longer break", async () => {
+  await call("/api/me", { as: "eng_a" });
+  await call("/api/me", { as: "eng_a" });
+  assert.equal(state.login_events.filter((r) => r.user_id === PEOPLE.eng_a.id).length, 1);
+  for (const r of state.login_events) r.at = new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString();
+  await call("/api/me", { as: "eng_a" });
+  assert.equal(state.login_events.filter((r) => r.user_id === PEOPLE.eng_a.id).length, 2);
+});
+
+test("an invitation can carry a short personal message, which the tracker shows to staff", async () => {
+  const long = await call(`/api/workspaces/${W_ACME}/invitations`, {
+    as: "admin_a", method: "POST", body: { email: "wide@acme.test", role: "auditor", note: "x".repeat(201) },
+  });
+  assert.equal(long.status, 400);
+  const sent = await call(`/api/workspaces/${W_ACME}/invitations`, {
+    as: "admin_a", method: "POST", body: { email: "note@acme.test", role: "auditor", note: "  Welcome aboard  " },
+  });
+  assert.equal(sent.status, 201);
+  const tracker = await call("/api/staff/invitations", { as: "sales" });
+  assert.equal(tracker.body.rows.find((r) => r.email === "note@acme.test").note, "Welcome aboard");
+  assert.equal(tracker.body.rows.find((r) => r.email === "newhire@acme.test").note, null);
+});
+
+test("the tracker counts logins for people who have signed in, and shows at least one for those who joined before logins were counted", async () => {
+  state.login_events.push({ user_id: PEOPLE.eng_a.id, email: PEOPLE.eng_a.email, at: NOW }, { user_id: PEOPLE.eng_a.id, email: PEOPLE.eng_a.email, at: NOW });
+  const tracker = await call("/api/staff/invitations", { as: "owner" });
+  const eng = tracker.body.rows.find((r) => r.email === PEOPLE.eng_a.email);
+  assert.equal(eng.logins, 2);
+  const sec = tracker.body.rows.find((r) => r.email === PEOPLE.sec_a.email);
+  assert.equal(sec.logins, 1);
+  assert.equal(tracker.body.rows.find((r) => r.email === "newhire@acme.test").logins, 0);
 });

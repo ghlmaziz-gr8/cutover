@@ -13,6 +13,7 @@ window.CUTOVER_GUIDE = {
   updated: "2026-10-29",
   whatsNew: [
     "2026-10-29: A Staff tab for Cutover owners and sales staff. The invitation tracker shows every invitation across workspaces: sent, signed in, waiting, removed, the acceptance rate and the average time to join, with search, filters and CSV export. Customers do not see it.",
+    "2026-10-29: The tracker counts logins and shows the personal message sent with each invitation. The message field is optional, up to 200 characters, on the People list.",
     "2026-10-29: Owners can read the heat map of any workspace from the Staff tab. Sales people cannot. The heat map stays anonymous: it does not record who clicked.",
     "2026-10-29: Super users add and remove owners and sales people under Staff access. Owners and sales people cannot add anyone.",
     "2026-10-28: Each stage on the path is now clickable. Choose the scope comes after Choose the approach. A stage opens a panel that shows what it holds, with a button to change it.",
@@ -362,7 +363,8 @@ window.CUTOVER_GUIDE = {
       body: [
         "The Staff tab is for Cutover owners and sales staff. Customers and workspace admins do not see it.",
         "Invitation tracker: every invitation sent in any workspace, kept after it is used or removed. Four figures show invitations sent, signed in with the acceptance rate, waiting, and the average time to join. Filter by status or workspace, search, or export the list as CSV.",
-        "Last visit comes from the time tracking the portal already keeps. The tracker does not record logins one by one, and it does not show the message sent with an invitation, because none is stored.",
+        "Logins: each time someone opens the portal after more than 30 minutes away, that counts as one login. People who joined before logins were counted show at least one.",
+        "Each invitation keeps the short personal message sent with it, up to 200 characters, so the tracker can show it beside the person.",
         "Behaviour and heat map: owners and super users choose any workspace, screen and period. The map shows where clicks landed, as before, and never who clicked. Sales people do not see it.",
         "Staff access: only super users see this. Add an owner or a sales person by email. To remove someone, press Remove. Owners and sales people cannot add anyone.",
       ],
