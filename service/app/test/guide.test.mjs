@@ -9,7 +9,7 @@ const html = readFileSync(new URL("../index.html", import.meta.url), "utf8");
 const sandbox = { window: {} };
 vm.runInNewContext(guideSrc, sandbox);
 const G = sandbox.window.CUTOVER_GUIDE;
-const WHO = ["everyone", "engineers", "admins", "operators"];
+const WHO = ["everyone", "engineers", "admins", "operators", "staff"];
 const TABS = ["analyses", "workspaces", "guide"];
 
 test("guide has an update date and at least one whats-new line", () => {

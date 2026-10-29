@@ -4,13 +4,17 @@
 //   - Add a line to whatsNew whenever a user-visible change ships, newest first.
 //   - If a step names a screen element, list its id in refs. The test in
 //     service/app/test/guide.test.mjs fails if that id no longer exists in index.html.
-//   - who: "everyone" | "engineers" (platform engineers) | "admins" (workspace admins) | "operators".
+//   - who: "everyone" | "engineers" (platform engineers) | "admins" (workspace admins) | "operators" | "staff"
+//     (owners and sales people, and super users).
 //   - faq: questions the Ask button answers. step names the guide step to open.
 //   - actions: {type:"link", label, href} | {type:"go", label, tab:"analyses"|"workspaces"|"guide"}
 //              | {type:"repo-check", label}
 window.CUTOVER_GUIDE = {
-  updated: "2026-10-22",
+  updated: "2026-10-29",
   whatsNew: [
+    "2026-10-29: A Staff tab for Cutover owners and sales staff. The invitation tracker shows every invitation across workspaces: sent, signed in, waiting, removed, the acceptance rate and the average time to join, with search, filters and CSV export. Customers do not see it.",
+    "2026-10-29: Owners can read the heat map of any workspace from the Staff tab. Sales people cannot. The heat map stays anonymous: it does not record who clicked.",
+    "2026-10-29: Super users add and remove owners and sales people under Staff access. Owners and sales people cannot add anyone.",
     "2026-10-28: Each stage on the path is now clickable. Choose the scope comes after Choose the approach. A stage opens a panel that shows what it holds, with a button to change it.",
     "2026-10-28: Feature groups now have two levels. A capability is a named business area, and it holds one or more features. The AI proposes the capabilities and their features together, and the owner approves both. Any signed-in user can rename a capability, on the draft or the approved grouping. The readiness list and the map group each feature under its capability, and the map outlines each capability.",
     "2026-10-28: Feature groups are now called capabilities. The card, its steps and buttons, the readiness list, the map, the module specs and the messages use the word capability. Nothing else changes.",
@@ -352,6 +356,20 @@ window.CUTOVER_GUIDE = {
       refs: ["downloadBtn", "deleteBtn", "scopeCard", "deeperCardNext"],
     },
     {
+      id: "staff",
+      title: "Track invitations and heat maps as staff",
+      who: "staff",
+      body: [
+        "The Staff tab is for Cutover owners and sales staff. Customers and workspace admins do not see it.",
+        "Invitation tracker: every invitation sent in any workspace, kept after it is used or removed. Four figures show invitations sent, signed in with the acceptance rate, waiting, and the average time to join. Filter by status or workspace, search, or export the list as CSV.",
+        "Last visit comes from the time tracking the portal already keeps. The tracker does not record logins one by one, and it does not show the message sent with an invitation, because none is stored.",
+        "Behaviour and heat map: owners and super users choose any workspace, screen and period. The map shows where clicks landed, as before, and never who clicked. Sales people do not see it.",
+        "Staff access: only super users see this. Add an owner or a sales person by email. To remove someone, press Remove. Owners and sales people cannot add anyone.",
+      ],
+      actions: [],
+      refs: ["staffCard"],
+    },
+    {
       id: "bell",
       title: "Follow updates with the bell",
       who: "everyone",
@@ -478,6 +496,14 @@ window.CUTOVER_GUIDE = {
     },
   ],
   faq: [
+    { q: "Who can see the Staff tab?", step: "staff",
+      a: "Super users, owners and sales people. A super user adds owners and sales people under Staff access. Workspace admins and customers do not see the tab." },
+    { q: "What is the difference between an owner and a sales person?", step: "staff",
+      a: "Both see the invitation tracker. Owners can also read the heat map of any workspace. Only super users can add either one." },
+    { q: "Why can't I see the heat map?", step: "staff",
+      a: "The heat map is open to super users and owners. Sales people see the tracker only." },
+    { q: "Does the tracker show who clicked?", step: "staff",
+      a: "No. The heat map shows where clicks landed on a screen and the id of the button used. It never records who clicked." },
     { q: "How do I add my GitHub repository?", step: "install",
       a: "Install the Cutover reader on it. Open https://github.com/apps/cutover-reader-portal/installations/new, choose 'Only select repositories', tick the repository, and Save. Then check it with the Check a repository step in the guide." },
     { q: "Cutover says it cannot read my repository. Why?", step: "check",
