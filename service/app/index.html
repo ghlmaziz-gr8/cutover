@@ -5968,12 +5968,12 @@ a{color:#6d28d9;font-weight:600}`;
     const rail = $("nextRail");
     rail.replaceChildren();
     const modern = scopeHas(row.scope, "modernize");
-    // The same order as the path: approach, scope, project plan, then the conversion.
+    // The same order as the cards on What next, from the top of the page down.
     const steps = [
       { id: "approachCard", label: "Approach", done: !!row.modern_template, show: !row.scope || modern },
-      { id: "scopeCard", label: "Scope", done: !!row.scope, show: true },
       { id: "targetCard", label: "Language", done: !!row.target_language, show: modern },
       { id: "targetCard", label: "Owner approval", done: !!row.target_approval, show: modern },
+      { id: "scopeCard", label: "Scope", done: !!row.scope, show: true },
       { id: "effortCard", label: "Project plan", done: !!row.target_approval, show: !!row.scope },
       { id: "conversionCard", label: "Converted code", done: false, show: modern },
     ].filter((x) => x.show);
