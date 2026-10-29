@@ -12,6 +12,7 @@
 window.CUTOVER_GUIDE = {
   updated: "2026-10-29",
   whatsNew: [
+    "2026-10-29: Staff open on a Cutover view on Who are you today? instead of a workspace. It lists their Cutover roles, and Continue opens the staff area. Each workspace is still one chip away.",
     "2026-10-29: Platform roles: a person can hold super user, admin, sales and support at once. These apply across Cutover, not to a workspace. Only super users set them, and admins and sales people can invite demo users with the sales or support role. The Staff tab is for these people.",
     "2026-10-29: A Staff tab for Cutover staff. The invitation tracker shows every invitation across workspaces: sent, signed in, waiting, removed, the acceptance rate and the average time to join, with search, filters and CSV export. Customers do not see it.",
     "2026-10-29: The tracker counts logins and shows the personal message sent with each invitation. The message field is optional, up to 200 characters, on the People list.",
