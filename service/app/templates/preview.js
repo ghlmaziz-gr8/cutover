@@ -127,17 +127,73 @@
 
 
   // The look: the portal's colours and type, shown as they would be used in the new front end.
+  // The palette families (palettes.js). Choosing one sets all six colours together, so the palette always
+  // belongs to one family, and the whole look moves to it in one motion.
+  const SLOT_VAR = { primary: "--p", highlight: "--h", links: "--l", page: "--page", surface: "--surface", text: "--text" };
   function lookAndFeel() {
+    const P = window.CutoverPalettes;
     const wrap = make("div", null, "look");
-    const swatches = make("div", null, "swatches");
-    [["Primary", "#6d28d9"], ["Highlight", "#ec4899"], ["Links and focus", "#0891b2"], ["Page", "#f7f6ff"], ["Surface", "#ffffff"], ["Text", "#1d1640"]]
-      .forEach(([name, hex]) => {
-        const sw = make("div", null, "swatch");
-        const dot = make("i");
-        dot.style.background = hex;
-        sw.append(dot, make("b", name), make("span", hex));
-        swatches.appendChild(sw);
+    let family = P.FAMILIES[0];
+    let mode = "light";
+
+    wrap.appendChild(make("p", "The same colours and type as the Cutover portal, so the new application feels like one product.", "look-note"));
+
+    // Family picker: each family is a fan of its colours. Hover spreads the fan; a click picks the family.
+    const picker = make("div", null, "pal-grid");
+    picker.setAttribute("role", "radiogroup");
+    picker.setAttribute("aria-label", "Palette family");
+    const pickButtons = P.FAMILIES.map((f) => {
+      const b = make("button", null, "pal");
+      b.setAttribute("role", "radio");
+      const fan = make("span", null, "pal-fan");
+      P.SLOTS.forEach(([, key]) => {
+        const i = make("i");
+        i.style.background = f.light[key];
+        fan.appendChild(i);
       });
+      b.append(fan, make("b", f.name), make("small", f.note));
+      b.addEventListener("click", () => { family = f; paint(); });
+      picker.appendChild(b);
+      return [f, b];
+    });
+
+    // Light or dark: the same family, with its dark set.
+    const modeRow = make("div", null, "pal-mode");
+    const modeButtons = ["light", "dark"].map((m) => {
+      const b = make("button", m === "light" ? "Light" : "Dark", "seg");
+      b.addEventListener("click", () => { mode = m; paint(); });
+      modeRow.appendChild(b);
+      return [m, b];
+    });
+
+    const swatches = make("div", null, "swatches");
+    const hexes = P.SLOTS.map(([name, key]) => {
+      const sw = make("div", null, "swatch");
+      const dot = make("i");
+      dot.style.background = `var(${SLOT_VAR[key]})`;
+      const hex = make("span", "");
+      sw.append(dot, make("b", name), hex);
+      swatches.appendChild(sw);
+      return [key, hex];
+    });
+
+    // Every colour in the look comes from the custom properties on .look, so one change moves them all.
+    function paint() {
+      const set = family[mode];
+      const vars = P.cssVars(set);
+      Object.keys(vars).forEach((k) => wrap.style.setProperty(k, vars[k]));
+      hexes.forEach(([key, el]) => { el.textContent = set[key]; });
+      pickButtons.forEach(([f, b]) => {
+        const on = f === family;
+        b.setAttribute("aria-checked", String(on));
+        b.classList.toggle("on", on);
+      });
+      modeButtons.forEach(([m, b]) => {
+        b.classList.toggle("on", m === mode);
+        b.setAttribute("aria-pressed", String(m === mode));
+      });
+    }
+
     const type = make("div", null, "type-sample");
     type.appendChild(make("p", "Screen title", "type-h"));
     type.appendChild(make("p", "Body text reads at 16 pixels, with clear labels and generous spacing.", "type-b"));
@@ -149,8 +205,8 @@
     chips.appendChild(make("span", "Inferred", "chip warn"));
     chips.appendChild(make("span", "Not shown for your role", "chip muted"));
     type.append(buttons, chips);
-    wrap.appendChild(make("p", "The same colours and type as the Cutover portal, so the new application feels like one product.", "look-note"));
-    wrap.append(swatches, type);
+    wrap.append(picker, modeRow, swatches, type);
+    paint();
     return wrap;
   }
 
