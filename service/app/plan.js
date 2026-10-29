@@ -110,6 +110,20 @@
     else out.push(line("No high-severity risks were found in the review."));
     out.push("");
 
+    out.push("## Cutover risks and fallbacks");
+    const items = input.contingencies || [];
+    if (items.length) {
+      items.forEach((c) => {
+        out.push(line(c.risk));
+        out.push(`   Fallback: ${c.contingency}`);
+        if (c.rollback_step) out.push(`   Roll back by: ${c.rollback_step}`);
+        if (c.trigger_condition) out.push(`   Trigger: ${c.trigger_condition}`);
+        if (c.owner_email) out.push(`   Owner: ${c.owner_email}`);
+        out.push(`   Status: ${c.status}`);
+      });
+    } else out.push(line("No cutover risks and fallbacks recorded."));
+    out.push("");
+
     out.push("## Gaps to check");
     if (gaps.length) gaps.forEach((g) => out.push(line(`${g.title}: confirm before relying on it.`)));
     else out.push(line("No medium-severity gaps were found."));

@@ -6683,6 +6683,7 @@ a{color:#6d28d9;font-weight:600}`;
   // The plan's inputs, read from the analysis and the findings this viewer can see. Used by the download and the map.
   function planInput(row) {
     return {
+      contingencies: (cur.contingencies || []).filter((c) => c.status !== "rejected"),
       appName: row.app_name,
       repo: row.repo,
       template: row.modern_template,
@@ -6780,6 +6781,10 @@ a{color:#6d28d9;font-weight:600}`;
   function planDocumentHtml(p, pdf) {
     const esc = (v) => String(v ?? "").replace(/[&<>"']/g, (ch) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[ch]));
     const est = p.est;
+    const riskItems = p.contingencies || [];
+    const risksHtml = riskItems.length
+      ? `<ul class="gates">${riskItems.map((c) => `<li><span class="gd"></span><div><b>${esc(c.risk)}</b><span>Fallback: ${esc(c.contingency)}</span>${c.rollback_step ? `<span>Roll back by: ${esc(c.rollback_step)}</span>` : ""}${c.trigger_condition ? `<span>Trigger: ${esc(c.trigger_condition)}</span>` : ""}${c.owner_email ? `<span>Owner: ${esc(c.owner_email)}</span>` : ""}<span>${esc(PLAN_STATUS[c.status] || c.status)}</span></div></li>`).join("")}</ul>`
+      : "<p>No cutover risks and fallbacks recorded.</p>";
     const fmt = (v) => (Math.round(v * 10) / 10).toLocaleString("en-US");
     const N = Math.max(1, est.weeks);
     const LEFT = 250;
@@ -6946,6 +6951,8 @@ a{color:#6d28d9;font-weight:600}`;
         <div class="box"><h4 style="margin:0 0 6px;font:800 9px system-ui;letter-spacing:.08em;text-transform:uppercase;color:#6d28d9">Assumptions</h4><ul>${est.assumptions.map((a) => `<li>${esc(a)}</li>`).join("")}</ul></div>
         <div class="box"><h4 style="margin:0 0 6px;font:800 9px system-ui;letter-spacing:.08em;text-transform:uppercase;color:#6d28d9">Gaps and things to check</h4><ul>${(est.notes || []).map((n) => `<li>${esc(n)}</li>`).join("") || "<li>None found.</li>"}</ul></div>
       </div>
+      <h2>Cutover risks and fallbacks</h2>
+      ${risksHtml}
       <footer class="foot"><span>${esc(est.label || "Cutover AI assessment")} · a planning range for review, not a quote</span><span>${esc(p.app)}</span></footer>
       </section>
     </main>${script}</body></html>`;
@@ -6996,6 +7003,7 @@ a{color:#6d28d9;font-weight:600}`;
     const tpl = effortTemplateOf(row);
     planExport = {
       est,
+      contingencies: (cur.contingencies || []).filter((c) => c.status !== "rejected"),
       title: planTitle(),
       app: cur.app_name || cur.repo || "Application",
       approach: TEMPLATE_NAME[tpl] || "No approach in this scope",
