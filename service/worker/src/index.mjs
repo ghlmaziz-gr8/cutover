@@ -2817,9 +2817,9 @@ async function targetApproval(env, row) {
 const PROGRESS_STAGES = [
   { id: "assessment", title: "Application Assessment", produces: "What the application is, how it is built and what data it holds, from the code." },
   { id: "approach", title: "Choose the approach", produces: "The modernized approach the team agrees on, from the three proposals.", needs: "assessment" },
-  { id: "deeper", title: "Deeper assessment", produces: "The architecture, the sections and the documents for this application.", needs: "approach" },
-  { id: "plan", title: "Modernization plan", produces: "A plan for the chosen approach: the order of work, the risks and a rough size.", needs: "deeper" },
-  { id: "starter", title: "Starter project", produces: "A zip with the skeleton for the chosen template, with no copied business logic.", needs: "plan" },
+  { id: "plan", title: "Modernization plan", produces: "A plan for the chosen approach: the order of work, the risks and a rough size.", needs: "approach" },
+  { id: "deeper", title: "Deeper assessment", produces: "The architecture, the sections and the documents for this application.", needs: "plan" },
+  { id: "starter", title: "Starter project", produces: "A zip with the skeleton for the chosen template, with no copied business logic.", needs: "deeper" },
   { id: "convert", title: "Converted code", produces: "Converted screens and routines, on a branch, with test results.", needs: "starter" },
   { id: "pr", title: "Pull request", produces: "The modernized application as a pull request. This is the end goal.", needs: "convert" },
 ];

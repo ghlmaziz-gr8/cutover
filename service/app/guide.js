@@ -57,7 +57,7 @@ window.CUTOVER_GUIDE = {
     "2026-10-27: Each level has its own colours, so the badge shows your progress. Starter is blue, Explorer teal, Regular indigo, Champion amber and Legend magenta. Time-on-the-system badges keep the blue.",
     "2026-10-27: Your level badge sits in the header, next to the Cutover logo. It is the shield badge with your level and points. Click it to open your rewards.",
     "2026-10-27: Each badge is a shield plate now, like a game award: a glowing medal with an icon, the name, a level pill, the points, and a gold star. Hours on the system get their own plates with a clock, star, flame or gem.",
-    "2026-10-28: The path to a modernized application starts with Application Assessment, then Choose the approach, then Deeper assessment, then the plan, starter project, converted code and pull request. Application Assessment clears when the analysis completes.",
+    "2026-10-28: The path is now Application Assessment, Choose the approach, Modernization plan, Deeper assessment, Starter project, Converted code and Pull request. The plan waits for the approach, and the deeper assessment waits for the plan.",
     "2026-10-28: Any role can choose the scope on What next for now, so the team can decide it together. Limiting it to the application owner, a CIO or a CTO is to be decided later.",
     "2026-10-28: What next opens from the Review screen, with a What next button beside Deeper assessment. The scope is chosen there before the deeper assessment runs.",
     "2026-10-28: The same estimate and project plan follow every scope: deeper assessment only, with Modernize, with Migrate, or with both. With Modernize they use the chosen approach; otherwise they use the lift-and-contain rates.",
