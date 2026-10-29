@@ -4,13 +4,18 @@
 //   - Add a line to whatsNew whenever a user-visible change ships, newest first.
 //   - If a step names a screen element, list its id in refs. The test in
 //     service/app/test/guide.test.mjs fails if that id no longer exists in index.html.
-//   - who: "everyone" | "engineers" (platform engineers) | "admins" (workspace admins) | "operators".
+//   - who: "everyone" | "engineers" (platform engineers) | "admins" (workspace admins) | "operators" | "staff"
+//     (owners and sales people, and super users).
 //   - faq: questions the Ask button answers. step names the guide step to open.
 //   - actions: {type:"link", label, href} | {type:"go", label, tab:"analyses"|"workspaces"|"guide"}
 //              | {type:"repo-check", label}
 window.CUTOVER_GUIDE = {
   updated: "2026-10-29",
   whatsNew: [
+    "2026-10-29: A Staff tab for Cutover owners and sales staff. The invitation tracker shows every invitation across workspaces: sent, signed in, waiting, removed, the acceptance rate and the average time to join, with search, filters and CSV export. Customers do not see it.",
+    "2026-10-29: The tracker counts logins and shows the personal message sent with each invitation. The message field is optional, up to 200 characters, on the People list.",
+    "2026-10-29: Owners can read the heat map of any workspace from the Staff tab. Sales people cannot. The heat map stays anonymous: it does not record who clicked.",
+    "2026-10-29: Super users add and remove owners and sales people under Staff access. Owners and sales people cannot add anyone.",
     "2026-10-29: Ask Cutover and this guide now match the current screens: Advance with Cutover, the seven steps in the top bar, deleting analyses, the dashboard on the role screen, and the template previews.",
     "2026-10-29: The top bar names its seven steps: Application Identification, Code Connection, Data Rules Confirmation, Cutover App Assessment, Findings, Advance and Modernization. Hover over a tick to see its step and status.",
     "2026-10-29: Advance with Cutover is step 6 of the top bar, and the deeper assessment page is step 7, Modernization. The screen keeps its path progress in its own rail.",
@@ -400,6 +405,21 @@ window.CUTOVER_GUIDE = {
       refs: ["downloadBtn", "deleteBtn", "scopeCard", "deeperCardNext"],
     },
     {
+      id: "staff",
+      title: "Track invitations and heat maps as staff",
+      who: "staff",
+      body: [
+        "The Staff tab is for Cutover owners and sales staff. Customers and workspace admins do not see it.",
+        "Invitation tracker: every invitation sent in any workspace, kept after it is used or removed. Four figures show invitations sent, signed in with the acceptance rate, waiting, and the average time to join. Filter by status or workspace, search, or export the list as CSV.",
+        "Logins: each time someone opens the portal after more than 30 minutes away, that counts as one login. People who joined before logins were counted show at least one.",
+        "Each invitation keeps the short personal message sent with it, up to 200 characters, so the tracker can show it beside the person.",
+        "Behaviour and heat map: owners and super users choose any workspace, screen and period. The map shows where clicks landed, as before, and never who clicked. Sales people do not see it.",
+        "Staff access: only super users see this. Add an owner or a sales person by email. To remove someone, press Remove. Owners and sales people cannot add anyone.",
+      ],
+      actions: [],
+      refs: ["staffCard"],
+      },
+      {
       id: "delete",
       title: "Delete an analysis",
       who: "everyone",
@@ -539,6 +559,14 @@ window.CUTOVER_GUIDE = {
     },
   ],
   faq: [
+    { q: "Who can see the Staff tab?", step: "staff",
+      a: "Super users, owners and sales people. A super user adds owners and sales people under Staff access. Workspace admins and customers do not see the tab." },
+    { q: "What is the difference between an owner and a sales person?", step: "staff",
+      a: "Both see the invitation tracker. Owners can also read the heat map of any workspace. Only super users can add either one." },
+    { q: "Why can't I see the heat map?", step: "staff",
+      a: "The heat map is open to super users and owners. Sales people see the tracker only." },
+    { q: "Does the tracker show who clicked?", step: "staff",
+      a: "No. The heat map shows where clicks landed on a screen and the id of the button used. It never records who clicked." },
     { q: "How do I delete an analysis?", step: "delete",
       a: "Open the Analyses list. On the analysis, press Delete, or tick several and press Delete selected. You can delete an analysis you started, and a workspace admin can delete any analysis in the workspace. A dialog lists what will be removed and what will be kept, and the deletion cannot be undone." },
     { q: "Why can't I delete a running analysis?", step: "delete",

@@ -16,6 +16,10 @@ import { validateDbMetadata } from "./db-metadata.mjs";
 //   POST   /api/workspaces                                create a customer workspace and invite its first admin (Cutover operators)
 //   PATCH  /api/workspaces/:id                             rename a workspace (operators)
 //   DELETE /api/workspaces/:id                             delete a workspace and its analyses (operators; type the name to confirm)
+//   GET    /api/staff/invitations                          invitation tracker across workspaces (staff: super users, owners, sales)
+//   GET    /api/staff                                      staff list (super users)
+//   POST   /api/staff                                      add an owner or sales person (super users)
+//   DELETE /api/staff/:email                               remove an owner or sales person (super users)
 //   GET    /api/admin/workspaces                           every workspace with counts; people shown only where the operator is a member (operators)
 //   GET    /api/workspaces/:id/members                    list members (workspace admins)
 //   DELETE /api/workspaces/:id/members/:userId            remove a member (workspace admins)
@@ -133,6 +137,20 @@ function isOperator(env, email) {
   return list.includes(String(email || "").toLowerCase());
 }
 
+// Stakeholder roles for the staff area. Super users are the operator list; owners and sales people are rows in
+// the staff table, added by a super user. Returns null for everyone else, and when the table cannot be read.
+const STAFF_ROLES = ["owner", "sales"];
+const STAFF_ROWS = 500;
+async function staffRoleFor(env, email) {
+  const clean = normalizeEmail(email);
+  if (!clean) return null;
+  if (isOperator(env, clean)) return "super_user";
+  const res = await serviceRest(env, `staff?email=eq.${encodeURIComponent(clean)}&select=role`);
+  if (!res.ok) return null;
+  const rows = await res.json();
+  return rows[0] && STAFF_ROLES.includes(rows[0].role) ? rows[0].role : null;
+}
+
 // Asks Supabase who the bearer token belongs to. Returns the user or null.
 async function currentUser(env, request) {
   const auth = request.headers.get("authorization") || "";
@@ -176,6 +194,12 @@ async function acceptInvitations(env, user) {
       method: "DELETE",
       headers: { prefer: "return=minimal" },
     });
+    // The log keeps the invitation after it is used up, so the invitation tracker can show it. Best effort.
+    await serviceRest(env, `invitation_log?workspace_id=eq.${inv.workspace_id}&email=eq.${encodeURIComponent(email)}&accepted_at=is.null`, {
+      method: "PATCH",
+      headers: { prefer: "return=minimal" },
+      body: JSON.stringify({ accepted_at: new Date().toISOString() }),
+    }).catch(() => {});
   }
   return true;
 }
@@ -490,6 +514,7 @@ async function me(request, env) {
       body: JSON.stringify({ name }),
     }).catch(() => {});
   }
+  await recordLogin(env, auth.user).catch(() => {});
   const res = await serviceRest(env,
     `members?user_id=eq.${auth.user.id}&select=workspace_id,role,is_admin,created_at,workspace:workspaces(id,name)&order=created_at.asc`);
   if (!res.ok) return json({ error: "Could not load your workspaces." }, 502);
@@ -497,6 +522,7 @@ async function me(request, env) {
   return json({
     email: auth.user.email,
     is_operator: isOperator(env, auth.user.email),
+    staff_role: await staffRoleFor(env, auth.user.email),
     workspaces: rows.map((r) => ({
       id: r.workspace_id,
       name: r.workspace?.name || "Workspace",
@@ -584,6 +610,9 @@ async function createInvitation(request, env, workspaceId) {
   if (!email) return json({ error: "Enter a valid email address." }, 400);
   if (!ROLES.includes(body.role)) return json({ error: `Role must be one of: ${ROLES.join(", ")}.` }, 400);
   const isAdmin = body.is_admin === true;
+  if (body.note !== undefined && body.note !== null && typeof body.note !== "string") return json({ error: "The message must be text." }, 400);
+  const note = typeof body.note === "string" ? body.note.trim() : "";
+  if (note.length > 200) return json({ error: "The message can be up to 200 characters." }, 400);
 
   const res = await serviceRest(env, "invitations?on_conflict=workspace_id,email", {
     method: "POST",
@@ -591,6 +620,7 @@ async function createInvitation(request, env, workspaceId) {
     body: JSON.stringify({ workspace_id: workspaceId, email, role: body.role, is_admin: isAdmin, invited_by: access.user.id }),
   });
   if (!res.ok) return json({ error: "Could not save the invitation." }, 502);
+  await logInvitation(env, workspaceId, email, body.role, isAdmin, access.user.id, note || null).catch(() => {});
   // If this person already has access, update their role now as well.
   await serviceRest(env, `members?workspace_id=eq.${workspaceId}&email=eq.${encodeURIComponent(email)}`, {
     method: "PATCH",
@@ -610,6 +640,193 @@ async function deleteInvitation(request, env, workspaceId, email) {
     headers: { prefer: "return=minimal" },
   });
   if (!res.ok) return json({ error: "Could not remove the invitation." }, 502);
+  await serviceRest(env, `invitation_log?workspace_id=eq.${workspaceId}&email=eq.${encodeURIComponent(clean)}&accepted_at=is.null&removed_at=is.null`, {
+    method: "PATCH",
+    headers: { prefer: "return=minimal" },
+    body: JSON.stringify({ removed_at: new Date().toISOString() }),
+  }).catch(() => {});
+  return json({ removed: true });
+}
+
+// One open log row per person and workspace: a second invitation updates the open row rather than adding one.
+async function logInvitation(env, workspaceId, email, role, isAdmin, invitedBy, note) {
+  const now = new Date().toISOString();
+  const open = await serviceRest(env, `invitation_log?workspace_id=eq.${workspaceId}&email=eq.${encodeURIComponent(email)}&accepted_at=is.null&removed_at=is.null&select=id`);
+  const rows = open.ok ? await open.json() : [];
+  if (rows.length) {
+    await serviceRest(env, `invitation_log?id=eq.${rows[0].id}`, {
+      method: "PATCH",
+      headers: { prefer: "return=minimal" },
+      body: JSON.stringify({ role, is_admin: isAdmin, invited_by: invitedBy, invited_at: now, note }),
+    });
+    return;
+  }
+  await serviceRest(env, "invitation_log", {
+    method: "POST",
+    headers: { prefer: "return=minimal" },
+    body: JSON.stringify({ workspace_id: workspaceId, email, role, is_admin: isAdmin, invited_by: invitedBy, invited_at: now, note }),
+  });
+}
+
+// ---- Staff: owners and sales people (added by a super user). Not open to customers. ----
+
+// A new login is counted when the last one was more than 30 minutes ago, as in Proof to Profit. Best effort.
+const LOGIN_GAP_MS = 30 * 60 * 1000;
+async function recordLogin(env, user) {
+  const since = encodeURIComponent(new Date(Date.now() - LOGIN_GAP_MS).toISOString());
+  const recent = await serviceRest(env, `login_events?user_id=eq.${user.id}&at=gte.${since}&select=id&limit=1`);
+  if (!recent.ok) return;
+  if ((await recent.json()).length) return;
+  await serviceRest(env, "login_events", {
+    method: "POST",
+    headers: { prefer: "return=minimal" },
+    body: JSON.stringify({ user_id: user.id, email: normalizeEmail(user.email) || String(user.email || "") }),
+  });
+}
+
+// The invitation tracker across every workspace: each invitation, whether it was used, and the last visit.
+async function staffInvitations(request, env) {
+  const auth = await requireUser(env, request);
+  if (auth.response) return auth.response;
+  const role = await staffRoleFor(env, auth.user.email);
+  if (!role) return json({ error: "Only Cutover staff can see this." }, 403);
+  const [wsRes, logRes, invRes, memRes, engRes, loginRes] = await Promise.all([
+    serviceRest(env, "workspaces?select=id,name&order=created_at.asc"),
+    serviceRest(env, `invitation_log?select=workspace_id,email,role,is_admin,invited_by,invited_at,accepted_at,removed_at,note&order=invited_at.desc&limit=${STAFF_ROWS}`),
+    serviceRest(env, "invitations?select=workspace_id,email,role,is_admin,invited_by,created_at"),
+    serviceRest(env, "members?select=workspace_id,user_id,email,role,is_admin,created_at"),
+    serviceRest(env, "engagement?select=user_id,last_seen"),
+    serviceRest(env, "login_events?select=user_id"),
+  ]);
+  if (!wsRes.ok || !logRes.ok || !invRes.ok || !memRes.ok || !engRes.ok || !loginRes.ok) {
+    return json({ error: "Could not load the invitations." }, 502);
+  }
+  const workspaces = await wsRes.json();
+  const log = await logRes.json();
+  const pending = await invRes.json();
+  const members = await memRes.json();
+  const lastSeen = new Map((await engRes.json()).map((r) => [r.user_id, r.last_seen]));
+  const loginCount = new Map();
+  for (const r of await loginRes.json()) loginCount.set(r.user_id, (loginCount.get(r.user_id) || 0) + 1);
+  const wsName = new Map(workspaces.map((w) => [w.id, w.name]));
+  const emailOf = new Map(members.map((m) => [m.user_id, m.email]));
+  const key = (wsId, email) => `${wsId}|${email}`;
+  const memberOf = new Map(members.map((m) => [key(m.workspace_id, m.email), m]));
+
+  // Invitations sent before the log existed are still pending in the invitations table; count them as sent.
+  const seen = new Set(log.map((r) => key(r.workspace_id, r.email)));
+  const all = [...log];
+  for (const inv of pending) {
+    if (seen.has(key(inv.workspace_id, inv.email))) continue;
+    seen.add(key(inv.workspace_id, inv.email));
+    all.push({ ...inv, invited_at: inv.created_at, accepted_at: null, removed_at: null });
+  }
+
+  const rows = all.map((r) => {
+    const member = memberOf.get(key(r.workspace_id, r.email));
+    const signedIn = !!(member || r.accepted_at);
+    const status = signedIn ? "signed_in" : r.removed_at ? "removed" : "waiting";
+    return {
+      workspace_id: r.workspace_id,
+      workspace: wsName.get(r.workspace_id) || "Workspace",
+      email: r.email,
+      role: r.role,
+      is_admin: r.is_admin === true,
+      invited_by: emailOf.get(r.invited_by) || null,
+      invited_at: r.invited_at,
+      accepted_at: r.accepted_at || null,
+      status,
+      last_seen: member ? lastSeen.get(member.user_id) || null : null,
+      note: r.note || null,
+      // Signed in before logins were counted: shown as at least one, as in Proof to Profit.
+      logins: signedIn ? Math.max(1, loginCount.get(member?.user_id) || 0) : 0,
+    };
+  });
+  // People who joined before any invitation was logged have no invited_at. They are listed, but not counted as sent.
+  for (const m of members) {
+    if (seen.has(key(m.workspace_id, m.email))) continue;
+    rows.push({
+      workspace_id: m.workspace_id,
+      workspace: wsName.get(m.workspace_id) || "Workspace",
+      email: m.email,
+      role: m.role,
+      is_admin: m.is_admin === true,
+      invited_by: null,
+      invited_at: null,
+      accepted_at: null,
+      status: "signed_in",
+      last_seen: lastSeen.get(m.user_id) || null,
+      note: null,
+      logins: Math.max(1, loginCount.get(m.user_id) || 0),
+    });
+  }
+  rows.sort((a, b) => String(b.invited_at || "").localeCompare(String(a.invited_at || "")));
+
+  const tracked = rows.filter((r) => r.invited_at);
+  const count = (status) => tracked.filter((r) => r.status === status).length;
+  const hours = tracked
+    .filter((r) => r.accepted_at)
+    .map((r) => (Date.parse(r.accepted_at) - Date.parse(r.invited_at)) / 3600000)
+    .filter((h) => h >= 0);
+  const sent = tracked.length;
+  const signedIn = count("signed_in");
+  return json({
+    viewer_role: role,
+    totals: {
+      sent,
+      signed_in: signedIn,
+      waiting: count("waiting"),
+      removed: count("removed"),
+      acceptance_percent: sent ? Math.round((signedIn / sent) * 100) : 0,
+      avg_hours_to_join: hours.length ? Math.round((hours.reduce((a, b) => a + b, 0) / hours.length) * 10) / 10 : null,
+      signed_in_before_tracking: rows.length - tracked.length,
+    },
+    workspaces: workspaces.map((w) => ({ id: w.id, name: w.name })),
+    rows: rows.slice(0, STAFF_ROWS),
+  });
+}
+
+// Super users only: who holds an owner or sales role.
+async function listStaff(request, env) {
+  const auth = await requireUser(env, request);
+  if (auth.response) return auth.response;
+  if (!isOperator(env, auth.user.email)) return json({ error: "Only super users can see this." }, 403);
+  const res = await serviceRest(env, "staff?select=email,role,created_at&order=created_at.asc");
+  if (!res.ok) return json({ error: "Could not load the staff list." }, 502);
+  return json(await res.json());
+}
+
+async function addStaff(request, env) {
+  const auth = await requireUser(env, request);
+  if (auth.response) return auth.response;
+  if (!isOperator(env, auth.user.email)) return json({ error: "Only super users can add staff." }, 403);
+  const parsed = await readJson(request);
+  if (parsed.error) return json({ error: parsed.error }, 400);
+  const body = parsed.value || {};
+  const email = normalizeEmail(body.email);
+  if (!email) return json({ error: "Enter a valid email address." }, 400);
+  if (!STAFF_ROLES.includes(body.role)) return json({ error: `Role must be one of: ${STAFF_ROLES.join(", ")}.` }, 400);
+  if (isOperator(env, email)) return json({ error: "This person is already a super user." }, 400);
+  const res = await serviceRest(env, "staff?on_conflict=email", {
+    method: "POST",
+    headers: { prefer: "resolution=merge-duplicates,return=minimal" },
+    body: JSON.stringify({ email, role: body.role, added_by: auth.user.id }),
+  });
+  if (!res.ok) return json({ error: "Could not save the staff member." }, 502);
+  return json({ email, role: body.role }, 201);
+}
+
+async function removeStaff(request, env, email) {
+  const auth = await requireUser(env, request);
+  if (auth.response) return auth.response;
+  if (!isOperator(env, auth.user.email)) return json({ error: "Only super users can remove staff." }, 403);
+  const clean = normalizeEmail(email);
+  if (!clean) return json({ error: "Not found." }, 404);
+  const res = await serviceRest(env, `staff?email=eq.${encodeURIComponent(clean)}`, {
+    method: "DELETE",
+    headers: { prefer: "return=minimal" },
+  });
+  if (!res.ok) return json({ error: "Could not remove the staff member." }, 502);
   return json({ removed: true });
 }
 
@@ -4898,8 +5115,13 @@ async function recordClicks(request, env) {
 }
 
 async function heatmap(request, env, workspaceId) {
-  const access = await workspaceAdmin(env, request, workspaceId);
-  if (access.response) return access.response;
+  const auth = await requireUser(env, request);
+  if (auth.response) return auth.response;
+  const staff = await staffRoleFor(env, auth.user.email);
+  if (staff !== "super_user" && staff !== "owner") {
+    const access = await workspaceAdmin(env, request, workspaceId);
+    if (access.response) return access.response;
+  }
   const url = new URL(request.url);
   const screen = url.searchParams.get("screen") || "";
   if (!CLICK_SCREEN.test(screen)) return json({ error: "Choose a screen." }, 400);
@@ -5091,6 +5313,11 @@ async function route(request, env) {
     if (path === "/api/repo-check" && method === "GET") return repoCheck(request, env);
     if (path === "/api/admin/workspaces" && method === "GET") return overviewWorkspaces(request, env);
     if (path === "/api/admin/database" && method === "GET") return databaseSize(request, env);
+    if (path === "/api/staff/invitations" && method === "GET") return staffInvitations(request, env);
+    if (path === "/api/staff" && method === "GET") return listStaff(request, env);
+    if (path === "/api/staff" && method === "POST") return addStaff(request, env);
+    const staffOne = path.match(/^\/api\/staff\/(.+)$/);
+    if (staffOne && method === "DELETE") return removeStaff(request, env, decodeURIComponent(staffOne[1]));
 
     if (path === "/api/clicks" && method === "POST") return recordClicks(request, env);
     const heatRoute = path.match(/^\/api\/workspaces\/([^/]+)\/heatmap$/);

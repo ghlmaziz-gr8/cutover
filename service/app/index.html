@@ -265,6 +265,19 @@ button.danger{background:transparent;color:var(--bad);box-shadow:none;border:1.5
 #personas .persona b{font-size:14px;line-height:1.2}
 #personas .av{width:34px;height:34px;border-radius:11px;font-size:13px;margin-bottom:4px}
 #personas .lock{font-size:10px;padding:2px 6px}
+.staff-kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin-top:12px}
+.staff-kpi{background:var(--card);border:1px solid var(--line);border-left:4px solid var(--accent2);border-radius:14px;padding:12px}
+.staff-kpi span{display:block;font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted)}
+.staff-kpi b{display:block;font:700 26px var(--display);margin-top:4px}
+.staff-kpi small{color:var(--muted)}
+.staff-bar{display:grid;grid-template-columns:150px 1fr 70px;gap:10px;align-items:center;margin-top:8px;font-size:13px}
+.staff-bar i{display:block;height:10px;border-radius:999px;background:linear-gradient(90deg,var(--accent2),var(--accent));transform-origin:left;animation:staffGrow .6s ease both}
+@keyframes staffGrow{from{transform:scaleX(0)}to{transform:scaleX(1)}}
+.staff-row{display:grid;grid-template-columns:1fr auto;gap:8px;align-items:center;padding:12px;border:1px solid var(--line);border-radius:14px;margin-top:8px;background:var(--card)}
+.staff-row .meta{color:var(--muted);font-size:12px;margin-top:2px}
+.staff-pill{font-size:11px;font-weight:700;border-radius:999px;padding:3px 9px;background:var(--line);color:var(--fg);white-space:nowrap}
+.staff-pill.in{background:#dcfce7;color:#166534}.staff-pill.wait{background:#fef3c7;color:#92400e}.staff-pill.gone{background:#fee2e2;color:#991b1b}
+@media (prefers-reduced-motion:reduce){.staff-bar i{animation:none}}
 
 /* Form controls */
 input,select,textarea{font:500 15px var(--body);padding:12px 14px;border-radius:14px;border:1.5px solid var(--line);background:var(--card);color:var(--fg);width:100%;min-width:0}
@@ -1780,6 +1793,7 @@ button:not(:disabled):active{transform:scale(.965)}
       <button type="button" class="small-btn" id="tabAnalyses" role="tab">Analyses</button>
       <button type="button" class="ghost small-btn" id="tabPrivacy" role="tab" hidden>Privacy</button>
       <button type="button" class="ghost small-btn" id="tabWorkspaces" role="tab" hidden>Workspaces</button>
+      <button type="button" class="ghost small-btn" id="tabStaff" role="tab" hidden>Staff</button>
       <button type="button" class="ghost small-btn" id="tabGuide" role="tab">Guide</button>
     </div>
 
@@ -1922,6 +1936,7 @@ button:not(:disabled):active{transform:scale(.965)}
       <form id="inviteForm" class="row" style="margin-top:14px;align-items:flex-end">
         <div class="grow"><label for="inviteEmail">Email</label><input id="inviteEmail" type="email" placeholder="name@organization.org" required autocomplete="off"></div>
         <div class="grow"><label for="inviteRole">Role</label><select id="inviteRole"></select></div>
+        <div class="grow"><label for="inviteNote">Personal message (optional)</label><input id="inviteNote" maxlength="200" placeholder="A short welcome" autocomplete="off"></div>
         <label class="check" style="margin-top:0"><input type="checkbox" id="inviteAdmin"> Also a workspace admin</label>
         <button type="submit" id="inviteBtn">Invite</button>
       </form>
@@ -1930,6 +1945,62 @@ button:not(:disabled):active{transform:scale(.965)}
       <div id="inviteList"></div>
       <h3>Members</h3>
       <div id="memberList"></div>
+    </div>
+
+    <div class="card" id="staffCard" hidden aria-labelledby="staffTitle">
+      <p class="eyebrow">Staff only</p>
+      <h2 id="staffTitle">Invitations and behaviour</h2>
+      <p class="muted small" style="margin-top:6px">For Cutover owners and sales staff. Customers do not see this area.</p>
+      <div class="row" role="tablist" aria-label="Staff views" style="gap:8px;flex-wrap:wrap;margin-top:12px">
+        <button type="button" class="small-btn" id="staffTabTracker" role="tab" aria-selected="true">Invitation tracker</button>
+        <button type="button" class="ghost small-btn" id="staffTabHeat" role="tab" aria-selected="false">Behaviour and heat map</button>
+        <button type="button" class="ghost small-btn" id="staffTabAccess" role="tab" aria-selected="false" hidden>Staff access</button>
+      </div>
+
+      <div id="staffTracker">
+        <div class="staff-kpis" id="staffKpis"></div>
+        <div id="staffFunnel"></div>
+        <div class="row" style="gap:8px;flex-wrap:wrap;margin-top:14px">
+          <input id="staffSearch" type="search" placeholder="Search email or workspace" aria-label="Search invitations" style="flex:1;min-width:180px">
+          <select id="staffWs" aria-label="Workspace"><option value="">All workspaces</option></select>
+          <div class="row" role="group" aria-label="Filter by status" style="gap:6px;flex-wrap:wrap">
+            <button type="button" class="small-btn" data-st="all" aria-pressed="true">All</button>
+            <button type="button" class="ghost small-btn" data-st="signed_in" aria-pressed="false">Signed in</button>
+            <button type="button" class="ghost small-btn" data-st="waiting" aria-pressed="false">Waiting</button>
+            <button type="button" class="ghost small-btn" data-st="removed" aria-pressed="false">Removed</button>
+          </div>
+          <button type="button" class="ghost small-btn" id="staffCsv">Export CSV</button>
+        </div>
+        <div id="staffRows"></div>
+        <p id="staffMsg" class="muted small hint" role="status"></p>
+      </div>
+
+      <div id="staffHeat" hidden>
+        <div class="row" style="gap:8px;flex-wrap:wrap;margin-top:12px">
+          <select id="staffHeatWs" aria-label="Workspace"></select>
+          <select id="staffHeatScreen" aria-label="Screen"></select>
+          <select id="staffHeatDays" aria-label="Period">
+            <option value="7">Last 7 days</option>
+            <option value="30" selected>Last 30 days</option>
+          </select>
+          <button type="button" id="staffHeatLoad" class="small-btn">Refresh</button>
+        </div>
+        <canvas id="staffHeatCanvas" width="640" height="400" role="img" aria-label="Heat map of clicks on the selected screen" style="display:block;width:100%;max-width:640px;height:auto;margin-top:12px;border-radius:14px;border:1px solid var(--line, #e4e4f0)"></canvas>
+        <p class="small" id="staffHeatSummary" style="margin:10px 0 0"></p>
+        <ul id="staffHeatTargets" style="margin:8px 0 0;padding-left:18px"></ul>
+        <p id="staffHeatMsg" class="muted small hint" role="status"></p>
+      </div>
+
+      <div id="staffAccess" hidden>
+        <p class="muted small">Owners see the tracker and the heat maps. Sales people see the tracker only. Only super users can add or remove them.</p>
+        <form id="staffForm" class="row" style="gap:8px;flex-wrap:wrap;align-items:flex-end;margin-top:12px">
+          <div class="grow"><label for="staffEmail">Email address</label><input id="staffEmail" type="email" placeholder="name@company.com" required autocomplete="off"></div>
+          <div><label for="staffRole">Role</label><select id="staffRole"><option value="owner">Owner</option><option value="sales">Sales</option></select></div>
+          <button type="submit" id="staffAdd">Add</button>
+        </form>
+        <div id="staffList" style="margin-top:12px"></div>
+        <p id="staffAccessMsg" class="small hint" role="status"></p>
+      </div>
     </div>
 
     <div class="card" id="operatorCard" hidden>
@@ -3216,7 +3287,8 @@ button:not(:disabled):active{transform:scale(.965)}
     const available = ["guide"];
     if (canAnalyse) available.push("analyses", "privacy");
     if (canWork) available.push("workspaces");
-    if (!available.includes(homeTab)) homeTab = canAnalyse ? "analyses" : canWork ? "workspaces" : "guide";
+    if (me.staff_role) available.push("staff");
+    if (!available.includes(homeTab)) homeTab = canAnalyse ? "analyses" : canWork ? "workspaces" : me.staff_role ? "staff" : "guide";
     const setTab = (id, key) => {
       $(id).hidden = !available.includes(key);
       $(id).className = homeTab === key ? "small-btn" : "ghost small-btn";
@@ -3225,7 +3297,11 @@ button:not(:disabled):active{transform:scale(.965)}
     setTab("tabAnalyses", "analyses");
     setTab("tabPrivacy", "privacy");
     setTab("tabWorkspaces", "workspaces");
+    setTab("tabStaff", "staff");
     setTab("tabGuide", "guide");
+    $("staffCard").hidden = !(me.staff_role && homeTab === "staff");
+    $("staffTabAccess").hidden = me.staff_role !== "super_user";
+    if (homeTab === "staff") showStaffTab(staffTab);
     $("analysesCard").hidden = homeTab !== "analyses";
     $("privacyCard").hidden = !(ws && homeTab === "privacy");
     $("modelsCard").hidden = !(ws && homeTab === "privacy");
@@ -3246,12 +3322,14 @@ button:not(:disabled):active{transform:scale(.965)}
     if (homeTab === "workspaces" && ws && ws.is_admin) loadPeople();
     if (homeTab === "guide") renderGuide();
   }
+  let staffTab = "tracker";
 
   let homeTab = "analyses";
   $("tabAnalyses").addEventListener("click", () => { homeTab = "analyses"; showHome(); });
   $("tabPrivacy").addEventListener("click", () => { homeTab = "privacy"; showHome(); });
   $("tabWorkspaces").addEventListener("click", () => { homeTab = "workspaces"; showHome(); });
   $("tabGuide").addEventListener("click", () => { homeTab = "guide"; showHome(); });
+  $("tabStaff").addEventListener("click", () => { homeTab = "staff"; showHome(); });
 
 
   // ---- Ask: answers questions from the guide and its FAQ. Runs in the browser; nothing is sent. ----
@@ -3476,8 +3554,8 @@ button:not(:disabled):active{transform:scale(.965)}
     }
   }
 
-  function drawHeatmap(data) {
-    const canvas = $("heatCanvas");
+  function drawHeatmap(data, canvasId = "heatCanvas", summaryId = "heatSummary") {
+    const canvas = $(canvasId);
     const ctx = canvas.getContext("2d");
     const W = canvas.width;
     const H = canvas.height;
@@ -3509,13 +3587,13 @@ button:not(:disabled):active{transform:scale(.965)}
       ctx.fillRect(cx - reach, cy - reach, reach * 2, reach * 2);
     }));
     const w = data.widths || {};
-    $("heatSummary").textContent = data.total
+    $(summaryId).textContent = data.total
       ? `${data.total} clicks in the last ${data.days} days on this screen. Phone ${w.phone || 0}, tablet ${w.tablet || 0}, desktop ${w.desktop || 0}.${data.truncated ? " Only the most recent clicks are counted." : ""}`
       : `No clicks on this screen in the last ${data.days} days yet.`;
   }
 
-  function renderHeatTargets(data) {
-    const list = $("heatTargets");
+  function renderHeatTargets(data, listId = "heatTargets") {
+    const list = $(listId);
     list.innerHTML = "";
     if (!data.targets || data.targets.length === 0) {
       list.append(el("li", "No named buttons were used on this screen.", "muted small"));
@@ -3527,6 +3605,217 @@ button:not(:disabled):active{transform:scale(.965)}
   $("heatLoad").addEventListener("click", loadHeatmap);
   $("heatScreen").addEventListener("change", loadHeatmap);
   $("heatDays").addEventListener("change", loadHeatmap);
+
+  // ---- Staff: invitation tracker, heat maps across workspaces, and staff access (super users) ----
+  let staffData = null;
+  let staffStatus = "all";
+  const STAFF_LABEL = { signed_in: "Signed in", waiting: "Waiting", removed: "Removed" };
+  const STAFF_PILL = { signed_in: "in", waiting: "wait", removed: "gone" };
+  const loginsText = (n) => (n === 1 ? "1 login" : `${n} logins`);
+  const shortDate = (iso) => (iso ? new Date(iso).toLocaleDateString([], { day: "numeric", month: "short", year: "numeric" }) : "No visit yet");
+
+  function showStaffTab(which) {
+    staffTab = which;
+    const tabs = { tracker: ["staffTabTracker", "staffTracker"], heat: ["staffTabHeat", "staffHeat"], access: ["staffTabAccess", "staffAccess"] };
+    for (const [key, [btn, panel]] of Object.entries(tabs)) {
+      $(btn).className = key === which ? "small-btn" : "ghost small-btn";
+      $(btn).setAttribute("aria-selected", String(key === which));
+      $(panel).hidden = key !== which;
+    }
+    if (which === "tracker") loadStaffTracker();
+    if (which === "heat") loadStaffHeat();
+    if (which === "access") loadStaffAccess();
+  }
+
+  $("staffTabTracker").addEventListener("click", () => showStaffTab("tracker"));
+  $("staffTabHeat").addEventListener("click", () => showStaffTab("heat"));
+  $("staffTabAccess").addEventListener("click", () => showStaffTab("access"));
+
+  async function loadStaffTracker() {
+    setMsg("staffMsg", "Loading the invitations...", false);
+    try {
+      staffData = await api("/api/staff/invitations");
+      const picked = $("staffWs").value;
+      $("staffWs").innerHTML = "";
+      $("staffWs").append(el("option", "All workspaces"));
+      $("staffWs").firstChild.value = "";
+      for (const w of staffData.workspaces) {
+        const o = el("option", w.name);
+        o.value = w.id;
+        $("staffWs").append(o);
+      }
+      $("staffWs").value = picked;
+      renderStaffTracker();
+      setMsg("staffMsg", staffData.totals.signed_in_before_tracking
+        ? `${staffData.totals.signed_in_before_tracking} people joined before invitations were tracked. They are listed without an invitation date.`
+        : "", false);
+    } catch (err) {
+      setMsg("staffMsg", err.message, true);
+    }
+  }
+
+  function staffFiltered() {
+    const q = $("staffSearch").value.trim().toLowerCase();
+    const wsId = $("staffWs").value;
+    return (staffData ? staffData.rows : []).filter((r) =>
+      (staffStatus === "all" || r.status === staffStatus) &&
+      (!wsId || r.workspace_id === wsId) &&
+      (!q || r.email.includes(q) || String(r.workspace).toLowerCase().includes(q)));
+  }
+
+  function renderStaffTracker() {
+    if (!staffData) return;
+    const t = staffData.totals;
+    const kpis = $("staffKpis");
+    kpis.innerHTML = "";
+    const tile = (label, value, note) => {
+      const box = el("div", null, "staff-kpi");
+      box.append(el("span", label), el("b", value), el("small", note));
+      kpis.append(box);
+    };
+    tile("Invitations sent", String(t.sent), "all time");
+    tile("Signed in", String(t.signed_in), `${t.acceptance_percent}% acceptance`);
+    tile("Waiting", String(t.waiting), "not signed in yet");
+    tile("Average time to join", t.avg_hours_to_join === null ? "No data" : `${t.avg_hours_to_join} h`, "after the invitation");
+
+    const funnel = $("staffFunnel");
+    funnel.innerHTML = "";
+    const bar = (label, n, pct) => {
+      const row = el("div", null, "staff-bar");
+      const track = el("div");
+      const fill = el("i");
+      fill.style.width = `${Math.max(0, Math.min(100, pct))}%`;
+      track.append(fill);
+      row.append(el("span", label), track, el("span", `${n} · ${Math.round(pct)}%`));
+      funnel.append(row);
+    };
+    bar("Invitations sent", t.sent, t.sent ? 100 : 0);
+    bar("Signed in", t.signed_in, t.sent ? (t.signed_in / t.sent) * 100 : 0);
+
+    document.querySelectorAll("#staffTracker [data-st]").forEach((b) => {
+      const on = b.dataset.st === staffStatus;
+      b.className = on ? "small-btn" : "ghost small-btn";
+      b.setAttribute("aria-pressed", String(on));
+    });
+
+    const rows = $("staffRows");
+    rows.innerHTML = "";
+    const list = staffFiltered();
+    if (!list.length) rows.append(el("p", "No invitations match these filters.", "muted small"));
+    for (const r of list) {
+      const card = el("div", null, "staff-row");
+      const who = el("div");
+      who.append(el("div", r.email));
+      const by = r.invited_by ? `invited by ${r.invited_by}` : r.invited_at ? "" : "joined before tracking";
+      const when = r.invited_at ? `· ${shortDate(r.invited_at)}` : "";
+      who.append(el("div", `${r.workspace} · ${roleName(r.role)}${r.is_admin ? " (admin)" : ""} ${by ? "· " + by : ""} ${when}`.replace(/\s+/g, " ").trim(), "meta"));
+      if (r.note) who.append(el("div", `“${r.note}”`, "meta"));
+      who.append(el("div", r.status === "signed_in" ? `${loginsText(r.logins)} · last visit ${shortDate(r.last_seen)}` : "", "meta"));
+      const pill = el("span", STAFF_LABEL[r.status], `staff-pill ${STAFF_PILL[r.status]}`);
+      card.append(who, pill);
+      rows.append(card);
+    }
+    if (staffData.rows.length >= 500) rows.append(el("p", "Only the most recent 500 invitations are shown.", "muted small"));
+  }
+
+  document.querySelectorAll("#staffTracker [data-st]").forEach((b) => b.addEventListener("click", () => {
+    staffStatus = b.dataset.st;
+    renderStaffTracker();
+  }));
+  $("staffSearch").addEventListener("input", renderStaffTracker);
+  $("staffWs").addEventListener("change", renderStaffTracker);
+
+  $("staffCsv").addEventListener("click", () => {
+    const head = ["email", "workspace", "role", "status", "invited_by", "invited_at", "accepted_at", "logins", "last_seen", "note"];
+    const cell = (v) => `"${String(v ?? "").replace(/"/g, '""')}"`;
+    const lines = [head.join(","), ...staffFiltered().map((r) => head.map((k) => cell(k === "role" ? roleName(r.role) : r[k])).join(","))];
+    const url = URL.createObjectURL(new Blob([lines.join("\n")], { type: "text/csv" }));
+    const a = el("a");
+    a.href = url;
+    a.download = "cutover-invitations.csv";
+    document.body.append(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  });
+
+  async function loadStaffHeat() {
+    if (!staffData) await loadStaffTracker();
+    if (!staffData) return;
+    const picked = $("staffHeatWs").value;
+    $("staffHeatWs").innerHTML = "";
+    for (const w of staffData.workspaces) {
+      const o = el("option", w.name);
+      o.value = w.id;
+      $("staffHeatWs").append(o);
+    }
+    if (picked) $("staffHeatWs").value = picked;
+    if (!$("staffHeatScreen").options.length) $("staffHeatScreen").innerHTML = $("heatScreen").innerHTML;
+    loadStaffHeatmap();
+  }
+
+  async function loadStaffHeatmap() {
+    const wsId = $("staffHeatWs").value;
+    if (!wsId) { setMsg("staffHeatMsg", "No workspace to show yet.", false); return; }
+    setMsg("staffHeatMsg", "Loading the clicks...", false);
+    try {
+      const screen = $("staffHeatScreen").value;
+      const days = $("staffHeatDays").value;
+      const data = await api(`/api/workspaces/${wsId}/heatmap?screen=${encodeURIComponent(screen)}&days=${encodeURIComponent(days)}`);
+      drawHeatmap(data, "staffHeatCanvas", "staffHeatSummary");
+      renderHeatTargets(data, "staffHeatTargets");
+      setMsg("staffHeatMsg", "", false);
+    } catch (err) {
+      setMsg("staffHeatMsg", err.message, true);
+    }
+  }
+
+  $("staffHeatLoad").addEventListener("click", loadStaffHeatmap);
+  $("staffHeatWs").addEventListener("change", loadStaffHeatmap);
+  $("staffHeatScreen").addEventListener("change", loadStaffHeatmap);
+  $("staffHeatDays").addEventListener("change", loadStaffHeatmap);
+
+  // Super users only: who holds an owner or sales role.
+  async function loadStaffAccess() {
+    const list = $("staffList");
+    list.innerHTML = "";
+    if (!me || me.staff_role !== "super_user") return;
+    $("staffAccessMsg").textContent = "";
+    try {
+      const rows = await api("/api/staff");
+      if (!rows.length) list.append(el("p", "No owners or sales people yet.", "muted small"));
+      for (const r of rows) {
+        const line = el("div", null, "staff-row");
+        line.append(el("div", `${r.email} · ${r.role === "owner" ? "Owner" : "Sales"}`));
+        const remove = el("button", "Remove", "ghost small-btn");
+        remove.type = "button";
+        remove.addEventListener("click", async () => {
+          try {
+            await api(`/api/staff/${encodeURIComponent(r.email)}`, { method: "DELETE" });
+            loadStaffAccess();
+          } catch (err) {
+            setMsg("staffAccessMsg", err.message, true);
+          }
+        });
+        line.append(remove);
+        list.append(line);
+      }
+    } catch (err) {
+      setMsg("staffAccessMsg", err.message, true);
+    }
+  }
+
+  $("staffForm").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    try {
+      await api("/api/staff", { method: "POST", body: JSON.stringify({ email: $("staffEmail").value.trim(), role: $("staffRole").value }) });
+      $("staffEmail").value = "";
+      setMsg("staffAccessMsg", "Added.", false);
+      loadStaffAccess();
+    } catch (err) {
+      setMsg("staffAccessMsg", err.message, true);
+    }
+  });
 
   // The database size against the free-tier limit, for operators only. Shown beside the workspace list.
   async function loadDatabaseSize() {
@@ -3609,6 +3898,7 @@ button:not(:disabled):active{transform:scale(.965)}
     if (who === "engineers") return !!(ws && ws.role === "platform_engineer");
     if (who === "admins") return !!(ws && ws.is_admin);
     if (who === "operators") return !!me.is_operator;
+    if (who === "staff") return !!(me.staff_role);
     return false;
   }
 
@@ -4576,10 +4866,11 @@ button:not(:disabled):active{transform:scale(.965)}
     try {
       await api(`/api/workspaces/${ws.id}/invitations`, {
         method: "POST",
-        body: JSON.stringify({ email, role: $("inviteRole").value, is_admin: $("inviteAdmin").checked }),
+        body: JSON.stringify({ email, role: $("inviteRole").value, is_admin: $("inviteAdmin").checked, note: $("inviteNote").value.trim() || undefined }),
       });
       setMsg("inviteMsg", `Invited ${email}.`, false);
       $("inviteEmail").value = "";
+      $("inviteNote").value = "";
       $("inviteAdmin").checked = false;
       loadPeople();
     } catch (err) {
