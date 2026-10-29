@@ -5711,6 +5711,14 @@ a{color:#6d28d9;font-weight:600}`;
         card.appendChild(el("p", `Cleared${by}.`, "small"));
       } else if (s.state === "skipped") {
         card.appendChild(el("p", "Not part of the scope you chose. It does not hold up the next stage.", "stage-lock"));
+        if (s.id === "approach") {
+          // The approach needs Modernize in the scope, so the card points to the scope to change it.
+          const add = el("button", "Add Modernize to the scope");
+          add.type = "button";
+          add.className = "ghost";
+          add.addEventListener("click", () => document.getElementById("scopeCard")?.scrollIntoView({ behavior: "smooth", block: "center" }));
+          card.appendChild(add);
+        }
       } else if (s.state === "locked") {
         card.appendChild(el("p", s.lock_reason, "stage-lock"));
         const go = el("button", `Go to ${(stages.find((x) => x.id === s.unlocked_by) || {}).title || "the previous stage"}`);

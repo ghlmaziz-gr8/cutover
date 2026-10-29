@@ -92,3 +92,8 @@ test("a stage outside the scope shows as not in scope, and the count leaves it o
   assert.ok(html.includes('skipped: "Not in scope"'));
   assert.ok(html.includes("const counted = stages.filter((s) => s.state !== \"skipped\").length;"));
 });
+
+test("a skipped approach points to the scope card to add Modernize", () => {
+  assert.ok(html.includes('const add = el("button", "Add Modernize to the scope");'));
+  assert.ok(html.includes('document.getElementById("scopeCard")?.scrollIntoView'));
+});
