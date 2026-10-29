@@ -16,10 +16,10 @@ import { validateDbMetadata } from "./db-metadata.mjs";
 //   POST   /api/workspaces                                create a customer workspace and invite its first admin (Cutover operators)
 //   PATCH  /api/workspaces/:id                             rename a workspace (operators)
 //   DELETE /api/workspaces/:id                             delete a workspace and its analyses (operators; type the name to confirm)
-//   GET    /api/staff/invitations                          invitation tracker across workspaces (staff: super users, owners, sales)
-//   GET    /api/staff                                      staff list (super users)
-//   POST   /api/staff                                      add an owner or sales person (super users)
-//   DELETE /api/staff/:email                               remove an owner or sales person (super users)
+//   GET    /api/staff/invitations                          invitation tracker across workspaces (super users, admins, sales, support)
+//   GET    /api/staff                                      staff people and their platform roles (anyone who may invite)
+//   POST   /api/staff                                      add a person or change their roles (super users; admins and sales for demo roles)
+//   DELETE /api/staff/:email                               remove a staff person (super users)
 //   GET    /api/admin/workspaces                           every workspace with counts; people shown only where the operator is a member (operators)
 //   GET    /api/workspaces/:id/members                    list members (workspace admins)
 //   DELETE /api/workspaces/:id/members/:userId            remove a member (workspace admins)
@@ -137,18 +137,34 @@ function isOperator(env, email) {
   return list.includes(String(email || "").toLowerCase());
 }
 
-// Stakeholder roles for the staff area. Super users are the operator list; owners and sales people are rows in
-// the staff table, added by a super user. Returns null for everyone else, and when the table cannot be read.
-const STAFF_ROLES = ["owner", "sales"];
+// Platform roles, across Cutover and not tied to a workspace. A person can hold several. Super users are the
+// operator list; the others are rows in the staff table. A table that cannot be read gives only the operator list.
+const PLATFORM_ROLES = ["super_user", "admin", "sales", "support"];
+// Who may be invited as a demo user by an admin or a sales person. Only super users may grant anything else.
+const DEMO_ROLES = ["sales", "support"];
 const STAFF_ROWS = 500;
-async function staffRoleFor(env, email) {
+async function platformRolesFor(env, email) {
   const clean = normalizeEmail(email);
-  if (!clean) return null;
-  if (isOperator(env, clean)) return "super_user";
-  const res = await serviceRest(env, `staff?email=eq.${encodeURIComponent(clean)}&select=role`);
-  if (!res.ok) return null;
-  const rows = await res.json();
-  return rows[0] && STAFF_ROLES.includes(rows[0].role) ? rows[0].role : null;
+  if (!clean) return [];
+  const roles = new Set();
+  if (isOperator(env, clean)) roles.add("super_user");
+  const res = await serviceRest(env, `staff?email=eq.${encodeURIComponent(clean)}&select=roles`);
+  if (res.ok) {
+    const rows = await res.json();
+    for (const r of (rows[0] && rows[0].roles) || []) if (PLATFORM_ROLES.includes(r)) roles.add(r);
+  }
+  return [...roles];
+}
+const canSeeTracker = (roles) => roles.some((r) => ["super_user", "admin", "sales", "support"].includes(r));
+const canSeeAllHeatmaps = (roles) => roles.includes("super_user") || roles.includes("admin");
+const canInvite = (roles) => roles.some((r) => ["super_user", "admin", "sales"].includes(r));
+// Super users may set any roles. Admins and sales people may set only demo roles, and may change only people
+// who hold nothing beyond demo roles. Nobody else sets roles.
+function canSetRoles(actorRoles, targetRolesNow, newRoles) {
+  if (actorRoles.includes("super_user")) return true;
+  if (!(actorRoles.includes("admin") || actorRoles.includes("sales"))) return false;
+  const demoOnly = (list) => list.every((r) => DEMO_ROLES.includes(r));
+  return demoOnly(targetRolesNow) && demoOnly(newRoles);
 }
 
 // Asks Supabase who the bearer token belongs to. Returns the user or null.
@@ -522,7 +538,7 @@ async function me(request, env) {
   return json({
     email: auth.user.email,
     is_operator: isOperator(env, auth.user.email),
-    staff_role: await staffRoleFor(env, auth.user.email),
+    staff_roles: await platformRolesFor(env, auth.user.email),
     workspaces: rows.map((r) => ({
       id: r.workspace_id,
       name: r.workspace?.name || "Workspace",
@@ -688,8 +704,8 @@ async function recordLogin(env, user) {
 async function staffInvitations(request, env) {
   const auth = await requireUser(env, request);
   if (auth.response) return auth.response;
-  const role = await staffRoleFor(env, auth.user.email);
-  if (!role) return json({ error: "Only Cutover staff can see this." }, 403);
+  const roles = await platformRolesFor(env, auth.user.email);
+  if (!canSeeTracker(roles)) return json({ error: "Only Cutover staff can see this." }, 403);
   const [wsRes, logRes, invRes, memRes, engRes, loginRes] = await Promise.all([
     serviceRest(env, "workspaces?select=id,name&order=created_at.asc"),
     serviceRest(env, `invitation_log?select=workspace_id,email,role,is_admin,invited_by,invited_at,accepted_at,removed_at,note&order=invited_at.desc&limit=${STAFF_ROWS}`),
@@ -771,7 +787,7 @@ async function staffInvitations(request, env) {
   const sent = tracked.length;
   const signedIn = count("signed_in");
   return json({
-    viewer_role: role,
+    viewer_roles: roles,
     totals: {
       sent,
       signed_in: signedIn,
@@ -786,40 +802,51 @@ async function staffInvitations(request, env) {
   });
 }
 
-// Super users only: who holds an owner or sales role.
+// Staff people and their platform roles. Visible to anyone who may invite.
 async function listStaff(request, env) {
   const auth = await requireUser(env, request);
   if (auth.response) return auth.response;
-  if (!isOperator(env, auth.user.email)) return json({ error: "Only super users can see this." }, 403);
-  const res = await serviceRest(env, "staff?select=email,role,created_at&order=created_at.asc");
+  if (!canInvite(await platformRolesFor(env, auth.user.email))) return json({ error: "Only staff who can invite may see this." }, 403);
+  const res = await serviceRest(env, "staff?select=email,roles,created_at&order=created_at.asc");
   if (!res.ok) return json({ error: "Could not load the staff list." }, 502);
   return json(await res.json());
 }
 
+// Adds a person with platform roles, or replaces the roles of someone already listed.
 async function addStaff(request, env) {
   const auth = await requireUser(env, request);
   if (auth.response) return auth.response;
-  if (!isOperator(env, auth.user.email)) return json({ error: "Only super users can add staff." }, 403);
+  const actor = await platformRolesFor(env, auth.user.email);
+  if (!canInvite(actor)) return json({ error: "Only staff who can invite may add people." }, 403);
   const parsed = await readJson(request);
   if (parsed.error) return json({ error: parsed.error }, 400);
   const body = parsed.value || {};
   const email = normalizeEmail(body.email);
   if (!email) return json({ error: "Enter a valid email address." }, 400);
-  if (!STAFF_ROLES.includes(body.role)) return json({ error: `Role must be one of: ${STAFF_ROLES.join(", ")}.` }, 400);
+  const roles = Array.isArray(body.roles) ? [...new Set(body.roles)] : [];
+  if (!roles.length || !roles.every((r) => PLATFORM_ROLES.includes(r))) {
+    return json({ error: `Choose at least one role: ${PLATFORM_ROLES.join(", ")}.` }, 400);
+  }
   if (isOperator(env, email)) return json({ error: "This person is already a super user." }, 400);
+  const now = await serviceRest(env, `staff?email=eq.${encodeURIComponent(email)}&select=roles`);
+  if (!now.ok) return json({ error: "Could not check the staff list." }, 502);
+  const existing = (await now.json())[0];
+  if (!canSetRoles(actor, (existing && existing.roles) || [], roles)) {
+    return json({ error: "You can invite demo users with the sales or support role only." }, 403);
+  }
   const res = await serviceRest(env, "staff?on_conflict=email", {
     method: "POST",
     headers: { prefer: "resolution=merge-duplicates,return=minimal" },
-    body: JSON.stringify({ email, role: body.role, added_by: auth.user.id }),
+    body: JSON.stringify({ email, roles, added_by: auth.user.id }),
   });
   if (!res.ok) return json({ error: "Could not save the staff member." }, 502);
-  return json({ email, role: body.role }, 201);
+  return json({ email, roles }, 201);
 }
 
 async function removeStaff(request, env, email) {
   const auth = await requireUser(env, request);
   if (auth.response) return auth.response;
-  if (!isOperator(env, auth.user.email)) return json({ error: "Only super users can remove staff." }, 403);
+  if (!(await platformRolesFor(env, auth.user.email)).includes("super_user")) return json({ error: "Only super users can remove staff." }, 403);
   const clean = normalizeEmail(email);
   if (!clean) return json({ error: "Not found." }, 404);
   const res = await serviceRest(env, `staff?email=eq.${encodeURIComponent(clean)}`, {
@@ -5117,8 +5144,8 @@ async function recordClicks(request, env) {
 async function heatmap(request, env, workspaceId) {
   const auth = await requireUser(env, request);
   if (auth.response) return auth.response;
-  const staff = await staffRoleFor(env, auth.user.email);
-  if (staff !== "super_user" && staff !== "owner") {
+  const roles = await platformRolesFor(env, auth.user.email);
+  if (!canSeeAllHeatmaps(roles)) {
     const access = await workspaceAdmin(env, request, workspaceId);
     if (access.response) return access.response;
   }

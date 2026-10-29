@@ -1950,10 +1950,10 @@ button:not(:disabled):active{transform:scale(.965)}
     <div class="card" id="staffCard" hidden aria-labelledby="staffTitle">
       <p class="eyebrow">Staff only</p>
       <h2 id="staffTitle">Invitations and behaviour</h2>
-      <p class="muted small" style="margin-top:6px">For Cutover owners and sales staff. Customers do not see this area.</p>
+      <p class="muted small" style="margin-top:6px">For Cutover staff, across Cutover and not tied to any workspace. Customers do not see this area.</p>
       <div class="row" role="tablist" aria-label="Staff views" style="gap:8px;flex-wrap:wrap;margin-top:12px">
         <button type="button" class="small-btn" id="staffTabTracker" role="tab" aria-selected="true">Invitation tracker</button>
-        <button type="button" class="ghost small-btn" id="staffTabHeat" role="tab" aria-selected="false">Behaviour and heat map</button>
+        <button type="button" class="ghost small-btn" id="staffTabHeat" role="tab" aria-selected="false" hidden>Behaviour and heat map</button>
         <button type="button" class="ghost small-btn" id="staffTabAccess" role="tab" aria-selected="false" hidden>Staff access</button>
       </div>
 
@@ -1992,11 +1992,19 @@ button:not(:disabled):active{transform:scale(.965)}
       </div>
 
       <div id="staffAccess" hidden>
-        <p class="muted small">Owners see the tracker and the heat maps. Sales people see the tracker only. Only super users can add or remove them.</p>
-        <form id="staffForm" class="row" style="gap:8px;flex-wrap:wrap;align-items:flex-end;margin-top:12px">
-          <div class="grow"><label for="staffEmail">Email address</label><input id="staffEmail" type="email" placeholder="name@company.com" required autocomplete="off"></div>
-          <div><label for="staffRole">Role</label><select id="staffRole"><option value="owner">Owner</option><option value="sales">Sales</option></select></div>
-          <button type="submit" id="staffAdd">Add</button>
+        <p class="muted small">A person can hold more than one role. Super user: everything, including roles. Admin: the tracker and every workspace's heat map. Sales: the tracker. Support: the tracker. Admins and sales people can invite demo users with the sales or support role. Only super users can remove people.</p>
+        <form id="staffForm" style="margin-top:12px">
+          <div class="row" style="gap:8px;flex-wrap:wrap;align-items:flex-end">
+            <div class="grow"><label for="staffEmail">Email address</label><input id="staffEmail" type="email" placeholder="name@company.com" required autocomplete="off"></div>
+            <button type="submit" id="staffAdd">Save</button>
+          </div>
+          <fieldset class="row" style="gap:12px;flex-wrap:wrap;border:0;padding:0;margin:10px 0 0">
+            <legend class="small muted" style="padding:0;margin-bottom:6px">Roles</legend>
+            <label class="check" style="margin-top:0"><input type="checkbox" name="staffRoles" value="super_user"> Super user</label>
+            <label class="check" style="margin-top:0"><input type="checkbox" name="staffRoles" value="admin"> Admin</label>
+            <label class="check" style="margin-top:0"><input type="checkbox" name="staffRoles" value="sales" checked> Sales</label>
+            <label class="check" style="margin-top:0"><input type="checkbox" name="staffRoles" value="support"> Support</label>
+          </fieldset>
         </form>
         <div id="staffList" style="margin-top:12px"></div>
         <p id="staffAccessMsg" class="small hint" role="status"></p>
@@ -3287,8 +3295,9 @@ button:not(:disabled):active{transform:scale(.965)}
     const available = ["guide"];
     if (canAnalyse) available.push("analyses", "privacy");
     if (canWork) available.push("workspaces");
-    if (me.staff_role) available.push("staff");
-    if (!available.includes(homeTab)) homeTab = canAnalyse ? "analyses" : canWork ? "workspaces" : me.staff_role ? "staff" : "guide";
+    const staffRoles = (me && me.staff_roles) || [];
+    if (staffRoles.length) available.push("staff");
+    if (!available.includes(homeTab)) homeTab = canAnalyse ? "analyses" : canWork ? "workspaces" : staffRoles.length ? "staff" : "guide";
     const setTab = (id, key) => {
       $(id).hidden = !available.includes(key);
       $(id).className = homeTab === key ? "small-btn" : "ghost small-btn";
@@ -3299,8 +3308,9 @@ button:not(:disabled):active{transform:scale(.965)}
     setTab("tabWorkspaces", "workspaces");
     setTab("tabStaff", "staff");
     setTab("tabGuide", "guide");
-    $("staffCard").hidden = !(me.staff_role && homeTab === "staff");
-    $("staffTabAccess").hidden = me.staff_role !== "super_user";
+    $("staffCard").hidden = !(staffRoles.length && homeTab === "staff");
+    $("staffTabHeat").hidden = !staffRoles.some((r) => r === "super_user" || r === "admin");
+    $("staffTabAccess").hidden = !staffRoles.some((r) => ["super_user", "admin", "sales"].includes(r));
     if (homeTab === "staff") showStaffTab(staffTab);
     $("analysesCard").hidden = homeTab !== "analyses";
     $("privacyCard").hidden = !(ws && homeTab === "privacy");
@@ -3775,29 +3785,40 @@ button:not(:disabled):active{transform:scale(.965)}
   $("staffHeatScreen").addEventListener("change", loadStaffHeatmap);
   $("staffHeatDays").addEventListener("change", loadStaffHeatmap);
 
-  // Super users only: who holds an owner or sales role.
+  // Platform roles: who holds which. Admins and sales see the demo roles they may grant; super users see all.
+  const PLATFORM_ROLE_NAME = { super_user: "Super user", admin: "Admin", sales: "Sales", support: "Support" };
+  const myStaffRoles = () => (me && me.staff_roles) || [];
   async function loadStaffAccess() {
     const list = $("staffList");
     list.innerHTML = "";
-    if (!me || me.staff_role !== "super_user") return;
+    const mine = myStaffRoles();
+    const isSuper = mine.includes("super_user");
+    const grantable = isSuper ? ["super_user", "admin", "sales", "support"] : ["sales", "support"];
+    document.querySelectorAll('input[name="staffRoles"]').forEach((box) => {
+      box.disabled = !grantable.includes(box.value);
+      if (box.disabled) box.checked = false;
+    });
     $("staffAccessMsg").textContent = "";
     try {
       const rows = await api("/api/staff");
-      if (!rows.length) list.append(el("p", "No owners or sales people yet.", "muted small"));
+      if (!rows.length) list.append(el("p", "No staff people yet.", "muted small"));
       for (const r of rows) {
         const line = el("div", null, "staff-row");
-        line.append(el("div", `${r.email} · ${r.role === "owner" ? "Owner" : "Sales"}`));
-        const remove = el("button", "Remove", "ghost small-btn");
-        remove.type = "button";
-        remove.addEventListener("click", async () => {
-          try {
-            await api(`/api/staff/${encodeURIComponent(r.email)}`, { method: "DELETE" });
-            loadStaffAccess();
-          } catch (err) {
-            setMsg("staffAccessMsg", err.message, true);
-          }
-        });
-        line.append(remove);
+        const names = (r.roles || []).map((k) => PLATFORM_ROLE_NAME[k] || k).join(", ");
+        line.append(el("div", `${r.email} · ${names}`));
+        if (isSuper) {
+          const remove = el("button", "Remove", "ghost small-btn");
+          remove.type = "button";
+          remove.addEventListener("click", async () => {
+            try {
+              await api(`/api/staff/${encodeURIComponent(r.email)}`, { method: "DELETE" });
+              loadStaffAccess();
+            } catch (err) {
+              setMsg("staffAccessMsg", err.message, true);
+            }
+          });
+          line.append(remove);
+        }
         list.append(line);
       }
     } catch (err) {
@@ -3808,7 +3829,9 @@ button:not(:disabled):active{transform:scale(.965)}
   $("staffForm").addEventListener("submit", async (e) => {
     e.preventDefault();
     try {
-      await api("/api/staff", { method: "POST", body: JSON.stringify({ email: $("staffEmail").value.trim(), role: $("staffRole").value }) });
+      const roles = [...document.querySelectorAll('input[name="staffRoles"]:checked')].map((b) => b.value);
+      if (!roles.length) { setMsg("staffAccessMsg", "Choose at least one role.", true); return; }
+      await api("/api/staff", { method: "POST", body: JSON.stringify({ email: $("staffEmail").value.trim(), roles }) });
       $("staffEmail").value = "";
       setMsg("staffAccessMsg", "Added.", false);
       loadStaffAccess();
@@ -3898,7 +3921,7 @@ button:not(:disabled):active{transform:scale(.965)}
     if (who === "engineers") return !!(ws && ws.role === "platform_engineer");
     if (who === "admins") return !!(ws && ws.is_admin);
     if (who === "operators") return !!me.is_operator;
-    if (who === "staff") return !!(me.staff_role);
+    if (who === "staff") return !!((me.staff_roles || []).length);
     return false;
   }
 
