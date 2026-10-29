@@ -1232,7 +1232,7 @@ function formatMeeting(startIso, zone) {
 }
 
 // The emails the prospect gets. kind is "booked", "moved" or "cancelled".
-function prospectBookingEmail(kind, firstName, when, manageUrl) {
+function prospectBookingEmail(kind, firstName, when, manageUrl, meetUrl) {
   const first = firstName;
   const copy = {
     booked: { subject: "Your meeting with the Cutover team is booked", headline: `You're booked, ${first}.`, line: "Your meeting with the Cutover team is booked." },
@@ -1241,12 +1241,14 @@ function prospectBookingEmail(kind, firstName, when, manageUrl) {
   }[kind];
   const textLines = [`Hi ${first},`, "", copy.line];
   if (when) textLines.push(`When: ${when}`);
+  if (meetUrl) textLines.push(`Join on Google Meet: ${meetUrl}`);
   if (manageUrl) textLines.push("", `Change or cancel your meeting: ${manageUrl}`);
   textLines.push("", `Learn more at ${SITE_ORIGIN}`, `See the demo: ${SITE_ORIGIN}/cutover-demo/`, "", UNATTENDED_NOTICE);
   const action = manageUrl
     ? `<a href="${escapeHtml(manageUrl)}" style="display:inline-block;background:#1d1640;color:#ffffff;text-decoration:none;font-weight:700;padding:14px 24px;border-radius:999px">${kind === "cancelled" ? "Book a new time" : "Change or cancel my meeting"}</a>`
     : `<a href="${SITE_ORIGIN}" style="display:inline-block;background:#1d1640;color:#ffffff;text-decoration:none;font-weight:700;padding:14px 24px;border-radius:999px">Visit cutover.site</a>`;
-  const whenBlock = when ? `<tr><td style="padding:28px 32px 0 32px"><div style="padding:18px 20px;background:#f7f4ff;border-radius:14px;font-size:16px;line-height:1.5"><strong>When</strong><br>${escapeHtml(when)}</div></td></tr>` : "";
+  const meetBlock = meetUrl ? `<div style="margin-top:12px"><a href="${escapeHtml(meetUrl)}" style="color:#6d28d9;font-weight:700">Join on Google Meet</a></div>` : "";
+  const whenBlock = when ? `<tr><td style="padding:28px 32px 0 32px"><div style="padding:18px 20px;background:#f7f4ff;border-radius:14px;font-size:16px;line-height:1.5"><strong>When</strong><br>${escapeHtml(when)}${meetBlock}</div></td></tr>` : "";
   const html = `<!doctype html><html><body style="margin:0;padding:0;background:#f4f1fb;font-family:Arial,Helvetica,sans-serif;color:#1d1640">
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#f4f1fb;padding:24px 12px"><tr><td align="center">
 <table role="presentation" width="600" cellpadding="0" cellspacing="0" style="max-width:600px;width:100%;background:#ffffff;border-radius:20px;overflow:hidden">
@@ -1266,15 +1268,16 @@ function prospectBookingEmail(kind, firstName, when, manageUrl) {
 }
 
 // The notice the sender gets. Plain text, from the same sales address.
-function senderNotice(kind, prospect, when) {
+function senderNotice(kind, prospect, when, meetUrl) {
   const who = `${prospect.first_name} ${prospect.last_name} from ${prospect.company}`;
   const verb = { booked: "booked a meeting", moved: "moved their meeting", cancelled: "cancelled their meeting" }[kind];
   const subject = `Meeting ${kind}: ${prospect.first_name} ${prospect.last_name}, ${prospect.company}`;
   const lines = [`${who} ${verb}.`, ""];
   if (when) lines.push(`When: ${when}`);
+  if (meetUrl) lines.push(`Google Meet: ${meetUrl}`);
   lines.push(`Email: ${prospect.email}`);
   if (prospect.phone) lines.push(`Phone: ${prospect.phone}`);
-  lines.push("", kind === "cancelled" ? "The event has been removed from your Google Calendar." : "The event is on your Google Calendar.", "", UNATTENDED_NOTICE);
+  lines.push("", kind === "cancelled" ? "The event has been removed from your Google Calendar, and the invitation withdrawn." : "The event is on your Google Calendar, with the Google Meet link.", "", UNATTENDED_NOTICE);
   return { subject, text: lines.join("\n") };
 }
 
@@ -1309,17 +1312,20 @@ async function bookMeeting(request, env, token) {
     start: { dateTime: chosen.start, timeZone: result.zone },
     end: { dateTime: chosen.end, timeZone: result.zone },
     attendees: [{ email }],
+    conferenceData: { createRequest: { requestId: crypto.randomUUID(), conferenceSolutionKey: { type: "hangoutsMeet" } } },
   });
   const headers = { authorization: `Bearer ${hostToken}`, "content-type": "application/json" };
   const moving = prospect.status === "booked" && prospect.calendar_event_id;
   const event = await fetch(
     moving
-      ? `https://www.googleapis.com/calendar/v3/calendars/primary/events/${encodeURIComponent(prospect.calendar_event_id)}?sendUpdates=none`
-      : "https://www.googleapis.com/calendar/v3/calendars/primary/events?sendUpdates=none",
+      ? `https://www.googleapis.com/calendar/v3/calendars/primary/events/${encodeURIComponent(prospect.calendar_event_id)}?sendUpdates=all`
+      : "https://www.googleapis.com/calendar/v3/calendars/primary/events?sendUpdates=all&conferenceDataVersion=1",
     { method: moving ? "PATCH" : "POST", headers, body: eventBody },
   ).catch(() => null);
   if (!event || !event.ok) return json({ error: "The meeting could not be added to the calendar. Please try again." }, 502);
-  const eventId = moving ? prospect.calendar_event_id : (await event.json()).id || null;
+  const created = await event.json();
+  const eventId = moving ? prospect.calendar_event_id : created.id || null;
+  const meetLink = created.hangoutLink || null;
 
   const saved = await serviceRest(env, `prospects?id=eq.${prospect.id}`, {
     method: "PATCH",
@@ -1332,9 +1338,9 @@ async function bookMeeting(request, env, token) {
   const when = formatMeeting(chosen.start, result.zone);
   const updated = { ...prospect, first_name, last_name, email, company, phone: phone || null };
   const manageUrl = `${SITE_ORIGIN}/book/?t=${await signProspectToken(env, prospect.id)}`;
-  const mail = prospectBookingEmail(kind, first_name, when, manageUrl);
+  const mail = prospectBookingEmail(kind, first_name, when, manageUrl, meetLink);
   await sendProspectMail(env, email, mail.subject, mail.text, mail.html);
-  const notice = senderNotice(kind, updated, when);
+  const notice = senderNotice(kind, updated, when, meetLink);
   await sendProspectMail(env, prospect.invited_by_email, notice.subject, notice.text, null);
   return json({ booked: true, moved: Boolean(moving), start: chosen.start, end: chosen.end, time_zone: result.zone });
 }
@@ -1349,7 +1355,7 @@ async function cancelMeeting(request, env, token) {
     const hostToken = await hostAccessToken(env, prospect.invited_by);
     if (!hostToken) return json({ error: "The calendar is not available right now. Please try again." }, 503);
     const del = await fetch(
-      `https://www.googleapis.com/calendar/v3/calendars/primary/events/${encodeURIComponent(prospect.calendar_event_id)}?sendUpdates=none`,
+      `https://www.googleapis.com/calendar/v3/calendars/primary/events/${encodeURIComponent(prospect.calendar_event_id)}?sendUpdates=all`,
       { method: "DELETE", headers: { authorization: `Bearer ${hostToken}` } },
     ).catch(() => null);
     // Google answers 410 when the event was already removed, which still leaves nothing to cancel.
@@ -1366,7 +1372,7 @@ async function cancelMeeting(request, env, token) {
   const bookUrl = `${SITE_ORIGIN}/book/?t=${await signProspectToken(env, prospect.id)}`;
   const mail = prospectBookingEmail("cancelled", prospect.first_name, null, bookUrl);
   await sendProspectMail(env, prospect.email, mail.subject, mail.text, mail.html);
-  const notice = senderNotice("cancelled", prospect, prospect.meeting_at ? formatMeeting(prospect.meeting_at, bookingZone(env)) : null);
+  const notice = senderNotice("cancelled", prospect, prospect.meeting_at ? formatMeeting(prospect.meeting_at, bookingZone(env)) : null, null);
   await sendProspectMail(env, prospect.invited_by_email, notice.subject, notice.text, null);
   return json({ cancelled: true });
 }

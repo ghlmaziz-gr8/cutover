@@ -370,19 +370,19 @@ beforeEach(() => {
     if (u === "https://www.googleapis.com/calendar/v3/freeBusy") {
       return j({ calendars: { primary: { busy: calendarFake.busy } } });
     }
-    if (u === "https://www.googleapis.com/calendar/v3/calendars/primary/events?sendUpdates=none") {
-      const event = { ...JSON.parse(init.body), id: `evt-${calendarFake.events.length + 1}` };
+    if (u === "https://www.googleapis.com/calendar/v3/calendars/primary/events?sendUpdates=all&conferenceDataVersion=1") {
+      const event = { ...JSON.parse(init.body), id: `evt-${calendarFake.events.length + 1}`, hangoutLink: "https://meet.google.com/abc-defg-hij" };
       calendarFake.events.push(event);
-      return j({ id: event.id });
+      return j(event);
     }
-    const eventOne = u.match(/^https:\/\/www\.googleapis\.com\/calendar\/v3\/calendars\/primary\/events\/([^?]+)\?sendUpdates=none$/);
+    const eventOne = u.match(/^https:\/\/www\.googleapis\.com\/calendar\/v3\/calendars\/primary\/events\/([^?]+)\?sendUpdates=all$/);
     if (eventOne) {
       const id = decodeURIComponent(eventOne[1]);
       if (init.method === "PATCH") {
         const event = calendarFake.events.find((e) => e.id === id);
         Object.assign(event, JSON.parse(init.body));
         calendarFake.patched.push(id);
-        return j({ id });
+        return j({ ...event, id, hangoutLink: event.hangoutLink });
       }
       if (init.method === "DELETE") {
         calendarFake.deleted.push(id);
@@ -3999,6 +3999,7 @@ test("the invitation is a rich email from the sales address, with a signed booki
     assert.ok(link, "the email carries the booking link");
     assert.ok(link[1].startsWith(`booking.${res.body.prospect.id}.`));
     assert.ok(mail.html.includes("Book your 30-minute walkthrough"));
+    assert.ok(mail.text.includes("Join on Google Meet") === false, "no Meet link before the meeting is set");
     assert.ok(mail.html.includes("Move critical systems to the cloud with a plan you can verify first"));
     assert.ok(mail.html.includes("Deeper AI assessment"));
     assert.ok(mail.text.includes("Modernize") || mail.text.includes("legacy"));
@@ -4232,4 +4233,27 @@ test("invalid or too many addresses are refused", async () => {
   assert.equal((await call("/api/prospects", { as: "sales", method: "POST", body: { ...PROSPECT, email: "pat@prospect.test, not-an-address" } })).status, 400);
   assert.equal((await call("/api/prospects", { as: "sales", method: "POST", body: { ...PROSPECT, email: "a@x.test,b@x.test,c@x.test,d@x.test,e@x.test,f@x.test" } })).status, 400);
   assert.equal(state.prospects.length, 0);
+});
+
+test("a booked meeting has a Google Meet link, Google sends the calendar invitation, and the emails carry the link", async () => {
+  env.RESEND_API_KEY = "re_test";
+  env.EMAIL_FROM = "Cutover <noreply.sales@cutover.site>";
+  try {
+    await connectSales();
+    const { token } = await invitePat();
+    const slots = await call(`/api/book/${token}/slots`);
+    const booked = await call(`/api/book/${token}`, { method: "POST", body: { start: slots.body.slots[0].start, first_name: "Pat", last_name: "Buyer", email: "pat@prospect.test", company: "Buyer Health" } });
+    assert.equal(booked.status, 200);
+    const event = calendarFake.events[0];
+    assert.ok(event.conferenceData.createRequest.conferenceSolutionKey.type === "hangoutsMeet", "the event asks Google for a Meet link");
+    assert.equal(event.attendees[0].email, "pat@prospect.test");
+    const confirmation = resendCalls.find((c) => c.to.includes("pat@prospect.test") && c.subject === "Your meeting with the Cutover team is booked");
+    assert.ok(confirmation.text.includes("Join on Google Meet: https://meet.google.com/abc-defg-hij"));
+    assert.ok(confirmation.html.includes("https://meet.google.com/abc-defg-hij"));
+    const notice = resendCalls.find((c) => c.to.includes("sales@cutover.test"));
+    assert.ok(notice.text.includes("Google Meet: https://meet.google.com/abc-defg-hij"));
+  } finally {
+    delete env.RESEND_API_KEY;
+    delete env.EMAIL_FROM;
+  }
 });
