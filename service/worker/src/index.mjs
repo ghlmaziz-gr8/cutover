@@ -1198,8 +1198,12 @@ async function listAnalyses(request, env) {
     `analyses?workspace_id=eq.${access.workspace_id}&select=id,owner_id,repo,ref,app_name,status,commit_sha,created_at,finished_at,expires_at,model_provider&order=created_at.desc&limit=100`);
   if (!res.ok) return json({ error: "Could not load analyses." }, 502);
   const rows = await res.json();
-  // The owner id is not sent. is_mine says whether the analysis is yours.
-  return json(rows.map(({ owner_id, ...rest }) => ({ ...rest, is_mine: owner_id === access.user.id })));
+  // The owner id is not sent. is_mine says whether the analysis is yours; can_delete says whether you may delete it.
+  const isAdmin = access.member.is_admin === true;
+  return json(rows.map(({ owner_id, ...rest }) => {
+    const isMine = owner_id === access.user.id;
+    return { ...rest, is_mine: isMine, can_delete: isMine || isAdmin };
+  }));
 }
 
 // ---- Notifications: saved per person, shown by the portal's bell. Writing one never fails the action that caused it. ----
@@ -2116,6 +2120,10 @@ async function deleteAnalysis(request, env, id) {
   const isOwner = access.row.owner_id === access.user.id;
   if (!isOwner && !access.member.is_admin) {
     return json({ error: "Only the person who started this analysis or a workspace admin can delete it." }, 403);
+  }
+  // A run that is still working on the code cannot be removed under it.
+  if (access.row.status === "queued" || access.row.status === "running") {
+    return json({ error: "This analysis is still running. Delete it once the run has finished." }, 409);
   }
   const refused = await logFirst(env, { workspace_id: access.row.workspace_id, user: access.user, action: "delete", analysis_id: id, repo: access.row.repo, detail: isOwner ? "By the owner" : "By a workspace admin" });
   if (refused) return refused;
