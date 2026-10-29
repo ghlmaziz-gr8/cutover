@@ -68,6 +68,26 @@ button.danger{background:transparent;color:var(--bad);box-shadow:none;border:1.5
 .dots i{flex:1 1 0;min-width:18px;height:6px;border-radius:9px;background:var(--line);transition:background .4s}
 .track[hidden],.dots[hidden]{display:none}
 .dots i.done{background:var(--ok)} .dots i.now{background:var(--accent2)}
+.dots i{cursor:default;transition:background .4s,transform .25s cubic-bezier(.2,.9,.3,1.4),box-shadow .25s}
+.dots i:hover,.dots i:focus-visible{transform:scaleY(1.9);outline:none;box-shadow:0 0 0 3px color-mix(in srgb,var(--accent2) 22%,transparent)}
+.dots i.now{animation:tickPulse 1.8s ease-in-out infinite}
+@keyframes tickPulse{0%,100%{box-shadow:0 0 0 0 color-mix(in srgb,var(--accent2) 40%,transparent)}50%{box-shadow:0 0 0 5px transparent}}
+.tick-tip{position:fixed;z-index:10000;width:248px;padding:14px 14px 12px;border-radius:18px;background:color-mix(in srgb,var(--card) 92%,transparent);backdrop-filter:blur(14px) saturate(1.4);-webkit-backdrop-filter:blur(14px) saturate(1.4);border:1px solid var(--line);box-shadow:0 22px 46px -18px rgba(29,22,64,.38);pointer-events:none}
+.tick-tip::before{content:"";position:absolute;top:0;left:0;right:0;height:4px;border-radius:18px 18px 0 0;background:linear-gradient(90deg,var(--accent),var(--accent2),#f59e0b)}
+.tick-tip::after{content:"";position:absolute;top:-7px;left:var(--ax,50%);width:12px;height:12px;margin-left:-6px;background:inherit;border-left:1px solid var(--line);border-top:1px solid var(--line);transform:rotate(45deg);background:color-mix(in srgb,var(--card) 92%,transparent)}
+.tick-tip.show{animation:tipIn .32s cubic-bezier(.2,.9,.3,1.2)}
+@keyframes tipIn{from{opacity:0;transform:translateY(-6px) scale(.94)}to{opacity:1;transform:none}}
+.tt-head{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-top:4px}
+.tt-step{font-size:11px;font-weight:800;letter-spacing:.1em;text-transform:uppercase;color:var(--muted)}
+.tt-status{font-size:11px;font-weight:800;padding:3px 9px;border-radius:999px;background:var(--soft);color:var(--muted)}
+.tt-status.is-done{background:color-mix(in srgb,var(--ok) 16%,transparent);color:var(--ok)}
+.tt-status.is-now{background:linear-gradient(90deg,var(--accent),var(--accent2));color:#fff}
+.tt-name{font:800 17px/1.25 var(--display);margin:8px 0 10px;color:var(--fg)}
+.tt-track{display:flex;gap:4px}
+.tt-track i{flex:1;height:5px;border-radius:99px;background:var(--line)}
+.tt-track i.done{background:var(--ok)}
+.tt-track i.now{background:linear-gradient(90deg,var(--accent),var(--accent2));animation:tickPulse 1.8s ease-in-out infinite}
+@media (prefers-reduced-motion:reduce){.dots i,.dots i.now,.tt-track i.now,.tick-tip.show{animation:none!important;transition:none!important}.dots i:hover{transform:none}}
 .top-in{padding-right:52px}
 /* Notifications: the bell, its panel, and toasts. Colors carry the tone; motion only confirms what changed. */
 .bell{position:absolute;right:16px;top:12px;width:34px;height:34px;padding:0;border-radius:11px;display:grid;place-items:center;background:var(--card);color:var(--fg);border:1.5px solid var(--line);box-shadow:0 6px 18px -10px #1e1b4b66}
@@ -2560,7 +2580,8 @@ button:not(:disabled):active{transform:scale(.965)}
     }
     $("barWrap").hidden = false;
     dots.hidden = false;
-    if (!dots.childElementCount) for (let i = 0; i < STAGES.length; i++) dots.appendChild(document.createElement("i"));
+    if (!dots.childElementCount) for (let i = 0; i < STAGES.length; i++) { const d = document.createElement("i"); d.tabIndex = 0; dots.appendChild(d); }
+    [...dots.children].forEach((d, i) => { d.dataset.label = STAGES[i].name; d.dataset.n = String(i + 1); d.dataset.total = String(STAGES.length); });
     // The review step is the end of the assessment, so the bar reads complete there.
     const done = id === "s-review";
     [...dots.children].forEach((d, i) => { d.className = i < idx || (done && i === idx) ? "done" : i === idx && !done ? "now" : ""; });
@@ -6022,7 +6043,10 @@ a{color:#6d28d9;font-weight:600}`;
     dots.hidden = false;
     dots.replaceChildren(...steps.map((x, i) => {
       const d = document.createElement("i");
-      d.title = x.label;
+      d.dataset.label = x.label;
+      d.dataset.n = String(i + 1);
+      d.dataset.total = String(n);
+      d.tabIndex = 0;
       d.className = x.done ? "done" : i === firstOpen ? "now" : "";
       return d;
     }));
@@ -6035,6 +6059,57 @@ a{color:#6d28d9;font-weight:600}`;
     const eyebrow = $("nextStep");
     if (eyebrow) eyebrow.textContent = label;
   }
+
+  // Hover or focus on a tick shows a card: the step, its status, and where every step stands.
+  function tickTip() {
+    let t = document.getElementById("tickTip");
+    if (!t) {
+      t = document.createElement("div");
+      t.id = "tickTip";
+      t.className = "tick-tip";
+      t.setAttribute("role", "tooltip");
+      t.hidden = true;
+      document.body.appendChild(t);
+    }
+    return t;
+  }
+  function showTick(d) {
+    const n = Number(d.dataset.n) || 1;
+    const total = Number(d.dataset.total) || 1;
+    const status = d.classList.contains("done") ? "done" : d.classList.contains("now") ? "now" : "todo";
+    const word = { done: "Done", now: "In progress", todo: "To come" }[status];
+    const t = tickTip();
+    t.replaceChildren();
+    const head = el("div", null, "tt-head");
+    head.append(el("span", `Step ${n} of ${total}`, "tt-step"), el("span", word, `tt-status is-${status}`));
+    const track = el("div", null, "tt-track");
+    for (let i = 1; i <= total; i++) {
+      track.appendChild(el("i", null, i < n || (i === n && status === "done") ? "done" : i === n ? "now" : ""));
+    }
+    t.append(head, el("div", d.dataset.label || "", "tt-name"), track);
+    t.hidden = false;
+    t.classList.remove("show");
+    void t.offsetWidth;
+    t.classList.add("show");
+    const r = d.getBoundingClientRect();
+    const w = t.offsetWidth;
+    const left = Math.max(8, Math.min(window.innerWidth - w - 8, r.left + r.width / 2 - w / 2));
+    t.style.left = `${left}px`;
+    t.style.top = `${r.bottom + 14}px`;
+    t.style.setProperty("--ax", `${Math.max(16, Math.min(w - 16, r.left + r.width / 2 - left))}px`);
+  }
+  function hideTick() {
+    const t = document.getElementById("tickTip");
+    if (t) t.hidden = true;
+  }
+  $("dots").addEventListener("mouseover", (e) => {
+    const d = e.target.closest && e.target.closest("i[data-label]");
+    if (d) showTick(d);
+  });
+  $("dots").addEventListener("mouseleave", hideTick);
+  $("dots").addEventListener("focusin", (e) => { if (e.target.dataset && e.target.dataset.label) showTick(e.target); });
+  $("dots").addEventListener("focusout", hideTick);
+  window.addEventListener("scroll", hideTick, { passive: true });
 
   function renderNextRail(row) {
     const rail = $("nextRail");
