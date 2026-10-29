@@ -460,7 +460,7 @@ test("the stages unlock one after another, and a locked stage says what to clear
     assert.equal(approach.state, stages[0].state === "cleared" ? "available" : "locked");
     assert.equal(plan.state, "locked");
     assert.equal(deeper.state, "locked");
-    assert.match(plan.lock_reason, /Clear Choose the approach to unlock Modernization plan/);
+    assert.match(plan.lock_reason, /Clear Choose the approach to unlock Project plan/);
     assert.match(deeper.lock_reason, /Clear Choose the approach to unlock Deeper assessment/);
   } else {
     assert.equal(approach.state, "cleared");
@@ -505,9 +505,10 @@ test("without Modernize in the scope, the modernization stages are skipped and d
   const body = (await call(`/api/analyses/${AN_ACME}`, { as: "eng_a" })).body;
   const byId = (id) => body.stages.find((s) => s.id === id);
   assert.equal(byId("approach").state, "skipped");
-  assert.equal(byId("plan").state, "skipped");
-  assert.equal(byId("deeper").state, "available", "the deeper assessment is not held up by skipped stages");
-  const refused = await call(`/api/analyses/${AN_ACME}/progress`, { as: "eng_a", method: "PUT", body: { action: "review", stage: "plan" } });
+  assert.equal(byId("starter").state, "skipped");
+  assert.equal(byId("plan").state, "available", "the project plan is part of every scope");
+  assert.equal(byId("deeper").state, "locked", "the deeper assessment waits for the project plan");
+  const refused = await call(`/api/analyses/${AN_ACME}/progress`, { as: "eng_a", method: "PUT", body: { action: "review", stage: "starter" } });
   assert.equal(refused.status, 409);
   assert.match(refused.body.error, /not in the scope you chose/);
   analysis.scope = "deeper_modernize";
