@@ -400,16 +400,36 @@ test("every workspace member can choose the modernized template for now, from th
   assert.equal(unknown.status, 400);
 });
 
-test("the approach can be chosen before any scope, but not once a scope without Modernize is chosen", async () => {
+test("the approach can be chosen before any scope, but not one that the chosen scope does not fit", async () => {
   const analysis = state.analyses.find((a) => a.id === AN_ACME);
   analysis.scope = null;
   const before = await call(`/api/analyses/${AN_ACME}/template`, { as: "cio_a", method: "PUT", body: { template: "web-modern" } });
   assert.equal(before.status, 200);
-  analysis.scope = "deeper";
+  analysis.scope = "deeper_migrate";
   const refused = await call(`/api/analyses/${AN_ACME}/template`, { as: "cio_a", method: "PUT", body: { template: "web-modern" } });
   assert.equal(refused.status, 409);
-  assert.match(refused.body.error, /not in the scope you chose/);
+  assert.match(refused.body.error, /does not fit this approach/);
   analysis.scope = "deeper_modernize";
+});
+
+test("each approach allows only the scopes that fit it", async () => {
+  const analysis = state.analyses.find((a) => a.id === AN_ACME);
+  analysis.scope = null;
+  const put = (template) => call(`/api/analyses/${AN_ACME}/template`, { as: "cio_a", method: "PUT", body: { template } });
+  const scope = (value) => call(`/api/analyses/${AN_ACME}/scope`, { as: "cio_a", method: "PATCH", body: { scope: value } });
+  await put("web-modern");
+  assert.equal((await scope("deeper_migrate")).status, 409);
+  assert.equal((await scope("deeper_modernize_migrate")).status, 200);
+  await scope(null);
+  await put("services-data");
+  assert.equal((await scope("deeper_modernize")).status, 409);
+  assert.equal((await scope("deeper_modernize_migrate")).status, 409);
+  assert.equal((await scope("deeper_migrate")).status, 200);
+  await scope(null);
+  await put("lift-contain");
+  assert.equal((await scope("deeper")).status, 200);
+  assert.equal((await scope("deeper_modernize")).status, 409);
+  analysis.scope = null;
 });
 
 test("the CIO's choice is saved with who chose it and when, and a later choice replaces it", async () => {
@@ -417,6 +437,7 @@ test("the CIO's choice is saved with who chose it and when, and a later choice r
   const first = await call(`/api/analyses/${AN_ACME}/template`, { as: "cio_a", method: "PUT", body: { template: "web-modern" } });
   assert.equal(first.status, 200);
   assert.equal(first.body.template, "web-modern");
+  state.analyses.find((a) => a.id === AN_ACME).scope = null;
   const second = await call(`/api/analyses/${AN_ACME}/template`, { as: "cio_a", method: "PUT", body: { template: "lift-contain" } });
   assert.equal(second.status, 200);
   const read = await call(`/api/analyses/${AN_ACME}`, { as: "eng_a" });
