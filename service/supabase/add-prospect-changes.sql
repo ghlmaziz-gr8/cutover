@@ -11,3 +11,6 @@ alter table public.prospects add column if not exists invited_by_name text;
 
 -- The personal note the sender writes into the invitation.
 alter table public.prospects add column if not exists invite_message text;
+
+-- Extra email addresses for the same prospect. Each one gets the invitation.
+alter table public.prospects add column if not exists extra_emails text[] not null default '{}';

@@ -4205,3 +4205,28 @@ test("the personal note is optional and capped at 500 characters", async () => {
   assert.equal(plain.status, 201);
   assert.equal(state.prospects[0].invite_message, null);
 });
+
+test("the invitation can go to several addresses for the same prospect, each with the same booking link", async () => {
+  env.RESEND_API_KEY = "re_test";
+  env.EMAIL_FROM = "Cutover <noreply.sales@cutover.site>";
+  try {
+    const res = await call("/api/prospects", { as: "sales", method: "POST", body: { ...PROSPECT, email: "pat@prospect.test, Pat.Work@Prospect.test; pat@prospect.test" } });
+    assert.equal(res.status, 201);
+    assert.equal(res.body.email_sent, true);
+    assert.equal(res.body.prospect.email, "pat@prospect.test");
+    assert.deepEqual(res.body.prospect.extra_emails, ["pat.work@prospect.test"]);
+    const recipients = resendCalls.map((c) => c.to[0]).sort();
+    assert.deepEqual(recipients, ["pat.work@prospect.test", "pat@prospect.test"]);
+    const links = new Set(resendCalls.map((c) => c.text.match(/cutover\.site\/book\/\?t=(\S+)/)[1]));
+    assert.equal(links.size, 1, "every address gets the same link");
+  } finally {
+    delete env.RESEND_API_KEY;
+    delete env.EMAIL_FROM;
+  }
+});
+
+test("invalid or too many addresses are refused", async () => {
+  assert.equal((await call("/api/prospects", { as: "sales", method: "POST", body: { ...PROSPECT, email: "pat@prospect.test, not-an-address" } })).status, 400);
+  assert.equal((await call("/api/prospects", { as: "sales", method: "POST", body: { ...PROSPECT, email: "a@x.test,b@x.test,c@x.test,d@x.test,e@x.test,f@x.test" } })).status, 400);
+  assert.equal(state.prospects.length, 0);
+});

@@ -925,6 +925,7 @@ function publicProspect(row) {
     company: row.company,
     phone: row.phone,
     invited_by_email: row.invited_by_email,
+    extra_emails: row.extra_emails || [],
     invite_message: row.invite_message || null,
     invited_at: row.invited_at,
     last_email_at: row.last_email_at,
@@ -947,8 +948,17 @@ async function createProspect(request, env) {
   const parsed = await readJson(request);
   if (parsed.error) return json({ error: parsed.error }, 400);
   const body = parsed.value || {};
-  const email = normalizeEmail(body.email);
-  if (!email) return json({ error: "Enter a valid email address." }, 400);
+  // One to five addresses for the same person, separated by commas, semicolons or spaces. The first is the main one.
+  const typed = String(body.email ?? "").split(/[,;\s]+/).map((v) => v.trim()).filter(Boolean);
+  if (!typed.length || typed.length > 5) return json({ error: "Enter one to five email addresses." }, 400);
+  const emails = [];
+  for (const raw of typed) {
+    const clean = normalizeEmail(raw);
+    if (!clean) return json({ error: `"${raw}" is not a valid email address.` }, 400);
+    if (!emails.includes(clean)) emails.push(clean);
+  }
+  const email = emails[0];
+  const extra_emails = emails.slice(1);
   const first_name = cleanText(body.first_name, 80);
   const last_name = cleanText(body.last_name, 80);
   if (!first_name || !last_name) return json({ error: "Enter the first and last name." }, 400);
@@ -963,14 +973,16 @@ async function createProspect(request, env) {
   const res = await serviceRest(env, "prospects", {
     method: "POST",
     headers: { prefer: "return=representation" },
-    body: JSON.stringify({ email, first_name, last_name, company, phone: phone || null, invited_by: caller.user.id, invited_by_email: invitedBy, invited_by_name: displayName(caller.user) || null, invite_message: message || null, status: "invited" }),
+    body: JSON.stringify({ email, first_name, last_name, company, phone: phone || null, invited_by: caller.user.id, invited_by_email: invitedBy, invited_by_name: displayName(caller.user) || null, invite_message: message || null, extra_emails, status: "invited" }),
   });
   if (!res.ok) return json({ error: "Could not save the prospect." }, 502);
   const [row] = await res.json();
 
   const bookingUrl = `${SITE_ORIGIN}/book/?t=${await signProspectToken(env, row.id)}`;
   const mail = prospectInviteEmail(row, bookingUrl);
-  const sent = await sendProspectMail(env, row.email, mail.subject, mail.text, mail.html);
+  // Every address gets its own copy of the same invitation and the same booking link.
+  const results = await Promise.all([row.email, ...(row.extra_emails || [])].map((to) => sendProspectMail(env, to, mail.subject, mail.text, mail.html)));
+  const sent = results.every(Boolean);
   if (sent) {
     await serviceRest(env, `prospects?id=eq.${row.id}`, {
       method: "PATCH",
