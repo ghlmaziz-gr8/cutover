@@ -1768,6 +1768,12 @@ button:not(:disabled):active{transform:scale(.965)}
       </div>
       <p class="muted small ins-foot">Counts come from the records Cutover keeps. AI jobs come from the action log, which is trimmed as it grows. Time saved is not estimated here.</p>
     </section>
+    <div class="card" id="platformCard" hidden style="margin-top:18px">
+      <p class="eyebrow">Cutover</p>
+      <h2 style="margin:6px 0 4px">Your Cutover roles</h2>
+      <p class="muted small">These roles apply across Cutover, not to one workspace. Continue to open the staff area.</p>
+      <div class="staff-kpis" id="platformRoles"></div>
+    </div>
     <div class="row wzNav">
       <button type="button" class="ghost" data-signout>Sign out</button>
       <button type="button" class="ghost" id="toStaff" hidden>Staff area</button>
@@ -3106,11 +3112,12 @@ button:not(:disabled):active{transform:scale(.965)}
       return;
     }
     ws = (ws && me.workspaces.find((w) => w.id === ws.id)) || me.workspaces[0] || null;
-    if (!ws) { showHome(); return; }
+    const staffHere = (me.staff_roles || []).length > 0;
+    if (!ws && !staffHere) { showHome(); return; }
+    if (cutoverView === null) cutoverView = staffHere;
     renderWorkspacePicks();
-    renderPersonas();
+    renderRoleView();
     show("s-role");
-    loadInsights();
   }
 
   // Insights on the role screen: counts of what the workspace has done, from the server, drawn with motion.
@@ -3231,17 +3238,58 @@ button:not(:disabled):active{transform:scale(.965)}
     }
   }
 
+  // Cutover level or a workspace. Staff start at Cutover; a workspace is chosen with its chip.
+  let cutoverView = null;
+  const PLATFORM_TEXT = {
+    super_user: "Everything across Cutover, including choosing roles.",
+    admin: "The invitation tracker, every workspace's heat map, and inviting demo users.",
+    sales: "The invitation tracker, and inviting demo users.",
+    support: "The invitation tracker only.",
+  };
+  const PLATFORM_NAME = { super_user: "Super user", admin: "Admin", sales: "Sales", support: "Support" };
+
   function renderWorkspacePicks() {
     const box = $("wsPicks");
     box.innerHTML = "";
-    box.hidden = me.workspaces.length < 2;
+    const staffHere = (me.staff_roles || []).length > 0;
+    box.hidden = me.workspaces.length < 2 && !staffHere;
+    if (staffHere) {
+      const c = el("button", "Cutover", "ghost");
+      c.type = "button";
+      c.setAttribute("aria-pressed", String(!!cutoverView));
+      c.addEventListener("click", () => { cutoverView = true; renderWorkspacePicks(); renderRoleView(); });
+      box.appendChild(c);
+    }
     for (const w of me.workspaces) {
       const b = el("button", w.name, "ghost");
       b.type = "button";
-      b.setAttribute("aria-pressed", String(!!ws && w.id === ws.id));
-      b.addEventListener("click", () => { ws = w; renderWorkspacePicks(); renderPersonas(); loadInsights(); });
+      b.setAttribute("aria-pressed", String(!cutoverView && !!ws && w.id === ws.id));
+      b.addEventListener("click", () => { cutoverView = false; ws = w; renderWorkspacePicks(); renderRoleView(); });
       box.appendChild(b);
     }
+  }
+
+  // Shows either the workspace's role cards and insights, or the Cutover-level roles.
+  function renderRoleView() {
+    const platform = !!cutoverView && (me.staff_roles || []).length > 0;
+    if (!ws) cutoverView = true;
+    renderPersonas();
+    $("personas").style.display = platform ? "none" : "";
+    $("youSee").style.display = platform ? "none" : "";
+    $("platformCard").hidden = !platform;
+    if (platform) {
+      const box = $("platformRoles");
+      box.innerHTML = "";
+      for (const key of me.staff_roles) {
+        const tile = el("div", null, "staff-kpi");
+        tile.append(el("span", "Cutover role"), el("b", PLATFORM_NAME[key] || key), el("small", PLATFORM_TEXT[key] || ""));
+        box.append(tile);
+      }
+      $("insightsCard").hidden = true;
+    } else {
+      loadInsights();
+    }
+    $("toHome").disabled = !ws && !platform;
   }
 
   // Only the role the admin gave in this workspace can be chosen. The others are shown locked.
@@ -3272,15 +3320,14 @@ button:not(:disabled):active{transform:scale(.965)}
     $("toStaff").hidden = !(me.staff_roles || []).length;
   }
 
-  $("toHome").addEventListener("click", () => showHome());
+  $("toHome").addEventListener("click", () => { if (cutoverView) homeTab = "staff"; showHome(); });
   $("toStaff").addEventListener("click", () => { homeTab = "staff"; showHome(); });
   $("roleGuide").addEventListener("click", () => openGuideStep("roles"));
   $("connectGuide").addEventListener("click", () => openGuideStep("install"));
   $("changeRole").addEventListener("click", () => {
     renderWorkspacePicks();
-    renderPersonas();
+    renderRoleView();
     show("s-role");
-    loadInsights();
   });
 
   // ---- Your workspace ----
