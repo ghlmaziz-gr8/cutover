@@ -5715,7 +5715,7 @@ a{color:#6d28d9;font-weight:600}`;
       if (s.id === "assessment") facts.push(row.status === "complete" ? "The code analysis is complete." : "The code analysis is not complete yet.");
       if (s.id === "approach") {
         if (s.state === "skipped") facts.push("Modernize is not in the scope, so there is no approach to choose.");
-        else if (row.modern_template) facts.push(`Chosen: ${TEMPLATE_NAME[row.modern_template] || row.modern_template}${row.modern_template_set_by_email ? " by " + row.modern_template_set_by_email : ""}.`);
+        else if (row.modern_template) facts.push(`Chosen: ${TEMPLATE_NAME[row.modern_template] || row.modern_template}${row.modern_template_set_by_email ? " by " + personLabel(row.modern_template_set_by_email) : ""}.`);
         else if (row.scope && !scopeHas(row.scope, "modernize")) facts.push("Modernize is not in the scope you chose.");
         else facts.push("Choose one of the three proposals on What next: " + Object.values(TEMPLATE_NAME).join(", ") + ".");
       }
@@ -5729,7 +5729,7 @@ a{color:#6d28d9;font-weight:600}`;
       if (s.id === "deeper") facts.push(row.deeper_done === true ? "The deeper assessment is done." : "The deeper assessment is not done yet.");
       if (s.id === "starter" || s.id === "convert" || s.id === "pr") facts.push(s.produces);
       facts.push(`Status: ${STATE_WORD[s.state] || s.state}.`);
-      if (s.state === "cleared" && s.cleared_by) facts.push(`Cleared by ${s.cleared_by}${s.cleared_at ? " on " + s.cleared_at.slice(0, 10) : ""}.`);
+      if (s.state === "cleared" && s.cleared_by) facts.push(`Cleared by ${personLabel(s.cleared_by)}${s.cleared_at ? " on " + s.cleared_at.slice(0, 10) : ""}.`);
       return facts;
     };
     const detail = el("div", null, "stage-detail");
@@ -5796,7 +5796,7 @@ a{color:#6d28d9;font-weight:600}`;
         card.appendChild(download);
       }
       if (s.state === "cleared") {
-        const by = s.cleared_by ? ` by ${s.cleared_by}` : "";
+        const by = s.cleared_by ? ` by ${personLabel(s.cleared_by)}` : "";
         card.appendChild(el("p", `Cleared${by}.`, "small"));
       } else if (s.state === "skipped") {
         card.appendChild(el("p", "Not part of the scope you chose. It does not hold up the next stage.", "stage-lock"));
@@ -5946,7 +5946,7 @@ a{color:#6d28d9;font-weight:600}`;
     wrap.appendChild(el("h3", "Modernized templates"));
     wrap.appendChild(el("p", "Designs are ready for this application. Each option shows the proposed look, page flow and wireframes, built from the screens and evidence Cutover found.", "muted small"));
     if (row && row.modern_template) {
-      const by = row.modern_template_set_by_email ? ` by ${row.modern_template_set_by_email}` : "";
+      const by = row.modern_template_set_by_email ? ` by ${personLabel(row.modern_template_set_by_email)}` : "";
       wrap.appendChild(el("p", `Chosen approach: ${TEMPLATE_NAME[row.modern_template] || row.modern_template}${by}.`, "small"));
     }
     const note = row && scopeHas(row.scope, "modernize")
@@ -6002,6 +6002,13 @@ a{color:#6d28d9;font-weight:600}`;
     $("groupNext").hidden = !modern;
   }
 
+  // Who did a step: the name when the workspace has one, then the email.
+  function personLabel(email) {
+    if (!email) return email;
+    const name = cur && cur.people && cur.people[String(email).toLowerCase()];
+    return name ? `${name} (${email})` : email;
+  }
+
   function renderApproach(row) {
     const card = $("approachCard");
     // The approach comes before the scope, so the card shows until a scope without Modernize is chosen.
@@ -6009,7 +6016,7 @@ a{color:#6d28d9;font-weight:600}`;
     card.hidden = !visible;
     if (!visible) return;
     renderModernize(row.findings && row.findings.deeper);
-    const by = row.modern_template_set_by_email ? ` by ${row.modern_template_set_by_email}` : "";
+    const by = row.modern_template_set_by_email ? ` by ${personLabel(row.modern_template_set_by_email)}` : "";
     const chosen = row.modern_template ? `Chosen: ${TEMPLATE_NAME[row.modern_template] || row.modern_template}${by}. ` : "";
     // Open to every role for now, while the flow is designed. The rules are to be enforced later.
     $("approachNote").textContent = `${chosen}Compare the three options and their previews, then choose one. Any role can choose it for now.`;
@@ -7568,7 +7575,7 @@ a{color:#6d28d9;font-weight:600}`;
 
     const status = el("div", null, "tl-status");
     if (row.target_language) {
-      const by = row.target_language_set_by_email ? ` by ${row.target_language_set_by_email}` : "";
+      const by = row.target_language_set_by_email ? ` by ${personLabel(row.target_language_set_by_email)}` : "";
       status.appendChild(el("p", `Chosen: ${name(row.target_language)}${by}.`, "small"));
       if (row.target_approval) {
         const when = new Date(row.target_approval.at).toLocaleDateString();
@@ -8555,7 +8562,7 @@ a{color:#6d28d9;font-weight:600}`;
     box.appendChild(msg);
     const lines = cur.cost_lines || [];
     if (cur.cost_users) {
-      box.appendChild(el("p", `Estimate for ${cur.cost_users.toLocaleString("en-US")} users, set by ${cur.cost_users_set_by_email || "a platform engineer"}.`, "small"));
+      box.appendChild(el("p", `Estimate for ${cur.cost_users.toLocaleString("en-US")} users, set by ${personLabel(cur.cost_users_set_by_email) || "a platform engineer"}.`, "small"));
       for (const text of lines) box.appendChild(el("p", text, "small"));
     } else {
       box.appendChild(el("p", "No number of users set yet. The cost lines in each proposal use three sample sizes.", "small muted"));
@@ -8685,7 +8692,7 @@ a{color:#6d28d9;font-weight:600}`;
     const canChoose = true;
     const deeperDone = cur.deeper_done === true;
     const note = cur.scope
-      ? `Chosen: ${SCOPE_LABEL[cur.scope]}${cur.scope_set_by_email ? ` by ${cur.scope_set_by_email}` : ""}.`
+      ? `Chosen: ${SCOPE_LABEL[cur.scope]}${cur.scope_set_by_email ? ` by ${personLabel(cur.scope_set_by_email)}` : ""}.`
       : "No scope chosen yet.";
     $("scopeNote").textContent = `${note} Choose the scope for this analysis. Any role can choose it for now.`;
     $("scopeLockBox").hidden = deeperDone;
@@ -8756,7 +8763,7 @@ const REGION_OPTS = {
     const canEdit = !!cur.can_plan;
     const cloudLabel = (key) => (CLOUD_OPTS.find((c) => c.key === key) || {}).label;
     $("migrateNote").textContent = cur.cloud
-      ? `Chosen: ${cloudLabel(cur.cloud)}${cur.cloud_set_by_email ? ` by ${cur.cloud_set_by_email}` : ""}.`
+      ? `Chosen: ${cloudLabel(cur.cloud)}${cur.cloud_set_by_email ? ` by ${personLabel(cur.cloud_set_by_email)}` : ""}.`
       : "No cloud chosen yet.";
     const opts = $("cloudOpts");
     opts.replaceChildren();
@@ -8802,7 +8809,7 @@ const REGION_OPTS = {
     $("intakeSave").disabled = !canEdit;
     const confirmed = !!cur.intake_confirmed_at;
     $("intakeConfirm").disabled = !canEdit || confirmed || !cur.intake;
-    $("intakeConfirm").textContent = confirmed ? `Confirmed by ${cur.intake_confirmed_by_email}` : "Confirm intake";
+    $("intakeConfirm").textContent = confirmed ? `Confirmed by ${personLabel(cur.intake_confirmed_by_email)}` : "Confirm intake";
   }
 
   // The Terraform drafts. Each one is kept as a numbered version. Only infrastructure roles see them.

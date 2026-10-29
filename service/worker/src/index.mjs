@@ -1916,14 +1916,18 @@ async function getAnalysis(request, env, id) {
   await refreshHead(env, row);
   await noteOpened(env, row);
 
-  const [commentsRes, actionsRes, contingenciesRes] = await Promise.all([
+  const [commentsRes, actionsRes, contingenciesRes, peopleRes] = await Promise.all([
     serviceRest(env, `analysis_comments?analysis_id=eq.${id}&select=id,author_id,author_email,body,created_at&order=created_at.asc`),
     serviceRest(env, `action_items?analysis_id=eq.${id}&select=id,title,status,created_by_email,done_by_email,created_at,done_at&order=created_at.asc`),
     serviceRest(env, `contingencies?analysis_id=eq.${id}&select=id,finding_id,risk,contingency,rollback_step,trigger_condition,owner_email,status,created_by_email,updated_by_email,created_at,updated_at&order=created_at.asc`),
+    serviceRest(env, `members?workspace_id=eq.${row.workspace_id}&select=email,name`),
   ]);
   if (!commentsRes.ok || !actionsRes.ok || !contingenciesRes.ok) {
     return json({ error: "Could not load the analysis." }, 502);
   }
+  // The names of this workspace's members, by email, so each step can show who did it.
+  const people = {};
+  if (peopleRes.ok) for (const m of await peopleRes.json()) if (m.email && m.name) people[String(m.email).toLowerCase()] = m.name;
 
   const isAdmin = member.is_admin === true;
   const { owner_id, findings, ...analysis } = row;
@@ -1973,6 +1977,7 @@ async function getAnalysis(request, env, id) {
     comments,
     action_items: await actionsRes.json(),
     contingencies: await contingenciesRes.json(),
+    people,
   });
 }
 
