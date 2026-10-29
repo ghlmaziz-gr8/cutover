@@ -4180,3 +4180,28 @@ test("the booked confirmation carries a link to change or cancel, and a moved me
     delete env.EMAIL_FROM;
   }
 });
+
+test("a personal note from the sender is shown in the invitation, and kept on the prospect", async () => {
+  env.RESEND_API_KEY = "re_test";
+  env.EMAIL_FROM = "Cutover <noreply.sales@cutover.site>";
+  try {
+    const res = await call("/api/prospects", { as: "sales", method: "POST", body: { ...PROSPECT, message: "Happy to show you how the migration plan works.\nNo pressure." } });
+    assert.equal(res.status, 201);
+    assert.equal(state.prospects[0].invite_message, "Happy to show you how the migration plan works.\nNo pressure.");
+    const mail = resendCalls[0];
+    assert.ok(mail.text.includes("A note from Sam Sales:"));
+    assert.ok(mail.text.includes("Happy to show you how the migration plan works."));
+    assert.ok(mail.html.includes("A note from Sam Sales"));
+    assert.ok(mail.html.includes("Happy to show you how the migration plan works.<br>No pressure."));
+  } finally {
+    delete env.RESEND_API_KEY;
+    delete env.EMAIL_FROM;
+  }
+});
+
+test("the personal note is optional and capped at 500 characters", async () => {
+  assert.equal((await call("/api/prospects", { as: "sales", method: "POST", body: { ...PROSPECT, message: "x".repeat(501) } })).status, 400);
+  const plain = await call("/api/prospects", { as: "sales", method: "POST", body: { ...PROSPECT, message: "" } });
+  assert.equal(plain.status, 201);
+  assert.equal(state.prospects[0].invite_message, null);
+});

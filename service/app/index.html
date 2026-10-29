@@ -1973,6 +1973,10 @@ button:not(:disabled):active{transform:scale(.965)}
           <input id="pEmail" type="email" placeholder="Email" aria-label="Email" required maxlength="320" style="min-width:200px">
           <input id="pCompany" placeholder="Company" aria-label="Company" required maxlength="120" style="min-width:180px">
           <input id="pPhone" type="tel" placeholder="Phone (optional)" aria-label="Phone (optional)" maxlength="30" style="min-width:160px">
+          <label class="wide" style="flex-basis:100%;display:flex;flex-direction:column;gap:4px;font-size:14px">
+            Personal note (optional)
+            <textarea id="pNote" rows="3" maxlength="500" placeholder="A few words to include in the invitation, in your own voice" style="font:inherit;padding:10px 12px;border-radius:12px;border:1px solid #d9d2ee"></textarea>
+          </label>
           <button type="submit" class="small-btn" id="pSubmit">Send invitation</button>
         </form>
         <p id="pMsg" class="muted small hint" role="status"></p>
@@ -3761,6 +3765,7 @@ button:not(:disabled):active{transform:scale(.965)}
       email: $("pEmail").value,
       company: $("pCompany").value,
       phone: $("pPhone").value,
+      message: $("pNote").value,
     };
     $("pSubmit").disabled = true;
     setMsg("pMsg", "Sending the invitation...", false);

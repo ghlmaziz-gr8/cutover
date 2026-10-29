@@ -8,3 +8,6 @@ alter table public.prospects add constraint prospects_status_valid
 
 -- The sender's name, shown to the prospect on the booking page.
 alter table public.prospects add column if not exists invited_by_name text;
+
+-- The personal note the sender writes into the invitation.
+alter table public.prospects add column if not exists invite_message text;

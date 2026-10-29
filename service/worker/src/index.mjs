@@ -860,11 +860,14 @@ const UNATTENDED_NOTICE = "This inbox is unattended. Nobody reads or replies to 
 function prospectInviteEmail(prospect, bookingUrl) {
   const first = prospect.first_name;
   const subject = `${first}, book your Cutover walkthrough`;
+  const from = prospect.invited_by_name || "the Cutover team";
+  const note = prospect.invite_message ? String(prospect.invite_message) : "";
   const text = [
     `Hi ${first},`,
     "",
     "Thank you for your interest in Cutover. Pick the 30-minute slot that suits you, and we will walk you through the platform.",
     "",
+    ...(note ? [`A note from ${from}:`, note, ""] : []),
     `Book your meeting: ${bookingUrl}`,
     `Visit cutover.site: ${SITE_ORIGIN}`,
     `See the demo: ${SITE_ORIGIN}/cutover-demo/`,
@@ -884,6 +887,7 @@ function prospectInviteEmail(prospect, bookingUrl) {
     <div style="font-size:30px;font-weight:700;line-height:1.2;margin-top:12px">Hi ${escapeHtml(first)}, let's talk about your migration.</div>
     <div style="font-size:16px;line-height:1.5;margin-top:14px;opacity:.95">Thank you for your interest. Pick a 30-minute slot that suits you and we will walk you through Cutover, live.</div>
   </td></tr>
+  ${note ? `<tr><td style="padding:24px 32px 0 32px"><div style="padding:18px 20px;background:#f7f4ff;border-left:4px solid #db2777;border-radius:0 14px 14px 0;font-size:15px;line-height:1.6"><div style="font-size:12px;letter-spacing:2px;text-transform:uppercase;color:#6b6585;margin-bottom:8px">A note from ${escapeHtml(from)}</div>${escapeHtml(note).replace(/\n/g, "<br>")}</div></td></tr>` : ""}
   <tr><td style="padding:32px;text-align:center">
     <a href="${escapeHtml(bookingUrl)}" style="display:inline-block;background:#1d1640;color:#ffffff;text-decoration:none;font-weight:700;font-size:16px;padding:16px 28px;border-radius:999px">Book your 30-minute meeting</a>
     <div style="font-size:13px;color:#6b6585;margin-top:12px">Choose a time that works for you. Takes about a minute.</div>
@@ -921,6 +925,7 @@ function publicProspect(row) {
     company: row.company,
     phone: row.phone,
     invited_by_email: row.invited_by_email,
+    invite_message: row.invite_message || null,
     invited_at: row.invited_at,
     last_email_at: row.last_email_at,
     status: row.status,
@@ -951,12 +956,14 @@ async function createProspect(request, env) {
   if (!company) return json({ error: "Enter the company name." }, 400);
   const phone = body.phone ? String(body.phone).trim() : null;
   if (phone && !PHONE_PATTERN.test(phone)) return json({ error: "Enter a valid phone number, or leave it empty." }, 400);
+  const message = body.message ? String(body.message).trim() : "";
+  if (message.length > 500) return json({ error: "Keep the personal note to 500 characters or fewer." }, 400);
   const invitedBy = normalizeEmail(caller.user.email);
 
   const res = await serviceRest(env, "prospects", {
     method: "POST",
     headers: { prefer: "return=representation" },
-    body: JSON.stringify({ email, first_name, last_name, company, phone: phone || null, invited_by: caller.user.id, invited_by_email: invitedBy, invited_by_name: displayName(caller.user) || null, status: "invited" }),
+    body: JSON.stringify({ email, first_name, last_name, company, phone: phone || null, invited_by: caller.user.id, invited_by_email: invitedBy, invited_by_name: displayName(caller.user) || null, invite_message: message || null, status: "invited" }),
   });
   if (!res.ok) return json({ error: "Could not save the prospect." }, 502);
   const [row] = await res.json();
