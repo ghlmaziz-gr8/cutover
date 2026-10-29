@@ -87,3 +87,8 @@ test("the approach card points to What next instead of saying coming soon", () =
   assert.ok(html.includes("Choose one of the three proposals on What next, under the scope."));
   assert.ok(html.includes('document.getElementById("approachCard")?.scrollIntoView'));
 });
+
+test("a stage outside the scope shows as not in scope, and the count leaves it out", () => {
+  assert.ok(html.includes('skipped: "Not in scope"'));
+  assert.ok(html.includes("const counted = stages.filter((s) => s.state !== \"skipped\").length;"));
+});

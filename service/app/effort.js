@@ -79,11 +79,44 @@
   //   roles, accessDbs, databaseEngines[], sourceFiles, notRead, needsReview, personalData (bool),
   //   hasIac, hasCi, hasContainers, targetLanguage, targetLabel, targetMatchesLegacy
   // }
-  // options: { scenario: "lean" | "expected" | "cautious", shares: {groupKey: 0..1}, excluded: [labels], teamSize: n|null }
+  // The effort groups each scope includes. Deeper assessment is always in; Modernize and Migrate add their own groups.
+  const SCOPE_GROUPS = {
+    base: ["discovery", "access", "requirements", "governance", "ai"],
+    modernize: ["build", "database", "testing", "security", "people"],
+    migrate: ["database", "testing", "security", "cutover"],
+  };
+  // The effort group each plan phase belongs to. A phase is shown only when its group is in the scope.
+  const PHASE_GROUP = {
+    "Mobilise and grant access": "access",
+    "Discover and confirm findings": "discovery",
+    "Requirements and user stories": "requirements",
+    "Platform and pipeline": "build",
+    "Database build and migration": "database",
+    "Application build": "build",
+    "Security, privacy and integration review": "security",
+    "Testing and acceptance": "testing",
+    "Approvals and go/no-go": "governance",
+    "Training and documentation": "people",
+    "Cutover and go-live": "cutover",
+    "Hypercare": "cutover",
+    "Retire the legacy system": "cutover",
+  };
+  // The groups in a scope, such as "deeper_modernize_migrate". Null when no scope is chosen, so every group counts.
+  function groupsInScope(scope) {
+    if (!scope) return null;
+    const parts = String(scope).split("_");
+    const keys = new Set(SCOPE_GROUPS.base);
+    if (parts.includes("modernize")) for (const k of SCOPE_GROUPS.modernize) keys.add(k);
+    if (parts.includes("migrate")) for (const k of SCOPE_GROUPS.migrate) keys.add(k);
+    return keys;
+  }
+
+  // options: { scenario: "lean" | "expected" | "cautious", shares: {groupKey: 0..1}, excluded: [labels], teamSize: n|null, scope: "deeper_modernize" | ... }
   function build(facts, options) {
     const f = facts || {};
     const opt = options || {};
     const excluded = new Set(opt.excluded || []);
+    const inScope = groupsInScope(opt.scope);
     const pickT = (key) => (opt.shares && typeof opt.shares[key] === "number" ? Math.min(1, Math.max(0, opt.shares[key])) : SCENARIO_T[opt.scenario] ?? 0.5);
     const template = RATES[f.template] ? f.template : null;
     if (!template) return { label: LABEL, ready: false, message: "Choose an approach first. The estimate follows the approach." };
@@ -122,7 +155,7 @@
     const groups = [];
     // Each item carries whether it is included, and its value at the chosen point of its range.
     const mark = (key, i) => {
-      const included = !excluded.has(i.label);
+      const included = !excluded.has(i.label) && (!inScope || inScope.has(key));
       const t = pickT(key);
       return { ...i, included, value: included ? r1(i.days[0] + (i.days[1] - i.days[0]) * t) : 0 };
     };
@@ -368,11 +401,11 @@
       headcount,
       team,
       weeks,
-      phases,
+      phases: inScope ? phases.filter((p) => !PHASE_GROUP[p.name] || inScope.has(PHASE_GROUP[p.name])) : phases,
       assumptions,
       notes,
     };
   }
 
-  root.Effort = { build, RATES, SHARED, LABEL };
+  root.Effort = { build, RATES, SHARED, LABEL, SCOPE_GROUPS, groupsInScope };
 })(typeof globalThis !== "undefined" ? globalThis : this);

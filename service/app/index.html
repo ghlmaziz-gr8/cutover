@@ -5669,7 +5669,8 @@ a{color:#6d28d9;font-weight:600}`;
     wrap.appendChild(el("p", "Each stage unlocks the next. Clear one to open the next.", "muted small"));
     const head = el("div", null, "stage-head");
     const done = stages.filter((s) => s.state === "cleared").length;
-    head.appendChild(el("p", `${done} of ${stages.length} cleared`, "small"));
+    const counted = stages.filter((s) => s.state !== "skipped").length;
+    head.appendChild(el("p", `${done} of ${counted} cleared`, "small"));
     const dots = el("div", null, "dots");
     stages.forEach((s) => {
       const i = document.createElement("i");
@@ -5681,7 +5682,7 @@ a{color:#6d28d9;font-weight:600}`;
     wrap.appendChild(head);
 
     const grid = el("div", null, "stage-grid");
-    const LABEL = { cleared: "Cleared", available: "Unlocked", locked: "Locked" };
+    const LABEL = { cleared: "Cleared", available: "Unlocked", locked: "Locked", skipped: "Not in scope" };
     for (const s of stages) {
       const card = el("div", null, `stage-card ${s.state}`);
       card.id = `stage-${s.id}`;
@@ -5708,6 +5709,8 @@ a{color:#6d28d9;font-weight:600}`;
       if (s.state === "cleared") {
         const by = s.cleared_by ? ` by ${s.cleared_by}` : "";
         card.appendChild(el("p", `Cleared${by}.`, "small"));
+      } else if (s.state === "skipped") {
+        card.appendChild(el("p", "Not part of the scope you chose. It does not hold up the next stage.", "stage-lock"));
       } else if (s.state === "locked") {
         card.appendChild(el("p", s.lock_reason, "stage-lock"));
         const go = el("button", `Go to ${(stages.find((x) => x.id === s.unlocked_by) || {}).title || "the previous stage"}`);
@@ -6872,7 +6875,7 @@ a{color:#6d28d9;font-weight:600}`;
     }
     const st = effortState;
     const E = window.Effort;
-    const est = E.build(effortFactsOf(row), { scenario: st.scenario, shares: st.shares, excluded: st.excluded, teamSize: st.teamSize });
+    const est = E.build(effortFactsOf(row), { scenario: st.scenario, shares: st.shares, excluded: st.excluded, teamSize: st.teamSize, scope: row.scope });
     const fmt = (v) => (Math.round(v * 10) / 10).toLocaleString("en-US");
     const pct = (t) => `${Math.round(t * 100)}%`;
     const tpl = effortTemplateOf(row);

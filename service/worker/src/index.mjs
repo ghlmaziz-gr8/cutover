@@ -2833,13 +2833,24 @@ function progressOf(row) {
     : {};
 }
 
+// The modernization stages. Without Modernize in the scope they are not part of the work: they are skipped, and do not block.
+const MODERNIZE_STAGES = ["approach", "plan", "starter", "convert", "pr"];
+
 // The state of every stage for one analysis, as the viewer sees it. Computed here so every screen agrees.
 function stageStates(row, viewerId) {
   const saved = progressOf(row);
   const done = {};
+  const modernizeInScope = scopeIncludes(row.scope, "modernize");
   return PROGRESS_STAGES.map((stage) => {
     const prior = stage.needs ? PROGRESS_STAGES.find((s) => s.id === stage.needs) : null;
     const record = saved[stage.id] && typeof saved[stage.id] === "object" ? saved[stage.id] : null;
+    if (!modernizeInScope && MODERNIZE_STAGES.includes(stage.id)) {
+      done[stage.id] = true;
+      return {
+        id: stage.id, title: stage.title, produces: stage.produces, state: "skipped", ready: false,
+        unlocked_by: prior ? prior.id : null, lock_reason: null, cleared_by: null, cleared_at: null, celebrate: false,
+      };
+    }
     const cleared = stage.id === "assessment"
       ? row.status === "complete"
       : stage.id === "approach"
@@ -2887,6 +2898,7 @@ async function setProgress(request, env, id) {
   } else if (action === "review") {
     if (!canStart(access.member)) return json({ error: "Only platform engineers can review a stage." }, 403);
     if (!PROGRESS_REVIEWABLE.includes(stage)) return json({ error: "This stage is cleared by its own steps." }, 400);
+    if (target.state === "skipped") return json({ error: "This stage is not in the scope you chose." }, 409);
     if (target.state === "locked") return json({ error: target.lock_reason }, 409);
     if (target.state === "cleared") return json({ error: "This stage is already cleared." }, 409);
     if (!target.ready) return json({ error: "This stage's output is not ready yet." }, 409);
