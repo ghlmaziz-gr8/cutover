@@ -947,7 +947,7 @@ function prospectInviteEmail(prospect, bookingUrl) {
 <table role="presentation" width="640" cellpadding="0" cellspacing="0" style="max-width:640px;width:100%;background:#ffffff;border-radius:24px;overflow:hidden;box-shadow:0 30px 70px -40px rgba(29,22,64,.45)">
 
   <tr><td class="hero" style="padding:40px 32px 36px 32px;color:#ffffff">
-    <div class="rise" style="font-size:12px;letter-spacing:3px;text-transform:uppercase;opacity:.92">Cutover · Enterprise platform migration</div>
+    <div class="rise" style="font-size:12px;letter-spacing:3px;text-transform:uppercase;opacity:.92">Cutover · Enterprise platform modernization + migration</div>
     <div class="rise" style="animation-delay:.1s;font-size:30px;font-weight:700;line-height:1.2;margin-top:14px">${escapeHtml(tagline)}.</div>
     <div class="rise" style="animation-delay:.2s;font-size:16px;line-height:1.55;margin-top:14px;opacity:.96">Hi ${escapeHtml(first)}, Cutover reads your applications, data and infrastructure, drafts the migration plan, and generates the target environment. Your team approves each step before anything changes.</div>
   </td></tr>
