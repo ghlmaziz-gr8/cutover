@@ -93,8 +93,8 @@ const REPORT = {
 function seed() {
   return {
     workspaces: [
-      { id: W_ACME, name: "Acme Health", created_at: NOW },
-      { id: W_BETA, name: "Beta Clinic", created_at: NOW },
+      { id: W_ACME, name: "Acme Health", created_at: NOW, is_demo: true },
+      { id: W_BETA, name: "Beta Clinic", created_at: NOW, is_demo: false },
     ],
     members: [
       { workspace_id: W_ACME, user_id: PEOPLE.admin_a.id, email: PEOPLE.admin_a.email, role: "platform_engineer", is_admin: true, created_at: NOW },
@@ -3760,13 +3760,23 @@ test("the tracker counts invitations sent, used, waiting and removed, with accep
   assert.ok(tracker.body.workspaces.some((w) => w.id === W_ACME));
 });
 
-test("an admin can read the heat map of any workspace; sales and support cannot; a workspace admin still reads their own", async () => {
-  const owner = await call(`/api/workspaces/${W_BETA}/heatmap?screen=s-files&days=30`, { as: "owner" });
-  assert.equal(owner.status, 200);
-  assert.equal((await call(`/api/workspaces/${W_BETA}/heatmap?screen=s-files&days=30`, { as: "sales" })).status, 404);
-  assert.equal((await call(`/api/workspaces/${W_BETA}/heatmap?screen=s-files&days=30`, { as: "support" })).status, 404);
+test("the tracker shows demo spaces only: a customer workspace's invitations are not shown to staff", async () => {
+  state.invitations.push({ workspace_id: W_BETA, email: "beta-hire@beta.test", role: "auditor", is_admin: false, created_at: NOW });
+  const tracker = await call("/api/staff/invitations", { as: "owner" });
+  assert.equal(tracker.body.rows.some((r) => r.workspace_id === W_BETA), false);
+  assert.equal(tracker.body.workspaces.some((w) => w.id === W_BETA), false);
+  assert.ok(tracker.body.workspaces.some((w) => w.id === W_ACME));
+});
+
+test("staff cannot read a customer workspace's heat map unless they are members of it", async () => {
+  assert.equal((await call(`/api/workspaces/${W_BETA}/heatmap?screen=s-files&days=30`, { as: "owner" })).status, 404);
+  assert.equal((await call(`/api/workspaces/${W_BETA}/heatmap?screen=s-files&days=30`, { as: "operator" })).status, 404);
+});
+
+test("a workspace admin reads their own heat map; a non-admin member does not; Cutover roles do not open it", async () => {
   assert.equal((await call(`/api/workspaces/${W_ACME}/heatmap?screen=s-files&days=30`, { as: "admin_a" })).status, 200);
   assert.equal((await call(`/api/workspaces/${W_ACME}/heatmap?screen=s-files&days=30`, { as: "eng_a" })).status, 403);
+  assert.equal((await call(`/api/workspaces/${W_ACME}/heatmap?screen=s-files&days=30`, { as: "owner" })).status, 404);
 });
 
 test("only super users set admin and super user roles; admins and sales invite demo users with sales or support only", async () => {
