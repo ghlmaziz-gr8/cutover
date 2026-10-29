@@ -29,6 +29,7 @@ import { validateDbMetadata } from "./db-metadata.mjs";
 //   POST   /api/workspaces/:id/cleanup/superseded         remove them, when the count matches the preview (platform engineers)
 //   GET    /api/admin/database                            database size against the free-tier limit (operators)
 //   GET    /api/analyses?workspace=                       analyses in one workspace (members)
+//   GET    /api/insights?workspace=                       counts of what the workspace has done with Cutover (members; no code or names)
 //   POST   /api/analyses                                  start an analysis (platform engineers)
 //   POST   /api/analyses/upload                            start an analysis of a zip of the code (query: workspace_id, app_name, data_rules_confirmed, model_key_id)
 //   GET    /api/analyses/:id                              one analysis, limited to what your role may see
@@ -1204,6 +1205,74 @@ async function listAnalyses(request, env) {
     const isMine = owner_id === access.user.id;
     return { ...rest, is_mine: isMine, can_delete: isMine || isAdmin };
   }));
+}
+
+// ---- Insights: what the workspace has done with Cutover, counted from the records it already keeps. ----
+// Counts only: no code, findings or names of people. AI jobs come from the action log, which is trimmed as it grows.
+async function workspaceInsights(request, env) {
+  const url = new URL(request.url);
+  const access = await workspaceAccess(env, request, url.searchParams.get("workspace") || "");
+  if (access.response) return access.response;
+  const wid = access.workspace_id;
+  const countOf = async (path) => {
+    const res = await serviceRest(env, path, { method: "GET", headers: { prefer: "count=exact", range: "0-0" } });
+    if (!res.ok) return null;
+    const total = Number((res.headers.get("content-range") || "").split("/")[1]);
+    return Number.isFinite(total) ? total : null;
+  };
+  const listOf = async (path) => {
+    const res = await serviceRest(env, path);
+    return res.ok ? await res.json() : null;
+  };
+  const analyses = await listOf(`analyses?workspace_id=eq.${wid}&select=id,repo,status,created_at,finished_at,model_provider&order=created_at.desc&limit=2000`);
+  if (!analyses) return json({ error: "Could not load the insights." }, 502);
+  const conversions = (await listOf(`analysis_conversions?select=status,decision,analyses!inner(workspace_id)&analyses.workspace_id=eq.${wid}&limit=5000`)) || [];
+  const groupings = (await listOf(`feature_groupings?select=groups,analyses!inner(workspace_id)&analyses.workspace_id=eq.${wid}&status=eq.approved&limit=500`)) || [];
+  const filesAssessed = await countOf(`file_findings?select=id,analyses!inner(workspace_id)&analyses.workspace_id=eq.${wid}`);
+  const aiJobs = await countOf(`assessment_log?workspace_id=eq.${wid}&action=in.(business_finish,grouping_finish,stories_finish,deep_file_finish)&select=id`);
+
+  const complete = analyses.filter((a) => a.status === "complete");
+  const minutes = complete
+    .filter((a) => a.finished_at)
+    .map((a) => (Date.parse(a.finished_at) - Date.parse(a.created_at)) / 60000)
+    .filter((m) => m > 0 && m < 24 * 60)
+    .sort((a, b) => a - b);
+  const median = minutes.length ? Math.round(minutes[Math.floor(minutes.length / 2)] * 10) / 10 : null;
+  const hoursOfRuns = Math.round((minutes.reduce((sum, m) => sum + m, 0) / 60) * 10) / 10;
+
+  const today = new Date();
+  today.setUTCHours(0, 0, 0, 0);
+  const trend = [];
+  for (let i = 13; i >= 0; i--) {
+    const d = new Date(today);
+    d.setUTCDate(d.getUTCDate() - i);
+    trend.push({ day: d.toISOString().slice(0, 10), count: 0 });
+  }
+  for (const a of analyses) {
+    const hit = trend.find((t) => t.day === String(a.created_at).slice(0, 10));
+    if (hit) hit.count += 1;
+  }
+
+  const stories = groupings.reduce((sum, g) => sum + (Array.isArray(g.groups) ? g.groups.reduce((n, f) => n + (Array.isArray(f.stories) ? f.stories.length : 0), 0) : 0), 0);
+  const accepted = conversions.filter((c) => c.decision === "accepted").length;
+  const rejected = conversions.filter((c) => c.decision === "rejected").length;
+  const ok = conversions.filter((c) => c.status === "ok").length;
+
+  return json({
+    generated_at: new Date().toISOString(),
+    totals: {
+      analyses: analyses.length,
+      codes_assessed: complete.length,
+      repositories: new Set(analyses.map((a) => a.repo)).size,
+      files_assessed: filesAssessed,
+      ai_analyses: complete.filter((a) => a.model_provider).length,
+      ai_jobs: aiJobs,
+      user_stories: stories,
+    },
+    conversions: { produced: ok, accepted, rejected, waiting: Math.max(0, ok - accepted - rejected) },
+    time: { median_minutes: median, hours_of_runs: hoursOfRuns },
+    trend,
+  });
 }
 
 // ---- Notifications: saved per person, shown by the portal's bell. Writing one never fails the action that caused it. ----
@@ -5025,6 +5094,7 @@ async function route(request, env) {
     if (path === "/api/analyses" && method === "POST") return startAnalysis(request, env);
     if (path === "/api/analyses/upload" && method === "POST") return startUpload(request, env);
     if (path === "/api/analyses" && method === "GET") return listAnalyses(request, env);
+    if (path === "/api/insights" && method === "GET") return workspaceInsights(request, env);
 
     const one = path.match(/^\/api\/analyses\/([^/]+)$/);
     if (one && UUID_PATTERN.test(one[1]) && method === "GET") return getAnalysis(request, env, one[1]);
