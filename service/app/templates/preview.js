@@ -134,7 +134,7 @@
     const P = window.CutoverPalettes;
     const wrap = make("div", null, "look");
     let family = P.FAMILIES[0];
-    let mode = "light";
+    let mode = window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
 
     wrap.appendChild(make("p", "The same colours and type as the Cutover portal, so the new application feels like one product.", "look-note"));
 
@@ -181,7 +181,9 @@
     function paint() {
       const set = family[mode];
       const vars = P.cssVars(set);
-      Object.keys(vars).forEach((k) => wrap.style.setProperty(k, vars[k]));
+      // Set on the page root, so the look and every wireframe below it take the chosen family.
+      const app = document.getElementById("app");
+      Object.keys(vars).forEach((k) => app.style.setProperty(k, vars[k]));
       hexes.forEach(([key, el]) => { el.textContent = set[key]; });
       pickButtons.forEach(([f, b]) => {
         const on = f === family;
