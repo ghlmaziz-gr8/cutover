@@ -578,6 +578,14 @@ pre{white-space:pre-wrap;word-break:break-word;background:var(--soft);padding:12
 .stage-card.cleared{border-color:var(--ok);background:color-mix(in srgb,var(--ok) 6%,var(--card))}
 .stage-card.available{border-color:var(--accent);box-shadow:0 14px 30px -20px color-mix(in srgb,var(--accent) 55%,transparent)}
 .stage-card.locked{opacity:.62}
+.stage-card{cursor:pointer}
+.stage-card.is-open{border-color:var(--accent)}
+.stage-card:focus-visible{outline:2px solid var(--accent);outline-offset:3px}
+.stage-detail{margin-top:14px;background:var(--card);border:1.5px solid var(--accent);border-radius:20px;padding:18px}
+.stage-detail[hidden]{display:none}
+.stage-detail-head{display:flex;justify-content:space-between;align-items:center;gap:12px}
+.stage-detail-head h4{margin:0;font-size:17px}
+.stage-facts{margin:10px 0 12px;padding-left:18px;font-size:14px;line-height:1.6}
 .stage-state{display:inline-flex;align-items:center;gap:7px;font:800 11px/1 var(--body);letter-spacing:.08em;text-transform:uppercase;color:var(--muted);margin:0 0 10px}
 .stage-state i{width:10px;height:10px;border-radius:50%;background:var(--line);display:inline-block}
 .stage-card.cleared .stage-state{color:var(--ok)}
@@ -5683,6 +5691,79 @@ a{color:#6d28d9;font-weight:600}`;
     head.appendChild(dots);
     wrap.appendChild(head);
 
+    // Each card opens the stage's detail below the grid: what the stage holds, and where to change it.
+    const STATE_WORD = { cleared: "Cleared", available: "Unlocked", locked: "Locked", skipped: "Not in scope" };
+    const goTo = (id) => document.getElementById(id)?.scrollIntoView({ behavior: "smooth", block: "center" });
+    const stageChange = (s) => {
+      if (s.id === "scope") return { label: "Change the scope", run: () => goTo("scopeCard") };
+      if (s.id === "approach" && s.state !== "skipped" && row.scope && scopeHas(row.scope, "modernize")) {
+        return { label: "Change the approach", run: () => goTo("approachCard") };
+      }
+      if (s.id === "plan" && row.scope) {
+        return { label: "Open the plan on What next", run: () => { const e = document.getElementById("effortCard"); if (e) e.open = true; goTo("effortCard"); } };
+      }
+      if (s.id === "deeper" && s.state !== "locked") return { label: "Open the deeper assessment", run: () => showDeeper() };
+      return null;
+    };
+    const stageFacts = (s) => {
+      const facts = [];
+      if (s.id === "assessment") facts.push(row.status === "complete" ? "The code analysis is complete." : "The code analysis is not complete yet.");
+      if (s.id === "approach") {
+        if (s.state === "skipped") facts.push("Modernize is not in the scope, so there is no approach to choose.");
+        else if (row.modern_template) facts.push(`Chosen: ${TEMPLATE_NAME[row.modern_template] || row.modern_template}${row.modern_template_set_by_email ? " by " + row.modern_template_set_by_email : ""}.`);
+        else facts.push("No approach chosen yet. The three proposals are: " + Object.values(TEMPLATE_NAME).join(", ") + ".");
+      }
+      if (s.id === "scope") {
+        if (row.scope) {
+          facts.push(`Chosen: ${SCOPE_LABEL[row.scope] || row.scope}.`);
+          facts.push("Includes: " + ["Deeper assessment", scopeHas(row.scope, "modernize") && "Modernize", scopeHas(row.scope, "migrate") && "Migrate"].filter(Boolean).join(", ") + ".");
+        } else facts.push("No scope chosen yet. Choose it on What next.");
+      }
+      if (s.id === "plan") facts.push(row.modern_template ? "The order of work, the risks and a rough size for the chosen approach. Effort and plan are on What next." : "Needs the approach to be chosen first.");
+      if (s.id === "deeper") facts.push(row.deeper_done === true ? "The deeper assessment is done." : "The deeper assessment is not done yet.");
+      if (s.id === "starter" || s.id === "convert" || s.id === "pr") facts.push(s.produces);
+      facts.push(`Status: ${STATE_WORD[s.state] || s.state}.`);
+      if (s.state === "cleared" && s.cleared_by) facts.push(`Cleared by ${s.cleared_by}${s.cleared_at ? " on " + s.cleared_at.slice(0, 10) : ""}.`);
+      return facts;
+    };
+    const detail = el("div", null, "stage-detail");
+    detail.id = "stageDetail";
+    detail.hidden = true;
+    const cards = {};
+    let openId = null;
+    const setOpen = (id) => {
+      openId = id === openId ? null : id;
+      for (const k of Object.keys(cards)) {
+        cards[k].classList.toggle("is-open", k === openId);
+        cards[k].setAttribute("aria-expanded", k === openId ? "true" : "false");
+      }
+      detail.hidden = !openId;
+      if (!openId) return;
+      const s = stages.find((x) => x.id === openId);
+      detail.replaceChildren();
+      const head = el("div", null, "stage-detail-head");
+      head.appendChild(el("h4", s.title));
+      const close = el("button", "Close");
+      close.type = "button";
+      close.className = "ghost";
+      close.addEventListener("click", () => setOpen(s.id));
+      head.appendChild(close);
+      detail.appendChild(head);
+      detail.appendChild(el("p", s.produces, "muted small"));
+      const list = el("ul", null, "stage-facts");
+      stageFacts(s).forEach((f) => list.appendChild(el("li", f)));
+      detail.appendChild(list);
+      const change = stageChange(s);
+      if (change) {
+        const b = el("button", change.label);
+        b.type = "button";
+        b.className = "ghost";
+        b.addEventListener("click", change.run);
+        detail.appendChild(b);
+      }
+      detail.scrollIntoView({ behavior: "smooth", block: "nearest" });
+    };
+
     const grid = el("div", null, "stage-grid");
     const LABEL = { cleared: "Cleared", available: "Unlocked", locked: "Locked", skipped: "Not in scope" };
     for (const s of stages) {
@@ -5752,9 +5833,17 @@ a{color:#6d28d9;font-weight:600}`;
       } else if (!s.ready) {
         card.appendChild(el("p", "Coming soon.", "stage-lock"));
       }
+      cards[s.id] = card;
+      card.tabIndex = 0;
+      card.setAttribute("role", "button");
+      card.setAttribute("aria-expanded", "false");
+      card.setAttribute("aria-controls", "stageDetail");
+      card.addEventListener("click", (e) => { if (!e.target.closest("button")) setOpen(s.id); });
+      card.addEventListener("keydown", (e) => { if ((e.key === "Enter" || e.key === " ") && e.target === card) { e.preventDefault(); setOpen(s.id); } });
       grid.appendChild(card);
     }
     wrap.appendChild(grid);
+    wrap.appendChild(detail);
     const planStage = stages.find((x) => x.id === "plan");
     if (planStage && planStage.state !== "locked" && row.modern_template && window.Plan) {
       wrap.appendChild(el("h4", "The plan at a glance", "eyebrow-sm"));

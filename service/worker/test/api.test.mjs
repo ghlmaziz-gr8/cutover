@@ -428,7 +428,7 @@ test("the stages unlock one after another, and a locked stage says what to clear
   state.analyses.find((a) => a.id === AN_ACME).scope = "deeper_modernize";
   const before = await call(`/api/analyses/${AN_ACME}`, { as: "eng_a" });
   const stages = before.body.stages;
-  assert.deepEqual(stages.map((s) => s.id), ["assessment", "scope", "approach", "plan", "deeper", "starter", "convert", "pr"]);
+  assert.deepEqual(stages.map((s) => s.id), ["assessment", "approach", "scope", "plan", "deeper", "starter", "convert", "pr"]);
   const approach = stages.find((s) => s.id === "approach");
   const plan = stages.find((s) => s.id === "plan");
   const deeper = stages.find((s) => s.id === "deeper");
@@ -437,7 +437,7 @@ test("the stages unlock one after another, and a locked stage says what to clear
     assert.equal(plan.state, "locked");
     assert.equal(deeper.state, "locked");
     assert.match(plan.lock_reason, /Clear Choose the approach to unlock Modernization plan/);
-    assert.match(deeper.lock_reason, /Clear Modernization plan to unlock Deeper assessment/);
+    assert.match(deeper.lock_reason, /Clear Choose the approach to unlock Deeper assessment/);
   } else {
     assert.equal(approach.state, "cleared");
     assert.equal(plan.state, plan.state === "cleared" ? "cleared" : "available");
@@ -445,15 +445,19 @@ test("the stages unlock one after another, and a locked stage says what to clear
   }
 });
 
-test("Choose the scope is a path stage before the approach, cleared once a scope is chosen", async () => {
+test("Choose the scope is a path stage after the approach, cleared once a scope is chosen", async () => {
   const analysis = state.analyses.find((a) => a.id === AN_ACME);
   analysis.scope = null;
+  analysis.modern_template = null;
   const body = (await call(`/api/analyses/${AN_ACME}`, { as: "eng_a" })).body;
   const scope = body.stages.find((s) => s.id === "scope");
   const approach = body.stages.find((s) => s.id === "approach");
-  assert.equal(scope.state, body.status === "complete" ? "available" : "locked");
-  if (scope.state === "available") assert.equal(approach.state, "locked");
-  assert.match(approach.lock_reason, /Clear Choose the scope to unlock Choose the approach/);
+  assert.equal(approach.state, body.status === "complete" ? "available" : "locked");
+  assert.equal(scope.state, "locked");
+  assert.match(scope.lock_reason || "", /Clear Choose the approach to unlock Choose the scope/);
+  analysis.modern_template = "web-modern";
+  const approved = (await call(`/api/analyses/${AN_ACME}`, { as: "eng_a" })).body;
+  assert.equal(approved.stages.find((s) => s.id === "scope").state, "available");
   analysis.scope = "deeper_modernize";
   const after = (await call(`/api/analyses/${AN_ACME}`, { as: "eng_a" })).body;
   assert.equal(after.stages.find((s) => s.id === "scope").state, "cleared");
