@@ -983,12 +983,13 @@ async function listProspects(request, env) {
   return json({ prospects: (await res.json()).map(publicProspect) });
 }
 
-// ---- Booking: a prospect picks a free time from the sender's calendar. Public, but only with a signed link. ----
+// ---- Booking: a prospect picks a free time from the sender's calendar, and can move or cancel it. Public, but only with a signed link. ----
 const BOOKING_TIME_ZONE_DEFAULT = "America/New_York";
 const BOOKING_MINUTES = 30;
 const BOOKING_GAP_MS = 15 * 60 * 1000;
 const BOOKING_DAYS_AHEAD = 14;
 const BOOKING_NOTICE_MS = 2 * 60 * 60 * 1000;
+const CAN_BOOK = ["invited", "cancelled", "booked"];
 
 function bookingZone(env) {
   return env.BOOKING_TIME_ZONE || BOOKING_TIME_ZONE_DEFAULT;
@@ -1071,7 +1072,7 @@ async function hostBusyTimes(accessToken, fromMs, toMs) {
   return busy.map((b) => ({ start: Date.parse(b.start), end: Date.parse(b.end) }));
 }
 
-// Loads the prospect a link names, and the sender's free times. Null when the link is not valid.
+// Loads the prospect a link names. Null when the link is not valid.
 async function bookingContext(env, token) {
   const prospectId = await readProspectToken(env, token);
   if (!prospectId) return null;
@@ -1085,7 +1086,7 @@ async function freeTimesFor(env, prospect) {
   const now = Date.now();
   const hostToken = await hostAccessToken(env, prospect.invited_by);
   if (!hostToken) return { error: "The Cutover team member who invited you is not available right now. Please reply to the invitation email, or try again later." };
-  const from = zonedInstant(addDays(new Intl.DateTimeFormat("en-CA", { timeZone: zone }).format(new Date(now)), 0), 0, 0, zone);
+  const from = zonedInstant(new Intl.DateTimeFormat("en-CA", { timeZone: zone }).format(new Date(now)), 0, 0, zone);
   const to = from + (BOOKING_DAYS_AHEAD + 1) * 24 * 60 * 60 * 1000;
   const busy = await hostBusyTimes(hostToken, from, to);
   if (!busy) return { error: "The calendar could not be read right now. Please try again in a moment." };
@@ -1111,7 +1112,7 @@ async function bookingInfo(request, env, token) {
 async function bookingSlots(request, env, token) {
   const found = await bookingContext(env, token);
   if (!found) return json({ error: "This booking link is not valid or has expired." }, 404);
-  if (found.prospect.status !== "invited") return json({ error: "This meeting is already booked." }, 409);
+  if (!CAN_BOOK.includes(found.prospect.status)) return json({ error: "This meeting can no longer be changed." }, 409);
   const result = await freeTimesFor(env, found.prospect);
   if (result.error) return json({ error: result.error }, 503);
   return json({ time_zone: result.zone, slots: result.slots });
@@ -1121,46 +1122,58 @@ function formatMeeting(startIso, zone) {
   return new Intl.DateTimeFormat("en-US", { timeZone: zone, weekday: "long", month: "long", day: "numeric", year: "numeric", hour: "numeric", minute: "2-digit", timeZoneName: "short" }).format(new Date(startIso));
 }
 
-function bookingConfirmationEmail(prospect, startIso, zone) {
-  const when = formatMeeting(startIso, zone);
-  const first = prospect.first_name;
-  const subject = `Your meeting with the Cutover team is booked`;
-  const text = [
-    `Hi ${first},`,
-    "",
-    "Your meeting with the Cutover team is booked.",
-    `When: ${when}`,
-    "",
-    `Learn more at ${SITE_ORIGIN}`,
-    `See the demo: ${SITE_ORIGIN}/cutover-demo/`,
-    "",
-    UNATTENDED_NOTICE,
-  ].join("\n");
+// The emails the prospect gets. kind is "booked", "moved" or "cancelled".
+function prospectBookingEmail(kind, firstName, when, manageUrl) {
+  const first = firstName;
+  const copy = {
+    booked: { subject: "Your meeting with the Cutover team is booked", headline: `You're booked, ${first}.`, line: "Your meeting with the Cutover team is booked." },
+    moved: { subject: "Your Cutover meeting has moved", headline: `Your meeting has moved, ${first}.`, line: "Your meeting with the Cutover team has a new time." },
+    cancelled: { subject: "Your Cutover meeting is cancelled", headline: `Your meeting is cancelled, ${first}.`, line: "Your meeting with the Cutover team has been cancelled. You can book a new time at any point." },
+  }[kind];
+  const textLines = [`Hi ${first},`, "", copy.line];
+  if (when) textLines.push(`When: ${when}`);
+  if (manageUrl) textLines.push("", `Change or cancel your meeting: ${manageUrl}`);
+  textLines.push("", `Learn more at ${SITE_ORIGIN}`, `See the demo: ${SITE_ORIGIN}/cutover-demo/`, "", UNATTENDED_NOTICE);
+  const action = manageUrl
+    ? `<a href="${escapeHtml(manageUrl)}" style="display:inline-block;background:#1d1640;color:#ffffff;text-decoration:none;font-weight:700;padding:14px 24px;border-radius:999px">${kind === "cancelled" ? "Book a new time" : "Change or cancel my meeting"}</a>`
+    : `<a href="${SITE_ORIGIN}" style="display:inline-block;background:#1d1640;color:#ffffff;text-decoration:none;font-weight:700;padding:14px 24px;border-radius:999px">Visit cutover.site</a>`;
+  const whenBlock = when ? `<tr><td style="padding:28px 32px 0 32px"><div style="padding:18px 20px;background:#f7f4ff;border-radius:14px;font-size:16px;line-height:1.5"><strong>When</strong><br>${escapeHtml(when)}</div></td></tr>` : "";
   const html = `<!doctype html><html><body style="margin:0;padding:0;background:#f4f1fb;font-family:Arial,Helvetica,sans-serif;color:#1d1640">
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#f4f1fb;padding:24px 12px"><tr><td align="center">
 <table role="presentation" width="600" cellpadding="0" cellspacing="0" style="max-width:600px;width:100%;background:#ffffff;border-radius:20px;overflow:hidden">
   <tr><td style="background:linear-gradient(135deg,#6d28d9,#db2777,#f97316);padding:36px 32px;color:#ffffff">
     <div style="font-size:13px;letter-spacing:3px;text-transform:uppercase;opacity:.9">Cutover</div>
-    <div style="font-size:28px;font-weight:700;line-height:1.2;margin-top:12px">You're booked, ${escapeHtml(first)}.</div>
-    <div style="font-size:16px;line-height:1.5;margin-top:12px;opacity:.95">Your meeting with the Cutover team is booked.</div>
+    <div style="font-size:28px;font-weight:700;line-height:1.2;margin-top:12px">${escapeHtml(copy.headline)}</div>
+    <div style="font-size:16px;line-height:1.5;margin-top:12px;opacity:.95">${escapeHtml(copy.line)}</div>
   </td></tr>
-  <tr><td style="padding:28px 32px">
-    <div style="padding:18px 20px;background:#f7f4ff;border-radius:14px;font-size:16px;line-height:1.5"><strong>When</strong><br>${escapeHtml(when)}</div>
-  </td></tr>
+  ${whenBlock}
+  <tr><td style="padding:28px 32px;text-align:center">${action}</td></tr>
   <tr><td style="padding:0 32px 28px 32px;text-align:center;font-size:15px">
-    <a href="${SITE_ORIGIN}" style="display:inline-block;background:#1d1640;color:#ffffff;text-decoration:none;font-weight:700;padding:14px 24px;border-radius:999px">Visit cutover.site</a>
-    <div style="margin-top:14px"><a href="${SITE_ORIGIN}/cutover-demo/" style="color:#db2777;font-weight:700">See the demo</a></div>
+    <a href="${SITE_ORIGIN}" style="color:#6d28d9;font-weight:700">cutover.site</a> &nbsp;·&nbsp; <a href="${SITE_ORIGIN}/cutover-demo/" style="color:#db2777;font-weight:700">See the demo</a>
   </td></tr>
   <tr><td style="background:#faf9fd;padding:18px 32px;font-size:12px;color:#6b6585;text-align:center;line-height:1.5">${escapeHtml(UNATTENDED_NOTICE)}<br>Cutover · cutover.site</td></tr>
 </table></td></tr></table></body></html>`;
-  return { subject, text, html };
+  return { subject: copy.subject, text: textLines.join("\n"), html };
+}
+
+// The notice the sender gets. Plain text, from the same sales address.
+function senderNotice(kind, prospect, when) {
+  const who = `${prospect.first_name} ${prospect.last_name} from ${prospect.company}`;
+  const verb = { booked: "booked a meeting", moved: "moved their meeting", cancelled: "cancelled their meeting" }[kind];
+  const subject = `Meeting ${kind}: ${prospect.first_name} ${prospect.last_name}, ${prospect.company}`;
+  const lines = [`${who} ${verb}.`, ""];
+  if (when) lines.push(`When: ${when}`);
+  lines.push(`Email: ${prospect.email}`);
+  if (prospect.phone) lines.push(`Phone: ${prospect.phone}`);
+  lines.push("", kind === "cancelled" ? "The event has been removed from your Google Calendar." : "The event is on your Google Calendar.", "", UNATTENDED_NOTICE);
+  return { subject, text: lines.join("\n") };
 }
 
 async function bookMeeting(request, env, token) {
   const found = await bookingContext(env, token);
   if (!found) return json({ error: "This booking link is not valid or has expired." }, 404);
   const prospect = found.prospect;
-  if (prospect.status !== "invited") return json({ error: "This meeting is already booked." }, 409);
+  if (!CAN_BOOK.includes(prospect.status)) return json({ error: "This meeting can no longer be changed." }, 409);
   const parsed = await readJson(request);
   if (parsed.error) return json({ error: parsed.error }, 400);
   const body = parsed.value || {};
@@ -1181,42 +1194,72 @@ async function bookMeeting(request, env, token) {
 
   const hostToken = await hostAccessToken(env, prospect.invited_by);
   if (!hostToken) return json({ error: "The calendar is not available right now. Please try again." }, 503);
-  const event = await fetch("https://www.googleapis.com/calendar/v3/calendars/primary/events?sendUpdates=none", {
-    method: "POST",
-    headers: { authorization: `Bearer ${hostToken}`, "content-type": "application/json" },
-    body: JSON.stringify({
-      summary: `Cutover meeting: ${first_name} ${last_name}, ${company}`,
-      description: `Booked through cutover.site.\nEmail: ${email}${phone ? `\nPhone: ${phone}` : ""}`,
-      start: { dateTime: chosen.start, timeZone: result.zone },
-      end: { dateTime: chosen.end, timeZone: result.zone },
-      attendees: [{ email }],
-    }),
-  }).catch(() => null);
+  const eventBody = JSON.stringify({
+    summary: `Cutover meeting: ${first_name} ${last_name}, ${company}`,
+    description: `Booked through cutover.site.\nEmail: ${email}${phone ? `\nPhone: ${phone}` : ""}`,
+    start: { dateTime: chosen.start, timeZone: result.zone },
+    end: { dateTime: chosen.end, timeZone: result.zone },
+    attendees: [{ email }],
+  });
+  const headers = { authorization: `Bearer ${hostToken}`, "content-type": "application/json" };
+  const moving = prospect.status === "booked" && prospect.calendar_event_id;
+  const event = await fetch(
+    moving
+      ? `https://www.googleapis.com/calendar/v3/calendars/primary/events/${encodeURIComponent(prospect.calendar_event_id)}?sendUpdates=none`
+      : "https://www.googleapis.com/calendar/v3/calendars/primary/events?sendUpdates=none",
+    { method: moving ? "PATCH" : "POST", headers, body: eventBody },
+  ).catch(() => null);
   if (!event || !event.ok) return json({ error: "The meeting could not be added to the calendar. Please try again." }, 502);
+  const eventId = moving ? prospect.calendar_event_id : (await event.json()).id || null;
 
   const saved = await serviceRest(env, `prospects?id=eq.${prospect.id}`, {
     method: "PATCH",
     headers: { prefer: "return=minimal" },
-    body: JSON.stringify({ status: "booked", meeting_at: chosen.start, first_name, last_name, email, company, phone: phone || null }),
+    body: JSON.stringify({ status: "booked", meeting_at: chosen.start, first_name, last_name, email, company, phone: phone || null, calendar_event_id: eventId }),
   });
-  if (!saved.ok) return json({ error: "The meeting was added, but we could not record it. Please contact the Cutover team." }, 502);
+  if (!saved.ok) return json({ error: "The meeting was saved in the calendar, but we could not record it. Please contact the Cutover team." }, 502);
 
-  const mail = bookingConfirmationEmail({ first_name }, chosen.start, result.zone);
-  await sendProspectMail(env, email, mail.subject, mail.text, mail.html);
-  // The sender gets a notice too, so the meeting shows up in their inbox as well as their calendar.
+  const kind = moving ? "moved" : "booked";
   const when = formatMeeting(chosen.start, result.zone);
-  const noticeText = [
-    `${first_name} ${last_name} from ${company} booked a meeting.`,
-    "",
-    `When: ${when}`,
-    `Email: ${email}${phone ? `\nPhone: ${phone}` : ""}`,
-    "",
-    "The meeting is on your Google Calendar.",
-    "",
-    UNATTENDED_NOTICE,
-  ].join("\n");
-  await sendProspectMail(env, prospect.invited_by_email, `Meeting booked: ${first_name} ${last_name}, ${company}`, noticeText, null);
-  return json({ booked: true, start: chosen.start, end: chosen.end, time_zone: result.zone });
+  const updated = { ...prospect, first_name, last_name, email, company, phone: phone || null };
+  const manageUrl = `${SITE_ORIGIN}/book/?t=${await signProspectToken(env, prospect.id)}`;
+  const mail = prospectBookingEmail(kind, first_name, when, manageUrl);
+  await sendProspectMail(env, email, mail.subject, mail.text, mail.html);
+  const notice = senderNotice(kind, updated, when);
+  await sendProspectMail(env, prospect.invited_by_email, notice.subject, notice.text, null);
+  return json({ booked: true, moved: Boolean(moving), start: chosen.start, end: chosen.end, time_zone: result.zone });
+}
+
+async function cancelMeeting(request, env, token) {
+  const found = await bookingContext(env, token);
+  if (!found) return json({ error: "This booking link is not valid or has expired." }, 404);
+  const prospect = found.prospect;
+  if (prospect.status !== "booked") return json({ error: "There is no booked meeting to cancel." }, 409);
+
+  if (prospect.calendar_event_id) {
+    const hostToken = await hostAccessToken(env, prospect.invited_by);
+    if (!hostToken) return json({ error: "The calendar is not available right now. Please try again." }, 503);
+    const del = await fetch(
+      `https://www.googleapis.com/calendar/v3/calendars/primary/events/${encodeURIComponent(prospect.calendar_event_id)}?sendUpdates=none`,
+      { method: "DELETE", headers: { authorization: `Bearer ${hostToken}` } },
+    ).catch(() => null);
+    // Google answers 410 when the event was already removed, which still leaves nothing to cancel.
+    if (!del || (!del.ok && del.status !== 410 && del.status !== 404)) return json({ error: "The meeting could not be removed from the calendar. Please try again." }, 502);
+  }
+
+  const saved = await serviceRest(env, `prospects?id=eq.${prospect.id}`, {
+    method: "PATCH",
+    headers: { prefer: "return=minimal" },
+    body: JSON.stringify({ status: "cancelled", meeting_at: null, calendar_event_id: null }),
+  });
+  if (!saved.ok) return json({ error: "The meeting was removed, but we could not record it. Please contact the Cutover team." }, 502);
+
+  const bookUrl = `${SITE_ORIGIN}/book/?t=${await signProspectToken(env, prospect.id)}`;
+  const mail = prospectBookingEmail("cancelled", prospect.first_name, null, bookUrl);
+  await sendProspectMail(env, prospect.email, mail.subject, mail.text, mail.html);
+  const notice = senderNotice("cancelled", prospect, prospect.meeting_at ? formatMeeting(prospect.meeting_at, bookingZone(env)) : null);
+  await sendProspectMail(env, prospect.invited_by_email, notice.subject, notice.text, null);
+  return json({ cancelled: true });
 }
 
 // Adds a person with platform roles, or replaces the roles of someone already listed.
@@ -5910,6 +5953,8 @@ async function route(request, env) {
     const bookOne = path.match(/^\/api\/book\/([^/]+)$/);
     if (bookOne && method === "GET") return bookingInfo(request, env, decodeURIComponent(bookOne[1]));
     if (bookOne && method === "POST") return bookMeeting(request, env, decodeURIComponent(bookOne[1]));
+    const bookCancel = path.match(/^\/api\/book\/([^/]+)\/cancel$/);
+    if (bookCancel && method === "POST") return cancelMeeting(request, env, decodeURIComponent(bookCancel[1]));
     if (path === "/api/staff" && method === "GET") return listStaff(request, env);
     if (path === "/api/staff" && method === "POST") return addStaff(request, env);
     const staffOne = path.match(/^\/api\/staff\/(.+)$/);

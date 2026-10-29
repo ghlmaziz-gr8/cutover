@@ -174,7 +174,7 @@ let github;
 let failLog;
 let failActivityLog;
 let resendCalls = [];
-let calendarFake = { busy: [], events: [] };
+let calendarFake = { busy: [], events: [], patched: [], deleted: [] };
 const realFetch = globalThis.fetch;
 
 const j = (body, status = 200) => new Response(body === undefined ? null : JSON.stringify(body), {
@@ -341,7 +341,7 @@ beforeEach(() => {
   failLog = false;
   failActivityLog = false;
   resendCalls = [];
-  calendarFake = { busy: [], events: [] };
+  calendarFake = { busy: [], events: [], patched: [], deleted: [] };
   github = { dispatches: [], dispatchOk: true };
   globalThis.fetch = async (url, init = {}) => {
     const u = String(url);
@@ -371,9 +371,23 @@ beforeEach(() => {
       return j({ calendars: { primary: { busy: calendarFake.busy } } });
     }
     if (u === "https://www.googleapis.com/calendar/v3/calendars/primary/events?sendUpdates=none") {
-      const event = JSON.parse(init.body);
+      const event = { ...JSON.parse(init.body), id: `evt-${calendarFake.events.length + 1}` };
       calendarFake.events.push(event);
-      return j({ id: "evt-test" });
+      return j({ id: event.id });
+    }
+    const eventOne = u.match(/^https:\/\/www\.googleapis\.com\/calendar\/v3\/calendars\/primary\/events\/([^?]+)\?sendUpdates=none$/);
+    if (eventOne) {
+      const id = decodeURIComponent(eventOne[1]);
+      if (init.method === "PATCH") {
+        const event = calendarFake.events.find((e) => e.id === id);
+        Object.assign(event, JSON.parse(init.body));
+        calendarFake.patched.push(id);
+        return j({ id });
+      }
+      if (init.method === "DELETE") {
+        calendarFake.deleted.push(id);
+        return new Response(null, { status: 204 });
+      }
     }
     if (u.startsWith("https://oauth2.googleapis.com/revoke")) return new Response(null, { status: 200 });
     if (u.startsWith("https://api.resend.com/")) {
@@ -4070,8 +4084,15 @@ test("the booking link shows the prospect, offers weekday slots from the sender'
     assert.ok(notice.text.includes("Buyer Health"));
     assert.ok(notice.text.includes("Google Calendar"));
 
-    assert.equal((await call(`/api/book/${token}`, { method: "POST", body: { start: slots.body.slots[1].start, first_name: "Pat", last_name: "Buyer", email: "pat@prospect.test", company: "Buyer Health" } })).status, 409);
-    assert.equal((await call(`/api/book/${token}/slots`)).status, 409);
+    // Once booked, the same link moves the meeting instead of making a second one.
+    const moved = await call(`/api/book/${token}`, { method: "POST", body: { start: slots.body.slots[1].start, first_name: "Pat", last_name: "Buyer", email: "pat@prospect.test", company: "Buyer Health" } });
+    assert.equal(moved.status, 200);
+    assert.equal(moved.body.moved, true);
+    assert.equal(calendarFake.events.length, 1, "no second event is made");
+    assert.deepEqual(calendarFake.patched, [calendarFake.events[0].id]);
+    assert.equal(calendarFake.events[0].start.dateTime, slots.body.slots[1].start);
+    assert.equal(state.prospects.find((p) => p.id === id).meeting_at, slots.body.slots[1].start);
+    assert.equal((await call(`/api/book/${token}/slots`)).status, 200);
   } finally {
     delete env.RESEND_API_KEY;
     delete env.EMAIL_FROM;
@@ -4104,4 +4125,57 @@ test("without a connected calendar, the booking page says the sender is not avai
   const res = await call(`/api/book/${token}/slots`);
   assert.equal(res.status, 503);
   assert.ok(res.body.error.includes("not available"));
+});
+
+test("the prospect can cancel: the calendar event is removed, both sides are told, and the link can book again", async () => {
+  env.RESEND_API_KEY = "re_test";
+  env.EMAIL_FROM = "Cutover <noreply.sales@cutover.site>";
+  try {
+    await connectSales();
+    const { id, token } = await invitePat();
+    const slots = await call(`/api/book/${token}/slots`);
+    const booked = await call(`/api/book/${token}`, { method: "POST", body: { start: slots.body.slots[0].start, first_name: "Pat", last_name: "Buyer", email: "pat@prospect.test", company: "Buyer Health" } });
+    assert.equal(booked.status, 200);
+    const eventId = calendarFake.events[0].id;
+    resendCalls = [];
+
+    const cancelled = await call(`/api/book/${token}/cancel`, { method: "POST" });
+    assert.equal(cancelled.status, 200);
+    assert.deepEqual(calendarFake.deleted, [eventId]);
+    const row = state.prospects.find((p) => p.id === id);
+    assert.equal(row.status, "cancelled");
+    assert.equal(row.calendar_event_id, null);
+    assert.equal(row.meeting_at, null);
+    assert.ok(resendCalls.find((c) => c.to.includes("pat@prospect.test") && c.subject === "Your Cutover meeting is cancelled"));
+    assert.ok(resendCalls.find((c) => c.to.includes("sales@cutover.test") && c.subject.startsWith("Meeting cancelled: Pat Buyer")));
+
+    assert.equal((await call(`/api/book/${token}/cancel`, { method: "POST" })).status, 409, "a cancelled meeting cannot be cancelled again");
+    const rebook = await call(`/api/book/${token}`, { method: "POST", body: { start: slots.body.slots[2].start, first_name: "Pat", last_name: "Buyer", email: "pat@prospect.test", company: "Buyer Health" } });
+    assert.equal(rebook.status, 200);
+    assert.equal(rebook.body.moved, false, "a cancelled meeting books a fresh event");
+    assert.equal(calendarFake.events.length, 2);
+  } finally {
+    delete env.RESEND_API_KEY;
+    delete env.EMAIL_FROM;
+  }
+});
+
+test("the booked confirmation carries a link to change or cancel, and a moved meeting is announced", async () => {
+  env.RESEND_API_KEY = "re_test";
+  env.EMAIL_FROM = "Cutover <noreply.sales@cutover.site>";
+  try {
+    await connectSales();
+    const { token } = await invitePat();
+    const slots = await call(`/api/book/${token}/slots`);
+    await call(`/api/book/${token}`, { method: "POST", body: { start: slots.body.slots[0].start, first_name: "Pat", last_name: "Buyer", email: "pat@prospect.test", company: "Buyer Health" } });
+    const confirmation = resendCalls.find((c) => c.to.includes("pat@prospect.test") && c.subject === "Your meeting with the Cutover team is booked");
+    assert.ok(confirmation.text.includes("Change or cancel your meeting: https://cutover.site/book/?t=booking."));
+    resendCalls = [];
+    await call(`/api/book/${token}`, { method: "POST", body: { start: slots.body.slots[1].start, first_name: "Pat", last_name: "Buyer", email: "pat@prospect.test", company: "Buyer Health" } });
+    assert.ok(resendCalls.find((c) => c.to.includes("pat@prospect.test") && c.subject === "Your Cutover meeting has moved"));
+    assert.ok(resendCalls.find((c) => c.to.includes("sales@cutover.test") && c.subject.startsWith("Meeting moved: Pat Buyer")));
+  } finally {
+    delete env.RESEND_API_KEY;
+    delete env.EMAIL_FROM;
+  }
 });
