@@ -2709,8 +2709,9 @@ async function setTemplate(request, env, id) {
   if (!MODERN_TEMPLATES.includes(template)) {
     return json({ error: "Choose web-modern, services-data or lift-contain." }, 400);
   }
-  if (!scopeIncludes(access.row.scope, "modernize")) {
-    return json({ error: "Choose Modernize as the next stage before choosing the approach." }, 409);
+  // The approach comes before the scope. It is refused only once a scope without Modernize is chosen.
+  if (access.row.scope && !scopeIncludes(access.row.scope, "modernize")) {
+    return json({ error: "This approach is not in the scope you chose." }, 409);
   }
   const res = await serviceRest(env, `analyses?id=eq.${id}`, {
     method: "PATCH",

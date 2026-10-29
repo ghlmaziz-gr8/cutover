@@ -5713,7 +5713,7 @@ a{color:#6d28d9;font-weight:600}`;
       if (s.id === "approach") {
         if (s.state === "skipped") facts.push("Modernize is not in the scope, so there is no approach to choose.");
         else if (row.modern_template) facts.push(`Chosen: ${TEMPLATE_NAME[row.modern_template] || row.modern_template}${row.modern_template_set_by_email ? " by " + row.modern_template_set_by_email : ""}.`);
-        else if (!scopeHas(row.scope, "modernize")) facts.push("Choose Modernize in the scope, then the approach on What next.");
+        else if (row.scope && !scopeHas(row.scope, "modernize")) facts.push("Modernize is not in the scope you chose.");
         else facts.push("Choose one of the three proposals on What next: " + Object.values(TEMPLATE_NAME).join(", ") + ".");
       }
       if (s.id === "scope") {
@@ -6001,7 +6001,8 @@ a{color:#6d28d9;font-weight:600}`;
   function renderApproach(row) {
     const card = $("approachCard");
     $("approachFold").open = !row || !row.modern_template;
-    const visible = !!row && scopeHas(row.scope, "modernize");
+    // The approach comes before the scope, so the card shows until a scope without Modernize is chosen.
+    const visible = !!row && (!row.scope || scopeHas(row.scope, "modernize"));
     card.hidden = !visible;
     if (!visible) return;
     const by = row.modern_template_set_by_email ? ` by ${row.modern_template_set_by_email}` : "";

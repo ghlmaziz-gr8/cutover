@@ -400,12 +400,15 @@ test("every workspace member can choose the modernized template for now, from th
   assert.equal(unknown.status, 400);
 });
 
-test("the approach can only be chosen once Modernize is the next stage", async () => {
+test("the approach can be chosen before any scope, but not once a scope without Modernize is chosen", async () => {
   const analysis = state.analyses.find((a) => a.id === AN_ACME);
+  analysis.scope = null;
+  const before = await call(`/api/analyses/${AN_ACME}/template`, { as: "cio_a", method: "PUT", body: { template: "web-modern" } });
+  assert.equal(before.status, 200);
   analysis.scope = "deeper";
-  const early = await call(`/api/analyses/${AN_ACME}/template`, { as: "cio_a", method: "PUT", body: { template: "web-modern" } });
-  assert.equal(early.status, 409);
-  assert.match(early.body.error, /Choose Modernize/);
+  const refused = await call(`/api/analyses/${AN_ACME}/template`, { as: "cio_a", method: "PUT", body: { template: "web-modern" } });
+  assert.equal(refused.status, 409);
+  assert.match(refused.body.error, /not in the scope you chose/);
   analysis.scope = "deeper_modernize";
 });
 
