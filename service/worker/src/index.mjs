@@ -847,7 +847,7 @@ async function sendProspectMail(env, to, subject, text, html) {
     const sent = await fetch("https://api.resend.com/emails", {
       method: "POST",
       headers: { authorization: `Bearer ${env.RESEND_API_KEY}`, "content-type": "application/json" },
-      body: JSON.stringify({ from: env.EMAIL_FROM, to: [to], subject: String(subject).slice(0, 200), text: String(text).slice(0, 8000), html }),
+      body: JSON.stringify({ from: env.EMAIL_FROM, to: [to], subject: String(subject).slice(0, 200), text: String(text).slice(0, 8000), ...(html ? { html } : {}) }),
     });
     return sent.ok;
   } catch {
@@ -1203,6 +1203,19 @@ async function bookMeeting(request, env, token) {
 
   const mail = bookingConfirmationEmail({ first_name }, chosen.start, result.zone);
   await sendProspectMail(env, email, mail.subject, mail.text, mail.html);
+  // The sender gets a notice too, so the meeting shows up in their inbox as well as their calendar.
+  const when = formatMeeting(chosen.start, result.zone);
+  const noticeText = [
+    `${first_name} ${last_name} from ${company} booked a meeting.`,
+    "",
+    `When: ${when}`,
+    `Email: ${email}${phone ? `\nPhone: ${phone}` : ""}`,
+    "",
+    "The meeting is on your Google Calendar.",
+    "",
+    UNATTENDED_NOTICE,
+  ].join("\n");
+  await sendProspectMail(env, prospect.invited_by_email, `Meeting booked: ${first_name} ${last_name}, ${company}`, noticeText, null);
   return json({ booked: true, start: chosen.start, end: chosen.end, time_zone: result.zone });
 }
 
