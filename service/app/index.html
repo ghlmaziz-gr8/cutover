@@ -2048,7 +2048,7 @@ button:not(:disabled):active{transform:scale(.965)}
       <div><b id="runBannerTitle">Analysis running</b><span class="stage" id="runBannerStage"></span></div>
       <div class="run-bar" aria-hidden="true"><i></i></div>
     </div>
-    <p class="eyebrow" id="nextStep">Step 1 of 7</p>
+    <p class="eyebrow">Step 6 of 7</p>
     <h2 style="margin:8px 0 6px">Advance with Cutover</h2>
     <p class="muted">Choose one. You can come back to the findings at any time.</p>
     <div class="row wzNav" style="margin:14px 0 4px">
@@ -2319,7 +2319,7 @@ button:not(:disabled):active{transform:scale(.965)}
   </section>
 
   <section id="s-deeper" class="screen" hidden>
-    <p class="eyebrow">Step 6 of 7</p>
+    <p class="eyebrow">Step 7 of 7</p>
     <h2 style="margin:8px 0 6px">Deeper assessment</h2>
     <p class="muted small" id="deeperMeta"></p>
     <div class="row wzNav" style="margin:14px 0 4px">
@@ -2475,12 +2475,12 @@ button:not(:disabled):active{transform:scale(.965)}
     { id: "s-rules", name: "Data Rules Confirmation", w: 5, min: 0.5 },
     { id: "s-run", name: "Cutover App Assessment", w: 40, min: 4 },
     { id: "s-review", name: "Findings", w: 15, min: 2 },
-    { id: "s-deeper", name: "Advance", w: 10, min: 1 },
-    { id: "s-next", name: "Modernization", w: 5, min: 0.5 },
+    { id: "s-next", name: "Advance", w: 5, min: 0.5 },
+    { id: "s-deeper", name: "Modernization", w: 10, min: 1 },
   ];
   const ETA_FROM = "s-run";
   // Screens after the assessment. Each is its own task, shown by name only.
-  const TASK_TITLES = { "s-plan": "Cutover risks and fallbacks", "s-files": "File-level results", "s-deeper": "Deeper assessment", "s-convert": "Converting files (beta)" };
+  const TASK_TITLES = { "s-plan": "Cutover risks and fallbacks", "s-files": "File-level results", "s-convert": "Converting files (beta)" };
   const SCREENS = ["s-login", "s-denied", "s-role", "s-home", "s-name", "s-connect", "s-rules", "s-run", "s-review", "s-next", "s-plan", "s-files", "s-deeper", "s-convert"];
   const MODEL_LABELS = { anthropic: "Anthropic (Claude)", google: "Google (Gemini)" };
   // The AI stage says whether the workspace's own model was added to this analysis, or opted out.
@@ -2563,7 +2563,6 @@ button:not(:disabled):active{transform:scale(.965)}
   // The header shows the step in the wizard, or the workspace elsewhere.
   function renderHeader(id) {
     const dots = $("dots");
-    if (id === "s-next") { renderPathHeader(); return; }
     // Later tasks are their own work, so they show only their name, with no assessment bar or steps.
     if (TASK_TITLES[id]) {
       $("barWrap").hidden = true;
@@ -6134,32 +6133,6 @@ a{color:#6d28d9;font-weight:600}`;
     ].filter((x) => x.show);
   }
 
-  // The header on Advance with Cutover shows the same path: one tick per step, and the step that is next.
-  function renderPathHeader() {
-    const dots = $("dots");
-    const steps = cur ? pathSteps(cur) : [];
-    const firstOpen = steps.findIndex((x) => !x.done);
-    const doneN = steps.filter((x) => x.done).length;
-    const n = steps.length;
-    const label = !n ? "" : firstOpen < 0 ? "All steps done" : `Step ${firstOpen + 1} of ${n}`;
-    $("barWrap").hidden = false;
-    dots.hidden = false;
-    dots.replaceChildren(...steps.map((x, i) => {
-      const d = document.createElement("i");
-      d.title = x.label;
-      d.className = x.done ? "done" : i === firstOpen ? "now" : "";
-      return d;
-    }));
-    const p = n ? Math.round((doneN / n) * 100) : 0;
-    $("stageName").textContent = "Advance with Cutover";
-    $("stepCount").textContent = label;
-    $("pct").textContent = `${p}%`;
-    $("barFill").style.width = `${p}%`;
-    $("eta").textContent = "";
-    const eyebrow = $("nextStep");
-    if (eyebrow) eyebrow.textContent = label;
-  }
-
   function renderNextRail(row) {
     const rail = $("nextRail");
     rail.replaceChildren();
@@ -6189,7 +6162,6 @@ a{color:#6d28d9;font-weight:600}`;
     rail.hidden = false;
     $("groupModernize").hidden = !modern;
     $("groupNext").hidden = !modern;
-    if (!$("s-next").hidden) renderPathHeader();
   }
 
   // Who did a step: the name when the workspace has one, then the email.

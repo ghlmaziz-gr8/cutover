@@ -123,7 +123,7 @@ test("the header counts the analysis steps only, and shows the estimate once the
   assert.ok(html.includes("idx >= etaStart ? etaFrom(idx) : \"\""));
 });
 
-test("each screen's own step label matches the header: Name is step 1 of 7, through Advance with Cutover, which reads from the path", () => {
+test("each screen's own step label matches the header: Name is step 1 of 7, through Advance with Cutover as step 6, and Modernization as step 7", () => {
   const html = readFileSync(new URL("../index.html", import.meta.url), "utf8");
   const label = (id) => { const i = html.indexOf(`id="${id}"`); return html.slice(i, html.indexOf("</p>", i)).match(/eyebrow">([^<]+)/)[1]; };
   assert.equal(label("s-name"), "Step 1 of 7");
@@ -131,7 +131,6 @@ test("each screen's own step label matches the header: Name is step 1 of 7, thro
   assert.equal(label("s-rules"), "Step 3 of 7");
   assert.equal(label("s-run"), "Step 4 of 7");
   assert.equal(label("s-review"), "Step 5 of 7");
-  assert.equal(label("s-deeper"), "Step 6 of 7");
-  // Advance with Cutover takes its step from the path, so the same numbers show there.
-  assert.ok(html.includes('id="nextStep"') && html.includes("if (eyebrow) eyebrow.textContent = label;"));
+  assert.equal(label("s-next"), "Step 6 of 7");
+  assert.equal(label("s-deeper"), "Step 7 of 7");
 });

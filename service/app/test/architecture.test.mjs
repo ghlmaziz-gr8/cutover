@@ -148,7 +148,6 @@ test("the header bar reads complete at review, and later tasks show only their n
   assert.ok(html.includes('const done = id === "s-review";'));
   assert.ok(html.includes('"Assessment complete"'));
   assert.ok(html.includes('const TASK_TITLES = { "s-plan"'));
-  assert.ok(html.includes("if (id === \"s-next\") { renderPathHeader(); return; }"));
   assert.ok(html.includes("if (TASK_TITLES[id]) {"));
 });
 
