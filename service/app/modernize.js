@@ -102,6 +102,6 @@
     return scored;
   }
 
-  const api = { choose, TEMPLATES: TEMPLATES.map(({ id, title, href, points }) => ({ id, title, href, points })) };
+  const api = { choose, TEMPLATES: TEMPLATES.map(({ id, title, href, summary, points }) => ({ id, title, href, summary, points })) };
   root.Modernize = api;
 })(typeof globalThis !== "undefined" ? globalThis : this);

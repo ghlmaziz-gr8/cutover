@@ -586,6 +586,8 @@ pre{white-space:pre-wrap;word-break:break-word;background:var(--soft);padding:12
 .stage-detail-head{display:flex;justify-content:space-between;align-items:center;gap:12px}
 .stage-detail-head h4{margin:0;font-size:17px}
 .stage-facts{margin:10px 0 12px;padding-left:18px;font-size:14px;line-height:1.6}
+.stage-option{margin-top:12px;padding-top:12px;border-top:1px solid var(--line)}
+.stage-option h5{margin:0 0 4px;font-size:15px}
 .stage-state{display:inline-flex;align-items:center;gap:7px;font:800 11px/1 var(--body);letter-spacing:.08em;text-transform:uppercase;color:var(--muted);margin:0 0 10px}
 .stage-state i{width:10px;height:10px;border-radius:50%;background:var(--line);display:inline-block}
 .stage-card.cleared .stage-state{color:var(--ok)}
@@ -5753,6 +5755,32 @@ a{color:#6d28d9;font-weight:600}`;
       const list = el("ul", null, "stage-facts");
       stageFacts(s).forEach((f) => list.appendChild(el("li", f)));
       detail.appendChild(list);
+      if (s.id === "approach" && s.state !== "skipped" && window.Modernize) {
+        // The three proposals, with the chosen one marked, so the user can read what the stage holds.
+        for (const t of window.Modernize.TEMPLATES) {
+          const box = el("div", null, "stage-option");
+          box.appendChild(el("h5", t.title + (row.modern_template === t.id ? " (chosen)" : "")));
+          if (t.summary) box.appendChild(el("p", t.summary, "muted small"));
+          if (s.state !== "locked") {
+            const chosen = row.modern_template === t.id;
+            const pick = el("button", chosen ? "Chosen approach" : "Choose this approach");
+            pick.type = "button";
+            pick.className = chosen ? "tag" : "ghost";
+            pick.disabled = chosen;
+            pick.addEventListener("click", () => chooseTemplate(row, t.id));
+            box.appendChild(pick);
+          }
+          const pts = t.points || {};
+          for (const [key, label] of [["pros", "Pros"], ["cons", "Cons"], ["best", "Best for"]]) {
+            if (!pts[key] || !pts[key].length) continue;
+            box.appendChild(el("p", label, "small"));
+            const items = el("ul", null, "stage-facts");
+            pts[key].forEach((x) => items.appendChild(el("li", x)));
+            box.appendChild(items);
+          }
+          detail.appendChild(box);
+        }
+      }
       const change = stageChange(s);
       if (change) {
         const b = el("button", change.label);
@@ -5845,7 +5873,7 @@ a{color:#6d28d9;font-weight:600}`;
     wrap.appendChild(grid);
     wrap.appendChild(detail);
     const planStage = stages.find((x) => x.id === "plan");
-    if (planStage && planStage.state !== "locked" && row.modern_template && window.Plan) {
+    if (planStage && window.Plan) {
       wrap.appendChild(el("h4", "The plan at a glance", "eyebrow-sm"));
       const map = el("div", null, "mmap plan-map");
       map.setAttribute("aria-label", "Map of the modernization plan");
@@ -5998,7 +6026,8 @@ a{color:#6d28d9;font-weight:600}`;
   function renderApproach(row) {
     const card = $("approachCard");
     $("approachFold").open = !row || !row.modern_template;
-    const visible = !!row && scopeHas(row.scope, "modernize");
+    // The approach comes before the scope on the path, so the card shows until a scope without Modernize is chosen.
+    const visible = !!row && (!row.scope || scopeHas(row.scope, "modernize"));
     card.hidden = !visible;
     if (!visible) return;
     const by = row.modern_template_set_by_email ? ` by ${row.modern_template_set_by_email}` : "";
