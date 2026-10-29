@@ -163,6 +163,7 @@ function seed() {
     invitation_log: [],
     login_events: [],
     calendar_connections: [],
+    prospects: [],
   };
 }
 
@@ -3935,4 +3936,68 @@ test("disconnecting removes the stored token and asks Google to revoke it", asyn
   assert.equal(state_row(PEOPLE.sales.id), undefined);
   assert.ok(outbound.some((c) => c.url.startsWith("https://oauth2.googleapis.com/revoke")));
   assert.equal((await call("/api/calendar", { as: "sales" })).body.connected, false);
+});
+
+// ---- Prospects: invitations sent to people who never log in ----
+
+const PROSPECT = { email: "  Buyer@Prospect.test ", first_name: "Pat", last_name: "Buyer", company: "Buyer Health", phone: "+1 (555) 010-2030" };
+
+test("sales can add a prospect; it is saved even when email is not set up yet", async () => {
+  const res = await call("/api/prospects", { as: "sales", method: "POST", body: PROSPECT });
+  assert.equal(res.status, 201);
+  assert.equal(res.body.email_sent, false);
+  assert.equal(res.body.prospect.email, "buyer@prospect.test");
+  assert.equal(res.body.prospect.status, "invited");
+  assert.equal(res.body.prospect.invited_by_email, "sales@cutover.test");
+  assert.equal(state.prospects.length, 1);
+  assert.equal(state.prospects[0].last_email_at, undefined);
+  assert.equal(resendCalls.length, 0);
+});
+
+test("the invitation is a rich email from the sales address, with a signed booking link and the unattended notice", async () => {
+  env.RESEND_API_KEY = "re_test";
+  env.EMAIL_FROM = "Cutover <noreply.sales@cutover.site>";
+  try {
+    const res = await call("/api/prospects", { as: "sales", method: "POST", body: PROSPECT });
+    assert.equal(res.status, 201);
+    assert.equal(res.body.email_sent, true);
+    assert.ok(res.body.prospect.last_email_at);
+    assert.equal(resendCalls.length, 1);
+    const mail = resendCalls[0];
+    assert.equal(mail.from, "Cutover <noreply.sales@cutover.site>");
+    assert.deepEqual(mail.to, ["buyer@prospect.test"]);
+    assert.ok(mail.subject.startsWith("Pat,"));
+    const link = mail.text.match(/https:\/\/cutover\.site\/book\/\?t=(\S+)/);
+    assert.ok(link, "the email carries the booking link");
+    assert.ok(link[1].startsWith(`booking.${res.body.prospect.id}.`));
+    assert.ok(mail.html.includes("Book your 30-minute meeting"));
+    assert.ok(mail.html.includes(`https://cutover.site/book/?t=${link[1]}`));
+    assert.ok(mail.html.includes("https://cutover.site/cutover-demo/"));
+    assert.ok(mail.html.includes("unattended"));
+    assert.ok(mail.text.includes("unattended"));
+  } finally {
+    delete env.RESEND_API_KEY;
+    delete env.EMAIL_FROM;
+  }
+});
+
+test("prospects need a valid email, both names and a company; the phone is optional", async () => {
+  assert.equal((await call("/api/prospects", { as: "sales", method: "POST", body: { ...PROSPECT, email: "not-an-email" } })).status, 400);
+  assert.equal((await call("/api/prospects", { as: "sales", method: "POST", body: { ...PROSPECT, first_name: "" } })).status, 400);
+  assert.equal((await call("/api/prospects", { as: "sales", method: "POST", body: { ...PROSPECT, company: "  " } })).status, 400);
+  assert.equal((await call("/api/prospects", { as: "sales", method: "POST", body: { ...PROSPECT, phone: "call me" } })).status, 400);
+  const noPhone = await call("/api/prospects", { as: "sales", method: "POST", body: { ...PROSPECT, phone: "" } });
+  assert.equal(noPhone.status, 201);
+  assert.equal(noPhone.body.prospect.phone, null);
+});
+
+test("only staff who invite can add or list prospects", async () => {
+  assert.equal((await call("/api/prospects", { as: "support", method: "POST", body: PROSPECT })).status, 403);
+  assert.equal((await call("/api/prospects", { as: "admin_a", method: "POST", body: PROSPECT })).status, 403);
+  assert.equal((await call("/api/prospects", { as: "support" })).status, 403);
+  await call("/api/prospects", { as: "sales", method: "POST", body: PROSPECT });
+  const list = await call("/api/prospects", { as: "sales" });
+  assert.equal(list.status, 200);
+  assert.equal(list.body.prospects.length, 1);
+  assert.equal(list.body.prospects[0].company, "Buyer Health");
 });
