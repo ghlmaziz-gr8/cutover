@@ -451,29 +451,32 @@
     proposal.appendChild(t.mock());
     wrap.appendChild(proposal);
 
-    wrap.appendChild(section("How it could look"));
-    const look = make("div", null, "proposal");
-    look.appendChild(make("p", "Look and feel", "proposal-title"));
-    look.appendChild(lookAndFeel());
-    wrap.appendChild(look);
+    // Run as is, in containers changes no code, so the look, the page flow and the screen layouts do not apply.
+    if (id !== "lift-contain") {
+      wrap.appendChild(section("How it could look"));
+      const look = make("div", null, "proposal");
+      look.appendChild(make("p", "Look and feel", "proposal-title"));
+      look.appendChild(lookAndFeel());
+      wrap.appendChild(look);
 
-    wrap.appendChild(section("Page flow"));
-    const flowCard = make("div", null, "proposal");
-    flowCard.appendChild(make("p", "From sign-in to the finished task", "proposal-title"));
-    flowCard.appendChild(pageFlow(t, ctx));
-    flowCard.appendChild(make("p", ctx.screens.length ? "Screen names come from the code. Each step is a screen the team rebuilds or keeps." : "No screen names were found, so the steps are placeholders.", "look-note"));
-    wrap.appendChild(flowCard);
+      wrap.appendChild(section("Page flow"));
+      const flowCard = make("div", null, "proposal");
+      flowCard.appendChild(make("p", "From sign-in to the finished task", "proposal-title"));
+      flowCard.appendChild(pageFlow(t, ctx));
+      flowCard.appendChild(make("p", ctx.screens.length ? "Screen names come from the code. Each step is a screen the team rebuilds or keeps." : "No screen names were found, so the steps are placeholders.", "look-note"));
+      wrap.appendChild(flowCard);
 
-    wrap.appendChild(section("Wireframes"));
-    const captions = {
-      "web-modern": "Each screen is rebuilt in the new front end, with the same fields and actions.",
-      "services-data": "The screens stay as they are, and call the new services behind them.",
-      "lift-contain": "The screens do not change. They run in a container instead."
-    };
-    const frames = make("div", null, "proposal");
-    frames.appendChild(make("p", "Screen layouts", "proposal-title"));
-    frames.appendChild(wireframes(ctx, captions[id] || "", id));
-    wrap.appendChild(frames);
+      wrap.appendChild(section("Wireframes"));
+      const captions = {
+        "web-modern": "Each screen is rebuilt in the new front end, with the same fields and actions.",
+        "services-data": "The screens stay as they are, and call the new services behind them.",
+        "lift-contain": "The screens do not change. They run in a container instead."
+      };
+      const frames = make("div", null, "proposal");
+      frames.appendChild(make("p", "Screen layouts", "proposal-title"));
+      frames.appendChild(wireframes(ctx, captions[id] || "", id));
+      wrap.appendChild(frames);
+    }
 
     wrap.appendChild(section("When it fits"));
     wrap.appendChild(card([make("p", t.fits), tagRow(t.tags)]));
