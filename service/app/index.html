@@ -3765,9 +3765,9 @@ button:not(:disabled):active{transform:scale(.965)}
 
   // Suggested notes are fixed wording with the prospect's name and company filled in. Staff can edit them before sending.
   const NOTE_TEMPLATES = {
-    friendly: (p) => `Hi ${p.first || "there"}, I'd love to show you how Cutover can help ${p.company || "your team"} plan its migration. Pick a time that suits you, and bring any questions.`,
-    direct: (p) => `${p.first || "There"}, ${p.company || "your team"} has migrations on the horizon. Cutover gives you a plan you can verify before anything moves. A 30-minute walkthrough is the quickest way to see if it fits.`,
-    formal: (p) => `Dear ${p.first || "there"}, thank you for considering Cutover for ${p.company || "your organisation"}. I would welcome the chance to walk you through our platform and how it approaches migration planning. Please choose a time that suits you.`,
+    friendly: (p) => `Hi ${p.first || "there"}, I'd love to show you how Cutover AI can help ${p.company || "your team"} plan its modernization or migration. Pick a time that suits you, and bring any questions.`,
+    direct: (p) => `${p.first || "There"}, ${p.company || "your team"} has modernization or migration work ahead. Cutover AI can plan it with a plan you can verify before anything moves. A 30-minute walkthrough is the quickest way to see if it fits.`,
+    formal: (p) => `Dear ${p.first || "there"}, thank you for considering Cutover AI for ${p.company || "your organisation"}. I would welcome the chance to walk you through how Cutover AI can plan your modernization or migration. Please choose a time that suits you.`,
   };
   for (const [key, make] of Object.entries(NOTE_TEMPLATES)) {
     $(`pTpl_${key}`).addEventListener("click", () => {
