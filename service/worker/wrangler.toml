@@ -23,7 +23,7 @@ APP_ORIGIN = "https://app.cutover.site"
 # The GitHub repository that contains the analysis workflow (owner/name).
 RUNNER_REPO = "ghlmaziz-gr8/cutover"
 # Email (Resend). Emails stay off until both are set: the secret RESEND_API_KEY, and the sender below.
-EMAIL_FROM = "Cutover <notices@cutover.site>"
+EMAIL_FROM = "Cutover <noreply.sales@cutover.site>"
 # Cutover operators: the only people who can create customer workspaces.
 # They cannot see a customer's data unless they are invited into that workspace.
 OPERATOR_EMAILS = "ghlmaziz@gmail.com"
