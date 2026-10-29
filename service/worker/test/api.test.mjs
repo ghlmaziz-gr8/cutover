@@ -53,6 +53,7 @@ const PEOPLE = {
   newhire: { id: uid(9), email: "newhire@acme.test" },
   owner: { id: uid(11), email: "owner@cutover.test", name: "Owen Owner" },
   sales: { id: uid(12), email: "sales@cutover.test", name: "Sam Sales" },
+  support: { id: uid(13), email: "support@cutover.test", name: "Sue Support" },
   stranger: { id: uid(10), email: "stranger@example.test" },
 };
 const AN_ACME = uid(201);
@@ -151,7 +152,11 @@ function seed() {
     screen_time: [],
     engagement: [],
     workspace_time: [],
-    staff: [{ email: "owner@cutover.test", role: "owner", added_by: uid(8), created_at: NOW }, { email: "sales@cutover.test", role: "sales", added_by: uid(8), created_at: NOW }],
+    staff: [
+      { email: "owner@cutover.test", roles: ["admin"], added_by: uid(8), created_at: NOW },
+      { email: "sales@cutover.test", roles: ["sales"], added_by: uid(8), created_at: NOW },
+      { email: "support@cutover.test", roles: ["support"], added_by: uid(8), created_at: NOW },
+    ],
     invitation_log: [],
     login_events: [],
   };
@@ -3716,19 +3721,20 @@ test("every level reached stays on the badge list, each with the day it was reac
 
 // ---- Staff: the invitation tracker, the heat maps they may read, and who may add staff ----
 
-test("the invitation tracker is for staff only: super users, owners and sales people", async () => {
+test("the invitation tracker is for staff only: super users, admins, sales and support", async () => {
   assert.equal((await call("/api/staff/invitations", { as: "operator" })).status, 200);
   assert.equal((await call("/api/staff/invitations", { as: "owner" })).status, 200);
   assert.equal((await call("/api/staff/invitations", { as: "sales" })).status, 200);
+  assert.equal((await call("/api/staff/invitations", { as: "support" })).status, 200);
   assert.equal((await call("/api/staff/invitations", { as: "admin_a" })).status, 403);
   assert.equal((await call("/api/staff/invitations", { as: "stranger" })).status, 403);
 });
 
 test("a sign-in from a staff row is read from the staff table, and an unknown email gets no staff role", async () => {
   const me = await call("/api/me", { as: "sales" });
-  assert.equal(me.body.staff_role, "sales");
-  assert.equal((await call("/api/me", { as: "admin_a" })).body.staff_role, null);
-  assert.equal((await call("/api/me", { as: "operator" })).body.staff_role, "super_user");
+  assert.deepEqual(me.body.staff_roles, ["sales"]);
+  assert.deepEqual((await call("/api/me", { as: "admin_a" })).body.staff_roles, []);
+  assert.deepEqual((await call("/api/me", { as: "operator" })).body.staff_roles, ["super_user"]);
 });
 
 test("the tracker counts invitations sent, used, waiting and removed, with acceptance and time to join", async () => {
@@ -3754,28 +3760,37 @@ test("the tracker counts invitations sent, used, waiting and removed, with accep
   assert.ok(tracker.body.workspaces.some((w) => w.id === W_ACME));
 });
 
-test("an owner can read the heat map of any workspace, a sales person cannot, and a workspace admin still can for their own", async () => {
+test("an admin can read the heat map of any workspace; sales and support cannot; a workspace admin still reads their own", async () => {
   const owner = await call(`/api/workspaces/${W_BETA}/heatmap?screen=s-files&days=30`, { as: "owner" });
   assert.equal(owner.status, 200);
   assert.equal((await call(`/api/workspaces/${W_BETA}/heatmap?screen=s-files&days=30`, { as: "sales" })).status, 404);
+  assert.equal((await call(`/api/workspaces/${W_BETA}/heatmap?screen=s-files&days=30`, { as: "support" })).status, 404);
   assert.equal((await call(`/api/workspaces/${W_ACME}/heatmap?screen=s-files&days=30`, { as: "admin_a" })).status, 200);
   assert.equal((await call(`/api/workspaces/${W_ACME}/heatmap?screen=s-files&days=30`, { as: "eng_a" })).status, 403);
 });
 
-test("only super users can see, add or remove staff, and staff cannot be given the super user role", async () => {
+test("only super users set admin and super user roles; admins and sales invite demo users with sales or support only", async () => {
   assert.equal((await call("/api/staff", { as: "operator" })).status, 200);
-  assert.equal((await call("/api/staff", { as: "owner" })).status, 403);
-  const added = await call("/api/staff", { as: "operator", method: "POST", body: { email: "Ops.Two@Cutover.test", role: "owner" } });
-  assert.equal(added.status, 201);
-  assert.ok(state.staff.find((r) => r.email === "ops.two@cutover.test" && r.role === "owner"));
-  assert.equal((await call("/api/staff", { as: "owner", method: "POST", body: { email: "x@cutover.test", role: "sales" } })).status, 403);
-  assert.equal((await call("/api/staff", { as: "operator", method: "POST", body: { email: "x@cutover.test", role: "super_user" } })).status, 400);
-  assert.equal((await call("/api/staff", { as: "operator", method: "POST", body: { email: "operator@cutover.test", role: "owner" } })).status, 400);
-  const removed = await call(`/api/staff/${encodeURIComponent("sales@cutover.test")}`, { as: "operator", method: "DELETE" });
-  assert.equal(removed.status, 200);
+  assert.equal((await call("/api/staff", { as: "sales" })).status, 200);
+  assert.equal((await call("/api/staff", { as: "support" })).status, 403);
+  const demo = await call("/api/staff", { as: "sales", method: "POST", body: { email: "Prospect@Example.test", roles: ["support"] } });
+  assert.equal(demo.status, 201);
+  assert.deepEqual(state.staff.find((r) => r.email === "prospect@example.test").roles, ["support"]);
+  assert.equal((await call("/api/staff", { as: "sales", method: "POST", body: { email: "x@example.test", roles: ["admin"] } })).status, 403);
+  assert.equal((await call("/api/staff", { as: "owner", method: "POST", body: { email: "x@example.test", roles: ["sales"] } })).status, 201);
+  assert.equal((await call("/api/staff", { as: "sales", method: "POST", body: { email: "admin@acme.test", roles: ["sales"] } })).status, 201);
+  assert.equal((await call("/api/staff", { as: "operator", method: "POST", body: { email: "many@example.test", roles: ["sales", "admin", "support"] } })).status, 201);
+  assert.deepEqual(state.staff.find((r) => r.email === "many@example.test").roles, ["sales", "admin", "support"]);
+  assert.equal((await call("/api/staff", { as: "operator", method: "POST", body: { email: "bad@example.test", roles: ["wizard"] } })).status, 400);
+  assert.equal((await call("/api/staff", { as: "operator", method: "POST", body: { email: "bad@example.test", roles: [] } })).status, 400);
+  assert.equal((await call("/api/staff", { as: "operator", method: "POST", body: { email: "operator@cutover.test", roles: ["admin"] } })).status, 400);
+  // An admin cannot change someone who already holds admin.
+  assert.equal((await call("/api/staff", { as: "sales", method: "POST", body: { email: "many@example.test", roles: ["support"] } })).status, 403);
+  // Removing staff is for super users only.
+  assert.equal((await call(`/api/staff/${encodeURIComponent("sales@cutover.test")}`, { as: "sales", method: "DELETE" })).status, 403);
+  assert.equal((await call(`/api/staff/${encodeURIComponent("sales@cutover.test")}`, { as: "operator", method: "DELETE" })).status, 200);
   assert.equal((await call("/api/staff/invitations", { as: "sales" })).status, 403);
 });
-
 test("a sign-in is counted once per 30 minutes, and again after a longer break", async () => {
   await call("/api/me", { as: "eng_a" });
   await call("/api/me", { as: "eng_a" });

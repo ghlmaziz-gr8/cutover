@@ -24,10 +24,11 @@ test("the staff card calls only routes the Worker serves", () => {
   assert.ok(workerSrc.includes("const staffOne = path.match("));
 });
 
-test("only staff see the tab, and the access tab is for super users alone", () => {
-  assert.ok(html.includes('if (me.staff_role) available.push("staff");'));
-  assert.ok(html.includes('$("staffTabAccess").hidden = me.staff_role !== "super_user";'));
-  assert.ok(html.includes('if (who === "staff") return !!(me.staff_role);'));
+test("the tab shows to anyone with a platform role; the heat map is for super users and admins; access is for those who can invite", () => {
+  assert.ok(html.includes('if (staffRoles.length) available.push("staff");'));
+  assert.ok(html.includes('$("staffTabAccess").hidden = !staffRoles.some((r) => ["super_user", "admin", "sales"].includes(r));'));
+  assert.ok(html.includes('$("staffTabHeat").hidden = !staffRoles.some((r) => r === "super_user" || r === "admin");'));
+  assert.ok(html.includes('if (who === "staff") return !!((me.staff_roles || []).length);'));
 });
 
 test("the heat map in the staff card stays anonymous: it reads the same route as the workspace heat map", () => {

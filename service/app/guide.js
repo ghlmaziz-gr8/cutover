@@ -5,17 +5,18 @@
 //   - If a step names a screen element, list its id in refs. The test in
 //     service/app/test/guide.test.mjs fails if that id no longer exists in index.html.
 //   - who: "everyone" | "engineers" (platform engineers) | "admins" (workspace admins) | "operators" | "staff"
-//     (owners and sales people, and super users).
+//     (anyone with a platform role: super user, admin, sales or support).
 //   - faq: questions the Ask button answers. step names the guide step to open.
 //   - actions: {type:"link", label, href} | {type:"go", label, tab:"analyses"|"workspaces"|"guide"}
 //              | {type:"repo-check", label}
 window.CUTOVER_GUIDE = {
   updated: "2026-10-29",
   whatsNew: [
-    "2026-10-29: A Staff tab for Cutover owners and sales staff. The invitation tracker shows every invitation across workspaces: sent, signed in, waiting, removed, the acceptance rate and the average time to join, with search, filters and CSV export. Customers do not see it.",
+    "2026-10-29: Platform roles: a person can hold super user, admin, sales and support at once. These apply across Cutover, not to a workspace. Only super users set them, and admins and sales people can invite demo users with the sales or support role. The Staff tab is for these people.",
+    "2026-10-29: A Staff tab for Cutover staff. The invitation tracker shows every invitation across workspaces: sent, signed in, waiting, removed, the acceptance rate and the average time to join, with search, filters and CSV export. Customers do not see it.",
     "2026-10-29: The tracker counts logins and shows the personal message sent with each invitation. The message field is optional, up to 200 characters, on the People list.",
-    "2026-10-29: Owners can read the heat map of any workspace from the Staff tab. Sales people cannot. The heat map stays anonymous: it does not record who clicked.",
-    "2026-10-29: Super users add and remove owners and sales people under Staff access. Owners and sales people cannot add anyone.",
+    "2026-10-29: Super users and admins can read the heat map of any workspace from the Staff tab. Sales and support cannot. The heat map stays anonymous: it does not record who clicked.",
+    "2026-10-29: Super users add people under Staff access, choose their roles and remove them. Admins and sales people can invite demo users with the sales or support role.",
     "2026-10-29: Ask Cutover and this guide now match the current screens: Advance with Cutover, the seven steps in the top bar, deleting analyses, the dashboard on the role screen, and the template previews.",
     "2026-10-29: The top bar names its seven steps: Application Identification, Code Connection, Data Rules Confirmation, Cutover App Assessment, Findings, Advance and Modernization. Hover over a tick to see its step and status.",
     "2026-10-29: Advance with Cutover is step 6 of the top bar, and the deeper assessment page is step 7, Modernization. The screen keeps its path progress in its own rail.",
@@ -409,12 +410,12 @@ window.CUTOVER_GUIDE = {
       title: "Track invitations and heat maps as staff",
       who: "staff",
       body: [
-        "The Staff tab is for Cutover owners and sales staff. Customers and workspace admins do not see it.",
+        "The Staff tab is for Cutover staff with a platform role: super user, admin, sales or support. Customers and workspace admins do not see it.",
         "Invitation tracker: every invitation sent in any workspace, kept after it is used or removed. Four figures show invitations sent, signed in with the acceptance rate, waiting, and the average time to join. Filter by status or workspace, search, or export the list as CSV.",
         "Logins: each time someone opens the portal after more than 30 minutes away, that counts as one login. People who joined before logins were counted show at least one.",
         "Each invitation keeps the short personal message sent with it, up to 200 characters, so the tracker can show it beside the person.",
-        "Behaviour and heat map: owners and super users choose any workspace, screen and period. The map shows where clicks landed, as before, and never who clicked. Sales people do not see it.",
-        "Staff access: only super users see this. Add an owner or a sales person by email. To remove someone, press Remove. Owners and sales people cannot add anyone.",
+        "Behaviour and heat map: super users and admins choose any workspace, screen and period. The map shows where clicks landed, as before, and never who clicked. Sales and support people do not see it.",
+        "Staff access: super users, admins and sales people see this. Add a person by email and tick their roles. Only super users can choose admin or super user, or remove someone. Admins and sales people can invite demo users with the sales or support role.",
       ],
       actions: [],
       refs: ["staffCard"],
@@ -560,11 +561,11 @@ window.CUTOVER_GUIDE = {
   ],
   faq: [
     { q: "Who can see the Staff tab?", step: "staff",
-      a: "Super users, owners and sales people. A super user adds owners and sales people under Staff access. Workspace admins and customers do not see the tab." },
-    { q: "What is the difference between an owner and a sales person?", step: "staff",
-      a: "Both see the invitation tracker. Owners can also read the heat map of any workspace. Only super users can add either one." },
+      a: "Anyone with a platform role: super user, admin, sales or support. The roles apply across Cutover, not to one workspace. Workspace admins and customers do not see the tab." },
+    { q: "What can each platform role do?", step: "staff",
+      a: "Super user: everything, including choosing roles. Admin: the tracker, every workspace's heat map, and inviting demo users. Sales: the tracker, and inviting demo users. Support: the tracker only. A person can hold several roles." },
     { q: "Why can't I see the heat map?", step: "staff",
-      a: "The heat map is open to super users and owners. Sales people see the tracker only." },
+      a: "The heat map is open to super users and admins. Sales and support people see the tracker only." },
     { q: "Does the tracker show who clicked?", step: "staff",
       a: "No. The heat map shows where clicks landed on a screen and the id of the button used. It never records who clicked." },
     { q: "How do I delete an analysis?", step: "delete",
