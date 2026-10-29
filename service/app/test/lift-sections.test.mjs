@@ -18,6 +18,6 @@ test("the services over a database layouts are called conceptual wireframes for 
 });
 
 test("the services page gives examples of a new database, labelled as a Cutover AI recommendation", () => {
-  assert.ok(src.includes('"Cutover AI recommendation"'));
+  assert.ok(src.includes("Cutover AI recommendation"));
   assert.ok(src.includes("The new database is not chosen yet."));
 });
