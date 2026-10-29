@@ -13,3 +13,10 @@ test("the insights route is open to members of the workspace and returns counts"
   assert.ok(!/select=[^`"&]*\b(source_path|purpose|suggestions|findings)\b/.test(body), "no code or findings are selected");
   assert.ok(body.includes('prefer: "count=exact"'), "file counts are counted in the database, not fetched");
 });
+
+test("the time in this workspace is the team's total and the caller's own, with no names", () => {
+  const start = src.indexOf("async function workspaceInsights(");
+  const body = src.slice(start, src.indexOf("\n// ---- Notifications", start));
+  assert.ok(body.includes("workspace_time?workspace_id=eq.${wid}&select=user_id,seconds"));
+  assert.ok(body.includes("team_hours_here") && body.includes("your_hours_here"));
+});

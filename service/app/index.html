@@ -513,6 +513,12 @@ label.check input[type="checkbox"]{flex:0 0 auto;width:18px;height:18px;margin:3
 .ins-time span{font:800 58px/1 var(--display);color:var(--accent);font-variant-numeric:tabular-nums}
 .ins-time small{font-size:16px;color:var(--muted);font-weight:700}
 .ins-time + p{margin:8px 0 0}
+.ins-time-row{margin-top:12px}
+.ins-timepanel .ins-time span{font-size:44px}
+.ins-timepanel .ins-time small{font-size:14px}
+.ins-time-split{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:12px;padding-top:12px;border-top:1px dashed var(--line)}
+.ins-time-split b{display:block;font:800 22px/1 var(--display);color:var(--fg);font-variant-numeric:tabular-nums}
+.ins-time-split small{display:block;margin-top:4px;font-size:12px;color:var(--muted)}
 .ins-foot{margin:14px 0 0;position:relative;z-index:1}
 @media (max-width:820px){.ins-grid{grid-template-columns:1fr}}
 @media (max-width:520px){.ins-kpis{grid-template-columns:repeat(2,1fr)}}
@@ -1728,9 +1734,16 @@ button:not(:disabled):active{transform:scale(.965)}
             <ul class="ins-legend" id="insLegend"></ul>
           </div>
         </div>
-        <div class="ins-panel">
-          <div class="ins-panel-h"><b>Time to findings</b><span class="muted small">median, start to review ready</span></div>
-          <div class="ins-time"><span id="insMedian">–</span><small>min</small></div>
+        <div class="ins-panel ins-timepanel">
+          <div class="ins-panel-h"><b>Time</b><span class="muted small">in this workspace</span></div>
+          <div class="ins-time-row">
+            <div class="ins-time"><span id="insTeamHours">0</span><small>h</small></div>
+            <p class="muted small" id="insTeamSub"></p>
+          </div>
+          <div class="ins-time-split">
+            <div><b id="insYourHours">0</b><small>h yours</small></div>
+            <div><b id="insMedian">–</b><small>min to findings</small></div>
+          </div>
           <p class="muted small" id="insHours"></p>
         </div>
       </div>
@@ -3096,26 +3109,35 @@ button:not(:disabled):active{transform:scale(.965)}
       return li;
     }));
 
-    // Time to findings.
-    const med = d.time.median_minutes;
-    if (med === null) {
+    // Time in this workspace: the team's total, the caller's own, and time to findings.
+    const t = d.time;
+    countTo(0, Math.round(t.team_hours_here * 10), 900, (v) => { $("insTeamHours").textContent = (v / 10).toFixed(1); });
+    countTo(0, Math.round(t.your_hours_here * 10), 900, (v) => { $("insYourHours").textContent = (v / 10).toFixed(1); });
+    $("insTeamSub").textContent = t.people_here
+      ? `${t.people_here} ${t.people_here === 1 ? "person" : "people"} have worked here`
+      : "No time recorded here yet";
+    if (t.median_minutes === null) {
       $("insMedian").textContent = "–";
       $("insHours").textContent = "No finished runs yet.";
     } else {
-      countTo(0, Math.round(med), 900, (v) => { $("insMedian").textContent = String(v); });
-      $("insHours").textContent = `${d.time.hours_of_runs} hours of analysis run so far.`;
+      countTo(0, Math.round(t.median_minutes), 900, (v) => { $("insMedian").textContent = String(v); });
+      $("insHours").textContent = `${t.hours_of_runs} hours of analysis run so far.`;
     }
     $("insUpdated").textContent = `Updated ${new Date(d.generated_at).toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" })}`;
   }
+  let insightsRun = 0;
   async function loadInsights() {
     const box = $("insightsCard");
     if (!ws) { box.hidden = true; return; }
+    const run = ++insightsRun;
+    $("insTitle").textContent = `What Cutover has done in ${ws.name}`;
     try {
       const data = await api(`/api/insights?workspace=${encodeURIComponent(ws.id)}`);
+      if (run !== insightsRun) return;
       box.hidden = false;
       renderInsights(data);
     } catch (err) {
-      box.hidden = true;
+      if (run === insightsRun) box.hidden = true;
     }
   }
 
@@ -3127,7 +3149,7 @@ button:not(:disabled):active{transform:scale(.965)}
       const b = el("button", w.name, "ghost");
       b.type = "button";
       b.setAttribute("aria-pressed", String(!!ws && w.id === ws.id));
-      b.addEventListener("click", () => { ws = w; renderWorkspacePicks(); renderPersonas(); });
+      b.addEventListener("click", () => { ws = w; renderWorkspacePicks(); renderPersonas(); loadInsights(); });
       box.appendChild(b);
     }
   }
