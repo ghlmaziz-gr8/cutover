@@ -2470,13 +2470,13 @@ button:not(:disabled):active{transform:scale(.965)}
   // one-time steps before the work begins, so they are not counted. Weights add up to 100, so the bar matches the step.
   // "min" is the rough minutes the step takes; the estimate is shown only from "Run the analysis" onwards.
   const STAGES = [
-    { id: "s-name", name: "Name the application", w: 10, min: 1 },
-    { id: "s-connect", name: "Connect the code", w: 15, min: 1 },
-    { id: "s-rules", name: "Confirm the data rules", w: 5, min: 0.5 },
-    { id: "s-run", name: "Run the analysis", w: 40, min: 4 },
-    { id: "s-review", name: "Review findings", w: 15, min: 2 },
-    { id: "s-deeper", name: "Deeper assessment", w: 10, min: 1 },
-    { id: "s-next", name: "Next steps", w: 5, min: 0.5 },
+    { id: "s-name", name: "Application Identification", w: 10, min: 1 },
+    { id: "s-connect", name: "Code Connection", w: 15, min: 1 },
+    { id: "s-rules", name: "Data Rules Confirmation", w: 5, min: 0.5 },
+    { id: "s-run", name: "Cutover App Assessment", w: 40, min: 4 },
+    { id: "s-review", name: "Findings", w: 15, min: 2 },
+    { id: "s-deeper", name: "Advance", w: 10, min: 1 },
+    { id: "s-next", name: "Modernization", w: 5, min: 0.5 },
   ];
   const ETA_FROM = "s-run";
   // Screens after the assessment. Each is its own task, shown by name only.
