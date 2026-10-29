@@ -859,6 +859,160 @@ async function removeStaff(request, env, email) {
   return json({ removed: true });
 }
 
+// ---- Google Calendar for staff: each person connects their own calendar, so bookings land on it ----
+// Only the free and busy times and the events Cutover creates are used. Event details are never read.
+const CALENDAR_SCOPES = [
+  "openid",
+  "email",
+  "https://www.googleapis.com/auth/calendar.events",
+  "https://www.googleapis.com/auth/calendar.freebusy",
+];
+const CALENDAR_STATE_MS = 15 * 60 * 1000;
+
+function calendarConfigured(env) {
+  return !!(env.GOOGLE_CALENDAR_CLIENT_ID && env.GOOGLE_CALENDAR_CLIENT_SECRET && env.CUTOVER_KEY_ENCRYPTION_KEY);
+}
+
+function base64UrlFrom(bytes) {
+  return bytesToBase64(bytes).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+}
+
+// The OAuth state says who started the connection, is signed, and expires after 15 minutes.
+async function calendarStateKey(env) {
+  const raw = base64ToBytes(env.CUTOVER_KEY_ENCRYPTION_KEY);
+  return crypto.subtle.importKey("raw", raw, { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
+}
+
+async function signCalendarState(env, userId) {
+  const payload = `${userId}.${Date.now() + CALENDAR_STATE_MS}`;
+  const sig = new Uint8Array(await crypto.subtle.sign("HMAC", await calendarStateKey(env), new TextEncoder().encode(payload)));
+  return `${payload}.${base64UrlFrom(sig)}`;
+}
+
+async function readCalendarState(env, state) {
+  const parts = String(state || "").split(".");
+  if (parts.length !== 3) return null;
+  const [userId, expires, sig] = parts;
+  if (!UUID_PATTERN.test(userId) || !(Number(expires) >= Date.now())) return null;
+  const mac = new Uint8Array(await crypto.subtle.sign("HMAC", await calendarStateKey(env), new TextEncoder().encode(`${userId}.${expires}`)));
+  return base64UrlFrom(mac) === sig ? userId : null;
+}
+
+// Who may connect a calendar: the people who invite. Anyone else gets nothing here.
+async function calendarCaller(request, env) {
+  const auth = await requireUser(env, request);
+  if (auth.response) return { response: auth.response };
+  const roles = await platformRolesFor(env, auth.user.email);
+  if (!canInvite(roles)) return { response: json({ error: "Only staff who can invite may use a calendar." }, 403) };
+  return { user: auth.user };
+}
+
+async function calendarStatus(request, env) {
+  const caller = await calendarCaller(request, env);
+  if (caller.response) return caller.response;
+  const res = await serviceRest(env, `calendar_connections?user_id=eq.${caller.user.id}&select=email,connected_at`);
+  if (!res.ok) return json({ error: "Could not read your calendar connection." }, 502);
+  const row = (await res.json())[0];
+  return json({
+    configured: calendarConfigured(env),
+    connected: !!row,
+    email: row ? row.email : null,
+    connected_at: row ? row.connected_at : null,
+  });
+}
+
+async function calendarConnectUrl(request, env) {
+  const caller = await calendarCaller(request, env);
+  if (caller.response) return caller.response;
+  if (!calendarConfigured(env)) {
+    return json({ error: "The calendar connection is not set up yet. A super user needs to add the Google client details first." }, 503);
+  }
+  const redirect = `${new URL(request.url).origin}/api/calendar/callback`;
+  const params = new URLSearchParams({
+    client_id: env.GOOGLE_CALENDAR_CLIENT_ID,
+    redirect_uri: redirect,
+    response_type: "code",
+    scope: CALENDAR_SCOPES.join(" "),
+    access_type: "offline",
+    prompt: "consent",
+    include_granted_scopes: "true",
+    state: await signCalendarState(env, caller.user.id),
+  });
+  return json({ url: `https://accounts.google.com/o/oauth2/v2/auth?${params.toString()}` });
+}
+
+// Google sends the browser here after consent. The state names the person, so the connection is theirs.
+async function calendarCallback(request, env) {
+  const back = (result, reason) => {
+    const origin = env.APP_ORIGIN || "";
+    const query = `#calendar=${result}${reason ? `&reason=${encodeURIComponent(reason)}` : ""}`;
+    return Response.redirect(`${origin}/${query}`, 302);
+  };
+  const url = new URL(request.url);
+  if (url.searchParams.get("error")) return back("error", "denied");
+  if (!calendarConfigured(env)) return back("error", "not-set-up");
+  const userId = await readCalendarState(env, url.searchParams.get("state"));
+  const code = url.searchParams.get("code");
+  if (!userId || !code) return back("error", "expired");
+
+  const redirect = `${url.origin}/api/calendar/callback`;
+  const tokenRes = await fetch("https://oauth2.googleapis.com/token", {
+    method: "POST",
+    headers: { "content-type": "application/x-www-form-urlencoded" },
+    body: new URLSearchParams({
+      code,
+      client_id: env.GOOGLE_CALENDAR_CLIENT_ID,
+      client_secret: env.GOOGLE_CALENDAR_CLIENT_SECRET,
+      redirect_uri: redirect,
+      grant_type: "authorization_code",
+    }).toString(),
+  }).catch(() => null);
+  if (!tokenRes || !tokenRes.ok) return back("error", "failed");
+  const token = await tokenRes.json();
+  if (!token.refresh_token) return back("error", "no-long-term-access");
+  const granted = String(token.scope || "").split(" ");
+  if (!granted.includes("https://www.googleapis.com/auth/calendar.events") || !granted.includes("https://www.googleapis.com/auth/calendar.freebusy")) {
+    return back("error", "permissions");
+  }
+
+  const who = await fetch("https://openidconnect.googleapis.com/v1/userinfo", { headers: { authorization: `Bearer ${token.access_token}` } }).catch(() => null);
+  const email = who && who.ok ? normalizeEmail((await who.json()).email) : null;
+  if (!email) return back("error", "failed");
+
+  const key = await encryptionKey(env);
+  if (!key) return back("error", "not-set-up");
+  const sealed = await encryptModelKey(key, token.refresh_token);
+  const saved = await serviceRest(env, "calendar_connections?on_conflict=user_id", {
+    method: "POST",
+    headers: { prefer: "resolution=merge-duplicates,return=minimal" },
+    body: JSON.stringify({ user_id: userId, email, ciphertext: sealed.ciphertext, iv: sealed.iv, scope: granted.join(" "), connected_at: new Date().toISOString() }),
+  });
+  if (!saved.ok) return back("error", "failed");
+  return back("connected");
+}
+
+async function calendarDisconnect(request, env) {
+  const caller = await calendarCaller(request, env);
+  if (caller.response) return caller.response;
+  const found = await serviceRest(env, `calendar_connections?user_id=eq.${caller.user.id}&select=ciphertext,iv`);
+  const row = found.ok ? (await found.json())[0] : null;
+  // Best effort: ask Google to revoke the permission, then forget the stored token either way.
+  const key = row && (await encryptionKey(env));
+  if (row && key) {
+    const refresh = await decryptModelKey(key, row).catch(() => null);
+    if (refresh) {
+      await fetch("https://oauth2.googleapis.com/revoke", {
+        method: "POST",
+        headers: { "content-type": "application/x-www-form-urlencoded" },
+        body: new URLSearchParams({ token: refresh }).toString(),
+      }).catch(() => {});
+    }
+  }
+  const res = await serviceRest(env, `calendar_connections?user_id=eq.${caller.user.id}`, { method: "DELETE", headers: { prefer: "return=minimal" } });
+  if (!res.ok) return json({ error: "Could not disconnect the calendar." }, 502);
+  return json({ disconnected: true });
+}
+
 // ---- Analyses ----
 
 // ---- Operators: rename, delete and overview of workspaces ----
@@ -5338,6 +5492,10 @@ async function route(request, env) {
     if (path === "/api/repo-check" && method === "GET") return repoCheck(request, env);
     if (path === "/api/admin/workspaces" && method === "GET") return overviewWorkspaces(request, env);
     if (path === "/api/admin/database" && method === "GET") return databaseSize(request, env);
+    if (path === "/api/calendar" && method === "GET") return calendarStatus(request, env);
+    if (path === "/api/calendar" && method === "DELETE") return calendarDisconnect(request, env);
+    if (path === "/api/calendar/connect-url" && method === "POST") return calendarConnectUrl(request, env);
+    if (path === "/api/calendar/callback" && method === "GET") return calendarCallback(request, env);
     if (path === "/api/staff/invitations" && method === "GET") return staffInvitations(request, env);
     if (path === "/api/staff" && method === "GET") return listStaff(request, env);
     if (path === "/api/staff" && method === "POST") return addStaff(request, env);

@@ -27,6 +27,9 @@ const env = {
   GITHUB_APP_PRIVATE_KEY: appKeys.privateKey,
   OPERATOR_EMAILS: "operator@cutover.test",
   CUTOVER_KEY_ENCRYPTION_KEY: randomBytes(32).toString("base64"),
+  GOOGLE_CALENDAR_CLIENT_ID: "client-test.apps.googleusercontent.com",
+  GOOGLE_CALENDAR_CLIENT_SECRET: "client-secret-test",
+  APP_ORIGIN: "https://app.cutover.test",
 };
 
 // Keys the fake provider accepts, refuses, or rate-limits. The test keys are long enough to pass the length check.
@@ -159,6 +162,7 @@ function seed() {
     ],
     invitation_log: [],
     login_events: [],
+    calendar_connections: [],
   };
 }
 
@@ -346,6 +350,17 @@ beforeEach(() => {
     if (u.startsWith(`${env.SUPABASE_URL}/rest/v1/`)) return handleRest(u, init);
     if (u.startsWith(`${env.SUPABASE_URL}/storage/v1/object/analysis-sources/`)) return handleStorage(u, init);
     if (u.startsWith("https://api.github.com/")) return handleGithub(u, init);
+    if (u === "https://oauth2.googleapis.com/token") {
+      const body = new URLSearchParams(init.body);
+      if (body.get("code") !== "good-code") return j({ error: "invalid_grant" }, 400);
+      return j({
+        access_token: "access-test",
+        refresh_token: "refresh-secret-test",
+        scope: "openid email https://www.googleapis.com/auth/calendar.events https://www.googleapis.com/auth/calendar.freebusy",
+      });
+    }
+    if (u.startsWith("https://openidconnect.googleapis.com/v1/userinfo")) return j({ email: "Sales@Cutover.test" });
+    if (u.startsWith("https://oauth2.googleapis.com/revoke")) return new Response(null, { status: 200 });
     if (u.startsWith("https://api.resend.com/")) {
       resendCalls.push(JSON.parse(init.body));
       return j({ id: "email-test" });
@@ -3832,4 +3847,92 @@ test("the tracker counts logins for people who have signed in, and shows at leas
   const sec = tracker.body.rows.find((r) => r.email === PEOPLE.sec_a.email);
   assert.equal(sec.logins, 1);
   assert.equal(tracker.body.rows.find((r) => r.email === "newhire@acme.test").logins, 0);
+});
+
+// ---- Google Calendar: each staff member connects their own, through a signed link ----
+
+test("staff who invite can see the calendar status; others cannot", async () => {
+  const sales = await call("/api/calendar", { as: "sales" });
+  assert.equal(sales.status, 200);
+  assert.equal(sales.body.configured, true);
+  assert.equal(sales.body.connected, false);
+  assert.equal((await call("/api/calendar", { as: "support" })).status, 403);
+  assert.equal((await call("/api/calendar", { as: "admin_a" })).status, 403);
+});
+
+test("connecting gives a Google link that asks for calendar access, with a signed state", async () => {
+  const res = await call("/api/calendar/connect-url", { as: "sales", method: "POST" });
+  assert.equal(res.status, 200);
+  const url = new URL(res.body.url);
+  assert.equal(url.origin + url.pathname, "https://accounts.google.com/o/oauth2/v2/auth");
+  assert.equal(url.searchParams.get("client_id"), env.GOOGLE_CALENDAR_CLIENT_ID);
+  assert.equal(url.searchParams.get("access_type"), "offline");
+  assert.equal(url.searchParams.get("prompt"), "consent");
+  assert.ok(url.searchParams.get("scope").includes("https://www.googleapis.com/auth/calendar.events"));
+  assert.ok(url.searchParams.get("scope").includes("https://www.googleapis.com/auth/calendar.freebusy"));
+  assert.equal(url.searchParams.get("redirect_uri"), "https://api.test/api/calendar/callback");
+  assert.ok(url.searchParams.get("state").split(".").length === 3);
+});
+
+test("with no Google client set up, the connect link says so and does not fail", async () => {
+  const saved = [env.GOOGLE_CALENDAR_CLIENT_ID, env.GOOGLE_CALENDAR_CLIENT_SECRET];
+  delete env.GOOGLE_CALENDAR_CLIENT_ID;
+  delete env.GOOGLE_CALENDAR_CLIENT_SECRET;
+  try {
+    const res = await call("/api/calendar/connect-url", { as: "sales", method: "POST" });
+    assert.equal(res.status, 503);
+    assert.match(res.body.error, /not set up yet/);
+    assert.equal((await call("/api/calendar", { as: "sales" })).body.configured, false);
+  } finally {
+    [env.GOOGLE_CALENDAR_CLIENT_ID, env.GOOGLE_CALENDAR_CLIENT_SECRET] = saved;
+  }
+});
+
+async function callbackFor(state, code = "good-code", extra = "") {
+  const res = await worker.fetch(request(`/api/calendar/callback?state=${encodeURIComponent(state)}&code=${code}${extra}`), env);
+  return res.headers.get("location");
+}
+
+test("after Google consent, the person's calendar is connected, and the token is stored encrypted", async () => {
+  const { body } = await call("/api/calendar/connect-url", { as: "sales", method: "POST" });
+  const state = new URL(body.url).searchParams.get("state");
+  const location = await callbackFor(state);
+  assert.equal(location, "https://app.cutover.test/#calendar=connected");
+  const row = state_row(PEOPLE.sales.id);
+  assert.equal(row.email, "sales@cutover.test");
+  assert.ok(!JSON.stringify(row).includes("refresh-secret-test"), "the refresh token is not stored in plain text");
+  const status = await call("/api/calendar", { as: "sales" });
+  assert.equal(status.body.connected, true);
+  assert.equal(status.body.email, "sales@cutover.test");
+});
+
+function state_row(userId) {
+  return state.calendar_connections.find((r) => r.user_id === userId);
+}
+
+test("a forged or expired state connects nothing", async () => {
+  const { body } = await call("/api/calendar/connect-url", { as: "sales", method: "POST" });
+  const state = new URL(body.url).searchParams.get("state");
+  const forged = state.replace(/.$/, state.endsWith("A") ? "B" : "A");
+  assert.equal(await callbackFor(forged), "https://app.cutover.test/#calendar=error&reason=expired");
+  const old = `${PEOPLE.sales.id}.${Date.now() - 1000}.abc`;
+  assert.equal(await callbackFor(old), "https://app.cutover.test/#calendar=error&reason=expired");
+  assert.equal(state_row(PEOPLE.sales.id), undefined);
+});
+
+test("a person who refuses at Google is told, and nothing is connected", async () => {
+  const { body } = await call("/api/calendar/connect-url", { as: "sales", method: "POST" });
+  const state = new URL(body.url).searchParams.get("state");
+  const res = await worker.fetch(request(`/api/calendar/callback?error=access_denied&state=${encodeURIComponent(state)}`), env);
+  assert.equal(res.headers.get("location"), "https://app.cutover.test/#calendar=error&reason=denied");
+});
+
+test("disconnecting removes the stored token and asks Google to revoke it", async () => {
+  const { body } = await call("/api/calendar/connect-url", { as: "sales", method: "POST" });
+  await callbackFor(new URL(body.url).searchParams.get("state"));
+  const gone = await call("/api/calendar", { as: "sales", method: "DELETE" });
+  assert.equal(gone.status, 200);
+  assert.equal(state_row(PEOPLE.sales.id), undefined);
+  assert.ok(outbound.some((c) => c.url.startsWith("https://oauth2.googleapis.com/revoke")));
+  assert.equal((await call("/api/calendar", { as: "sales" })).body.connected, false);
 });
