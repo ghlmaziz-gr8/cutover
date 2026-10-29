@@ -1235,7 +1235,7 @@ function formatMeeting(startIso, zone) {
 function prospectBookingEmail(kind, firstName, when, manageUrl, meetUrl) {
   const first = firstName;
   const copy = {
-    booked: { subject: "Your meeting with the Cutover team is booked", headline: `You're booked, ${first}.`, line: "Your meeting with the Cutover team is booked." },
+    booked: { subject: "Your meeting with the Cutover team is booked", headline: `You're booked, ${first}.`, line: "Your meeting with the Cutover team is booked to review Cutover AI modernization." },
     moved: { subject: "Your Cutover meeting has moved", headline: `Your meeting has moved, ${first}.`, line: "Your meeting with the Cutover team has a new time." },
     cancelled: { subject: "Your Cutover meeting is cancelled", headline: `Your meeting is cancelled, ${first}.`, line: "Your meeting with the Cutover team has been cancelled. You can book a new time at any point." },
   }[kind];
