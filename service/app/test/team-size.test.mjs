@@ -20,3 +20,19 @@ test("without a chosen size, the team is the one the build sizes", () => {
   const auto = E.build(facts, { scenario: "expected" });
   assert.ok(auto.headcount >= 2);
 });
+
+test("the people needed add up to the headcount shown, with no fraction left over", () => {
+  for (const opt of [{ scenario: "expected" }, { scenario: "expected", teamSize: 22 }, { scenario: "cautious" }]) {
+    const est = E.build(facts, opt);
+    const delivery = est.team.filter((r) => r.side === "delivery").reduce((a, r) => a + r.fte, 0);
+    assert.equal(delivery, est.headcount);
+  }
+});
+
+test("the phases add up to the total, within rounding", () => {
+  for (const scenario of ["lean", "expected", "cautious"]) {
+    const est = E.build(facts, { scenario });
+    const phases = est.phases.reduce((a, p) => a + p.days, 0);
+    assert.ok(Math.abs(phases - est.total.value) < 1, `${scenario}: ${phases} vs ${est.total.value}`);
+  }
+});

@@ -294,7 +294,11 @@
         devRole.fte = Math.max(0.25, Math.round((target - others) * 4) / 4);
       }
     }
-    const headcount = Math.ceil(deliveryFte());
+    // Whole people: the developers take the fraction, so the roles add up to the headcount shown.
+    const whole = Math.ceil(deliveryFte());
+    const devFraction = team.find((r) => r.side === "delivery" && r.role === "Developers");
+    if (devFraction && whole > deliveryFte()) devFraction.fte = r1(devFraction.fte + (whole - deliveryFte()));
+    const headcount = whole;
 
     // Onboarding is per person in the team.
     const onboard = scale(S.onboarding, headcount);
@@ -364,18 +368,27 @@
     let week = 1;
     const phases = phaseDefs.map((p) => {
       const meta = META[p.name] || { effort: null, owners: [] };
+      // The build group is split between the platform and the application, as the weeks are.
+      const BUILD_SHARE = { "Platform and pipeline": 0.3, "Application build": 0.7 };
       const out = {
         name: p.name, startWeek: week, endWeek: week + p.weeks - 1, weeks: p.weeks, tasks: p.tasks, deliverables: p.deliverables, approvals: p.approvals,
-        owners: meta.owners, days: meta.effort ? sumOf(meta.effort) : 0, gate: p.approvals.some((a) => /Gate|gate/.test(a)),
+        owners: meta.owners, days: meta.effort ? r1(sumOf(meta.effort) * (meta.effort === "build" ? BUILD_SHARE[p.name] : 1)) : 0, gate: p.approvals.some((a) => /Gate|gate/.test(a)),
       };
       week += p.weeks;
       return out;
     });
     const weeks = week - 1;
+    const governanceBefore = valueOf("governance");
 
     // Project management runs for the whole plan.
     const pm = scale(S.pmPerWeek, weeks);
     upsert("governance", { label: "Project management and status reporting", count: weeks, unit: "week", days: pm });
+    // The phases add up to the total: project management runs every week, and the AI saving is taken off build and testing.
+    const pmValue = valueOf("governance") - governanceBefore;
+    for (const ph of phases) ph.days = r1(ph.days + (pmValue * ph.weeks) / weeks);
+    const bt = phases.filter((ph) => ["build", "testing"].includes((META[ph.name] || {}).effort));
+    const btDays = bt.reduce((a, ph) => a + ph.days, 0);
+    if (btDays > 0) for (const ph of bt) ph.days = r1(ph.days + (valueOf("ai") * ph.days) / btDays);
     const total = add(...groups.map((g) => [g.low, g.high]));
     if (weeks > R.weeks + 6) notes.push(`The plan runs ${weeks} weeks, longer than the usual ${R.weeks} weeks for this approach, because discovery, the database and the approvals take time.`);
 
