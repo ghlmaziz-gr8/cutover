@@ -425,6 +425,7 @@ test("the CIO's choice is saved with who chose it and when, and a later choice r
 // ---- The path through the modernize stages ----
 
 test("the stages unlock one after another, and a locked stage says what to clear first", async () => {
+  state.analyses.find((a) => a.id === AN_ACME).scope = "deeper_modernize";
   const before = await call(`/api/analyses/${AN_ACME}`, { as: "eng_a" });
   const stages = before.body.stages;
   assert.deepEqual(stages.map((s) => s.id), ["assessment", "approach", "plan", "deeper", "starter", "convert", "pr"]);
@@ -444,7 +445,24 @@ test("the stages unlock one after another, and a locked stage says what to clear
   }
 });
 
+test("without Modernize in the scope, the modernization stages are skipped and do not block the deeper assessment", async () => {
+  const analysis = state.analyses.find((a) => a.id === AN_ACME);
+  analysis.scope = "deeper_migrate";
+  analysis.modern_template = null;
+  analysis.deeper_done = false;
+  const body = (await call(`/api/analyses/${AN_ACME}`, { as: "eng_a" })).body;
+  const byId = (id) => body.stages.find((s) => s.id === id);
+  assert.equal(byId("approach").state, "skipped");
+  assert.equal(byId("plan").state, "skipped");
+  assert.equal(byId("deeper").state, "available", "the deeper assessment is not held up by skipped stages");
+  const refused = await call(`/api/analyses/${AN_ACME}/progress`, { as: "eng_a", method: "PUT", body: { action: "review", stage: "plan" } });
+  assert.equal(refused.status, 409);
+  assert.match(refused.body.error, /not in the scope you chose/);
+  analysis.scope = "deeper_modernize";
+});
+
 test("a stage cannot be reviewed while it is locked, or before its output is ready", async () => {
+  state.analyses.find((a) => a.id === AN_ACME).scope = "deeper_modernize";
   const analysis = state.analyses.find((a) => a.id === AN_ACME);
   analysis.deeper_done = false;
   analysis.modern_template = null;
@@ -460,6 +478,7 @@ test("a stage cannot be reviewed while it is locked, or before its output is rea
 });
 
 test("a platform engineer can review the plan once the approach is chosen", async () => {
+  state.analyses.find((a) => a.id === AN_ACME).scope = "deeper_modernize";
   const analysis = state.analyses.find((a) => a.id === AN_ACME);
   analysis.deeper_done = true;
   analysis.modern_template = "lift-contain";
@@ -471,6 +490,7 @@ test("a platform engineer can review the plan once the approach is chosen", asyn
 });
 
 test("a platform engineer can review the starter project once the plan is cleared", async () => {
+  state.analyses.find((a) => a.id === AN_ACME).scope = "deeper_modernize";
   const analysis = state.analyses.find((a) => a.id === AN_ACME);
   analysis.deeper_done = true;
   analysis.modern_template = "web-modern";
