@@ -3702,6 +3702,7 @@ button:not(:disabled):active{transform:scale(.965)}
 
   $("staffTabTracker").addEventListener("click", () => showStaffTab("tracker"));
   $("staffTabAccess").addEventListener("click", () => showStaffTab("access"));
+  $("staffTabCalendar").addEventListener("click", () => showStaffTab("calendar"));
 
   async function loadStaffTracker() {
     setMsg("staffMsg", "Loading the invitations...", false);
