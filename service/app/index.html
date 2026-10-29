@@ -2028,6 +2028,7 @@ button:not(:disabled):active{transform:scale(.965)}
         <div id="approachMap" class="mmap" aria-label="Map of the three approaches"></div>
       </details>
       <div id="approachGrid"></div>
+      <div id="approachProposals"></div>
       <p class="small hint" id="approachMsg" role="status"></p>
     </div>
     <div class="card" id="targetCard" hidden style="margin-top:18px"><div id="targetBody"></div></div>
@@ -2350,7 +2351,6 @@ button:not(:disabled):active{transform:scale(.965)}
       <div class="mmap file-map" id="deeperFilesMap" aria-label="Map of the files in this application"></div>
       <div class="card" id="deeperFileDetail" hidden style="margin-top:14px"></div>
     </div>
-    <div id="deeperModern"></div>
     <div class="card" id="deeperLimits"></div>
     <div class="row wzNav">
       <button type="button" class="ghost" id="deeperBackBottom">Back to findings</button>
@@ -6007,6 +6007,7 @@ a{color:#6d28d9;font-weight:600}`;
     const visible = !!row && (!row.scope || scopeHas(row.scope, "modernize"));
     card.hidden = !visible;
     if (!visible) return;
+    renderModernize(row.findings && row.findings.deeper);
     const by = row.modern_template_set_by_email ? ` by ${row.modern_template_set_by_email}` : "";
     const chosen = row.modern_template ? `Chosen: ${TEMPLATE_NAME[row.modern_template] || row.modern_template}${by}. ` : "";
     // Open to every role for now, while the flow is designed. The rules are to be enforced later.
@@ -8509,7 +8510,6 @@ a{color:#6d28d9;font-weight:600}`;
       }
       sections.appendChild(card);
     }
-    renderModernize(deeper);
     limits.appendChild(el("h3", "How to read this", null));
     limits.firstChild.style.marginTop = "0";
     const ul = el("ul", null, null);
@@ -8560,7 +8560,7 @@ a{color:#6d28d9;font-weight:600}`;
         cur.cost_users_set_by_email = me ? me.email : "";
         cur.cost_lines = res.lines;
         renderModernize(deeper);
-        const after = $("deeperModern").querySelector(".cost-users p");
+        const after = $("approachProposals").querySelector(".cost-users p");
         if (after) after.textContent = "Saved. The estimate below uses this number.";
       } catch (err) {
         msg.className = "err small hint";
@@ -8570,10 +8570,11 @@ a{color:#6d28d9;font-weight:600}`;
     return box;
   }
 
+  // The three proposals sit with the approach choice on What next, where the decision is recorded.
   function renderModernize(deeper) {
-    const box = $("deeperModern");
+    const box = $("approachProposals");
     box.replaceChildren();
-    const proposals = deeper.modernize || [];
+    const proposals = (deeper && deeper.modernize) || [];
     if (!proposals.length) return;
     const card = el("div", null, "card deeper-sec");
     card.appendChild(el("h3", "Modernize: three proposals", null));
