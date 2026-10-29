@@ -82,3 +82,8 @@ test("the scope options all draw: no check reads an undefined variable, which st
   const body = html.slice(start, html.indexOf("const CLOUD_OPTS", start));
   assert.ok(!body.includes("!locked"), "renderScope must not read the undefined locked variable");
 });
+
+test("the approach card points to What next instead of saying coming soon", () => {
+  assert.ok(html.includes("Choose one of the three proposals on What next, under the scope."));
+  assert.ok(html.includes('document.getElementById("approachCard")?.scrollIntoView'));
+});
