@@ -170,7 +170,7 @@ test("the convert button is off until a target language is chosen", () => {
 test("the conversion page holds the work; Next steps shows a summary; rejected files leave the list", () => {
   assert.ok(html.includes('<section id="s-convert" class="screen" hidden>'));
   assert.ok(html.includes('"s-convert"]'));
-  assert.ok(html.includes('"s-convert": "Converting files"'));
+  assert.ok(html.includes('"s-convert": "Converting files (beta)"'));
   assert.ok(html.includes("function showConvert()"));
   assert.ok(html.includes("function renderConversionSummary(row)"));
   assert.ok(html.includes('id="conversionCardNext"'));

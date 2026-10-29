@@ -2264,7 +2264,8 @@ button:not(:disabled):active{transform:scale(.965)}
   <!-- Deeper assessment: plain-language documents built from the findings -->
   <section id="s-convert" class="screen" hidden>
     <p class="eyebrow">Conversion</p>
-    <h2 style="margin:8px 0 6px">Converting files</h2>
+    <h2 style="margin:8px 0 6px">Converting files <span class="tag">Beta</span></h2>
+    <p class="muted small" style="margin:0 0 12px">This feature is under evaluation.</p>
     <p class="muted small" id="convertMeta"></p>
     <div class="row wzNav" style="margin:14px 0 4px">
       <button type="button" class="ghost" id="convertBack">Back to next steps</button>
@@ -2436,7 +2437,7 @@ button:not(:disabled):active{transform:scale(.965)}
   ];
   const ETA_FROM = "s-run";
   // Screens after the assessment. Each is its own task, shown by name only.
-  const TASK_TITLES = { "s-next": "Next steps", "s-plan": "Cutover risks and fallbacks", "s-files": "File-level results", "s-deeper": "Deeper assessment", "s-convert": "Converting files" };
+  const TASK_TITLES = { "s-next": "Next steps", "s-plan": "Cutover risks and fallbacks", "s-files": "File-level results", "s-deeper": "Deeper assessment", "s-convert": "Converting files (beta)" };
   const SCREENS = ["s-login", "s-denied", "s-role", "s-home", "s-name", "s-connect", "s-rules", "s-run", "s-review", "s-next", "s-plan", "s-files", "s-deeper", "s-convert"];
   const MODEL_LABELS = { anthropic: "Anthropic (Claude)", google: "Google (Gemini)" };
   // The AI stage says whether the workspace's own model was added to this analysis, or opted out.
