@@ -13,6 +13,6 @@ test("the page builds the name and email label for each step", () => {
 });
 
 test("the analysis carries the names of the workspace's members", () => {
-  assert.ok(worker.includes("members?workspace_id=eq.${row.workspace_id}&select=email,name"));
-  assert.ok(worker.includes("    people,\n  });"));
+  assert.ok(worker.includes("members?workspace_id=eq.${row.workspace_id}&select=user_id,email,name"));
+  assert.ok(worker.includes("    started_by_email: startedBy,\n  });"));
 });
