@@ -5761,6 +5761,15 @@ a{color:#6d28d9;font-weight:600}`;
           const box = el("div", null, "stage-option");
           box.appendChild(el("h5", t.title + (row.modern_template === t.id ? " (chosen)" : "")));
           if (t.summary) box.appendChild(el("p", t.summary, "muted small"));
+          if (s.state !== "locked") {
+            const chosen = row.modern_template === t.id;
+            const pick = el("button", chosen ? "Chosen approach" : "Choose this approach");
+            pick.type = "button";
+            pick.className = chosen ? "tag" : "ghost";
+            pick.disabled = chosen;
+            pick.addEventListener("click", () => chooseTemplate(row, t.id));
+            box.appendChild(pick);
+          }
           const pts = t.points || {};
           for (const [key, label] of [["pros", "Pros"], ["cons", "Cons"], ["best", "Best for"]]) {
             if (!pts[key] || !pts[key].length) continue;
@@ -6017,7 +6026,8 @@ a{color:#6d28d9;font-weight:600}`;
   function renderApproach(row) {
     const card = $("approachCard");
     $("approachFold").open = !row || !row.modern_template;
-    const visible = !!row && scopeHas(row.scope, "modernize");
+    // The approach comes before the scope on the path, so the card shows until a scope without Modernize is chosen.
+    const visible = !!row && (!row.scope || scopeHas(row.scope, "modernize"));
     card.hidden = !visible;
     if (!visible) return;
     const by = row.modern_template_set_by_email ? ` by ${row.modern_template_set_by_email}` : "";
