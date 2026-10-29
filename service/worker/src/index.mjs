@@ -1253,6 +1253,13 @@ async function workspaceInsights(request, env) {
     if (hit) hit.count += 1;
   }
 
+  // Time spent in this workspace: the team's total, and the caller's own. Only totals, no names.
+  const timeRows = (await listOf(`workspace_time?workspace_id=eq.${wid}&select=user_id,seconds`)) || [];
+  const hours = (sec) => Math.round((sec / 3600) * 10) / 10;
+  const teamSeconds = timeRows.reduce((sum, r) => sum + Number(r.seconds || 0), 0);
+  const yourSeconds = timeRows.filter((r) => r.user_id === access.user.id).reduce((sum, r) => sum + Number(r.seconds || 0), 0);
+  const people = new Set(timeRows.filter((r) => Number(r.seconds) > 0).map((r) => r.user_id)).size;
+
   const stories = groupings.reduce((sum, g) => sum + (Array.isArray(g.groups) ? g.groups.reduce((n, f) => n + (Array.isArray(f.stories) ? f.stories.length : 0), 0) : 0), 0);
   const accepted = conversions.filter((c) => c.decision === "accepted").length;
   const rejected = conversions.filter((c) => c.decision === "rejected").length;
@@ -1270,7 +1277,13 @@ async function workspaceInsights(request, env) {
       user_stories: stories,
     },
     conversions: { produced: ok, accepted, rejected, waiting: Math.max(0, ok - accepted - rejected) },
-    time: { median_minutes: median, hours_of_runs: hoursOfRuns },
+    time: {
+      median_minutes: median,
+      hours_of_runs: hoursOfRuns,
+      team_hours_here: hours(teamSeconds),
+      your_hours_here: hours(yourSeconds),
+      people_here: people,
+    },
     trend,
   });
 }
