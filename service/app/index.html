@@ -1882,7 +1882,7 @@ button:not(:disabled):active{transform:scale(.965)}
           <option value="s-rules">Rules</option>
           <option value="s-run">Run the analysis</option>
           <option value="s-review">Review</option>
-          <option value="s-next">Next steps</option>
+          <option value="s-next">Advance with Cutover</option>
           <option value="s-plan">Plan</option>
           <option value="s-files" selected>Files and findings</option>
           <option value="s-convert">Convert</option>
@@ -2272,7 +2272,7 @@ button:not(:disabled):active{transform:scale(.965)}
     <h2 style="margin:8px 0 6px">Cutover risks and fallbacks</h2>
     <p class="muted small" id="planMeta"></p>
     <div class="row wzNav" style="margin:14px 0 4px">
-      <button type="button" class="ghost" id="planBackNext">Back to next steps</button>
+      <button type="button" class="ghost" id="planBackNext">Back to Advance with Cutover</button>
       <button type="button" class="ghost" id="planBackReview">Back to findings</button>
     </div>
     <div class="card fr-intro">
@@ -2326,7 +2326,7 @@ button:not(:disabled):active{transform:scale(.965)}
     </div>
     <p id="planMsg" class="err small hint" role="status"></p>
     <div class="row wzNav">
-      <button type="button" class="ghost" id="planBackNextBottom">Back to next steps</button>
+      <button type="button" class="ghost" id="planBackNextBottom">Back to Advance with Cutover</button>
       <button type="button" class="ghost" id="planBackReviewBottom">Back to findings</button>
     </div>
   </section>
@@ -2413,7 +2413,7 @@ button:not(:disabled):active{transform:scale(.965)}
     <p class="muted small" style="margin:0 0 12px">This feature is under evaluation.</p>
     <p class="muted small" id="convertMeta"></p>
     <div class="row wzNav" style="margin:14px 0 4px">
-      <button type="button" class="ghost" id="convertBack">Back to next steps</button>
+      <button type="button" class="ghost" id="convertBack">Back to Advance with Cutover</button>
     </div>
     <div class="conv-strip" id="convertStrip" style="margin-top:12px"></div>
     <div class="card" id="conversionCard" hidden style="margin-top:12px"><div id="conversionBody"></div></div>
@@ -2425,7 +2425,7 @@ button:not(:disabled):active{transform:scale(.965)}
     <p class="muted small" id="deeperMeta"></p>
     <div class="row wzNav" style="margin:14px 0 4px">
       <button type="button" class="ghost" id="deeperBack">Back to findings</button>
-      <button type="button" id="deeperNext" disabled>Go to next steps</button>
+      <button type="button" id="deeperNext" disabled>Go to Advance with Cutover</button>
     </div>
     <div class="card fr-intro">
       <svg class="fr-art" viewBox="0 0 96 80" aria-hidden="true">
@@ -2498,7 +2498,7 @@ button:not(:disabled):active{transform:scale(.965)}
     <div class="card" id="deeperLimits"></div>
     <div class="row wzNav">
       <button type="button" class="ghost" id="deeperBackBottom">Back to findings</button>
-      <button type="button" id="deeperNextBottom" disabled>Go to next steps</button>
+      <button type="button" id="deeperNextBottom" disabled>Go to Advance with Cutover</button>
     </div>
   </section>
 
@@ -2717,7 +2717,7 @@ button:not(:disabled):active{transform:scale(.965)}
 
   // Time on the system. The portal sends a short heartbeat about every 30 seconds while the tab is visible and the
   // person has been active in the last two minutes. The labels are for the login card only.
-  const SCREEN_LABELS = { "s-home": "Home", "s-run": "Run", "s-review": "Review", "s-next": "Next steps", "s-plan": "Plan",
+  const SCREEN_LABELS = { "s-home": "Home", "s-run": "Run", "s-review": "Review", "s-next": "Advance with Cutover", "s-plan": "Plan",
     "s-files": "Files", "s-deeper": "Deeper assessment", "s-convert": "Convert", "s-rules": "Rules", "s-connect": "Connect",
     "s-name": "Name", "s-role": "Role" };
   let timeScreen = null;
@@ -6326,7 +6326,7 @@ a{color:#6d28d9;font-weight:600}`;
       wrap.appendChild(el("p", `Chosen approach: ${TEMPLATE_NAME[row.modern_template] || row.modern_template}${by}.`, "small"));
     }
     const note = row && scopeHas(row.scope, "modernize")
-      ? "Modernize is the next stage. The approach is chosen on the next steps page."
+      ? "Modernize is the next stage. The approach is chosen on the Advance with Cutover page."
       : "To choose an approach, first choose Modernize as the next stage.";
     wrap.appendChild(el("p", note, "small"));
     const next = el("button", "Deeper assessment");
@@ -8723,7 +8723,7 @@ a{color:#6d28d9;font-weight:600}`;
     $("deepDataLabel").hidden = !dataOpen;
     $("dbCard").hidden = !dataOpen;
     $("lensNote").textContent = ready
-      ? "Open one of the three to read it. Opening one lets you continue to Next steps."
+      ? "Open one of the three to read it. Opening one lets you continue to Advance with Cutover."
       : "The deeper assessment is not finished yet. Run deep data assessment below, and the three open when it is ready.";
   }
   function openLens(key) {
@@ -8843,7 +8843,7 @@ a{color:#6d28d9;font-weight:600}`;
     const opened = lensState.analysis === cur.id && lensState.opened;
     $("deeperNext").disabled = !(ready && opened);
     $("deeperNextBottom").disabled = !(ready && opened);
-    setMsg("lensMsg", ready && !opened ? "Open one of the three assessments to continue to Next steps." : "", false);
+    setMsg("lensMsg", ready && !opened ? "Open one of the three assessments to continue to Advance with Cutover." : "", false);
   }
 
   function showDeeper() {
