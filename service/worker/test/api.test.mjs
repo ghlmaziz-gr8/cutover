@@ -428,7 +428,7 @@ test("the stages unlock one after another, and a locked stage says what to clear
   state.analyses.find((a) => a.id === AN_ACME).scope = "deeper_modernize";
   const before = await call(`/api/analyses/${AN_ACME}`, { as: "eng_a" });
   const stages = before.body.stages;
-  assert.deepEqual(stages.map((s) => s.id), ["assessment", "approach", "plan", "deeper", "starter", "convert", "pr"]);
+  assert.deepEqual(stages.map((s) => s.id), ["assessment", "scope", "approach", "plan", "deeper", "starter", "convert", "pr"]);
   const approach = stages.find((s) => s.id === "approach");
   const plan = stages.find((s) => s.id === "plan");
   const deeper = stages.find((s) => s.id === "deeper");
@@ -443,6 +443,20 @@ test("the stages unlock one after another, and a locked stage says what to clear
     assert.equal(plan.state, plan.state === "cleared" ? "cleared" : "available");
     assert.equal(deeper.state, before.body.deeper_done === true ? "cleared" : plan.state === "cleared" ? "available" : "locked");
   }
+});
+
+test("Choose the scope is a path stage before the approach, cleared once a scope is chosen", async () => {
+  const analysis = state.analyses.find((a) => a.id === AN_ACME);
+  analysis.scope = null;
+  const body = (await call(`/api/analyses/${AN_ACME}`, { as: "eng_a" })).body;
+  const scope = body.stages.find((s) => s.id === "scope");
+  const approach = body.stages.find((s) => s.id === "approach");
+  assert.equal(scope.state, body.status === "complete" ? "available" : "locked");
+  if (scope.state === "available") assert.equal(approach.state, "locked");
+  assert.match(approach.lock_reason, /Clear Choose the scope to unlock Choose the approach/);
+  analysis.scope = "deeper_modernize";
+  const after = (await call(`/api/analyses/${AN_ACME}`, { as: "eng_a" })).body;
+  assert.equal(after.stages.find((s) => s.id === "scope").state, "cleared");
 });
 
 test("the scope can be cleared, and until one is chosen nothing is skipped", async () => {
