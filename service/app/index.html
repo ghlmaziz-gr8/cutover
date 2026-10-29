@@ -1973,6 +1973,16 @@ button:not(:disabled):active{transform:scale(.965)}
           <input id="pEmail" type="email" placeholder="Email" aria-label="Email" required maxlength="320" style="min-width:200px">
           <input id="pCompany" placeholder="Company" aria-label="Company" required maxlength="120" style="min-width:180px">
           <input id="pPhone" type="tel" placeholder="Phone (optional)" aria-label="Phone (optional)" maxlength="30" style="min-width:160px">
+          <label class="wide" style="flex-basis:100%;display:flex;flex-direction:column;gap:4px;font-size:14px">
+            Personal note (optional)
+            <textarea id="pNote" rows="3" maxlength="500" placeholder="A few words to include in the invitation, in your own voice" style="font:inherit;padding:10px 12px;border-radius:12px;border:1px solid #d9d2ee"></textarea>
+          </label>
+          <div class="row" role="group" aria-label="Suggested notes" style="gap:6px;flex-wrap:wrap;flex-basis:100%;align-items:center">
+            <span class="muted small">Suggest a note:</span>
+            <button type="button" class="ghost small-btn" id="pTpl_friendly">Friendly</button>
+            <button type="button" class="ghost small-btn" id="pTpl_direct">Direct</button>
+            <button type="button" class="ghost small-btn" id="pTpl_formal">Formal</button>
+          </div>
           <button type="submit" class="small-btn" id="pSubmit">Send invitation</button>
         </form>
         <p id="pMsg" class="muted small hint" role="status"></p>
@@ -3753,6 +3763,18 @@ button:not(:disabled):active{transform:scale(.965)}
     }
   }
 
+  // Suggested notes are fixed wording with the prospect's name and company filled in. Staff can edit them before sending.
+  const NOTE_TEMPLATES = {
+    friendly: (p) => `Hi ${p.first || "there"}, I'd love to show you how Cutover can help ${p.company || "your team"} plan its migration. Pick a time that suits you, and bring any questions.`,
+    direct: (p) => `${p.first || "There"}, ${p.company || "your team"} has migrations on the horizon. Cutover gives you a plan you can verify before anything moves. A 30-minute walkthrough is the quickest way to see if it fits.`,
+    formal: (p) => `Dear ${p.first || "there"}, thank you for considering Cutover for ${p.company || "your organisation"}. I would welcome the chance to walk you through our platform and how it approaches migration planning. Please choose a time that suits you.`,
+  };
+  for (const [key, make] of Object.entries(NOTE_TEMPLATES)) {
+    $(`pTpl_${key}`).addEventListener("click", () => {
+      $("pNote").value = make({ first: $("pFirst").value.trim(), company: $("pCompany").value.trim() });
+    });
+  }
+
   $("prospectForm").addEventListener("submit", async (e) => {
     e.preventDefault();
     const payload = {
@@ -3761,6 +3783,7 @@ button:not(:disabled):active{transform:scale(.965)}
       email: $("pEmail").value,
       company: $("pCompany").value,
       phone: $("pPhone").value,
+      message: $("pNote").value,
     };
     $("pSubmit").disabled = true;
     setMsg("pMsg", "Sending the invitation...", false);
