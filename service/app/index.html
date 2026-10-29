@@ -3116,18 +3116,22 @@ button:not(:disabled):active{transform:scale(.965)}
     }));
 
     // Time in this workspace: the team's total, the caller's own, and time to findings.
-    const t = d.time;
-    countTo(0, Math.round(t.team_hours_here * 10), 900, (v) => { $("insTeamHours").textContent = (v / 10).toFixed(1); });
-    countTo(0, Math.round(t.your_hours_here * 10), 900, (v) => { $("insYourHours").textContent = (v / 10).toFixed(1); });
-    $("insTeamSub").textContent = t.people_here
-      ? `${t.people_here} ${t.people_here === 1 ? "person" : "people"} have worked here`
+    // A Worker that is not yet redeployed sends no workspace time: show zero, never NaN.
+    const t = d.time || {};
+    const teamHours = Number(t.team_hours_here) || 0;
+    const yourHours = Number(t.your_hours_here) || 0;
+    const people = Number(t.people_here) || 0;
+    countTo(0, Math.round(teamHours * 10), 900, (v) => { $("insTeamHours").textContent = (v / 10).toFixed(1); });
+    countTo(0, Math.round(yourHours * 10), 900, (v) => { $("insYourHours").textContent = (v / 10).toFixed(1); });
+    $("insTeamSub").textContent = people
+      ? `${people} ${people === 1 ? "person" : "people"} have worked here`
       : "No time recorded here yet";
-    if (t.median_minutes === null) {
+    if (t.median_minutes == null) {
       $("insMedian").textContent = "–";
       $("insHours").textContent = "No finished runs yet.";
     } else {
       countTo(0, Math.round(t.median_minutes), 900, (v) => { $("insMedian").textContent = String(v); });
-      $("insHours").textContent = `${t.hours_of_runs} hours of analysis run so far.`;
+      $("insHours").textContent = `${Number(t.hours_of_runs) || 0} hours of analysis run so far.`;
     }
     $("insUpdated").textContent = `Updated ${new Date(d.generated_at).toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" })}`;
   }
