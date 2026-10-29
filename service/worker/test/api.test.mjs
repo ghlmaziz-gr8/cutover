@@ -390,12 +390,12 @@ const visibleIds = (findings) => Object.keys(findings || {}).sort();
 
 // ---- Choosing the modernized template ----
 
-test("the owner or a CIO or CTO chooses the modernized template, from the three there are; an engineer does not", async () => {
+test("every workspace member can choose the modernized template for now, from the three there are", async () => {
   state.analyses.find((a) => a.id === AN_ACME).scope = "deeper_modernize";
   const auditor = await call(`/api/analyses/${AN_ACME}/template`, { as: "aud_a", method: "PUT", body: { template: "web-modern" } });
-  assert.equal(auditor.status, 403);
+  assert.equal(auditor.status, 200, "open to every role while the flow is designed");
   const engineer = await call(`/api/analyses/${AN_ACME}/template`, { as: "eng_a", method: "PUT", body: { template: "web-modern" } });
-  assert.equal(engineer.status, 403, "the engineer carries the approach out, the CIO decides it");
+  assert.equal(engineer.status, 200);
   const unknown = await call(`/api/analyses/${AN_ACME}/template`, { as: "cio_a", method: "PUT", body: { template: "anything" } });
   assert.equal(unknown.status, 400);
 });

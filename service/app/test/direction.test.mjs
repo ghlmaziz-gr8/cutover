@@ -5,10 +5,9 @@ import { readFileSync } from "node:fs";
 
 const html = readFileSync(new URL("../index.html", import.meta.url), "utf8");
 
-test("the scope and the approach follow the owner or CIO/CTO flag, not the engineer flag", () => {
+test("the scope and the approach are open to every role for now", () => {
   assert.match(html, /const canChoose = true;/);
-  assert.match(html, /if \(choosable && row && row\.can_choose_direction\) \{/);
-  assert.match(html, /\$\("approachNote"\)\.textContent = row\.can_choose_direction/);
+  assert.match(html, /if \(choosable && row\) \{/);
   assert.match(html, /Any role can choose it for now\./);
 });
 

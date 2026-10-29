@@ -847,6 +847,7 @@ body.zoom-open{overflow:hidden}
 .mm-branch > details{background:var(--card,#fff);border:1px solid var(--line);border-left:4px solid var(--tc);border-radius:16px;padding:0 16px 12px;box-shadow:0 2px 10px rgba(0,0,0,.04);transition:transform .2s ease,box-shadow .2s ease}
 .mm-branch > details:hover{transform:translateY(-2px);box-shadow:0 12px 26px rgba(109,40,217,.12)}
 .mm-branch.is-chosen > details{box-shadow:0 0 0 2px var(--accent,#6d28d9),0 12px 26px rgba(109,40,217,.14)}
+.has-choice .mm-branch:not(.is-chosen){opacity:.35}
 .mm-head{list-style:none;cursor:pointer;display:flex;flex-wrap:wrap;align-items:center;gap:8px 12px;padding:14px 0}
 .mm-head::-webkit-details-marker{display:none}
 .mm-head::after{content:"▾";margin-left:auto;color:var(--muted,#6b7280);transition:transform .2s}
@@ -5614,7 +5615,7 @@ a{color:#6d28d9;font-weight:600}`;
     try { pending = JSON.parse(sessionStorage.getItem("cutover.pendingTemplate") || "null"); } catch (e) { pending = null; }
     if (!pending || !cur || pending.analysis !== cur.id || Date.now() - pending.at > 10 * 60 * 1000) return;
     sessionStorage.removeItem("cutover.pendingTemplate");
-    if (cur.can_plan) await chooseTemplate(cur, pending.template);
+    await chooseTemplate(cur, pending.template);
   }
 
   const TEMPLATE_NAME = { "web-modern": "Modern web front end over an API", "services-data": "Services over a modern database", "lift-contain": "Run as is, in containers" };
@@ -5822,7 +5823,7 @@ a{color:#6d28d9;font-weight:600}`;
       link.textContent = "See the proposed design →";
       link.style.cssText = "display:inline-block;margin-top:10px;font-weight:700;color:var(--k)";
       c.appendChild(link);
-      if (choosable && row && row.can_choose_direction) {
+      if (choosable && row) {
         const pick = el("button", row.modern_template === p.id ? "Chosen approach" : "Choose this approach");
         pick.type = "button";
         pick.className = row.modern_template === p.id ? "tag" : "ghost";
@@ -5905,9 +5906,8 @@ a{color:#6d28d9;font-weight:600}`;
     if (!visible) return;
     const by = row.modern_template_set_by_email ? ` by ${row.modern_template_set_by_email}` : "";
     const chosen = row.modern_template ? `Chosen: ${TEMPLATE_NAME[row.modern_template] || row.modern_template}${by}. ` : "";
-    $("approachNote").textContent = row.can_choose_direction
-      ? `${chosen}Compare the three options and their previews, then choose one.`
-      : `${chosen}The application owner, or a CIO or CTO, chooses the approach.`;
+    // Open to every role for now, while the flow is designed. The rules are to be enforced later.
+    $("approachNote").textContent = `${chosen}Compare the three options and their previews, then choose one. Any role can choose it for now.`;
     $("approachGrid").replaceChildren(templateGrid(currentFindings, row, true));
     renderApproachMap(currentFindings, row.modern_template);
   }
@@ -6073,6 +6073,7 @@ a{color:#6d28d9;font-weight:600}`;
       const h = b.lines.length * 21 + 20;
       const bg = svgNode("g", { class: "rad-branch", tabindex: "0", role: "button", "data-branch": b.id });
       bg.appendChild(svgNode("rect", { x: b.x - w / 2, y: b.y - h / 2, width: w, height: h, rx: h / 2, fill: b.color, class: "rad-pill", stroke: b.chosen ? "#111827" : "none", "stroke-width": b.chosen ? 3 : 0 }));
+      if (map.branches.some((x) => x.chosen) && !b.chosen) bg.setAttribute("opacity", "0.3");
       bg.appendChild(svgText(b.lines, b.x, b.y, { fill: "#ffffff", "font-size": 15, "font-weight": 800 }));
       const bt = svgNode("title", {}); bt.textContent = `${b.label}${b.fitText ? ` · ${b.fitText}` : ""}${b.chosen ? " · chosen" : ""}`; bg.appendChild(bt);
       const toggle = () => {
@@ -6328,6 +6329,8 @@ a{color:#6d28d9;font-weight:600}`;
     const points = Object.fromEntries(window.Modernize.TEMPLATES.map((t) => [t.id, t.points]));
     const tree = window.MindMap.approach(window.Modernize.choose(findings || {}), points, chosenId);
     drawMap(tree, box, { title: "The three approaches", toolbar: true, radial: true, radialLinks: tree.children.map((c) => ({ id: c.id, label: c.label })) });
+    // Once an approach is chosen, the other two fade, so the choice is what the map shows.
+    box.classList.toggle("has-choice", !!chosenId);
   }
 
   // Architecture diagram, drawn after What we found. Each layer is a box with its source finding and a confidence tag.
