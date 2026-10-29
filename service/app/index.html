@@ -1986,7 +1986,16 @@ button:not(:disabled):active{transform:scale(.965)}
           <button type="submit" class="small-btn" id="pSubmit">Send invitation</button>
         </form>
         <p id="pMsg" class="muted small hint" role="status"></p>
+        <div class="row" style="gap:8px;flex-wrap:wrap;margin-top:14px;align-items:center">
+          <input id="pSearch" type="search" placeholder="Search name, company, email, status or sender" aria-label="Search prospects" style="flex:1;min-width:220px">
+          <span id="pCount" class="muted small"></span>
+        </div>
         <div id="pRows" style="margin-top:12px"></div>
+        <div class="row" id="pPager" style="gap:8px;justify-content:center;align-items:center;margin-top:12px" hidden>
+          <button type="button" class="ghost small-btn" id="pPrev">Previous</button>
+          <span id="pPage" class="muted small"></span>
+          <button type="button" class="ghost small-btn" id="pNext">Next</button>
+        </div>
       </div>
 
       <div id="staffTracker" hidden>
@@ -3745,14 +3754,43 @@ button:not(:disabled):active{transform:scale(.965)}
     }
   }
 
+  const PROSPECTS_PER_PAGE = 10;
+  let prospectPage = 1;
+
+  // Matches the search text against the name, company, email, status and the sender.
+  function matchingProspects() {
+    const query = $("pSearch").value.trim().toLowerCase();
+    if (!query) return prospects;
+    return prospects.filter((p) => [
+      p.first_name, p.last_name, `${p.first_name} ${p.last_name}`, p.company, p.email,
+      ...(p.extra_emails || []), p.status, String(p.status).replace("_", " "), p.invited_by_email,
+    ].some((v) => String(v || "").toLowerCase().includes(query)));
+  }
+
   function renderProspects() {
     const box = $("pRows");
     box.replaceChildren();
+    const matches = matchingProspects();
+    const pages = Math.max(1, Math.ceil(matches.length / PROSPECTS_PER_PAGE));
+    prospectPage = Math.min(Math.max(1, prospectPage), pages);
+    const start = (prospectPage - 1) * PROSPECTS_PER_PAGE;
+    const shown = matches.slice(start, start + PROSPECTS_PER_PAGE);
+
+    $("pCount").textContent = prospects.length ? `${matches.length} of ${prospects.length}` : "";
+    $("pPager").hidden = matches.length <= PROSPECTS_PER_PAGE;
+    $("pPage").textContent = `Page ${prospectPage} of ${pages}`;
+    $("pPrev").disabled = prospectPage <= 1;
+    $("pNext").disabled = prospectPage >= pages;
+
     if (!prospects.length) {
       box.append(el("p", "No prospects yet. Invite your first one above.", "muted small"));
       return;
     }
-    for (const p of prospects) {
+    if (!matches.length) {
+      box.append(el("p", "No prospects match that search.", "muted small"));
+      return;
+    }
+    for (const p of shown) {
       const row = el("div", null, "prospect-row");
       row.style.cssText = "padding:12px 14px;border:1px solid var(--line);border-radius:14px;margin-bottom:8px";
       row.append(el("strong", `${p.first_name} ${p.last_name}`), el("span", ` · ${p.company}`));
@@ -3774,6 +3812,19 @@ button:not(:disabled):active{transform:scale(.965)}
       $("pNote").value = make({ first: $("pFirst").value.trim(), company: $("pCompany").value.trim() });
     });
   }
+
+  $("pSearch").addEventListener("input", () => {
+    prospectPage = 1;
+    renderProspects();
+  });
+  $("pPrev").addEventListener("click", () => {
+    prospectPage -= 1;
+    renderProspects();
+  });
+  $("pNext").addEventListener("click", () => {
+    prospectPage += 1;
+    renderProspects();
+  });
 
   $("prospectForm").addEventListener("submit", async (e) => {
     e.preventDefault();
