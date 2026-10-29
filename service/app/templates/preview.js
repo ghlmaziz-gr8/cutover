@@ -450,6 +450,18 @@
     proposal.appendChild(make("p", "The target design, in outline", "proposal-title"));
     proposal.appendChild(t.mock());
     wrap.appendChild(proposal);
+    if (id === "services-data") {
+      // The new database is not chosen yet. These are examples, from current trends, for the team to compare.
+      const rec = make("div", null, "proposal");
+      rec.appendChild(make("p", "Cutover AI recommendation", "proposal-title"));
+      rec.appendChild(make("p", "The new database is not chosen yet. These are examples to compare, based on current trends (checked October 2026). The team makes the decision.", "muted small"));
+      rec.appendChild(list([
+        "PostgreSQL, as a managed cloud service (for example Cloud SQL, Aurora PostgreSQL or Azure Database for PostgreSQL). The most common target when moving off Oracle or SQL Server, with no licence fee.",
+        "Azure SQL, if the team is on Microsoft and the legacy system is SQL Server. It keeps the same T-SQL style, so fewer routines need rewriting.",
+        "A PostgreSQL-compatible engine built for scale or analytics (for example AlloyDB or Azure HorizonDB), if volume or reporting needs grow beyond a standard managed database.",
+      ]));
+      wrap.appendChild(rec);
+    }
 
     // Run as is, in containers changes no code, so the look, the page flow and the screen layouts do not apply.
     // The look changes only when the screens are rebuilt, so only the web front end shows it.

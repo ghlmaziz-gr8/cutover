@@ -16,3 +16,8 @@ test("the look is shown only for the web front end, and the page flow and layout
 test("the services over a database layouts are called conceptual wireframes for data flow", () => {
   assert.ok(src.includes('section(id === "services-data" ? "Conceptual wireframes for data flow" : "Wireframes")'));
 });
+
+test("the services page gives examples of a new database, labelled as a Cutover AI recommendation", () => {
+  assert.ok(src.includes('"Cutover AI recommendation"'));
+  assert.ok(src.includes("The new database is not chosen yet."));
+});
