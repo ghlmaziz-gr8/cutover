@@ -105,3 +105,9 @@ test("choosing or clearing the scope redraws What next, and the scope can be cle
   const body = html.slice(start, html.indexOf("\n  }\n", start));
   assert.ok(body.includes("showNext();"), "setScope redraws every card, not only the scope");
 });
+
+test("the Modernize path sits above the scope card on What next", () => {
+  const modern = html.indexOf('id="groupModernize"');
+  const scope = html.indexOf('id="scopeCard"');
+  assert.ok(modern > 0 && scope > 0 && modern < scope, "the Modernize path comes before Choose the scope");
+});
