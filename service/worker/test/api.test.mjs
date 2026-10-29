@@ -4061,9 +4061,14 @@ test("the booking link shows the prospect, offers weekday slots from the sender'
     assert.equal(calendarFake.events[0].attendees[0].email, "pat@prospect.test");
     assert.equal(state.prospects.find((p) => p.id === id).status, "booked");
     assert.equal(state.prospects.find((p) => p.id === id).meeting_at, first.start);
-    const confirmation = resendCalls[resendCalls.length - 1];
+    const confirmation = resendCalls.find((c) => c.to.includes("pat@prospect.test"));
     assert.equal(confirmation.subject, "Your meeting with the Cutover team is booked");
     assert.ok(confirmation.text.includes("unattended"));
+    const notice = resendCalls.find((c) => c.to.includes("sales@cutover.test"));
+    assert.ok(notice, "the sender gets a notice in their inbox");
+    assert.ok(notice.subject.startsWith("Meeting booked: Pat Buyer"));
+    assert.ok(notice.text.includes("Buyer Health"));
+    assert.ok(notice.text.includes("Google Calendar"));
 
     assert.equal((await call(`/api/book/${token}`, { method: "POST", body: { start: slots.body.slots[1].start, first_name: "Pat", last_name: "Buyer", email: "pat@prospect.test", company: "Buyer Health" } })).status, 409);
     assert.equal((await call(`/api/book/${token}/slots`)).status, 409);
