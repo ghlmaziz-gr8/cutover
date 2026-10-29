@@ -589,6 +589,7 @@ pre{white-space:pre-wrap;word-break:break-word;background:var(--soft);padding:12
 .stage-option{margin-top:12px;padding-top:12px;border-top:1px solid var(--line)}
 .stage-option h5{margin:0 0 4px;font-size:15px}
 .scope-opt.unfit{opacity:.5}
+#effortCard{scroll-margin-top:16px}
 .stage-state{display:inline-flex;align-items:center;gap:7px;font:800 11px/1 var(--body);letter-spacing:.08em;text-transform:uppercase;color:var(--muted);margin:0 0 10px}
 .stage-state i{width:10px;height:10px;border-radius:50%;background:var(--line);display:inline-block}
 .stage-card.cleared .stage-state{color:var(--ok)}
@@ -5703,7 +5704,7 @@ a{color:#6d28d9;font-weight:600}`;
         return { label: "Change the approach", run: () => goTo("approachCard") };
       }
       if (s.id === "plan" && row.scope) {
-        return { label: "Open the plan on What next", run: () => { const e = document.getElementById("effortCard"); if (e) e.open = true; goTo("effortCard"); } };
+        return { label: "Open the plan on What next", run: () => { const e = document.getElementById("effortCard"); if (e) { e.open = true; e.scrollIntoView({ behavior: "smooth", block: "start" }); } } };
       }
       if (s.id === "deeper" && s.state !== "locked") return { label: "Open the deeper assessment", run: () => showDeeper() };
       return null;
