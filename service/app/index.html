@@ -534,7 +534,7 @@ pre{white-space:pre-wrap;word-break:break-word;background:var(--soft);padding:12
 .stat.tone-amber{--tone:#d97706}
 .stat.tone-green{--tone:#059669}
 .stat.tone-violet{--tone:#6d28d9}
-.stat-ic{display:grid;place-items:center;width:38px;height:38px;border-radius:12px;margin-bottom:10px;background:color-mix(in srgb,var(--tone) 14%,transparent);color:var(--tone);font-style:normal;animation:pop .6s cubic-bezier(.2,.9,.3,1.3) backwards;animation-delay:calc(var(--i,0) * 70ms + 180ms)}
+.stat-ic{position:absolute;top:16px;right:16px;display:grid;place-items:center;width:38px;height:38px;border-radius:12px;background:color-mix(in srgb,var(--tone) 14%,transparent);color:var(--tone);font-style:normal;animation:pop .6s cubic-bezier(.2,.9,.3,1.3) backwards;animation-delay:calc(var(--i,0) * 70ms + 180ms)}
 .stat-ic svg{width:21px;height:21px;fill:none;stroke:currentColor;stroke-width:2.2;stroke-linecap:round;stroke-linejoin:round}
 .stat:hover .stat-ic{animation:wiggle .6s ease}
 .stat-bar{display:block;height:6px;margin-top:12px;border-radius:99px;background:var(--soft);overflow:hidden}
