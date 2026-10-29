@@ -35,3 +35,9 @@ test("the heat map in the staff card stays anonymous: it reads the same route as
   assert.ok(html.includes("/heatmap?screen="));
   assert.ok(!/staff[^\n]*user_id|clicked_by|clicker/i.test(html.slice(html.indexOf("Staff: invitation tracker"), html.indexOf("The database size against"))));
 });
+
+test("a person with a platform role can reach the staff area without choosing a workspace", () => {
+  assert.ok(html.includes('id="toStaff"'));
+  assert.ok(html.includes('!(me.staff_roles || []).length) {\n      show("s-denied");'));
+  assert.ok(html.includes('$("toStaff").hidden = !(me.staff_roles || []).length;'));
+});
