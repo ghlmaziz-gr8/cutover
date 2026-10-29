@@ -983,6 +983,229 @@ async function listProspects(request, env) {
   return json({ prospects: (await res.json()).map(publicProspect) });
 }
 
+// ---- Booking: a prospect picks a free time from the sender's calendar. Public, but only with a signed link. ----
+const BOOKING_TIME_ZONE_DEFAULT = "America/New_York";
+const BOOKING_MINUTES = 30;
+const BOOKING_GAP_MS = 15 * 60 * 1000;
+const BOOKING_DAYS_AHEAD = 14;
+const BOOKING_NOTICE_MS = 2 * 60 * 60 * 1000;
+
+function bookingZone(env) {
+  return env.BOOKING_TIME_ZONE || BOOKING_TIME_ZONE_DEFAULT;
+}
+
+// How far the zone is ahead of UTC at one moment, in milliseconds.
+function zoneOffsetMs(utcMs, zone) {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: zone, hourCycle: "h23", year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", second: "2-digit",
+  }).formatToParts(new Date(utcMs));
+  const get = (type) => Number(parts.find((p) => p.type === type).value);
+  const asUtc = Date.UTC(get("year"), get("month") - 1, get("day"), get("hour"), get("minute"), get("second"));
+  return asUtc - Math.floor(utcMs / 1000) * 1000;
+}
+
+// The instant of a wall-clock time (YYYY-MM-DD, hour, minute) in the given zone.
+function zonedInstant(dateStr, hour, minute, zone) {
+  const [y, m, d] = dateStr.split("-").map(Number);
+  const wall = Date.UTC(y, m - 1, d, hour, minute);
+  let guess = wall;
+  for (let i = 0; i < 2; i++) guess = wall - zoneOffsetMs(guess, zone);
+  return guess;
+}
+
+function addDays(dateStr, days) {
+  const [y, m, d] = dateStr.split("-").map(Number);
+  return new Date(Date.UTC(y, m - 1, d + days)).toISOString().slice(0, 10);
+}
+
+// Mon to Fri, 9:00 to 17:00 in the host's zone, 30-minute meetings, 15 minutes clear of other events.
+function bookingSlotsFor(busy, zone, now) {
+  const slots = [];
+  const today = new Intl.DateTimeFormat("en-CA", { timeZone: zone }).format(new Date(now));
+  for (let i = 0; i < BOOKING_DAYS_AHEAD; i++) {
+    const day = addDays(today, i);
+    const weekday = new Date(`${day}T00:00:00Z`).getUTCDay();
+    if (weekday === 0 || weekday === 6) continue;
+    for (let minutes = 9 * 60; minutes + BOOKING_MINUTES <= 17 * 60; minutes += BOOKING_MINUTES) {
+      const start = zonedInstant(day, Math.floor(minutes / 60), minutes % 60, zone);
+      const end = start + BOOKING_MINUTES * 60 * 1000;
+      if (start < now + BOOKING_NOTICE_MS) continue;
+      const clash = busy.some((b) => start < b.end + BOOKING_GAP_MS && end + BOOKING_GAP_MS > b.start);
+      if (!clash) slots.push({ start: new Date(start).toISOString(), end: new Date(end).toISOString() });
+    }
+  }
+  return slots;
+}
+
+// A fresh access token for the sender's calendar, from the refresh token we stored when they connected.
+async function hostAccessToken(env, hostUserId) {
+  const found = await serviceRest(env, `calendar_connections?user_id=eq.${hostUserId}&select=ciphertext,iv`);
+  const row = found.ok ? (await found.json())[0] : null;
+  const key = row && (await encryptionKey(env));
+  if (!row || !key) return null;
+  const refresh = await decryptModelKey(key, row).catch(() => null);
+  if (!refresh || !env.GOOGLE_CALENDAR_CLIENT_ID || !env.GOOGLE_CALENDAR_CLIENT_SECRET) return null;
+  const res = await fetch("https://oauth2.googleapis.com/token", {
+    method: "POST",
+    headers: { "content-type": "application/x-www-form-urlencoded" },
+    body: new URLSearchParams({
+      client_id: env.GOOGLE_CALENDAR_CLIENT_ID,
+      client_secret: env.GOOGLE_CALENDAR_CLIENT_SECRET,
+      refresh_token: refresh,
+      grant_type: "refresh_token",
+    }).toString(),
+  }).catch(() => null);
+  if (!res || !res.ok) return null;
+  return (await res.json()).access_token || null;
+}
+
+// The busy times on the sender's primary calendar. Null when the calendar cannot be read.
+async function hostBusyTimes(accessToken, fromMs, toMs) {
+  const res = await fetch("https://www.googleapis.com/calendar/v3/freeBusy", {
+    method: "POST",
+    headers: { authorization: `Bearer ${accessToken}`, "content-type": "application/json" },
+    body: JSON.stringify({ timeMin: new Date(fromMs).toISOString(), timeMax: new Date(toMs).toISOString(), items: [{ id: "primary" }] }),
+  }).catch(() => null);
+  if (!res || !res.ok) return null;
+  const busy = ((await res.json()).calendars?.primary?.busy) || [];
+  return busy.map((b) => ({ start: Date.parse(b.start), end: Date.parse(b.end) }));
+}
+
+// Loads the prospect a link names, and the sender's free times. Null when the link is not valid.
+async function bookingContext(env, token) {
+  const prospectId = await readProspectToken(env, token);
+  if (!prospectId) return null;
+  const res = await serviceRest(env, `prospects?id=eq.${prospectId}&select=*`);
+  const prospect = res.ok ? (await res.json())[0] : null;
+  return prospect ? { prospect } : null;
+}
+
+async function freeTimesFor(env, prospect) {
+  const zone = bookingZone(env);
+  const now = Date.now();
+  const hostToken = await hostAccessToken(env, prospect.invited_by);
+  if (!hostToken) return { error: "The Cutover team member who invited you is not available right now. Please reply to the invitation email, or try again later." };
+  const from = zonedInstant(addDays(new Intl.DateTimeFormat("en-CA", { timeZone: zone }).format(new Date(now)), 0), 0, 0, zone);
+  const to = from + (BOOKING_DAYS_AHEAD + 1) * 24 * 60 * 60 * 1000;
+  const busy = await hostBusyTimes(hostToken, from, to);
+  if (!busy) return { error: "The calendar could not be read right now. Please try again in a moment." };
+  return { zone, slots: bookingSlotsFor(busy, zone, now) };
+}
+
+async function bookingInfo(request, env, token) {
+  const found = await bookingContext(env, token);
+  if (!found) return json({ error: "This booking link is not valid or has expired." }, 404);
+  const p = found.prospect;
+  return json({
+    first_name: p.first_name,
+    last_name: p.last_name,
+    email: p.email,
+    company: p.company,
+    phone: p.phone,
+    status: p.status,
+    meeting_at: p.meeting_at,
+    time_zone: bookingZone(env),
+  });
+}
+
+async function bookingSlots(request, env, token) {
+  const found = await bookingContext(env, token);
+  if (!found) return json({ error: "This booking link is not valid or has expired." }, 404);
+  if (found.prospect.status !== "invited") return json({ error: "This meeting is already booked." }, 409);
+  const result = await freeTimesFor(env, found.prospect);
+  if (result.error) return json({ error: result.error }, 503);
+  return json({ time_zone: result.zone, slots: result.slots });
+}
+
+function formatMeeting(startIso, zone) {
+  return new Intl.DateTimeFormat("en-US", { timeZone: zone, weekday: "long", month: "long", day: "numeric", year: "numeric", hour: "numeric", minute: "2-digit", timeZoneName: "short" }).format(new Date(startIso));
+}
+
+function bookingConfirmationEmail(prospect, startIso, zone) {
+  const when = formatMeeting(startIso, zone);
+  const first = prospect.first_name;
+  const subject = `Your meeting with the Cutover team is booked`;
+  const text = [
+    `Hi ${first},`,
+    "",
+    "Your meeting with the Cutover team is booked.",
+    `When: ${when}`,
+    "",
+    `Learn more at ${SITE_ORIGIN}`,
+    `See the demo: ${SITE_ORIGIN}/cutover-demo/`,
+    "",
+    UNATTENDED_NOTICE,
+  ].join("\n");
+  const html = `<!doctype html><html><body style="margin:0;padding:0;background:#f4f1fb;font-family:Arial,Helvetica,sans-serif;color:#1d1640">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#f4f1fb;padding:24px 12px"><tr><td align="center">
+<table role="presentation" width="600" cellpadding="0" cellspacing="0" style="max-width:600px;width:100%;background:#ffffff;border-radius:20px;overflow:hidden">
+  <tr><td style="background:linear-gradient(135deg,#6d28d9,#db2777,#f97316);padding:36px 32px;color:#ffffff">
+    <div style="font-size:13px;letter-spacing:3px;text-transform:uppercase;opacity:.9">Cutover</div>
+    <div style="font-size:28px;font-weight:700;line-height:1.2;margin-top:12px">You're booked, ${escapeHtml(first)}.</div>
+    <div style="font-size:16px;line-height:1.5;margin-top:12px;opacity:.95">Your meeting with the Cutover team is booked.</div>
+  </td></tr>
+  <tr><td style="padding:28px 32px">
+    <div style="padding:18px 20px;background:#f7f4ff;border-radius:14px;font-size:16px;line-height:1.5"><strong>When</strong><br>${escapeHtml(when)}</div>
+  </td></tr>
+  <tr><td style="padding:0 32px 28px 32px;text-align:center;font-size:15px">
+    <a href="${SITE_ORIGIN}" style="display:inline-block;background:#1d1640;color:#ffffff;text-decoration:none;font-weight:700;padding:14px 24px;border-radius:999px">Visit cutover.site</a>
+    <div style="margin-top:14px"><a href="${SITE_ORIGIN}/cutover-demo/" style="color:#db2777;font-weight:700">See the demo</a></div>
+  </td></tr>
+  <tr><td style="background:#faf9fd;padding:18px 32px;font-size:12px;color:#6b6585;text-align:center;line-height:1.5">${escapeHtml(UNATTENDED_NOTICE)}<br>Cutover · cutover.site</td></tr>
+</table></td></tr></table></body></html>`;
+  return { subject, text, html };
+}
+
+async function bookMeeting(request, env, token) {
+  const found = await bookingContext(env, token);
+  if (!found) return json({ error: "This booking link is not valid or has expired." }, 404);
+  const prospect = found.prospect;
+  if (prospect.status !== "invited") return json({ error: "This meeting is already booked." }, 409);
+  const parsed = await readJson(request);
+  if (parsed.error) return json({ error: parsed.error }, 400);
+  const body = parsed.value || {};
+  const first_name = cleanText(body.first_name, 80);
+  const last_name = cleanText(body.last_name, 80);
+  const email = normalizeEmail(body.email);
+  const company = cleanText(body.company, 120);
+  const phone = body.phone ? String(body.phone).trim() : null;
+  if (!first_name || !last_name) return json({ error: "Enter your first and last name." }, 400);
+  if (!email) return json({ error: "Enter a valid email address." }, 400);
+  if (!company) return json({ error: "Enter your company name." }, 400);
+  if (phone && !PHONE_PATTERN.test(phone)) return json({ error: "Enter a valid phone number, or leave it empty." }, 400);
+
+  const result = await freeTimesFor(env, prospect);
+  if (result.error) return json({ error: result.error }, 503);
+  const chosen = result.slots.find((s) => s.start === body.start);
+  if (!chosen) return json({ error: "That time is no longer free. Please pick another time." }, 409);
+
+  const hostToken = await hostAccessToken(env, prospect.invited_by);
+  if (!hostToken) return json({ error: "The calendar is not available right now. Please try again." }, 503);
+  const event = await fetch("https://www.googleapis.com/calendar/v3/calendars/primary/events?sendUpdates=none", {
+    method: "POST",
+    headers: { authorization: `Bearer ${hostToken}`, "content-type": "application/json" },
+    body: JSON.stringify({
+      summary: `Cutover meeting: ${first_name} ${last_name}, ${company}`,
+      description: `Booked through cutover.site.\nEmail: ${email}${phone ? `\nPhone: ${phone}` : ""}`,
+      start: { dateTime: chosen.start, timeZone: result.zone },
+      end: { dateTime: chosen.end, timeZone: result.zone },
+      attendees: [{ email }],
+    }),
+  }).catch(() => null);
+  if (!event || !event.ok) return json({ error: "The meeting could not be added to the calendar. Please try again." }, 502);
+
+  const saved = await serviceRest(env, `prospects?id=eq.${prospect.id}`, {
+    method: "PATCH",
+    headers: { prefer: "return=minimal" },
+    body: JSON.stringify({ status: "booked", meeting_at: chosen.start, first_name, last_name, email, company, phone: phone || null }),
+  });
+  if (!saved.ok) return json({ error: "The meeting was added, but we could not record it. Please contact the Cutover team." }, 502);
+
+  const mail = bookingConfirmationEmail({ first_name }, chosen.start, result.zone);
+  await sendProspectMail(env, email, mail.subject, mail.text, mail.html);
+  return json({ booked: true, start: chosen.start, end: chosen.end, time_zone: result.zone });
+}
+
 // Adds a person with platform roles, or replaces the roles of someone already listed.
 async function addStaff(request, env) {
   const auth = await requireUser(env, request);
@@ -5637,7 +5860,8 @@ async function repoCheck(request, env) {
 const DEV_ORIGINS = ["http://localhost:8000", "http://127.0.0.1:8000"];
 
 function allowedOrigin(origin, env) {
-  const list = [...DEV_ORIGINS, ...(env.APP_ORIGIN ? [env.APP_ORIGIN] : [])];
+  // The marketing site hosts the booking page. It only calls the public booking routes, which need a signed link.
+  const list = [...DEV_ORIGINS, SITE_ORIGIN, ...(env.APP_ORIGIN ? [env.APP_ORIGIN] : [])];
   return list.includes(origin) ? origin : null;
 }
 
@@ -5668,6 +5892,11 @@ async function route(request, env) {
     if (path === "/api/staff/invitations" && method === "GET") return staffInvitations(request, env);
     if (path === "/api/prospects" && method === "GET") return listProspects(request, env);
     if (path === "/api/prospects" && method === "POST") return createProspect(request, env);
+    const bookSlots = path.match(/^\/api\/book\/([^/]+)\/slots$/);
+    if (bookSlots && method === "GET") return bookingSlots(request, env, decodeURIComponent(bookSlots[1]));
+    const bookOne = path.match(/^\/api\/book\/([^/]+)$/);
+    if (bookOne && method === "GET") return bookingInfo(request, env, decodeURIComponent(bookOne[1]));
+    if (bookOne && method === "POST") return bookMeeting(request, env, decodeURIComponent(bookOne[1]));
     if (path === "/api/staff" && method === "GET") return listStaff(request, env);
     if (path === "/api/staff" && method === "POST") return addStaff(request, env);
     const staffOne = path.match(/^\/api\/staff\/(.+)$/);

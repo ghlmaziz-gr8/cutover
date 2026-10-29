@@ -174,6 +174,7 @@ let github;
 let failLog;
 let failActivityLog;
 let resendCalls = [];
+let calendarFake = { busy: [], events: [] };
 const realFetch = globalThis.fetch;
 
 const j = (body, status = 200) => new Response(body === undefined ? null : JSON.stringify(body), {
@@ -340,6 +341,7 @@ beforeEach(() => {
   failLog = false;
   failActivityLog = false;
   resendCalls = [];
+  calendarFake = { busy: [], events: [] };
   github = { dispatches: [], dispatchOk: true };
   globalThis.fetch = async (url, init = {}) => {
     const u = String(url);
@@ -353,6 +355,10 @@ beforeEach(() => {
     if (u.startsWith("https://api.github.com/")) return handleGithub(u, init);
     if (u === "https://oauth2.googleapis.com/token") {
       const body = new URLSearchParams(init.body);
+      if (body.get("grant_type") === "refresh_token") {
+        if (body.get("refresh_token") !== "refresh-secret-test") return j({ error: "invalid_grant" }, 400);
+        return j({ access_token: "access-from-refresh" });
+      }
       if (body.get("code") !== "good-code") return j({ error: "invalid_grant" }, 400);
       return j({
         access_token: "access-test",
@@ -361,6 +367,14 @@ beforeEach(() => {
       });
     }
     if (u.startsWith("https://openidconnect.googleapis.com/v1/userinfo")) return j({ email: "Sales@Cutover.test" });
+    if (u === "https://www.googleapis.com/calendar/v3/freeBusy") {
+      return j({ calendars: { primary: { busy: calendarFake.busy } } });
+    }
+    if (u === "https://www.googleapis.com/calendar/v3/calendars/primary/events?sendUpdates=none") {
+      const event = JSON.parse(init.body);
+      calendarFake.events.push(event);
+      return j({ id: "evt-test" });
+    }
     if (u.startsWith("https://oauth2.googleapis.com/revoke")) return new Response(null, { status: 200 });
     if (u.startsWith("https://api.resend.com/")) {
       resendCalls.push(JSON.parse(init.body));
@@ -4000,4 +4014,89 @@ test("only staff who invite can add or list prospects", async () => {
   assert.equal(list.status, 200);
   assert.equal(list.body.prospects.length, 1);
   assert.equal(list.body.prospects[0].company, "Buyer Health");
+});
+
+// ---- Booking: the prospect picks a free time from the sender's calendar ----
+
+async function connectSales() {
+  const { body } = await call("/api/calendar/connect-url", { as: "sales", method: "POST" });
+  await callbackFor(new URL(body.url).searchParams.get("state"));
+}
+
+async function invitePat() {
+  env.RESEND_API_KEY = "re_test";
+  env.EMAIL_FROM = "Cutover <noreply.sales@cutover.site>";
+  const res = await call("/api/prospects", { as: "sales", method: "POST", body: PROSPECT });
+  const token = resendCalls[0].text.match(/cutover\.site\/book\/\?t=(\S+)/)[1];
+  return { id: res.body.prospect.id, token };
+}
+
+test("the booking link shows the prospect, offers weekday slots from the sender's calendar, and books one", async () => {
+  try {
+    await connectSales();
+    const { id, token } = await invitePat();
+
+    const info = await call(`/api/book/${token}`);
+    assert.equal(info.status, 200);
+    assert.equal(info.body.first_name, "Pat");
+    assert.equal(info.body.status, "invited");
+
+    const slots = await call(`/api/book/${token}/slots`);
+    assert.equal(slots.status, 200);
+    assert.ok(slots.body.slots.length > 0);
+    for (const slot of slots.body.slots) {
+      const day = new Date(slot.start).toLocaleDateString("en-US", { timeZone: "America/New_York", weekday: "short" });
+      assert.ok(!["Sat", "Sun"].includes(day), "no weekend slots");
+      const hour = Number(new Intl.DateTimeFormat("en-US", { timeZone: "America/New_York", hour: "numeric", hourCycle: "h23" }).format(new Date(slot.start)));
+      assert.ok(hour >= 9 && hour < 17, "only 9 to 17 in the host's zone");
+      assert.equal(Date.parse(slot.end) - Date.parse(slot.start), 30 * 60 * 1000);
+    }
+
+    const first = slots.body.slots[0];
+    const booked = await call(`/api/book/${token}`, { method: "POST", body: { start: first.start, first_name: "Pat", last_name: "Buyer", email: "pat@prospect.test", company: "Buyer Health" } });
+    assert.equal(booked.status, 200);
+    assert.equal(booked.body.booked, true);
+    assert.equal(calendarFake.events.length, 1);
+    assert.equal(calendarFake.events[0].start.dateTime, first.start);
+    assert.equal(calendarFake.events[0].attendees[0].email, "pat@prospect.test");
+    assert.equal(state.prospects.find((p) => p.id === id).status, "booked");
+    assert.equal(state.prospects.find((p) => p.id === id).meeting_at, first.start);
+    const confirmation = resendCalls[resendCalls.length - 1];
+    assert.equal(confirmation.subject, "Your meeting with the Cutover team is booked");
+    assert.ok(confirmation.text.includes("unattended"));
+
+    assert.equal((await call(`/api/book/${token}`, { method: "POST", body: { start: slots.body.slots[1].start, first_name: "Pat", last_name: "Buyer", email: "pat@prospect.test", company: "Buyer Health" } })).status, 409);
+    assert.equal((await call(`/api/book/${token}/slots`)).status, 409);
+  } finally {
+    delete env.RESEND_API_KEY;
+    delete env.EMAIL_FROM;
+  }
+});
+
+test("a time that clashes with a meeting, with 15 minutes clear either side, is not offered", async () => {
+  await connectSales();
+  const { token } = await invitePat();
+  const before = (await call(`/api/book/${token}/slots`)).body.slots;
+  const target = before[0];
+  const start = Date.parse(target.start);
+  calendarFake.busy = [{ start: new Date(start - 10 * 60 * 1000).toISOString(), end: new Date(start + 5 * 60 * 1000).toISOString() }];
+  const after = (await call(`/api/book/${token}/slots`)).body.slots;
+  assert.ok(!after.some((s) => s.start === target.start), "the clashing slot is gone");
+});
+
+test("a booking link that is not valid is refused, and a time that was not offered is refused", async () => {
+  await connectSales();
+  assert.equal((await call("/api/book/booking.not-a-real-id.1.abc")).status, 404);
+  assert.equal((await call("/api/book/not-a-token")).status, 404);
+  const { token } = await invitePat();
+  const booking = { first_name: "Pat", last_name: "Buyer", email: "pat@prospect.test", company: "Buyer Health" };
+  assert.equal((await call(`/api/book/${token}`, { method: "POST", body: { ...booking, start: "2026-11-02T03:00:00.000Z" } })).status, 409);
+  assert.equal(calendarFake.events.length, 0);
+});
+
+test("without a connected calendar, the booking page says the sender is not available", async () => {
+  const { token } = await invitePat();
+  const res = await call(`/api/book/${token}/slots`);
+  assert.equal(res.status, 503);
+  assert.ok(res.body.error.includes("not available"));
 });
