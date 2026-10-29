@@ -2816,7 +2816,8 @@ async function targetApproval(env, row) {
 // engineer's review once its output is ready. Each viewer is told once when a stage clears.
 const PROGRESS_STAGES = [
   { id: "assessment", title: "Application Assessment", produces: "What the application is, how it is built and what data it holds, from the code." },
-  { id: "approach", title: "Choose the approach", produces: "The modernized approach the team agrees on, from the three proposals.", needs: "assessment" },
+  { id: "scope", title: "Choose the scope", produces: "The work this analysis covers: the deeper assessment, Modernize, Migrate, or a mix of them.", needs: "assessment" },
+  { id: "approach", title: "Choose the approach", produces: "The modernized approach the team agrees on, from the three proposals.", needs: "scope" },
   { id: "plan", title: "Modernization plan", produces: "A plan for the chosen approach: the order of work, the risks and a rough size.", needs: "approach" },
   { id: "deeper", title: "Deeper assessment", produces: "The architecture, the sections and the documents for this application.", needs: "plan" },
   { id: "starter", title: "Starter project", produces: "A zip with the skeleton for the chosen template, with no copied business logic.", needs: "deeper" },
@@ -2854,6 +2855,8 @@ function stageStates(row, viewerId) {
     }
     const cleared = stage.id === "assessment"
       ? row.status === "complete"
+      : stage.id === "scope"
+        ? Boolean(row.scope)
       : stage.id === "approach"
         ? Boolean(row.modern_template)
         : stage.id === "deeper"

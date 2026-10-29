@@ -5728,6 +5728,14 @@ a{color:#6d28d9;font-weight:600}`;
         go.className = "ghost";
         go.addEventListener("click", () => document.getElementById(`stage-${s.unlocked_by}`)?.scrollIntoView({ behavior: "smooth", block: "center" }));
         card.appendChild(go);
+      } else if (s.id === "scope") {
+        // The scope is chosen on What next, under the path, so the card points there.
+        card.appendChild(el("p", "Choose the work this analysis covers on What next, under the path.", "stage-lock"));
+        const pick = el("button", "Go to the scope");
+        pick.type = "button";
+        pick.className = "ghost";
+        pick.addEventListener("click", () => document.getElementById("scopeCard")?.scrollIntoView({ behavior: "smooth", block: "center" }));
+        card.appendChild(pick);
       } else if (s.id === "approach") {
         // The approach is chosen on What next, not reviewed here, so the card points there.
         card.appendChild(el("p", "Choose one of the three proposals on What next, under the scope.", "stage-lock"));
