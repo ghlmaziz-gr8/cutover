@@ -814,6 +814,175 @@ async function listStaff(request, env) {
   return json(await res.json());
 }
 
+// ---- Prospects: people a sales or admin person invites to a meeting. Prospects never log in. ----
+const SITE_ORIGIN = "https://cutover.site";
+const PROSPECT_LINK_MS = 30 * 24 * 60 * 60 * 1000;
+const PHONE_PATTERN = /^\+?[0-9 ()\-.]{7,30}$/;
+
+function escapeHtml(value) {
+  return String(value).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
+}
+
+// The booking link names the prospect, is signed, and expires after 30 days.
+async function signProspectToken(env, prospectId) {
+  const payload = `booking.${prospectId}.${Date.now() + PROSPECT_LINK_MS}`;
+  const sig = new Uint8Array(await crypto.subtle.sign("HMAC", await calendarStateKey(env), new TextEncoder().encode(payload)));
+  return `${payload}.${base64UrlFrom(sig)}`;
+}
+
+// Returns the prospect id when the link is genuine and has not expired.
+async function readProspectToken(env, token) {
+  const parts = String(token || "").split(".");
+  if (parts.length !== 4) return null;
+  const [kind, prospectId, expires, sig] = parts;
+  if (kind !== "booking" || !UUID_PATTERN.test(prospectId) || !(Number(expires) >= Date.now())) return null;
+  const mac = new Uint8Array(await crypto.subtle.sign("HMAC", await calendarStateKey(env), new TextEncoder().encode(`booking.${prospectId}.${expires}`)));
+  return base64UrlFrom(mac) === sig ? prospectId : null;
+}
+
+// Sends one email from the sales address. Returns false, and never throws, when email is not set up or the send fails.
+async function sendProspectMail(env, to, subject, text, html) {
+  if (!env.RESEND_API_KEY || !env.EMAIL_FROM) return false;
+  try {
+    const sent = await fetch("https://api.resend.com/emails", {
+      method: "POST",
+      headers: { authorization: `Bearer ${env.RESEND_API_KEY}`, "content-type": "application/json" },
+      body: JSON.stringify({ from: env.EMAIL_FROM, to: [to], subject: String(subject).slice(0, 200), text: String(text).slice(0, 8000), html }),
+    });
+    return sent.ok;
+  } catch {
+    return false;
+  }
+}
+
+const UNATTENDED_NOTICE = "This inbox is unattended. Nobody reads or replies to messages sent here.";
+
+function prospectInviteEmail(prospect, bookingUrl) {
+  const first = prospect.first_name;
+  const subject = `${first}, book your Cutover walkthrough`;
+  const text = [
+    `Hi ${first},`,
+    "",
+    "Thank you for your interest in Cutover. Pick the 30-minute slot that suits you, and we will walk you through the platform.",
+    "",
+    `Book your meeting: ${bookingUrl}`,
+    `Visit cutover.site: ${SITE_ORIGIN}`,
+    `See the demo: ${SITE_ORIGIN}/cutover-demo/`,
+    "",
+    "What to expect:",
+    "- A 30-minute walkthrough tailored to your business",
+    "- Answers to your questions about migration, security and rollout",
+    "- Clear next steps, with no obligation",
+    "",
+    UNATTENDED_NOTICE,
+  ].join("\n");
+  const html = `<!doctype html><html><body style="margin:0;padding:0;background:#f4f1fb;font-family:Arial,Helvetica,sans-serif;color:#1d1640">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#f4f1fb;padding:24px 12px"><tr><td align="center">
+<table role="presentation" width="600" cellpadding="0" cellspacing="0" style="max-width:600px;width:100%;background:#ffffff;border-radius:20px;overflow:hidden">
+  <tr><td style="background:linear-gradient(135deg,#6d28d9,#db2777,#f97316);padding:36px 32px;color:#ffffff">
+    <div style="font-size:13px;letter-spacing:3px;text-transform:uppercase;opacity:.9">Cutover</div>
+    <div style="font-size:30px;font-weight:700;line-height:1.2;margin-top:12px">Hi ${escapeHtml(first)}, let's talk about your migration.</div>
+    <div style="font-size:16px;line-height:1.5;margin-top:14px;opacity:.95">Thank you for your interest. Pick a 30-minute slot that suits you and we will walk you through Cutover, live.</div>
+  </td></tr>
+  <tr><td style="padding:32px;text-align:center">
+    <a href="${escapeHtml(bookingUrl)}" style="display:inline-block;background:#1d1640;color:#ffffff;text-decoration:none;font-weight:700;font-size:16px;padding:16px 28px;border-radius:999px">Book your 30-minute meeting</a>
+    <div style="font-size:13px;color:#6b6585;margin-top:12px">Choose a time that works for you. Takes about a minute.</div>
+  </td></tr>
+  <tr><td style="padding:0 32px 8px 32px">
+    <div style="font-size:18px;font-weight:700;margin-bottom:14px">What to expect</div>
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
+      <tr><td style="padding:14px 16px;background:#f7f4ff;border-radius:14px;font-size:15px;line-height:1.5"><strong>A tailored walkthrough.</strong> We focus on the workflows that matter to your business.</td></tr>
+      <tr><td style="height:10px"></td></tr>
+      <tr><td style="padding:14px 16px;background:#fff6f0;border-radius:14px;font-size:15px;line-height:1.5"><strong>Your questions answered.</strong> Migration, security, and how the rollout would run.</td></tr>
+      <tr><td style="height:10px"></td></tr>
+      <tr><td style="padding:14px 16px;background:#f0fdf8;border-radius:14px;font-size:15px;line-height:1.5"><strong>Clear next steps.</strong> No obligation. You decide what happens next.</td></tr>
+    </table>
+  </td></tr>
+  <tr><td style="padding:24px 32px 32px 32px;text-align:center;font-size:15px">
+    Explore first: <a href="${SITE_ORIGIN}" style="color:#6d28d9;font-weight:700">cutover.site</a> &nbsp;·&nbsp; <a href="${SITE_ORIGIN}/cutover-demo/" style="color:#db2777;font-weight:700">See the demo</a>
+  </td></tr>
+  <tr><td style="background:#faf9fd;padding:18px 32px;font-size:12px;color:#6b6585;text-align:center;line-height:1.5">${escapeHtml(UNATTENDED_NOTICE)}<br>Cutover · cutover.site</td></tr>
+</table></td></tr></table></body></html>`;
+  return { subject, text, html };
+}
+
+function cleanText(value, max) {
+  const s = String(value ?? "").trim();
+  return s.length > 0 && s.length <= max ? s : null;
+}
+
+// What staff see for a prospect. Nothing here is needed to log in, and no login data is stored for prospects.
+function publicProspect(row) {
+  return {
+    id: row.id,
+    first_name: row.first_name,
+    last_name: row.last_name,
+    email: row.email,
+    company: row.company,
+    phone: row.phone,
+    invited_by_email: row.invited_by_email,
+    invited_at: row.invited_at,
+    last_email_at: row.last_email_at,
+    status: row.status,
+    meeting_at: row.meeting_at,
+  };
+}
+
+async function prospectCaller(request, env) {
+  const auth = await requireUser(env, request);
+  if (auth.response) return { response: auth.response };
+  if (!canInvite(await platformRolesFor(env, auth.user.email))) return { response: json({ error: "Only staff who can invite may use prospects." }, 403) };
+  return { user: auth.user };
+}
+
+// Adds a prospect and sends the rich invitation. A prospect is saved even if the email cannot be sent.
+async function createProspect(request, env) {
+  const caller = await prospectCaller(request, env);
+  if (caller.response) return caller.response;
+  const parsed = await readJson(request);
+  if (parsed.error) return json({ error: parsed.error }, 400);
+  const body = parsed.value || {};
+  const email = normalizeEmail(body.email);
+  if (!email) return json({ error: "Enter a valid email address." }, 400);
+  const first_name = cleanText(body.first_name, 80);
+  const last_name = cleanText(body.last_name, 80);
+  if (!first_name || !last_name) return json({ error: "Enter the first and last name." }, 400);
+  const company = cleanText(body.company, 120);
+  if (!company) return json({ error: "Enter the company name." }, 400);
+  const phone = body.phone ? String(body.phone).trim() : null;
+  if (phone && !PHONE_PATTERN.test(phone)) return json({ error: "Enter a valid phone number, or leave it empty." }, 400);
+  const invitedBy = normalizeEmail(caller.user.email);
+
+  const res = await serviceRest(env, "prospects", {
+    method: "POST",
+    headers: { prefer: "return=representation" },
+    body: JSON.stringify({ email, first_name, last_name, company, phone: phone || null, invited_by: caller.user.id, invited_by_email: invitedBy, status: "invited" }),
+  });
+  if (!res.ok) return json({ error: "Could not save the prospect." }, 502);
+  const [row] = await res.json();
+
+  const bookingUrl = `${SITE_ORIGIN}/book/?t=${await signProspectToken(env, row.id)}`;
+  const mail = prospectInviteEmail(row, bookingUrl);
+  const sent = await sendProspectMail(env, row.email, mail.subject, mail.text, mail.html);
+  if (sent) {
+    await serviceRest(env, `prospects?id=eq.${row.id}`, {
+      method: "PATCH",
+      headers: { prefer: "return=minimal" },
+      body: JSON.stringify({ last_email_at: new Date().toISOString() }),
+    });
+    row.last_email_at = new Date().toISOString();
+  }
+  return json({ prospect: publicProspect(row), email_sent: sent }, 201);
+}
+
+async function listProspects(request, env) {
+  const caller = await prospectCaller(request, env);
+  if (caller.response) return caller.response;
+  const res = await serviceRest(env, "prospects?select=*&order=invited_at.desc&limit=500");
+  if (!res.ok) return json({ error: "Could not load the prospects." }, 502);
+  return json({ prospects: (await res.json()).map(publicProspect) });
+}
+
 // Adds a person with platform roles, or replaces the roles of someone already listed.
 async function addStaff(request, env) {
   const auth = await requireUser(env, request);
@@ -5497,6 +5666,8 @@ async function route(request, env) {
     if (path === "/api/calendar/connect-url" && method === "POST") return calendarConnectUrl(request, env);
     if (path === "/api/calendar/callback" && method === "GET") return calendarCallback(request, env);
     if (path === "/api/staff/invitations" && method === "GET") return staffInvitations(request, env);
+    if (path === "/api/prospects" && method === "GET") return listProspects(request, env);
+    if (path === "/api/prospects" && method === "POST") return createProspect(request, env);
     if (path === "/api/staff" && method === "GET") return listStaff(request, env);
     if (path === "/api/staff" && method === "POST") return addStaff(request, env);
     const staffOne = path.match(/^\/api\/staff\/(.+)$/);

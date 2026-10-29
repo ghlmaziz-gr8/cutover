@@ -1959,12 +1959,27 @@ button:not(:disabled):active{transform:scale(.965)}
       <h2 id="staffTitle">Invitations and behaviour</h2>
       <p class="muted small" style="margin-top:6px">For Cutover staff. This area covers demo spaces only. A customer workspace is never shown here, unless you are a member of it.</p>
       <div class="row" role="tablist" aria-label="Staff views" style="gap:8px;flex-wrap:wrap;margin-top:12px">
-        <button type="button" class="small-btn" id="staffTabTracker" role="tab" aria-selected="true">Demo invitations</button>
+        <button type="button" class="small-btn" id="staffTabProspects" role="tab" aria-selected="true" hidden>Prospects</button>
+        <button type="button" class="ghost small-btn" id="staffTabTracker" role="tab" aria-selected="false">Demo invitations</button>
         <button type="button" class="ghost small-btn" id="staffTabCalendar" role="tab" aria-selected="false" hidden>My calendar</button>
         <button type="button" class="ghost small-btn" id="staffTabAccess" role="tab" aria-selected="false" hidden>Staff access</button>
       </div>
 
-      <div id="staffTracker">
+      <div id="staffProspects" hidden>
+        <p class="muted small hint" style="margin-top:12px">Invite a prospect and we send them a welcome email with a link to book a 30-minute meeting on your calendar. Each invitation is sent from noreply.sales@cutover.site. This inbox is unattended, so replies are not read.</p>
+        <form id="prospectForm" class="row" style="gap:8px;flex-wrap:wrap;margin-top:12px" autocomplete="off">
+          <input id="pFirst" placeholder="First name" aria-label="First name" required maxlength="80" style="min-width:140px">
+          <input id="pLast" placeholder="Last name" aria-label="Last name" required maxlength="80" style="min-width:140px">
+          <input id="pEmail" type="email" placeholder="Email" aria-label="Email" required maxlength="320" style="min-width:200px">
+          <input id="pCompany" placeholder="Company" aria-label="Company" required maxlength="120" style="min-width:180px">
+          <input id="pPhone" type="tel" placeholder="Phone (optional)" aria-label="Phone (optional)" maxlength="30" style="min-width:160px">
+          <button type="submit" class="small-btn" id="pSubmit">Send invitation</button>
+        </form>
+        <p id="pMsg" class="muted small hint" role="status"></p>
+        <div id="pRows" style="margin-top:12px"></div>
+      </div>
+
+      <div id="staffTracker" hidden>
         <div class="staff-kpis" id="staffKpis"></div>
         <div id="staffFunnel"></div>
         <div class="row" style="gap:8px;flex-wrap:wrap;margin-top:14px">
@@ -3374,6 +3389,8 @@ button:not(:disabled):active{transform:scale(.965)}
     $("staffCard").hidden = !(staffRoles.length && homeTab === "staff");
     $("staffTabAccess").hidden = !staffRoles.some((r) => ["super_user", "admin", "sales"].includes(r));
     $("staffTabCalendar").hidden = !staffRoles.some((r) => ["super_user", "admin", "sales"].includes(r));
+    $("staffTabProspects").hidden = !staffRoles.some((r) => ["super_user", "admin", "sales"].includes(r));
+    if (!staffRoles.some((r) => ["super_user", "admin", "sales"].includes(r)) && staffTab === "prospects") staffTab = "tracker";
     if (homeTab === "staff") showStaffTab(staffTab);
     $("analysesCard").hidden = homeTab !== "analyses";
     $("privacyCard").hidden = !(ws && homeTab === "privacy");
@@ -3395,7 +3412,7 @@ button:not(:disabled):active{transform:scale(.965)}
     if (homeTab === "workspaces" && ws && ws.is_admin) loadPeople();
     if (homeTab === "guide") renderGuide();
   }
-  let staffTab = "tracker";
+  let staffTab = "prospects";
 
   let homeTab = "analyses";
   $("tabAnalyses").addEventListener("click", () => { homeTab = "analyses"; showHome(); });
@@ -3689,12 +3706,13 @@ button:not(:disabled):active{transform:scale(.965)}
 
   function showStaffTab(which) {
     staffTab = which;
-    const tabs = { tracker: ["staffTabTracker", "staffTracker"], calendar: ["staffTabCalendar", "staffCalendar"], access: ["staffTabAccess", "staffAccess"] };
+    const tabs = { prospects: ["staffTabProspects", "staffProspects"], tracker: ["staffTabTracker", "staffTracker"], calendar: ["staffTabCalendar", "staffCalendar"], access: ["staffTabAccess", "staffAccess"] };
     for (const [key, [btn, panel]] of Object.entries(tabs)) {
       $(btn).className = key === which ? "small-btn" : "ghost small-btn";
       $(btn).setAttribute("aria-selected", String(key === which));
       $(panel).hidden = key !== which;
     }
+    if (which === "prospects") loadProspects();
     if (which === "tracker") loadStaffTracker();
     if (which === "access") loadStaffAccess();
     if (which === "calendar") loadStaffCalendar();
@@ -3702,6 +3720,62 @@ button:not(:disabled):active{transform:scale(.965)}
 
   $("staffTabTracker").addEventListener("click", () => showStaffTab("tracker"));
   $("staffTabAccess").addEventListener("click", () => showStaffTab("access"));
+  $("staffTabProspects").addEventListener("click", () => showStaffTab("prospects"));
+
+  // ---- Prospects: the people invited to a meeting. They never log in. ----
+  let prospects = [];
+
+  async function loadProspects() {
+    try {
+      const data = await api("/api/prospects");
+      prospects = data.prospects || [];
+      renderProspects();
+    } catch (err) {
+      setMsg("pMsg", err.message, true);
+    }
+  }
+
+  function renderProspects() {
+    const box = $("pRows");
+    box.replaceChildren();
+    if (!prospects.length) {
+      box.append(el("p", "No prospects yet. Invite your first one above.", "muted small"));
+      return;
+    }
+    for (const p of prospects) {
+      const row = el("div", null, "prospect-row");
+      row.style.cssText = "padding:12px 14px;border:1px solid var(--line);border-radius:14px;margin-bottom:8px";
+      row.append(el("strong", `${p.first_name} ${p.last_name}`), el("span", ` · ${p.company}`));
+      row.append(el("div", p.email, "muted small"));
+      const emailState = p.last_email_at ? "invitation sent" : "invitation not sent";
+      row.append(el("div", `Invited by ${p.invited_by_email} on ${new Date(p.invited_at).toLocaleDateString()} · ${emailState} · ${String(p.status).replace("_", " ")}`, "muted small"));
+      box.append(row);
+    }
+  }
+
+  $("prospectForm").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const payload = {
+      first_name: $("pFirst").value,
+      last_name: $("pLast").value,
+      email: $("pEmail").value,
+      company: $("pCompany").value,
+      phone: $("pPhone").value,
+    };
+    $("pSubmit").disabled = true;
+    setMsg("pMsg", "Sending the invitation...", false);
+    try {
+      const data = await api("/api/prospects", { method: "POST", body: JSON.stringify(payload) });
+      prospects.unshift(data.prospect);
+      renderProspects();
+      e.target.reset();
+      setMsg("pMsg", data.email_sent ? `Invitation sent to ${data.prospect.email}.` : "Saved. The invitation email was not sent, because email is not set up yet.", !data.email_sent);
+    } catch (err) {
+      setMsg("pMsg", err.message, true);
+    } finally {
+      $("pSubmit").disabled = false;
+    }
+  });
   $("staffTabCalendar").addEventListener("click", () => showStaffTab("calendar"));
 
   async function loadStaffTracker() {
