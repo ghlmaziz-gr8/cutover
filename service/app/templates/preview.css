@@ -265,3 +265,52 @@ ul{margin:8px 0 0;padding-left:20px}
   .ai-rec,.ai-rec::after,.ai-spark svg,.ai-node.is-new,.ai-line path,.ai-ic .ai-band,.ai-opt{animation:none !important}
   .ai-opt,.ai-opt:hover{transition:none !important;transform:none !important}
 }
+
+/* Palette families: one choice moves all six colours. Registered as colours so they glide between families. */
+@property --p{syntax:"<color>";inherits:true;initial-value:#6d28d9}
+@property --h{syntax:"<color>";inherits:true;initial-value:#ec4899}
+@property --l{syntax:"<color>";inherits:true;initial-value:#0891b2}
+@property --page{syntax:"<color>";inherits:true;initial-value:#f7f6ff}
+@property --surface{syntax:"<color>";inherits:true;initial-value:#ffffff}
+@property --text{syntax:"<color>";inherits:true;initial-value:#1d1640}
+@property --a3{syntax:"<color>";inherits:true;initial-value:#f59e0b}
+@property --on{syntax:"<color>";inherits:true;initial-value:#ffffff}
+.look{
+  --grad:linear-gradient(120deg,var(--p),var(--h) 55%,var(--a3));
+  background:var(--page);color:var(--text);border:1px solid var(--line);border-radius:18px;padding:16px;
+  transition:--p .7s ease,--h .7s ease,--l .7s ease,--page .7s ease,--surface .7s ease,--text .7s ease,--a3 .7s ease;
+}
+.look .look-note{color:var(--text);opacity:.75}
+.look .swatch{background:var(--surface)}
+.look .swatch span{color:var(--text);opacity:.7}
+.look .type-sample{background:var(--surface)}
+.look .btn-primary{background:var(--grad);color:var(--on);border:0}
+.look .btn-ghost{border-color:var(--p);color:var(--p)}
+.look .type-h{color:var(--text)}
+.look .type-b{color:var(--text);opacity:.75}
+.pal-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px}
+.pal{all:unset;box-sizing:border-box;cursor:pointer;border:1px solid var(--line);border-radius:16px;padding:12px;background:var(--surface);display:grid;gap:6px;transition:transform .25s ease,box-shadow .25s ease,border-color .25s ease}
+.pal:hover{transform:translateY(-3px);box-shadow:0 12px 24px -16px var(--p)}
+.pal:focus-visible{outline:2px solid var(--l);outline-offset:2px}
+.pal.on{border-color:var(--p);box-shadow:0 0 0 2px color-mix(in srgb,var(--p) 35%,transparent)}
+.pal b{font:700 14px/1.2 var(--display);color:var(--text)}
+.pal small{font-size:12px;color:var(--text);opacity:.7;line-height:1.35}
+.pal-fan{display:flex;padding:2px 0 4px 4px;margin-bottom:2px}
+.pal-fan i{width:26px;height:26px;border-radius:50%;border:2px solid var(--surface);margin-left:-8px;transition:transform .35s cubic-bezier(.2,.7,.2,1)}
+.pal-fan i:first-child{margin-left:0}
+.pal:hover .pal-fan i:nth-child(1){transform:translateX(-4px) rotate(-8deg)}
+.pal:hover .pal-fan i:nth-child(2){transform:translateX(0) translateY(-4px)}
+.pal:hover .pal-fan i:nth-child(3){transform:translateX(3px) translateY(0)}
+.pal:hover .pal-fan i:nth-child(4){transform:translateX(6px) translateY(-4px) rotate(8deg)}
+.pal:hover .pal-fan i:nth-child(5){transform:translateX(9px) translateY(0)}
+.pal:hover .pal-fan i:nth-child(6){transform:translateX(12px) translateY(-4px) rotate(-8deg)}
+.pal-mode{display:inline-flex;gap:4px;margin-top:12px;padding:4px;border:1px solid var(--line);border-radius:999px;background:var(--surface)}
+.seg{all:unset;cursor:pointer;padding:6px 14px;border-radius:999px;font:700 13px var(--body);color:var(--muted)}
+.seg.on{background:var(--grad);color:var(--on)}
+.seg:focus-visible{outline:2px solid var(--l)}
+.swatches{margin-top:12px}
+@media (prefers-reduced-motion:reduce){
+  .look,.pal,.pal-fan i{transition:none !important}
+  .pal:hover{transform:none}
+  .pal:hover .pal-fan i{transform:none !important}
+}
