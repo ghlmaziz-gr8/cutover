@@ -3998,7 +3998,10 @@ test("the invitation is a rich email from the sales address, with a signed booki
     const link = mail.text.match(/https:\/\/cutover\.site\/book\/\?t=(\S+)/);
     assert.ok(link, "the email carries the booking link");
     assert.ok(link[1].startsWith(`booking.${res.body.prospect.id}.`));
-    assert.ok(mail.html.includes("Book your 30-minute meeting"));
+    assert.ok(mail.html.includes("Book your 30-minute walkthrough"));
+    assert.ok(mail.html.includes("Move critical systems to the cloud with a plan you can verify first"));
+    assert.ok(mail.html.includes("Deeper AI assessment"));
+    assert.ok(mail.text.includes("Modernize") || mail.text.includes("legacy"));
     assert.ok(mail.html.includes(`https://cutover.site/book/?t=${link[1]}`));
     assert.ok(mail.html.includes("https://cutover.site/cutover-demo/"));
     assert.ok(mail.html.includes("unattended"));

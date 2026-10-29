@@ -862,51 +862,140 @@ function prospectInviteEmail(prospect, bookingUrl) {
   const subject = `${first}, book your Cutover walkthrough`;
   const from = prospect.invited_by_name || "the Cutover team";
   const note = prospect.invite_message ? String(prospect.invite_message) : "";
+  const tagline = "Move critical systems to the cloud with a plan you can verify first";
+  const pillars = [
+    ["Read-only discovery", "Discovery never writes to your systems. Source access is pinned to a commit."],
+    ["Deeper AI assessment", "Every finding links to its source and is marked verified or inferred, so nothing is taken on trust."],
+    ["Named sign-off", "Nothing changes until an approver signs the plan. Every approval is logged against the plan hash."],
+  ];
+  const steps = [
+    ["Point Cutover at a pinned source commit and read-only access. Nothing is changed."],
+    ["Map the code, data model, interfaces and deployment, from legacy systems to modern ones."],
+    ["Generate target designs for Azure, AWS or Google Cloud, with Terraform and a cost range for each."],
+    ["A named approver signs the plan. Staging applies first, and production waits for explicit sign-off."],
+  ];
+  const sectors = ["Healthcare", "Financial services", "Government", "Insurance", "Education", "Utilities", "Retail", "Manufacturing"];
+
   const text = [
     `Hi ${first},`,
     "",
-    "Thank you for your interest in Cutover. Pick the 30-minute slot that suits you, and we will walk you through the platform.",
+    tagline + ".",
     "",
     ...(note ? [`A note from ${from}:`, note, ""] : []),
-    `Book your meeting: ${bookingUrl}`,
+    "Cutover modernizes legacy applications and migrates them to the cloud. It reads your applications, data and infrastructure, drafts the migration plan, and generates the target environment. Your team approves each step before anything changes.",
+    "",
+    "What you get:",
+    ...pillars.map(([title, body]) => `- ${title}: ${body}`),
+    "",
+    "From legacy system to approved plan in four steps:",
+    ...steps.map((step, i) => `${i + 1}. ${step[0]}`),
+    "",
+    `Book your 30-minute meeting: ${bookingUrl}`,
     `Visit cutover.site: ${SITE_ORIGIN}`,
     `See the demo: ${SITE_ORIGIN}/cutover-demo/`,
     "",
-    "What to expect:",
-    "- A 30-minute walkthrough tailored to your business",
-    "- Answers to your questions about migration, security and rollout",
-    "- Clear next steps, with no obligation",
+    `Built for regulated sectors: ${sectors.join(", ")}.`,
     "",
     UNATTENDED_NOTICE,
   ].join("\n");
-  const html = `<!doctype html><html><body style="margin:0;padding:0;background:#f4f1fb;font-family:Arial,Helvetica,sans-serif;color:#1d1640">
+
+  const pillarCells = pillars.map(([title, body], i) => `
+          <td width="33%" valign="top" style="padding:0 6px">
+            <div class="rise" style="animation-delay:${0.15 + i * 0.12}s;background:#ffffff;border:1px solid #e7e2f3;border-radius:16px;padding:18px 16px;height:100%">
+              <div style="width:34px;height:34px;border-radius:10px;background:linear-gradient(135deg,#6d28d9,#db2777);color:#ffffff;font-weight:700;text-align:center;line-height:34px;font-size:16px">${i + 1}</div>
+              <div style="font-size:15px;font-weight:700;margin-top:12px">${escapeHtml(title)}</div>
+              <div style="font-size:13px;line-height:1.55;color:#4a4566;margin-top:6px">${escapeHtml(body)}</div>
+            </div>
+          </td>`).join("");
+
+  const stepRows = steps.map((step, i) => `
+        <tr>
+          <td valign="top" width="44" style="padding:10px 0">
+            <div class="pulse" style="width:34px;height:34px;border-radius:50%;background:#1d1640;color:#ffffff;font-weight:700;text-align:center;line-height:34px;font-size:15px">${i + 1}</div>
+          </td>
+          <td valign="top" style="padding:12px 0;font-size:15px;line-height:1.55;color:#2b2550">${escapeHtml(step[0])}</td>
+        </tr>`).join("");
+
+  const sectorChips = sectors.map((s) => `<span style="display:inline-block;margin:4px 4px;padding:7px 12px;border-radius:999px;background:#f7f4ff;border:1px solid #e7e2f3;font-size:13px;color:#2b2550">${escapeHtml(s)}</span>`).join("");
+
+  const noteBlock = note ? `
+  <tr><td style="padding:24px 32px 0 32px">
+    <div style="padding:18px 20px;background:#f7f4ff;border-left:4px solid #db2777;border-radius:0 14px 14px 0;font-size:15px;line-height:1.6">
+      <div style="font-size:12px;letter-spacing:2px;text-transform:uppercase;color:#6b6585;margin-bottom:8px">A note from ${escapeHtml(from)}</div>
+      ${escapeHtml(note).replace(/\n/g, "<br>")}
+    </div>
+  </td></tr>` : "";
+
+  const html = `<!doctype html>
+<html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<style>
+  @keyframes drift { 0%{background-position:0% 50%} 50%{background-position:100% 50%} 100%{background-position:0% 50%} }
+  @keyframes rise { from{opacity:0;transform:translateY(14px)} to{opacity:1;transform:none} }
+  @keyframes pulse { 0%,100%{box-shadow:0 0 0 0 rgba(219,39,119,.45)} 70%{box-shadow:0 0 0 12px rgba(219,39,119,0)} }
+  @keyframes shine { from{transform:translateX(-120%)} to{transform:translateX(220%)} }
+  .hero { background:linear-gradient(120deg,#6d28d9,#db2777,#f97316,#6d28d9); background-size:300% 300%; animation:drift 12s ease-in-out infinite; }
+  .rise { animation:rise .7s cubic-bezier(.2,.8,.2,1) both; }
+  .pulse { animation:pulse 2.2s ease-out infinite; }
+  .cta { position:relative; overflow:hidden; }
+  .cta::after { content:""; position:absolute; top:0; bottom:0; width:40%; left:0; background:linear-gradient(90deg,transparent,rgba(255,255,255,.35),transparent); animation:shine 2.8s ease-in-out infinite; }
+  @media (prefers-reduced-motion: reduce) { * { animation:none !important; } }
+  @media (max-width:620px) { .stack td { display:block !important; width:100% !important; padding:0 0 12px 0 !important; } }
+</style></head>
+<body style="margin:0;padding:0;background:#f4f1fb;font-family:Arial,Helvetica,sans-serif;color:#1d1640">
+<div style="display:none;max-height:0;overflow:hidden;opacity:0">${escapeHtml(tagline)}. Book a 30-minute walkthrough.</div>
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#f4f1fb;padding:24px 12px"><tr><td align="center">
-<table role="presentation" width="600" cellpadding="0" cellspacing="0" style="max-width:600px;width:100%;background:#ffffff;border-radius:20px;overflow:hidden">
-  <tr><td style="background:linear-gradient(135deg,#6d28d9,#db2777,#f97316);padding:36px 32px;color:#ffffff">
-    <div style="font-size:13px;letter-spacing:3px;text-transform:uppercase;opacity:.9">Cutover</div>
-    <div style="font-size:30px;font-weight:700;line-height:1.2;margin-top:12px">Hi ${escapeHtml(first)}, let's talk about your migration.</div>
-    <div style="font-size:16px;line-height:1.5;margin-top:14px;opacity:.95">Thank you for your interest. Pick a 30-minute slot that suits you and we will walk you through Cutover, live.</div>
+<table role="presentation" width="640" cellpadding="0" cellspacing="0" style="max-width:640px;width:100%;background:#ffffff;border-radius:24px;overflow:hidden;box-shadow:0 30px 70px -40px rgba(29,22,64,.45)">
+
+  <tr><td class="hero" style="padding:40px 32px 36px 32px;color:#ffffff">
+    <div class="rise" style="font-size:12px;letter-spacing:3px;text-transform:uppercase;opacity:.92">Cutover · Enterprise platform migration</div>
+    <div class="rise" style="animation-delay:.1s;font-size:30px;font-weight:700;line-height:1.2;margin-top:14px">${escapeHtml(tagline)}.</div>
+    <div class="rise" style="animation-delay:.2s;font-size:16px;line-height:1.55;margin-top:14px;opacity:.96">Hi ${escapeHtml(first)}, Cutover reads your applications, data and infrastructure, drafts the migration plan, and generates the target environment. Your team approves each step before anything changes.</div>
   </td></tr>
-  ${note ? `<tr><td style="padding:24px 32px 0 32px"><div style="padding:18px 20px;background:#f7f4ff;border-left:4px solid #db2777;border-radius:0 14px 14px 0;font-size:15px;line-height:1.6"><div style="font-size:12px;letter-spacing:2px;text-transform:uppercase;color:#6b6585;margin-bottom:8px">A note from ${escapeHtml(from)}</div>${escapeHtml(note).replace(/\n/g, "<br>")}</div></td></tr>` : ""}
-  <tr><td style="padding:32px;text-align:center">
-    <a href="${escapeHtml(bookingUrl)}" style="display:inline-block;background:#1d1640;color:#ffffff;text-decoration:none;font-weight:700;font-size:16px;padding:16px 28px;border-radius:999px">Book your 30-minute meeting</a>
-    <div style="font-size:13px;color:#6b6585;margin-top:12px">Choose a time that works for you. Takes about a minute.</div>
+${noteBlock}
+  <tr><td style="padding:28px 32px 8px 32px;text-align:center">
+    <a href="${escapeHtml(bookingUrl)}" class="cta" style="display:inline-block;background:#1d1640;color:#ffffff;text-decoration:none;font-weight:700;font-size:16px;padding:16px 30px;border-radius:999px">Book your 30-minute walkthrough</a>
+    <div style="font-size:13px;color:#6b6585;margin-top:12px">Pick a time from my calendar. It takes about a minute.</div>
   </td></tr>
-  <tr><td style="padding:0 32px 8px 32px">
-    <div style="font-size:18px;font-weight:700;margin-bottom:14px">What to expect</div>
-    <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
-      <tr><td style="padding:14px 16px;background:#f7f4ff;border-radius:14px;font-size:15px;line-height:1.5"><strong>A tailored walkthrough.</strong> We focus on the workflows that matter to your business.</td></tr>
-      <tr><td style="height:10px"></td></tr>
-      <tr><td style="padding:14px 16px;background:#fff6f0;border-radius:14px;font-size:15px;line-height:1.5"><strong>Your questions answered.</strong> Migration, security, and how the rollout would run.</td></tr>
-      <tr><td style="height:10px"></td></tr>
-      <tr><td style="padding:14px 16px;background:#f0fdf8;border-radius:14px;font-size:15px;line-height:1.5"><strong>Clear next steps.</strong> No obligation. You decide what happens next.</td></tr>
+
+  <tr><td style="padding:26px 26px 6px 26px">
+    <div style="font-size:18px;font-weight:700;padding:0 6px 12px 6px">Modernize with a plan you can verify</div>
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" class="stack"><tr>${pillarCells}
+    </tr></table>
+  </td></tr>
+
+  <tr><td style="padding:22px 32px 6px 32px">
+    <div style="font-size:18px;font-weight:700;margin-bottom:4px">From legacy system to approved plan</div>
+    <div style="font-size:14px;color:#6b6585;margin-bottom:8px">Migrating legacy applications is where most projects stall. Cutover makes each step visible.</div>
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0">${stepRows}
     </table>
   </td></tr>
-  <tr><td style="padding:24px 32px 32px 32px;text-align:center;font-size:15px">
-    Explore first: <a href="${SITE_ORIGIN}" style="color:#6d28d9;font-weight:700">cutover.site</a> &nbsp;·&nbsp; <a href="${SITE_ORIGIN}/cutover-demo/" style="color:#db2777;font-weight:700">See the demo</a>
+
+  <tr><td style="padding:18px 32px 8px 32px">
+    <div style="background:linear-gradient(135deg,#f7f4ff,#fff6f0);border:1px solid #e7e2f3;border-radius:18px;padding:20px">
+      <div style="font-size:15px;font-weight:700;margin-bottom:8px">Built for the systems that can't afford downtime</div>
+      <div style="font-size:13px;line-height:1.5;color:#4a4566;margin-bottom:8px">Targets: Azure, AWS and Google Cloud, with Terraform you can review, version and run yourself. Control mapping for HIPAA, PCI DSS, SOX and NIST 800-53.</div>
+      <div>${sectorChips}</div>
+    </div>
   </td></tr>
-  <tr><td style="background:#faf9fd;padding:18px 32px;font-size:12px;color:#6b6585;text-align:center;line-height:1.5">${escapeHtml(UNATTENDED_NOTICE)}<br>Cutover · cutover.site</td></tr>
-</table></td></tr></table></body></html>`;
+
+  <tr><td style="padding:14px 32px 8px 32px">
+    <div style="font-size:14px;line-height:1.8;color:#2b2550">
+      <span style="color:#db2777;font-weight:700">✓</span> Read-only discovery by default<br>
+      <span style="color:#db2777;font-weight:700">✓</span> Sensitive samples redacted before any analysis runs<br>
+      <span style="color:#db2777;font-weight:700">✓</span> Named approvals, plan hashes and an immutable audit log<br>
+      <span style="color:#db2777;font-weight:700">✓</span> We do not train models on customer code or data
+    </div>
+  </td></tr>
+
+  <tr><td style="padding:22px 32px 30px 32px;text-align:center;font-size:15px">
+    <a href="${SITE_ORIGIN}" style="color:#6d28d9;font-weight:700;text-decoration:none">Explore cutover.site</a>
+    &nbsp;&nbsp;·&nbsp;&nbsp;
+    <a href="${SITE_ORIGIN}/cutover-demo/" style="color:#db2777;font-weight:700;text-decoration:none">Watch the demo on a sample app</a>
+  </td></tr>
+
+  <tr><td style="background:#faf9fd;padding:18px 32px;font-size:12px;color:#6b6585;text-align:center;line-height:1.6">${escapeHtml(UNATTENDED_NOTICE)}<br>Cutover · cutover.site</td></tr>
+</table></td></tr></table>
+</body></html>`;
   return { subject, text, html };
 }
 
