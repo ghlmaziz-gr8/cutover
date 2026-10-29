@@ -1957,10 +1957,9 @@ button:not(:disabled):active{transform:scale(.965)}
     <div class="card" id="staffCard" hidden aria-labelledby="staffTitle">
       <p class="eyebrow">Staff only</p>
       <h2 id="staffTitle">Invitations and behaviour</h2>
-      <p class="muted small" style="margin-top:6px">For Cutover staff, across Cutover and not tied to any workspace. Customers do not see this area.</p>
+      <p class="muted small" style="margin-top:6px">For Cutover staff. This area covers demo spaces only. A customer workspace is never shown here, unless you are a member of it.</p>
       <div class="row" role="tablist" aria-label="Staff views" style="gap:8px;flex-wrap:wrap;margin-top:12px">
-        <button type="button" class="small-btn" id="staffTabTracker" role="tab" aria-selected="true">Invitation tracker</button>
-        <button type="button" class="ghost small-btn" id="staffTabHeat" role="tab" aria-selected="false" hidden>Behaviour and heat map</button>
+        <button type="button" class="small-btn" id="staffTabTracker" role="tab" aria-selected="true">Demo invitations</button>
         <button type="button" class="ghost small-btn" id="staffTabAccess" role="tab" aria-selected="false" hidden>Staff access</button>
       </div>
 
@@ -1980,22 +1979,6 @@ button:not(:disabled):active{transform:scale(.965)}
         </div>
         <div id="staffRows"></div>
         <p id="staffMsg" class="muted small hint" role="status"></p>
-      </div>
-
-      <div id="staffHeat" hidden>
-        <div class="row" style="gap:8px;flex-wrap:wrap;margin-top:12px">
-          <select id="staffHeatWs" aria-label="Workspace"></select>
-          <select id="staffHeatScreen" aria-label="Screen"></select>
-          <select id="staffHeatDays" aria-label="Period">
-            <option value="7">Last 7 days</option>
-            <option value="30" selected>Last 30 days</option>
-          </select>
-          <button type="button" id="staffHeatLoad" class="small-btn">Refresh</button>
-        </div>
-        <canvas id="staffHeatCanvas" width="640" height="400" role="img" aria-label="Heat map of clicks on the selected screen" style="display:block;width:100%;max-width:640px;height:auto;margin-top:12px;border-radius:14px;border:1px solid var(--line, #e4e4f0)"></canvas>
-        <p class="small" id="staffHeatSummary" style="margin:10px 0 0"></p>
-        <ul id="staffHeatTargets" style="margin:8px 0 0;padding-left:18px"></ul>
-        <p id="staffHeatMsg" class="muted small hint" role="status"></p>
       </div>
 
       <div id="staffAccess" hidden>
@@ -3360,7 +3343,6 @@ button:not(:disabled):active{transform:scale(.965)}
     setTab("tabStaff", "staff");
     setTab("tabGuide", "guide");
     $("staffCard").hidden = !(staffRoles.length && homeTab === "staff");
-    $("staffTabHeat").hidden = !staffRoles.some((r) => r === "super_user" || r === "admin");
     $("staffTabAccess").hidden = !staffRoles.some((r) => ["super_user", "admin", "sales"].includes(r));
     if (homeTab === "staff") showStaffTab(staffTab);
     $("analysesCard").hidden = homeTab !== "analyses";
@@ -3677,19 +3659,17 @@ button:not(:disabled):active{transform:scale(.965)}
 
   function showStaffTab(which) {
     staffTab = which;
-    const tabs = { tracker: ["staffTabTracker", "staffTracker"], heat: ["staffTabHeat", "staffHeat"], access: ["staffTabAccess", "staffAccess"] };
+    const tabs = { tracker: ["staffTabTracker", "staffTracker"], access: ["staffTabAccess", "staffAccess"] };
     for (const [key, [btn, panel]] of Object.entries(tabs)) {
       $(btn).className = key === which ? "small-btn" : "ghost small-btn";
       $(btn).setAttribute("aria-selected", String(key === which));
       $(panel).hidden = key !== which;
     }
     if (which === "tracker") loadStaffTracker();
-    if (which === "heat") loadStaffHeat();
     if (which === "access") loadStaffAccess();
   }
 
   $("staffTabTracker").addEventListener("click", () => showStaffTab("tracker"));
-  $("staffTabHeat").addEventListener("click", () => showStaffTab("heat"));
   $("staffTabAccess").addEventListener("click", () => showStaffTab("access"));
 
   async function loadStaffTracker() {
@@ -3762,7 +3742,8 @@ button:not(:disabled):active{transform:scale(.965)}
     const rows = $("staffRows");
     rows.innerHTML = "";
     const list = staffFiltered();
-    if (!list.length) rows.append(el("p", "No invitations match these filters.", "muted small"));
+    if (!staffData.workspaces.length) rows.append(el("p", "No demo spaces yet. Invitations to demo spaces will appear here once one is set up.", "muted small"));
+    else if (!list.length) rows.append(el("p", "No invitations match these filters.", "muted small"));
 
     // One card per person. Logins and last visit belong to the person, so they are shown once.
     const people = new Map();
@@ -3815,42 +3796,6 @@ button:not(:disabled):active{transform:scale(.965)}
     a.remove();
     setTimeout(() => URL.revokeObjectURL(url), 1000);
   });
-
-  async function loadStaffHeat() {
-    if (!staffData) await loadStaffTracker();
-    if (!staffData) return;
-    const picked = $("staffHeatWs").value;
-    $("staffHeatWs").innerHTML = "";
-    for (const w of staffData.workspaces) {
-      const o = el("option", w.name);
-      o.value = w.id;
-      $("staffHeatWs").append(o);
-    }
-    if (picked) $("staffHeatWs").value = picked;
-    if (!$("staffHeatScreen").options.length) $("staffHeatScreen").innerHTML = $("heatScreen").innerHTML;
-    loadStaffHeatmap();
-  }
-
-  async function loadStaffHeatmap() {
-    const wsId = $("staffHeatWs").value;
-    if (!wsId) { setMsg("staffHeatMsg", "No workspace to show yet.", false); return; }
-    setMsg("staffHeatMsg", "Loading the clicks...", false);
-    try {
-      const screen = $("staffHeatScreen").value;
-      const days = $("staffHeatDays").value;
-      const data = await api(`/api/workspaces/${wsId}/heatmap?screen=${encodeURIComponent(screen)}&days=${encodeURIComponent(days)}`);
-      drawHeatmap(data, "staffHeatCanvas", "staffHeatSummary");
-      renderHeatTargets(data, "staffHeatTargets");
-      setMsg("staffHeatMsg", "", false);
-    } catch (err) {
-      setMsg("staffHeatMsg", err.message, true);
-    }
-  }
-
-  $("staffHeatLoad").addEventListener("click", loadStaffHeatmap);
-  $("staffHeatWs").addEventListener("change", loadStaffHeatmap);
-  $("staffHeatScreen").addEventListener("change", loadStaffHeatmap);
-  $("staffHeatDays").addEventListener("change", loadStaffHeatmap);
 
   // Platform roles: who holds which. Admins and sales see the demo roles they may grant; super users see all.
   const PLATFORM_ROLE_NAME = { super_user: "Super user", admin: "Admin", sales: "Sales", support: "Support" };

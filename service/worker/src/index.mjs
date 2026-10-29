@@ -156,7 +156,6 @@ async function platformRolesFor(env, email) {
   return [...roles];
 }
 const canSeeTracker = (roles) => roles.some((r) => ["super_user", "admin", "sales", "support"].includes(r));
-const canSeeAllHeatmaps = (roles) => roles.includes("super_user") || roles.includes("admin");
 const canInvite = (roles) => roles.some((r) => ["super_user", "admin", "sales"].includes(r));
 // Super users may set any roles. Admins and sales people may set only demo roles, and may change only people
 // who hold nothing beyond demo roles. Nobody else sets roles.
@@ -706,8 +705,9 @@ async function staffInvitations(request, env) {
   if (auth.response) return auth.response;
   const roles = await platformRolesFor(env, auth.user.email);
   if (!canSeeTracker(roles)) return json({ error: "Only Cutover staff can see this." }, 403);
+  // Staff see only demo spaces. A customer workspace is never shown to Cutover staff, unless they are members of it.
   const [wsRes, logRes, invRes, memRes, engRes, loginRes] = await Promise.all([
-    serviceRest(env, "workspaces?select=id,name&order=created_at.asc"),
+    serviceRest(env, "workspaces?select=id,name&is_demo=eq.true&order=created_at.asc"),
     serviceRest(env, `invitation_log?select=workspace_id,email,role,is_admin,invited_by,invited_at,accepted_at,removed_at,note&order=invited_at.desc&limit=${STAFF_ROWS}`),
     serviceRest(env, "invitations?select=workspace_id,email,role,is_admin,invited_by,created_at"),
     serviceRest(env, "members?select=workspace_id,user_id,email,role,is_admin,created_at"),
@@ -718,9 +718,11 @@ async function staffInvitations(request, env) {
     return json({ error: "Could not load the invitations." }, 502);
   }
   const workspaces = await wsRes.json();
-  const log = await logRes.json();
-  const pending = await invRes.json();
-  const members = await memRes.json();
+  const demo = new Set(workspaces.map((w) => w.id));
+  const inDemo = (r) => demo.has(r.workspace_id);
+  const log = (await logRes.json()).filter(inDemo);
+  const pending = (await invRes.json()).filter(inDemo);
+  const members = (await memRes.json()).filter(inDemo);
   const lastSeen = new Map((await engRes.json()).map((r) => [r.user_id, r.last_seen]));
   const loginCount = new Map();
   for (const r of await loginRes.json()) loginCount.set(r.user_id, (loginCount.get(r.user_id) || 0) + 1);
@@ -5142,13 +5144,9 @@ async function recordClicks(request, env) {
 }
 
 async function heatmap(request, env, workspaceId) {
-  const auth = await requireUser(env, request);
-  if (auth.response) return auth.response;
-  const roles = await platformRolesFor(env, auth.user.email);
-  if (!canSeeAllHeatmaps(roles)) {
-    const access = await workspaceAdmin(env, request, workspaceId);
-    if (access.response) return access.response;
-  }
+  // Only members of the workspace, as before: a Cutover role does not open a customer's heat map.
+  const access = await workspaceAdmin(env, request, workspaceId);
+  if (access.response) return access.response;
   const url = new URL(request.url);
   const screen = url.searchParams.get("screen") || "";
   if (!CLICK_SCREEN.test(screen)) return json({ error: "Choose a screen." }, 400);

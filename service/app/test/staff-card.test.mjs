@@ -8,8 +8,8 @@ const html = readFileSync(new URL("../index.html", import.meta.url), "utf8");
 const workerSrc = readFileSync(new URL("../../worker/src/index.mjs", import.meta.url), "utf8");
 
 test("the staff card and its tabs exist on the page", () => {
-  for (const id of ["staffCard", "tabStaff", "staffTabTracker", "staffTabHeat", "staffTabAccess", "staffKpis",
-    "staffFunnel", "staffRows", "staffSearch", "staffWs", "staffCsv", "staffHeat", "staffHeatCanvas", "staffAccess",
+  for (const id of ["staffCard", "tabStaff", "staffTabTracker", "staffTabAccess", "staffKpis",
+    "staffFunnel", "staffRows", "staffSearch", "staffWs", "staffCsv", "staffAccess",
     "staffForm", "staffList"]) {
     assert.ok(html.includes(`id="${id}"`), `missing #${id}`);
   }
@@ -18,6 +18,8 @@ test("the staff card and its tabs exist on the page", () => {
 test("the staff card calls only routes the Worker serves", () => {
   const calls = [...html.matchAll(/api\(`?"?(\/api\/[^`"?]+)/g)].map((m) => m[1]);
   assert.ok(calls.includes("/api/staff/invitations"));
+  const staffSection = html.slice(html.indexOf("Staff: invitation tracker"), html.indexOf("The database size against"));
+  assert.ok(!staffSection.includes("/heatmap"), "the staff area no longer reads customer heat maps");
   assert.ok(calls.includes("/api/staff"));
   assert.ok(workerSrc.includes('path === "/api/staff/invitations"'));
   assert.ok(workerSrc.includes('path === "/api/staff" && method === "POST"'));
@@ -27,13 +29,12 @@ test("the staff card calls only routes the Worker serves", () => {
 test("the tab shows to anyone with a platform role; the heat map is for super users and admins; access is for those who can invite", () => {
   assert.ok(html.includes('if (staffRoles.length) available.push("staff");'));
   assert.ok(html.includes('$("staffTabAccess").hidden = !staffRoles.some((r) => ["super_user", "admin", "sales"].includes(r));'));
-  assert.ok(html.includes('$("staffTabHeat").hidden = !staffRoles.some((r) => r === "super_user" || r === "admin");'));
   assert.ok(html.includes('if (who === "staff") return !!((me.staff_roles || []).length);'));
 });
 
-test("the heat map in the staff card stays anonymous: it reads the same route as the workspace heat map", () => {
-  assert.ok(html.includes("/heatmap?screen="));
-  assert.ok(!/staff[^\n]*user_id|clicked_by|clicker/i.test(html.slice(html.indexOf("Staff: invitation tracker"), html.indexOf("The database size against"))));
+test("the staff card shows demo invitations only, with no heat map tab", () => {
+  assert.ok(!html.includes('id="staffTabHeat"'));
+  assert.ok(html.includes("Demo invitations"));
 });
 
 test("a person with a platform role can reach the staff area without choosing a workspace", () => {
