@@ -465,6 +465,58 @@ label.check input[type="checkbox"]{flex:0 0 auto;width:18px;height:18px;margin:3
 .del-part.kept{background:var(--soft);border:1px solid var(--line)}
 .del-actions{display:flex;justify-content:flex-end;gap:10px;margin-top:18px;flex-wrap:wrap}
 @media (prefers-reduced-motion:reduce){.sel-bar,.del-dialog[open],.danger{animation:none!important;transition:none!important}}
+
+/* Insights on the role screen: a dashboard of what the workspace has done, with motion. */
+.ins{position:relative;margin-top:22px;padding:22px;border-radius:26px;background:var(--card);border:1px solid var(--line);overflow:hidden;animation:rise .6s cubic-bezier(.2,.8,.2,1) backwards}
+.ins::before{content:"";position:absolute;inset:0 0 auto 0;height:5px;background:linear-gradient(90deg,var(--accent),var(--accent2),#f59e0b)}
+.ins::after{content:"";position:absolute;top:-120px;right:-120px;width:320px;height:320px;border-radius:50%;background:radial-gradient(closest-side,color-mix(in srgb,var(--accent2) 14%,transparent),transparent);pointer-events:none}
+.ins[hidden]{display:none}
+.ins-head{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;flex-wrap:wrap;position:relative;z-index:1}
+.ins-kicker{margin:0;font-size:12px;letter-spacing:.12em;text-transform:uppercase;font-weight:800;color:var(--accent2)}
+.ins-title{margin:4px 0 0;font:800 22px/1.2 var(--display);color:var(--fg)}
+.ins-updated{font-size:12px;font-weight:700;padding:5px 10px;border-radius:999px;background:var(--soft);color:var(--muted)}
+.ins-kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(128px,1fr));gap:12px;margin-top:16px;position:relative;z-index:1}
+.ins-kpi{position:relative;padding:14px 14px 12px;border-radius:18px;border:1px solid var(--line);background:color-mix(in srgb,var(--soft) 45%,var(--card));overflow:hidden;animation:rise .55s cubic-bezier(.2,.8,.2,1) backwards;animation-delay:calc(var(--i,0) * 70ms + 120ms);transition:transform .25s ease,box-shadow .25s ease}
+.ins-kpi:hover{transform:translateY(-3px);box-shadow:0 14px 28px -16px var(--tone,var(--accent))}
+.ins-kpi::before{content:"";position:absolute;inset:0 0 auto 0;height:3px;background:var(--tone,var(--accent))}
+.ins-kpi.tone-violet{--tone:#6d28d9}
+.ins-kpi.tone-teal{--tone:#0891b2}
+.ins-kpi.tone-green{--tone:#059669}
+.ins-kpi.tone-amber{--tone:#d97706}
+.ins-kpi.tone-pink{--tone:#db2777}
+.ins-ic{display:grid;place-items:center;width:34px;height:34px;border-radius:11px;background:color-mix(in srgb,var(--tone) 14%,transparent);color:var(--tone);font-style:normal;animation:pop .6s cubic-bezier(.2,.9,.3,1.3) backwards;animation-delay:calc(var(--i,0) * 70ms + 220ms)}
+.ins-ic svg{width:19px;height:19px;fill:none;stroke:currentColor;stroke-width:2.2;stroke-linecap:round;stroke-linejoin:round}
+.ins-kpi b{display:block;margin-top:10px;font:800 30px/1 var(--display);color:var(--fg);font-variant-numeric:tabular-nums}
+.ins-label{display:block;margin-top:6px;font-size:13px;font-weight:700;color:var(--fg)}
+.ins-sub{display:block;margin-top:2px;font-size:12px;color:var(--muted)}
+.ins-grid{display:grid;grid-template-columns:1.25fr 1.25fr 1fr;gap:12px;margin-top:14px;position:relative;z-index:1}
+.ins-panel{padding:16px;border-radius:18px;border:1px solid var(--line);background:var(--card);min-width:0}
+.ins-panel-h{display:flex;justify-content:space-between;align-items:baseline;gap:8px;flex-wrap:wrap}
+.ins-panel-h b{font:700 15px var(--display);color:var(--fg)}
+.ins-bars{display:flex;align-items:flex-end;gap:6px;height:130px;margin-top:14px}
+.ins-col{flex:1;height:100%;display:flex;align-items:flex-end;position:relative;min-width:0}
+.ins-col i{display:block;width:100%;height:var(--h);border-radius:9px 9px 4px 4px;background:linear-gradient(180deg,var(--accent2),var(--accent));transform-origin:bottom;animation:growY .9s cubic-bezier(.2,.8,.2,1) backwards;animation-delay:calc(var(--d,0) * 40ms + 200ms);transition:filter .2s ease}
+.ins-col:hover i{filter:brightness(1.12) saturate(1.1)}
+.ins-col::after{content:attr(data-tip);position:absolute;bottom:calc(var(--h, 0%) + 8px);left:50%;transform:translate(-50%,6px);padding:4px 8px;border-radius:9px;background:var(--fg);color:var(--card);font-size:12px;font-weight:700;white-space:nowrap;opacity:0;pointer-events:none;transition:opacity .2s ease,transform .2s ease;z-index:2}
+.ins-col:hover::after{opacity:1;transform:translate(-50%,0)}
+.ins-days{display:flex;gap:6px;margin-top:6px}
+.ins-days span{flex:1;text-align:center;font-size:11px;color:var(--muted);min-width:0}
+.ins-ring-wrap{display:flex;align-items:center;gap:12px;margin-top:12px;flex-wrap:wrap}
+.ins-ring{width:104px;height:104px;flex:none}
+.ins-seg{transition:stroke-dasharray 1.1s cubic-bezier(.2,.8,.2,1)}
+.ins-ring-num{font:800 20px var(--display);fill:var(--fg)}
+.ins-legend{list-style:none;margin:0;padding:0;display:grid;gap:8px;font-size:13px;min-width:0}
+.ins-legend li{display:flex;align-items:center;gap:8px;color:var(--muted)}
+.ins-legend li i{width:10px;height:10px;border-radius:4px;display:inline-block}
+.ins-legend li b{margin-left:auto;color:var(--fg);font-variant-numeric:tabular-nums;padding-left:12px}
+.ins-time{margin-top:14px;display:flex;align-items:baseline;gap:6px}
+.ins-time span{font:800 58px/1 var(--display);color:var(--accent);font-variant-numeric:tabular-nums}
+.ins-time small{font-size:16px;color:var(--muted);font-weight:700}
+.ins-time + p{margin:8px 0 0}
+.ins-foot{margin:14px 0 0;position:relative;z-index:1}
+@media (max-width:820px){.ins-grid{grid-template-columns:1fr}}
+@media (max-width:520px){.ins-kpis{grid-template-columns:repeat(2,1fr)}}
+@media (prefers-reduced-motion:reduce){.ins,.ins-kpi,.ins-ic,.ins-col i,.ins-seg{animation:none!important;transition:none!important}.ins-kpi:hover{transform:none}}
 .item.done b{text-decoration:line-through;color:var(--muted)}
 .chip{display:inline-block;font-size:12.5px;font-weight:700;padding:4px 11px;border-radius:99px;background:#fef3c7;color:#92400e;margin:2px 4px 2px 0}
 .stages{padding-left:22px;margin:10px 0}
@@ -1654,6 +1706,36 @@ button:not(:disabled):active{transform:scale(.965)}
     <div class="row" id="wsPicks" style="margin-top:18px" hidden></div>
     <div class="grid" style="margin-top:18px" id="personas"></div>
     <div class="you card" id="youSee" style="margin-top:18px"></div>
+    <section class="ins" id="insightsCard" aria-labelledby="insTitle" hidden>
+      <header class="ins-head">
+        <div>
+          <p class="ins-kicker">Your workspace so far</p>
+          <h3 class="ins-title" id="insTitle">What Cutover has done here</h3>
+        </div>
+        <span class="ins-updated" id="insUpdated"></span>
+      </header>
+      <div class="ins-kpis" id="insKpis"></div>
+      <div class="ins-grid">
+        <div class="ins-panel ins-trend">
+          <div class="ins-panel-h"><b>Analyses started</b><span class="muted small">last 14 days</span></div>
+          <div class="ins-bars" id="insBars"></div>
+          <div class="ins-days" id="insDays"></div>
+        </div>
+        <div class="ins-panel">
+          <div class="ins-panel-h"><b>File conversions</b><span class="muted small">decided by your team</span></div>
+          <div class="ins-ring-wrap">
+            <svg class="ins-ring" id="insRing" viewBox="0 0 120 120" aria-hidden="true"></svg>
+            <ul class="ins-legend" id="insLegend"></ul>
+          </div>
+        </div>
+        <div class="ins-panel">
+          <div class="ins-panel-h"><b>Time to findings</b><span class="muted small">median, start to review ready</span></div>
+          <div class="ins-time"><span id="insMedian">–</span><small>min</small></div>
+          <p class="muted small" id="insHours"></p>
+        </div>
+      </div>
+      <p class="muted small ins-foot">Counts come from the records Cutover keeps. AI jobs come from the action log, which is trimmed as it grows. Time saved is not estimated here.</p>
+    </section>
     <div class="row wzNav">
       <button type="button" class="ghost" data-signout>Sign out</button>
       <button type="button" id="toHome">Continue</button>
@@ -2929,6 +3011,112 @@ button:not(:disabled):active{transform:scale(.965)}
     renderWorkspacePicks();
     renderPersonas();
     show("s-role");
+    loadInsights();
+  }
+
+  // Insights on the role screen: counts of what the workspace has done, from the server, drawn with motion.
+  const INS_ICON = {
+    code: '<path d="M8 7l-5 5 5 5"/><path d="M16 7l5 5-5 5"/><path d="M14 4l-4 16"/>',
+    file: '<path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5"/>',
+    convert: '<path d="M4 7h12l-3-3"/><path d="M20 17H8l3 3"/>',
+    story: '<path d="M5 4h11a3 3 0 0 1 3 3v13H8a3 3 0 0 1-3-3z"/><path d="M5 17a3 3 0 0 1 3-3h11"/>',
+    spark: '<path d="M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8z"/>',
+    bolt: '<path d="M13 2L4 14h7l-1 8 9-12h-7z"/>'
+  };
+  const INS_KPI = [
+    { key: "codes_assessed", label: "Codes assessed", icon: "code", tone: "violet", sub: (d) => `${d.totals.repositories} ${d.totals.repositories === 1 ? "repository" : "repositories"}` },
+    { key: "files_assessed", label: "Files assessed", icon: "file", tone: "teal", sub: () => "each file reviewed" },
+    { key: "converted", label: "Files converted", icon: "convert", tone: "green", sub: (d) => `${d.conversions.accepted} accepted` },
+    { key: "user_stories", label: "User stories", icon: "story", tone: "amber", sub: () => "in approved features" },
+    { key: "ai_analyses", label: "AI-assisted analyses", icon: "spark", tone: "pink", sub: () => "with an AI model" },
+    { key: "ai_jobs", label: "AI jobs run", icon: "bolt", tone: "violet", sub: () => "from the action log" }
+  ];
+  function insValue(d, key) {
+    if (key === "converted") return d.conversions.accepted;
+    return d.totals[key] ?? 0;
+  }
+  function renderInsights(d) {
+    const kpis = $("insKpis");
+    kpis.replaceChildren();
+    INS_KPI.forEach((k, i) => {
+      const tile = el("div", null, `ins-kpi tone-${k.tone}`);
+      tile.style.setProperty("--i", String(i));
+      const ic = el("i", null, "ins-ic");
+      ic.innerHTML = `<svg viewBox="0 0 24 24" aria-hidden="true">${INS_ICON[k.icon]}</svg>`;
+      const num = el("b", "0");
+      tile.append(ic, num, el("span", k.label, "ins-label"), el("small", k.sub(d), "ins-sub"));
+      kpis.appendChild(tile);
+      countTo(0, insValue(d, k.key), 900 + i * 60, (v) => { num.textContent = String(v); });
+    });
+
+    // Analyses started, per day.
+    const bars = $("insBars");
+    const days = $("insDays");
+    bars.replaceChildren();
+    days.replaceChildren();
+    const max = Math.max(1, ...d.trend.map((t) => t.count));
+    d.trend.forEach((t, i) => {
+      const col = el("div", null, "ins-col");
+      col.dataset.tip = `${t.count} on ${new Date(t.day + "T00:00:00").toLocaleDateString(undefined, { month: "short", day: "numeric" })}`;
+      const bar = el("i");
+      const height = `${Math.max(t.count ? 6 : 2, Math.round((t.count / max) * 100))}%`;
+      bar.style.setProperty("--h", height);
+      col.style.setProperty("--h", height);
+      bar.style.setProperty("--d", String(i));
+      col.appendChild(bar);
+      bars.appendChild(col);
+      days.appendChild(el("span", i % 2 === 1 ? new Date(t.day + "T00:00:00").toLocaleDateString(undefined, { day: "numeric" }) : ""));
+    });
+
+    // Conversions: accepted, rejected and waiting, as one ring.
+    const c = d.conversions;
+    const total = Math.max(1, c.produced);
+    const ring = $("insRing");
+    const R = 46;
+    const C = 2 * Math.PI * R;
+    const parts = [
+      { label: "Accepted", n: c.accepted, color: "var(--ok)" },
+      { label: "Rejected", n: c.rejected, color: "var(--warn)" },
+      { label: "Waiting", n: c.waiting, color: "var(--line)" }
+    ];
+    let offset = 0;
+    ring.innerHTML = `<circle cx="60" cy="60" r="${R}" fill="none" stroke="var(--soft)" stroke-width="12"/>` + parts.map((p) => {
+      const len = (p.n / total) * C;
+      const seg = `<circle class="ins-seg" cx="60" cy="60" r="${R}" fill="none" stroke="${p.color}" stroke-width="12" stroke-linecap="round" stroke-dasharray="0 ${C}" stroke-dashoffset="${-offset}" transform="rotate(-90 60 60)" data-len="${len} ${C}"/>`;
+      offset += len;
+      return seg;
+    }).join("") + `<text x="60" y="64" text-anchor="middle" class="ins-ring-num">${c.produced ? Math.round((c.accepted / total) * 100) : 0}%</text>`;
+    requestAnimationFrame(() => ring.querySelectorAll(".ins-seg").forEach((s) => s.setAttribute("stroke-dasharray", s.dataset.len)));
+    const legend = $("insLegend");
+    legend.replaceChildren(...parts.map((p) => {
+      const li = el("li");
+      const dot = el("i");
+      dot.style.background = p.color;
+      li.append(dot, el("span", p.label), el("b", String(p.n)));
+      return li;
+    }));
+
+    // Time to findings.
+    const med = d.time.median_minutes;
+    if (med === null) {
+      $("insMedian").textContent = "–";
+      $("insHours").textContent = "No finished runs yet.";
+    } else {
+      countTo(0, Math.round(med), 900, (v) => { $("insMedian").textContent = String(v); });
+      $("insHours").textContent = `${d.time.hours_of_runs} hours of analysis run so far.`;
+    }
+    $("insUpdated").textContent = `Updated ${new Date(d.generated_at).toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" })}`;
+  }
+  async function loadInsights() {
+    const box = $("insightsCard");
+    if (!ws) { box.hidden = true; return; }
+    try {
+      const data = await api(`/api/insights?workspace=${encodeURIComponent(ws.id)}`);
+      box.hidden = false;
+      renderInsights(data);
+    } catch (err) {
+      box.hidden = true;
+    }
   }
 
   function renderWorkspacePicks() {
@@ -2977,6 +3165,7 @@ button:not(:disabled):active{transform:scale(.965)}
     renderWorkspacePicks();
     renderPersonas();
     show("s-role");
+    loadInsights();
   });
 
   // ---- Your workspace ----
