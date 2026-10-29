@@ -442,6 +442,29 @@ label.check input[type="checkbox"]{flex:0 0 auto;width:18px;height:18px;margin:3
 .item{display:flex;flex-wrap:wrap;gap:10px 14px;align-items:center;padding:14px 0;border-bottom:1px solid var(--line)}
 .item:last-child{border-bottom:0}
 .item .body{flex-basis:100%;white-space:pre-wrap;word-break:break-word}
+/* Deleting analyses: a checkbox per row, a selection bar, a danger button and a confirmation dialog. */
+.item .pick{width:18px;height:18px;margin:0 2px 0 0;accent-color:var(--accent);flex:none;cursor:pointer}
+.danger{background:#dc2626;color:#fff;border:0;border-radius:12px;padding:9px 14px;font:700 14px var(--body);cursor:pointer;transition:transform .15s ease,filter .15s ease}
+.danger:hover{filter:brightness(1.08);transform:translateY(-1px)}
+.danger:focus-visible{outline:2px solid #dc2626;outline-offset:2px}
+.danger-text{color:#b91c1c;border-color:color-mix(in srgb,#dc2626 45%,var(--line))}
+.sel-bar{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;margin-top:10px;padding:10px 14px;border-radius:14px;background:color-mix(in srgb,var(--accent) 9%,var(--card));border:1px solid color-mix(in srgb,var(--accent) 28%,var(--line));font-weight:700;font-size:14px;animation:rise .35s cubic-bezier(.2,.8,.2,1) backwards}
+.sel-bar[hidden]{display:none}
+.del-dialog{border:0;padding:0;border-radius:24px;width:min(480px,calc(100vw - 32px));background:var(--card);color:var(--fg);box-shadow:0 40px 90px -30px rgba(29,22,64,.55);overflow:hidden}
+.del-dialog::backdrop{background:rgba(18,14,38,.55);backdrop-filter:blur(4px)}
+.del-dialog[open]{animation:tipIn .3s cubic-bezier(.2,.9,.3,1.1)}
+.del-body{padding:24px;border-top:4px solid #dc2626}
+.del-kicker{font-size:11px;font-weight:800;letter-spacing:.12em;text-transform:uppercase;color:#dc2626}
+.del-title{font:800 22px/1.2 var(--display);margin:6px 0 10px;overflow-wrap:anywhere}
+.del-list{margin:0 0 14px;padding:0 0 0 18px;color:var(--muted);font-size:14px;display:grid;gap:4px}
+.del-part{display:grid;gap:3px;padding:12px 14px;border-radius:14px;margin-top:10px;font-size:14px}
+.del-part b{font-size:13px}
+.del-part span{color:var(--muted);font-size:13px}
+.del-part.gone{background:color-mix(in srgb,#dc2626 8%,var(--card));border:1px solid color-mix(in srgb,#dc2626 30%,var(--line))}
+.del-part.gone b{color:#b91c1c}
+.del-part.kept{background:var(--soft);border:1px solid var(--line)}
+.del-actions{display:flex;justify-content:flex-end;gap:10px;margin-top:18px;flex-wrap:wrap}
+@media (prefers-reduced-motion:reduce){.sel-bar,.del-dialog[open],.danger{animation:none!important;transition:none!important}}
 .item.done b{text-decoration:line-through;color:var(--muted)}
 .chip{display:inline-block;font-size:12.5px;font-weight:700;padding:4px 11px;border-radius:99px;background:#fef3c7;color:#92400e;margin:2px 4px 2px 0}
 .stages{padding-left:22px;margin:10px 0}
@@ -1714,6 +1737,13 @@ button:not(:disabled):active{transform:scale(.965)}
       <div class="row" style="justify-content:space-between;margin-top:10px;gap:8px;flex-wrap:wrap">
         <p class="muted small" id="listCount" style="margin:0"></p>
         <button type="button" class="ghost small-btn" id="markAllOpened" hidden>Mark all as opened</button>
+      </div>
+      <div class="sel-bar" id="selBar" hidden>
+        <span id="selCount"></span>
+        <span class="row" style="gap:8px">
+          <button type="button" class="ghost small-btn" id="selClear">Clear</button>
+          <button type="button" class="danger small-btn" id="selDelete">Delete selected</button>
+        </span>
       </div>
       <div id="analysisList" style="margin-top:6px"></div>
       <div class="row" id="listPager" style="justify-content:space-between;margin-top:12px" hidden>
@@ -3556,8 +3586,101 @@ button:not(:disabled):active{transform:scale(.965)}
     const open = el("button", "Open", "ghost small-btn");
     open.type = "button";
     open.addEventListener("click", () => openAnalysis(r.id));
-    item.append(text, open);
+    if (r.can_delete) {
+      const pick = el("input", null, "pick");
+      pick.type = "checkbox";
+      pick.checked = picked.has(r.id);
+      pick.setAttribute("aria-label", `Select ${r.app_name || r.repo}`);
+      pick.addEventListener("change", () => {
+        if (pick.checked) picked.add(r.id); else picked.delete(r.id);
+        updateSelBar();
+      });
+      item.appendChild(pick);
+      const del = el("button", "Delete", "ghost small-btn danger-text");
+      del.type = "button";
+      del.addEventListener("click", () => deleteAnalyses([r.id]));
+      item.append(text, open, del);
+    } else {
+      item.append(text, open);
+    }
     return item;
+  }
+
+  // Deleting: pick one or more analyses you may delete, then confirm once. Each delete removes the analysis
+  // with its findings, screens, conversions, comments and uploaded code. A short deletion record stays for the audit log.
+  const picked = new Set();
+  function updateSelBar() {
+    const n = picked.size;
+    $("selBar").hidden = n === 0;
+    $("selCount").textContent = `${n} selected`;
+    $("selDelete").textContent = n > 1 ? `Delete ${n} analyses` : "Delete selected";
+  }
+  $("selClear").addEventListener("click", () => { picked.clear(); updateSelBar(); renderList(); });
+  $("selDelete").addEventListener("click", () => deleteAnalyses([...picked]));
+
+  function confirmDelete(names) {
+    return new Promise((resolve) => {
+      const dlg = document.createElement("dialog");
+      dlg.className = "del-dialog";
+      const count = names.length;
+      const label = (n) => n.app_name || n.repo;
+      const body = el("div", null, "del-body");
+      body.append(
+        el("span", "Delete", "del-kicker"),
+        el("h3", count === 1 ? `"${label(names[0])}"` : `${count} analyses`, "del-title"),
+      );
+      const list = el("ul", null, "del-list");
+      names.slice(0, 5).forEach((n) => list.appendChild(el("li", `${label(n)} · ${new Date(n.created_at).toLocaleDateString()}`)));
+      if (count > 5) list.appendChild(el("li", `and ${count - 5} more`));
+      body.appendChild(list);
+      const gone = el("div", null, "del-part gone");
+      gone.append(el("b", "Removed for good"), el("span", "Findings, drawn screens, deeper assessments, converted files, comments and the uploaded code."));
+      const kept = el("div", null, "del-part kept");
+      kept.append(el("b", "Kept for the audit log"), el("span", "A short record: the repository, the time and who deleted it. No findings and no code."));
+      body.append(gone, kept);
+      const actions = el("div", null, "del-actions");
+      const cancel = el("button", "Cancel", "ghost");
+      cancel.type = "button";
+      const go = el("button", count === 1 ? "Delete permanently" : `Delete ${count} permanently`, "danger");
+      go.type = "button";
+      actions.append(cancel, go);
+      body.appendChild(actions);
+      dlg.appendChild(body);
+      document.body.appendChild(dlg);
+      const finish = (v) => { dlg.close(); dlg.remove(); resolve(v); };
+      cancel.addEventListener("click", () => finish(false));
+      go.addEventListener("click", () => finish(true));
+      dlg.addEventListener("cancel", (e) => { e.preventDefault(); finish(false); });
+      dlg.showModal();
+      cancel.focus();
+    });
+  }
+
+  async function deleteAnalyses(ids) {
+    const msg = $("listMsg");
+    const names = ids.map((id) => listRows.find((r) => r.id === id)).filter(Boolean);
+    if (!names.length) return;
+    if (!(await confirmDelete(names))) return;
+    let done = 0;
+    const failed = [];
+    for (const id of ids) {
+      msg.className = "muted small";
+      msg.textContent = `Deleting ${done + failed.length + 1} of ${ids.length}…`;
+      try {
+        await api(`/api/analyses/${id}`, { method: "DELETE" });
+        done += 1;
+        listRows = listRows.filter((r) => r.id !== id);
+        picked.delete(id);
+      } catch (err) {
+        failed.push(err.message);
+      }
+    }
+    msg.className = failed.length ? "err small" : "muted small";
+    msg.textContent = failed.length
+      ? `Deleted ${done}. ${failed.length} could not be deleted: ${failed[0]}`
+      : `Deleted ${done} ${done === 1 ? "analysis" : "analyses"}, with what it held.`;
+    updateSelBar();
+    resetListAndRender();
   }
 
   function renderList() {
@@ -3578,6 +3701,7 @@ button:not(:disabled):active{transform:scale(.965)}
       ? `${matches.length} of ${listRows.length} analyses shown · ${unread} not opened yet`
       : "";
     $("markAllOpened").hidden = unread === 0;
+    updateSelBar();
     $("pageInfo").textContent = `Page ${listPage} of ${pages}`;
     $("pagePrev").disabled = listPage <= 1;
     $("pageNext").disabled = listPage >= pages;
