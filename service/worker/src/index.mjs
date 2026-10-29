@@ -2666,6 +2666,16 @@ function scopeIncludes(scope, stage) {
 }
 
 // Saves the next stage for one analysis. Modernize and Migrate wait for the deeper assessment to finish.
+// Which scopes fit an approach. Modernize goes with the web front end only; Migrate goes with the other two.
+// Until an approach is chosen, every scope fits.
+function scopeFitsApproach(scope, template) {
+  if (!scope || !template) return true;
+  const modern = template === "web-modern";
+  if (scopeIncludes(scope, "modernize")) return modern;
+  if (scopeIncludes(scope, "migrate")) return !modern;
+  return true;
+}
+
 async function setScope(request, env, id) {
   const access = await analysisAccess(env, request, id);
   if (access.response) return access.response;
@@ -2678,6 +2688,9 @@ async function setScope(request, env, id) {
   const clearing = scope === null;
   if (!clearing && !Object.prototype.hasOwnProperty.call(SCOPES, scope)) {
     return json({ error: "Choose deeper, deeper and modernize, deeper and migrate, or all three." }, 400);
+  }
+  if (!clearing && !scopeFitsApproach(scope, access.row.modern_template)) {
+    return json({ error: "This scope does not fit the approach you chose." }, 409);
   }
   const refused = await logFirst(env, { workspace_id: access.row.workspace_id, user: access.user, action: "scope", analysis_id: id, repo: access.row.repo, detail: clearing ? "cleared" : scope });
   if (refused) return refused;
@@ -2709,9 +2722,8 @@ async function setTemplate(request, env, id) {
   if (!MODERN_TEMPLATES.includes(template)) {
     return json({ error: "Choose web-modern, services-data or lift-contain." }, 400);
   }
-  // The approach comes before the scope. It is refused only once a scope without Modernize is chosen.
-  if (access.row.scope && !scopeIncludes(access.row.scope, "modernize")) {
-    return json({ error: "This approach is not in the scope you chose." }, 409);
+  if (!scopeFitsApproach(access.row.scope, template)) {
+    return json({ error: "The scope you chose does not fit this approach. Clear the scope first." }, 409);
   }
   const res = await serviceRest(env, `analyses?id=eq.${id}`, {
     method: "PATCH",

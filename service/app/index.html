@@ -588,6 +588,7 @@ pre{white-space:pre-wrap;word-break:break-word;background:var(--soft);padding:12
 .stage-facts{margin:10px 0 12px;padding-left:18px;font-size:14px;line-height:1.6}
 .stage-option{margin-top:12px;padding-top:12px;border-top:1px solid var(--line)}
 .stage-option h5{margin:0 0 4px;font-size:15px}
+.scope-opt.unfit{opacity:.5}
 .stage-state{display:inline-flex;align-items:center;gap:7px;font:800 11px/1 var(--body);letter-spacing:.08em;text-transform:uppercase;color:var(--muted);margin:0 0 10px}
 .stage-state i{width:10px;height:10px;border-radius:50%;background:var(--line);display:inline-block}
 .stage-card.cleared .stage-state{color:var(--ok)}
@@ -8656,6 +8657,16 @@ a{color:#6d28d9;font-weight:600}`;
   }
 
   // Shows the three next stages. Modernize and Migrate stay locked until the deeper assessment is done.
+  // Which scopes fit the approach. Modernize goes with the web front end only; Migrate goes with the other two.
+  // Until an approach is chosen, every scope is open.
+  function scopeFitsApproach(key, template) {
+    if (!template) return true;
+    const modern = template === "web-modern";
+    if (scopeHas(key, "modernize")) return modern;
+    if (scopeHas(key, "migrate")) return !modern;
+    return true;
+  }
+
   function renderScope() {
     const list = $("scopeOpts");
     list.replaceChildren();
@@ -8679,12 +8690,16 @@ a{color:#6d28d9;font-weight:600}`;
       card.appendChild(head);
       card.appendChild(el("div", o.body, "small muted"));
       if (o.note) card.appendChild(el("div", o.note, "small"));
+      const fits = scopeFitsApproach(o.key, cur.modern_template);
+      if (!fits) card.classList.add("unfit");
       if (selected) {
         card.appendChild(el("span", "Selected", "tag ai"));
+      } else if (!fits) {
+        card.appendChild(el("span", "Not for the approach you chose", "tag"));
       } else {
         card.appendChild(el("span", "Available", "tag"));
       }
-      if (canChoose && !selected) {
+      if (canChoose && !selected && fits) {
         const b = el("button", `Choose ${o.title.toLowerCase()}`, "ghost small-btn");
         b.type = "button";
         b.addEventListener("click", () => setScope(o.key));
