@@ -3763,17 +3763,33 @@ button:not(:disabled):active{transform:scale(.965)}
     rows.innerHTML = "";
     const list = staffFiltered();
     if (!list.length) rows.append(el("p", "No invitations match these filters.", "muted small"));
+
+    // One card per person. Logins and last visit belong to the person, so they are shown once.
+    const people = new Map();
     for (const r of list) {
+      if (!people.has(r.email)) people.set(r.email, []);
+      people.get(r.email).push(r);
+    }
+    for (const [email, items] of people) {
       const card = el("div", null, "staff-row");
       const who = el("div");
-      who.append(el("div", r.email));
-      const by = r.invited_by ? `invited by ${r.invited_by}` : r.invited_at ? "" : "joined before tracking";
-      const when = r.invited_at ? `· ${shortDate(r.invited_at)}` : "";
-      who.append(el("div", `${r.workspace} · ${roleName(r.role)}${r.is_admin ? " (admin)" : ""} ${by ? "· " + by : ""} ${when}`.replace(/\s+/g, " ").trim(), "meta"));
-      if (r.note) who.append(el("div", `“${r.note}”`, "meta"));
-      who.append(el("div", r.status === "signed_in" ? `${loginsText(r.logins)} · last visit ${shortDate(r.last_seen)}` : "", "meta"));
-      const pill = el("span", STAFF_LABEL[r.status], `staff-pill ${STAFF_PILL[r.status]}`);
-      card.append(who, pill);
+      who.append(el("div", email));
+      const logins = Math.max(0, ...items.map((i) => i.logins || 0));
+      const visits = items.map((i) => i.last_seen).filter(Boolean).sort();
+      const signedIn = items.some((i) => i.status === "signed_in");
+      if (signedIn) who.append(el("div", `${loginsText(logins)} · last visit ${shortDate(visits[visits.length - 1])}`, "meta"));
+      for (const r of items) {
+        const line = el("div", null, "staff-sub");
+        line.style.cssText = "display:flex;gap:8px;align-items:center;justify-content:space-between;margin-top:6px;font-size:13px";
+        const text = el("span");
+        const by = r.invited_by ? `invited by ${r.invited_by}` : r.invited_at ? "" : "joined before tracking";
+        const when = r.invited_at ? `· ${shortDate(r.invited_at)}` : "";
+        text.textContent = `${r.workspace} · ${roleName(r.role)}${r.is_admin ? " (admin)" : ""} ${by ? "· " + by : ""} ${when}`.replace(/\s+/g, " ").trim();
+        line.append(text, el("span", STAFF_LABEL[r.status], `staff-pill ${STAFF_PILL[r.status]}`));
+        who.append(line);
+        if (r.note) who.append(el("div", `“${r.note}”`, "meta"));
+      }
+      card.append(who);
       rows.append(card);
     }
     if (staffData.rows.length >= 500) rows.append(el("p", "Only the most recent 500 invitations are shown.", "muted small"));
