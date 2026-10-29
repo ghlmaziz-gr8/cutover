@@ -5843,7 +5843,6 @@ a{color:#6d28d9;font-weight:600}`;
       grid.appendChild(card);
     }
     wrap.appendChild(grid);
-    wrap.appendChild(detail);
     const planStage = stages.find((x) => x.id === "plan");
     if (planStage && planStage.state !== "locked" && row.modern_template && window.Plan) {
       wrap.appendChild(el("h4", "The plan at a glance", "eyebrow-sm"));
@@ -5852,6 +5851,8 @@ a{color:#6d28d9;font-weight:600}`;
       drawMap(window.Plan.tree(planInput(row)), map, { radial: true, title: "Project plan" });
       wrap.appendChild(map);
     }
+    // The stage detail opens below the plan at a glance, which stays where it is under the path.
+    wrap.appendChild(detail);
     return wrap;
   }
 
