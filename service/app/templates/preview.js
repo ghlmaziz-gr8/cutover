@@ -417,6 +417,84 @@
     return ul;
   }
 
+  // The database recommendation: examples to compare, not a decision. Static markup only, no user data.
+  const AI_OPTIONS = [
+    {
+      name: "PostgreSQL, managed",
+      tag: "Most common",
+      fit: "The usual target when moving off Oracle or SQL Server, with no licence fee.",
+      examples: "Cloud SQL · Aurora PostgreSQL · Azure Database for PostgreSQL",
+      icon: '<ellipse cx="24" cy="11" rx="13" ry="5"/><path d="M11 11v26c0 2.8 5.8 5 13 5s13-2.2 13-5V11"/><path class="ai-band" d="M11 24c0 2.8 5.8 5 13 5s13-2.2 13-5"/>'
+    },
+    {
+      name: "Azure SQL",
+      tag: "If on Microsoft",
+      fit: "For SQL Server today. It keeps the same T-SQL style, so fewer routines need rewriting.",
+      examples: "Azure SQL Database",
+      icon: '<rect x="6" y="9" width="36" height="30" rx="4"/><path d="M6 17h36"/><path class="ai-band" d="M13 27l5 5 5-5 5 5 5-5"/>'
+    },
+    {
+      name: "PostgreSQL-compatible, for scale",
+      tag: "For growth",
+      fit: "For when volume or reporting outgrows a standard managed database.",
+      examples: "AlloyDB · Azure HorizonDB",
+      icon: '<path d="M27 5L10 27h12l-2 16 17-22H25z"/>'
+    }
+  ];
+  const AI_FLOW = ["Legacy rules", "Services", "New database"];
+  const SPARK = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2l1.8 5.2L19 9l-5.2 1.8L12 16l-1.8-5.2L5 9l5.2-1.8z"/><path d="M19 15l.9 2.1L22 18l-2.1.9L19 21l-.9-2.1L16 18l2.1-.9z"/></svg>';
+  const LINE = '<svg class="ai-line" viewBox="0 0 80 12" preserveAspectRatio="none" aria-hidden="true"><path d="M2 6H72"/><path d="M66 1l8 5-8 5"/></svg>';
+
+  function aiRecommendation() {
+    const box = make("section", null, "ai-rec");
+    box.setAttribute("aria-labelledby", "ai-rec-title");
+
+    const head = make("div", null, "ai-head");
+    const spark = make("span", null, "ai-spark");
+    spark.innerHTML = SPARK;
+    const titles = make("div", null, "ai-titles");
+    titles.appendChild(make("p", "Cutover AI recommendation", "ai-kicker"));
+    const title = make("p", "Compare these options for the new database", "ai-title");
+    title.id = "ai-rec-title";
+    titles.appendChild(title);
+    head.appendChild(spark);
+    head.appendChild(titles);
+    head.appendChild(make("span", "Checked October 2026", "ai-date"));
+    box.appendChild(head);
+
+    // Flow: the rules move out of the legacy system, into services, then into the chosen database.
+    const flow = make("div", null, "ai-flow");
+    flow.setAttribute("aria-hidden", "true");
+    AI_FLOW.forEach((label, i) => {
+      const node = make("span", label, i === AI_FLOW.length - 1 ? "ai-node is-new" : "ai-node");
+      flow.appendChild(node);
+      if (i < AI_FLOW.length - 1) {
+        const line = make("span", null, "ai-link");
+        line.innerHTML = LINE;
+        flow.appendChild(line);
+      }
+    });
+    box.appendChild(flow);
+
+    box.appendChild(make("p", "The new database is not chosen yet. These are examples to compare, based on current trends. The team makes the decision.", "ai-note"));
+
+    const grid = make("div", null, "ai-options");
+    AI_OPTIONS.forEach((o, i) => {
+      const opt = make("article", null, "ai-opt");
+      opt.style.setProperty("--i", String(i));
+      const ic = make("span", null, "ai-ic");
+      ic.innerHTML = `<svg viewBox="0 0 48 48" aria-hidden="true">${o.icon}</svg>`;
+      opt.appendChild(ic);
+      opt.appendChild(make("span", o.tag, "ai-tag"));
+      opt.appendChild(make("h3", o.name));
+      opt.appendChild(make("p", o.fit));
+      opt.appendChild(make("p", o.examples, "ai-examples"));
+      grid.appendChild(opt);
+    });
+    box.appendChild(grid);
+    return box;
+  }
+
   function render(id, fit, rec, ctx, analysis) {
     const t = T[id];
     const app = document.getElementById("app");
@@ -452,15 +530,7 @@
     wrap.appendChild(proposal);
     if (id === "services-data") {
       // The new database is not chosen yet. These are examples, from current trends, for the team to compare.
-      const rec = make("div", null, "proposal");
-      rec.appendChild(make("p", "Cutover AI recommendation", "proposal-title"));
-      rec.appendChild(make("p", "The new database is not chosen yet. These are examples to compare, based on current trends (checked October 2026). The team makes the decision.", "muted small"));
-      rec.appendChild(list([
-        "PostgreSQL, as a managed cloud service (for example Cloud SQL, Aurora PostgreSQL or Azure Database for PostgreSQL). The most common target when moving off Oracle or SQL Server, with no licence fee.",
-        "Azure SQL, if the team is on Microsoft and the legacy system is SQL Server. It keeps the same T-SQL style, so fewer routines need rewriting.",
-        "A PostgreSQL-compatible engine built for scale or analytics (for example AlloyDB or Azure HorizonDB), if volume or reporting needs grow beyond a standard managed database.",
-      ]));
-      wrap.appendChild(rec);
+      wrap.appendChild(aiRecommendation());
     }
 
     // Run as is, in containers changes no code, so the look, the page flow and the screen layouts do not apply.
