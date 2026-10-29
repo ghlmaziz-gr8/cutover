@@ -2702,10 +2702,7 @@ const MODERN_TEMPLATES = ["web-modern", "services-data", "lift-contain"];
 async function setTemplate(request, env, id) {
   const access = await analysisAccess(env, request, id);
   if (access.response) return access.response;
-  // The approach is the owner's or a CIO's or CTO's decision; the engineer carries it out.
-  if (!canApproveTarget(access.row, access.member, access.user)) {
-    return json({ error: "Only the application owner, or a CIO or CTO, can choose the modernized template." }, 403);
-  }
+  // Open to every workspace member for now, while the flow is designed. The rules are to be enforced later.
   const parsed = await readJson(request);
   if (parsed.error) return json({ error: parsed.error }, 400);
   const template = parsed.value && parsed.value.template;

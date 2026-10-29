@@ -111,3 +111,11 @@ test("the Modernize path sits above the scope card on What next", () => {
   const scope = html.indexOf('id="scopeCard"');
   assert.ok(modern > 0 && scope > 0 && modern < scope, "the Modernize path comes before Choose the scope");
 });
+
+test("every role can choose the approach, and the map fades the two it did not pick", () => {
+  assert.ok(html.includes("Any role can choose it for now."));
+  assert.ok(html.includes("if (choosable && row) {"));
+  assert.ok(html.includes('box.classList.toggle("has-choice", !!chosenId);'));
+  assert.ok(html.includes('bg.setAttribute("opacity", "0.3");'));
+  assert.ok(!html.includes("if (cur.can_plan) await chooseTemplate"));
+});
