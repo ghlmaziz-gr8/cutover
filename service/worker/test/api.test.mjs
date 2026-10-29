@@ -445,6 +445,16 @@ test("the stages unlock one after another, and a locked stage says what to clear
   }
 });
 
+test("the scope can be cleared, and until one is chosen nothing is skipped", async () => {
+  const cleared = await call(`/api/analyses/${AN_ACME}/scope`, { as: "cio_a", method: "PATCH", body: { scope: null } });
+  assert.equal(cleared.status, 200);
+  const saved = state.analyses.find((a) => a.id === AN_ACME);
+  assert.equal(saved.scope, null);
+  assert.equal(saved.scope_set_by_email, null);
+  const body = (await call(`/api/analyses/${AN_ACME}`, { as: "eng_a" })).body;
+  assert.ok(body.stages.every((s) => s.state !== "skipped"), "no stage is skipped while no scope is chosen");
+});
+
 test("without Modernize in the scope, the modernization stages are skipped and do not block the deeper assessment", async () => {
   const analysis = state.analyses.find((a) => a.id === AN_ACME);
   analysis.scope = "deeper_migrate";

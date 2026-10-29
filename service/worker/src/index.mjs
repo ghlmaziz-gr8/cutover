@@ -2673,18 +2673,21 @@ async function setScope(request, env, id) {
   // owner, a CIO or a CTO is to be decided later.
   const parsed = await readJson(request);
   if (parsed.error) return json({ error: parsed.error }, 400);
+  // null clears the scope, so the team can start the choice again.
   const scope = parsed.value && parsed.value.scope;
-  if (!Object.prototype.hasOwnProperty.call(SCOPES, scope)) {
+  const clearing = scope === null;
+  if (!clearing && !Object.prototype.hasOwnProperty.call(SCOPES, scope)) {
     return json({ error: "Choose deeper, deeper and modernize, deeper and migrate, or all three." }, 400);
   }
-  const refused = await logFirst(env, { workspace_id: access.row.workspace_id, user: access.user, action: "scope", analysis_id: id, repo: access.row.repo, detail: scope });
+  const refused = await logFirst(env, { workspace_id: access.row.workspace_id, user: access.user, action: "scope", analysis_id: id, repo: access.row.repo, detail: clearing ? "cleared" : scope });
   if (refused) return refused;
   const res = await serviceRest(env, `analyses?id=eq.${id}`, {
     method: "PATCH",
     headers: { prefer: "return=minimal" },
-    body: JSON.stringify({ scope, scope_set_by_email: access.user.email, scope_set_at: new Date().toISOString() }),
+    body: JSON.stringify({ scope, scope_set_by_email: clearing ? null : access.user.email, scope_set_at: clearing ? null : new Date().toISOString() }),
   });
   if (!res.ok) return json({ error: "Could not save the scope." }, 502);
+  if (clearing) return json({ saved: true });
   const labels = SCOPE_LABELS;
   await notifyPeople(env, access.row.workspace_id, await analysisAudienceExcept(env, access.row, access.user.id), {
     kind: "scope_chosen", tone: "info", title: `Next stage chosen: ${labels[scope]}`,
@@ -2840,7 +2843,8 @@ const MODERNIZE_STAGES = ["approach", "plan", "starter", "convert", "pr"];
 function stageStates(row, viewerId) {
   const saved = progressOf(row);
   const done = {};
-  const modernizeInScope = scopeIncludes(row.scope, "modernize");
+  // Until a scope is chosen nothing is skipped.
+  const modernizeInScope = !row.scope || scopeIncludes(row.scope, "modernize");
   return PROGRESS_STAGES.map((stage) => {
     const prior = stage.needs ? PROGRESS_STAGES.find((s) => s.id === stage.needs) : null;
     const record = saved[stage.id] && typeof saved[stage.id] === "object" ? saved[stage.id] : null;

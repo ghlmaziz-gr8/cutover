@@ -97,3 +97,11 @@ test("a skipped approach points to the scope card to add Modernize", () => {
   assert.ok(html.includes('const add = el("button", "Add Modernize to the scope");'));
   assert.ok(html.includes('document.getElementById("scopeCard")?.scrollIntoView'));
 });
+
+test("choosing or clearing the scope redraws What next, and the scope can be cleared", () => {
+  assert.ok(html.includes('id="scopeClear"'));
+  assert.ok(html.includes('$("scopeClear").addEventListener("click", () => setScope(null));'));
+  const start = html.indexOf("  async function setScope(key) {");
+  const body = html.slice(start, html.indexOf("\n  }\n", start));
+  assert.ok(body.includes("showNext();"), "setScope redraws every card, not only the scope");
+});
