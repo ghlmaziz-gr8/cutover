@@ -5975,6 +5975,7 @@ a{color:#6d28d9;font-weight:600}`;
       { id: "targetCard", label: "Owner approval", done: !!row.target_approval, show: modern },
       { id: "scopeCard", label: "Scope", done: !!row.scope, show: true },
       { id: "effortCard", label: "Project plan", done: !!row.target_approval, show: !!row.scope },
+      { id: "deeperCardNext", label: "Deeper assessment", done: row.deeper_done === true, show: true },
       { id: "conversionCard", label: "Converted code", done: false, show: modern },
     ].filter((x) => x.show);
     const firstOpen = steps.findIndex((x) => !x.done);
