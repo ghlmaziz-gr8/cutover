@@ -52,3 +52,11 @@ test("the look uses the families, animates them and turns the motion off when as
   assert.ok(css.includes("@property --p"), "the colours are registered so they glide");
   assert.ok(css.includes("prefers-reduced-motion"));
 });
+
+test("the palette is set on the page root, so the wireframes below the look take it too", () => {
+  const renderer = readFileSync(new URL("../templates/preview.js", import.meta.url), "utf8");
+  const css = readFileSync(new URL("../templates/preview.css", import.meta.url), "utf8");
+  assert.ok(renderer.includes('document.getElementById("app")'), "the family is applied to the page root");
+  assert.ok(css.includes("#app{") && css.includes("--accent:var(--p)"), "the page's tokens follow the family");
+  assert.ok(css.includes("--grad:linear-gradient(120deg,var(--p)"), "gradients follow the family");
+});
