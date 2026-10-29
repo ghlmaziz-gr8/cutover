@@ -23,7 +23,7 @@ test("the scope is listed after the approach on the path, and the plan waits for
 test("a stage's change button goes to the card that holds its choice", () => {
   assert.ok(html.includes('label: "Change the scope", run: () => goTo("scopeCard")'));
   assert.ok(html.includes('label: "Change the approach", run: () => goTo("approachCard")'));
-  assert.ok(html.includes('label: "Open the plan on What next"'));
+  assert.ok(html.includes('label: "Open the plan on Advance with Cutover"'));
 });
 
 test("the change is in What's new", () => {

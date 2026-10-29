@@ -1,4 +1,4 @@
-// The three Modernize proposals sit with the approach choice on What next, not under the deeper assessment.
+// The three Modernize proposals sit with the approach choice on Advance with Cutover, not under the deeper assessment.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";

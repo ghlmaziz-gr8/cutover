@@ -33,7 +33,7 @@ test("the four scope options are offered before the deeper assessment runs, and 
   assert.ok(!html.includes("Locked until the deeper assessment is complete"));
 });
 
-test("the tech stack and the estimate and plan are chosen on What next, not on the deeper assessment page", () => {
+test("the tech stack and the estimate and plan are chosen on Advance with Cutover, not on the deeper assessment page", () => {
   const deeper = html.slice(html.indexOf('<section id="s-deeper"'), html.indexOf('<script', html.indexOf('<section id="s-deeper"')));
   assert.ok(!deeper.includes('id="targetCard"') && !deeper.includes('id="effortCard"'));
   const next = html.slice(html.indexOf('id="s-next"'), html.indexOf('<!-- 9. Contingency planning -->'));
@@ -71,7 +71,7 @@ test("the files are loaded once per analysis, through the existing files list", 
   assert.ok(html.includes("businessFiles = { analysis: cur.id, rows: await loadFiles() };"));
 });
 
-test("What next opens from the Review screen, so the scope is chosen before the deeper assessment", () => {
+test("Advance with Cutover opens from the Review screen, so the scope is chosen before the deeper assessment", () => {
   const review = html.slice(html.indexOf('<section id="s-review"'), html.indexOf('<section id="s-deeper"') > 0 ? html.indexOf('<section id="s-deeper"') : html.length);
   assert.ok(review.includes('id="toNext"') && review.includes('id="toNextTop"'));
   assert.ok(!review.includes('id="toWhatNext"') && !review.includes("Deeper assessment</button>"));
@@ -84,8 +84,8 @@ test("the scope options all draw: no check reads an undefined variable, which st
   assert.ok(!body.includes("!locked"), "renderScope must not read the undefined locked variable");
 });
 
-test("the approach card points to What next instead of saying coming soon", () => {
-  assert.ok(html.includes("Choose one of the three proposals on What next, under the scope."));
+test("the approach card points to Advance with Cutover instead of saying coming soon", () => {
+  assert.ok(html.includes("Choose one of the three proposals on Advance with Cutover, under the scope."));
   assert.ok(html.includes('document.getElementById("approachCard")?.scrollIntoView'));
 });
 
@@ -99,7 +99,7 @@ test("a skipped approach points to the scope card to add Modernize", () => {
   assert.ok(html.includes('document.getElementById("scopeCard")?.scrollIntoView'));
 });
 
-test("choosing or clearing the scope redraws What next, and the scope can be cleared", () => {
+test("choosing or clearing the scope redraws Advance with Cutover, and the scope can be cleared", () => {
   assert.ok(html.includes('id="scopeClear"'));
   assert.ok(html.includes('$("scopeClear").addEventListener("click", () => setScope(null));'));
   const start = html.indexOf("  async function setScope(key) {");
@@ -107,7 +107,7 @@ test("choosing or clearing the scope redraws What next, and the scope can be cle
   assert.ok(body.includes("showNext();"), "setScope redraws every card, not only the scope");
 });
 
-test("the Modernize path sits above the scope card on What next", () => {
+test("the Modernize path sits above the scope card on Advance with Cutover", () => {
   const modern = html.indexOf('id="groupModernize"');
   const scope = html.indexOf('id="scopeCard"');
   assert.ok(modern > 0 && scope > 0 && modern < scope, "the Modernize path comes before Choose the scope");

@@ -1963,7 +1963,7 @@ button:not(:disabled):active{transform:scale(.965)}
       <button type="button" class="ghost" id="exportPdfTop">Export PDF</button>
       <button type="button" class="ghost" id="exportHtmlTop">Export HTML</button>
       <button type="button" class="ghost" id="reviewFilesTop" hidden>Review file results</button>
-      <button type="button" id="toNextTop">What next</button>
+      <button type="button" id="toNextTop">Advance with Cutover</button>
     </div>
     <div class="card" id="outOfDateCard" hidden style="margin-top:12px">
       <h3 style="margin-top:0">The repository has changed</h3>
@@ -1994,7 +1994,7 @@ button:not(:disabled):active{transform:scale(.965)}
 
     <div class="row wzNav">
       <button type="button" class="ghost" id="reviewBack">Back to analyses</button>
-      <button type="button" id="toNext">What next</button>
+      <button type="button" id="toNext">Advance with Cutover</button>
     </div>
   </section>
 
@@ -2006,7 +2006,7 @@ button:not(:disabled):active{transform:scale(.965)}
       <div class="run-bar" aria-hidden="true"><i></i></div>
     </div>
     <p class="eyebrow">Step 7 of 7</p>
-    <h2 style="margin:8px 0 6px">What next?</h2>
+    <h2 style="margin:8px 0 6px">Advance with Cutover</h2>
     <p class="muted">Choose one. You can come back to the findings at any time.</p>
     <div class="row wzNav" style="margin:14px 0 4px">
       <button type="button" class="ghost" id="nextBackReviewTop">Back to findings</button>
@@ -5705,7 +5705,7 @@ a{color:#6d28d9;font-weight:600}`;
         return { label: "Change the approach", run: () => goTo("approachCard") };
       }
       if (s.id === "plan" && row.scope) {
-        return { label: "Open the plan on What next", run: () => { const e = document.getElementById("effortCard"); if (e) { e.open = true; e.scrollIntoView({ behavior: "smooth", block: "start" }); } } };
+        return { label: "Open the plan on Advance with Cutover", run: () => { const e = document.getElementById("effortCard"); if (e) { e.open = true; e.scrollIntoView({ behavior: "smooth", block: "start" }); } } };
       }
       if (s.id === "deeper" && s.state !== "locked") return { label: "Open the deeper assessment", run: () => showDeeper() };
       return null;
@@ -5717,15 +5717,15 @@ a{color:#6d28d9;font-weight:600}`;
         if (s.state === "skipped") facts.push("Modernize is not in the scope, so there is no approach to choose.");
         else if (row.modern_template) facts.push(`Chosen: ${TEMPLATE_NAME[row.modern_template] || row.modern_template}${row.modern_template_set_by_email ? " by " + personLabel(row.modern_template_set_by_email) : ""}.`);
         else if (row.scope && !scopeHas(row.scope, "modernize")) facts.push("Modernize is not in the scope you chose.");
-        else facts.push("Choose one of the three proposals on What next: " + Object.values(TEMPLATE_NAME).join(", ") + ".");
+        else facts.push("Choose one of the three proposals on Advance with Cutover: " + Object.values(TEMPLATE_NAME).join(", ") + ".");
       }
       if (s.id === "scope") {
         if (row.scope) {
           facts.push(`Chosen: ${SCOPE_LABEL[row.scope] || row.scope}.`);
           facts.push("Includes: " + ["Deeper assessment", scopeHas(row.scope, "modernize") && "Modernize", scopeHas(row.scope, "migrate") && "Migrate"].filter(Boolean).join(", ") + ".");
-        } else facts.push("No scope chosen yet. Choose it on What next.");
+        } else facts.push("No scope chosen yet. Choose it on Advance with Cutover.");
       }
-      if (s.id === "plan") facts.push(row.modern_template ? "The order of work, the risks and a rough size for the chosen approach. Effort and plan are on What next." : "Needs the approach to be chosen first.");
+      if (s.id === "plan") facts.push(row.modern_template ? "The order of work, the risks and a rough size for the chosen approach. Effort and plan are on Advance with Cutover." : "Needs the approach to be chosen first.");
       if (s.id === "deeper") facts.push(row.deeper_done === true ? "The deeper assessment is done." : "The deeper assessment is not done yet.");
       if (s.id === "starter" || s.id === "convert" || s.id === "pr") facts.push(s.produces);
       facts.push(`Status: ${STATE_WORD[s.state] || s.state}.`);
@@ -5821,7 +5821,7 @@ a{color:#6d28d9;font-weight:600}`;
         card.appendChild(go);
       } else if (s.id === "scope") {
         // The scope is chosen on What next, under the path, so the card points there.
-        card.appendChild(el("p", "Choose the work this analysis covers on What next, under the path.", "stage-lock"));
+        card.appendChild(el("p", "Choose the work this analysis covers on Advance with Cutover, under the path.", "stage-lock"));
         const pick = el("button", "Go to the scope");
         pick.type = "button";
         pick.className = "ghost";
@@ -5829,7 +5829,7 @@ a{color:#6d28d9;font-weight:600}`;
         card.appendChild(pick);
       } else if (s.id === "approach") {
         // The approach is chosen on What next, not reviewed here, so the card points there.
-        card.appendChild(el("p", "Choose one of the three proposals on What next, under the scope.", "stage-lock"));
+        card.appendChild(el("p", "Choose one of the three proposals on Advance with Cutover, under the scope.", "stage-lock"));
         const pick = el("button", "Go to the approach");
         pick.type = "button";
         pick.className = "ghost";
@@ -8599,7 +8599,7 @@ a{color:#6d28d9;font-weight:600}`;
     const card = el("div", null, "card deeper-sec");
     card.appendChild(el("h3", "Modernize: three proposals", null));
     card.firstChild.style.marginTop = "0";
-    card.appendChild(el("p", "These are options to review, not decisions. The costs are estimates for Google Cloud only. Choosing Modernize on What next records the decision.", "muted small"));
+    card.appendChild(el("p", "These are options to review, not decisions. The costs are estimates for Google Cloud only. Choosing Modernize on Advance with Cutover records the decision.", "muted small"));
     card.appendChild(costUsersBox(deeper));
     for (const p of proposals) {
       const item = el("div", null, "prop");

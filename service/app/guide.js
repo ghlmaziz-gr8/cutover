@@ -58,6 +58,7 @@ window.CUTOVER_GUIDE = {
     "2026-10-27: Each level has its own colours, so the badge shows your progress. Starter is blue, Explorer teal, Regular indigo, Champion amber and Legend magenta. Time-on-the-system badges keep the blue.",
     "2026-10-27: Your level badge sits in the header, next to the Cutover logo. It is the shield badge with your level and points. Click it to open your rewards.",
     "2026-10-27: Each badge is a shield plate now, like a game award: a glowing medal with an icon, the name, a level pill, the points, and a gold star. Hours on the system get their own plates with a clock, star, flame or gem.",
+    "2026-10-29: The What next button and screen are now called Advance with Cutover, so the label says what the button does.",
     "2026-10-29: The Modernization plan is now the Project plan. It is open for every scope, once the scope is chosen, and the deeper assessment and the stages after it wait for it.",
     "2026-10-28: The path is now Application Assessment, Choose the approach, Modernization plan, Deeper assessment, Starter project, Converted code and Pull request. The plan waits for the approach, and the deeper assessment waits for the plan.",
     "2026-10-28: The estimate follows the scope. Deeper assessment covers discovery and requirements. Modernize adds the build and testing. Migrate adds the database move, security, testing and cutover. The plan shows only the phases in the scope.",
