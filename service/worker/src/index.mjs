@@ -2816,9 +2816,9 @@ async function targetApproval(env, row) {
 // engineer's review once its output is ready. Each viewer is told once when a stage clears.
 const PROGRESS_STAGES = [
   { id: "assessment", title: "Application Assessment", produces: "What the application is, how it is built and what data it holds, from the code." },
-  { id: "scope", title: "Choose the scope", produces: "The work this analysis covers: the deeper assessment, Modernize, Migrate, or a mix of them.", needs: "assessment" },
-  { id: "approach", title: "Choose the approach", produces: "The modernized approach the team agrees on, from the three proposals.", needs: "scope" },
-  { id: "plan", title: "Modernization plan", produces: "A plan for the chosen approach: the order of work, the risks and a rough size.", needs: "approach" },
+  { id: "approach", title: "Choose the approach", produces: "The modernized approach the team agrees on, from the three proposals.", needs: "assessment" },
+  { id: "scope", title: "Choose the scope", produces: "The work this analysis covers: the deeper assessment, Modernize, Migrate, or a mix of them.", needs: "approach" },
+  { id: "plan", title: "Modernization plan", produces: "A plan for the chosen approach: the order of work, the risks and a rough size.", needs: "scope" },
   { id: "deeper", title: "Deeper assessment", produces: "The architecture, the sections and the documents for this application.", needs: "plan" },
   { id: "starter", title: "Starter project", produces: "A zip with the skeleton for the chosen template, with no copied business logic.", needs: "deeper" },
   { id: "convert", title: "Converted code", produces: "Converted screens and routines, on a branch, with test results.", needs: "starter" },
@@ -2846,7 +2846,8 @@ function stageStates(row, viewerId) {
   return PROGRESS_STAGES.map((stage) => {
     const prior = stage.needs ? PROGRESS_STAGES.find((s) => s.id === stage.needs) : null;
     const record = saved[stage.id] && typeof saved[stage.id] === "object" ? saved[stage.id] : null;
-    if (!modernizeInScope && MODERNIZE_STAGES.includes(stage.id)) {
+    const hasWork = stage.id === "approach" ? Boolean(row.modern_template) : Boolean(record && record.reviewed_at);
+    if (!modernizeInScope && MODERNIZE_STAGES.includes(stage.id) && !hasWork) {
       done[stage.id] = true;
       return {
         id: stage.id, title: stage.title, produces: stage.produces, state: "skipped", ready: false,
@@ -2862,9 +2863,10 @@ function stageStates(row, viewerId) {
         : stage.id === "deeper"
           ? row.deeper_done === true
           : Boolean(record && record.reviewed_at);
-    const unlocked = !prior || done[prior.id] === true;
+    // A stage waits for the first earlier stage that is not done yet, so the path cannot be skipped over.
+    const blocker = PROGRESS_STAGES.slice(0, PROGRESS_STAGES.indexOf(stage)).find((s) => done[s.id] !== true) || null;
     done[stage.id] = cleared;
-    const state = cleared ? "cleared" : unlocked ? "available" : "locked";
+    const state = cleared ? "cleared" : blocker ? "locked" : "available";
     const acked = Array.isArray((saved.acknowledged || {})[viewerId]) && saved.acknowledged[viewerId].includes(stage.id);
     return {
       id: stage.id,
@@ -2872,8 +2874,8 @@ function stageStates(row, viewerId) {
       produces: stage.produces,
       state,
       ready: PROGRESS_READY[stage.id] === true,
-      unlocked_by: prior ? prior.id : null,
-      lock_reason: state === "locked" ? `Clear ${prior.title} to unlock ${stage.title}.` : null,
+      unlocked_by: blocker ? blocker.id : null,
+      lock_reason: state === "locked" ? `Clear ${blocker.title} to unlock ${stage.title}.` : null,
       cleared_by: cleared && record ? record.reviewed_by || null : null,
       cleared_at: cleared && record ? record.reviewed_at || null : null,
       celebrate: cleared && !acked,
