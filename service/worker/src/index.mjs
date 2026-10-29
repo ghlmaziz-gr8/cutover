@@ -1920,14 +1920,18 @@ async function getAnalysis(request, env, id) {
     serviceRest(env, `analysis_comments?analysis_id=eq.${id}&select=id,author_id,author_email,body,created_at&order=created_at.asc`),
     serviceRest(env, `action_items?analysis_id=eq.${id}&select=id,title,status,created_by_email,done_by_email,created_at,done_at&order=created_at.asc`),
     serviceRest(env, `contingencies?analysis_id=eq.${id}&select=id,finding_id,risk,contingency,rollback_step,trigger_condition,owner_email,status,created_by_email,updated_by_email,created_at,updated_at&order=created_at.asc`),
-    serviceRest(env, `members?workspace_id=eq.${row.workspace_id}&select=email,name`),
+    serviceRest(env, `members?workspace_id=eq.${row.workspace_id}&select=user_id,email,name`),
   ]);
   if (!commentsRes.ok || !actionsRes.ok || !contingenciesRes.ok) {
     return json({ error: "Could not load the analysis." }, 502);
   }
   // The names of this workspace's members, by email, so each step can show who did it.
   const people = {};
-  if (peopleRes.ok) for (const m of await peopleRes.json()) if (m.email && m.name) people[String(m.email).toLowerCase()] = m.name;
+  const memberRows = peopleRes.ok ? await peopleRes.json() : [];
+  for (const m of memberRows) if (m.email && m.name) people[String(m.email).toLowerCase()] = m.name;
+  // The person who started the analysis, who completes the assessment.
+  const starter = memberRows.find((m) => m.user_id === row.owner_id);
+  const startedBy = starter && starter.email ? starter.email : null;
 
   const isAdmin = member.is_admin === true;
   const { owner_id, findings, ...analysis } = row;
@@ -1978,6 +1982,7 @@ async function getAnalysis(request, env, id) {
     action_items: await actionsRes.json(),
     contingencies: await contingenciesRes.json(),
     people,
+    started_by_email: startedBy,
   });
 }
 
@@ -2882,6 +2887,15 @@ function stageStates(row, viewerId) {
         : stage.id === "deeper"
           ? row.deeper_done === true
           : Boolean(record && record.reviewed_at);
+    // Who cleared the stage and when: the approach and scope were chosen by someone; the assessment and deeper
+    // assessment finish when the analysis does; the rest are reviews.
+    const origin = stage.id === "approach"
+      ? { by: row.modern_template_set_by_email, at: row.modern_template_set_at }
+      : stage.id === "scope"
+        ? { by: row.scope_set_by_email, at: row.scope_set_at }
+        : stage.id === "assessment" || stage.id === "deeper"
+          ? { by: null, at: row.finished_at }
+          : { by: record ? record.reviewed_by : null, at: record ? record.reviewed_at : null };
     // A stage waits for the first earlier stage that is not done yet, so the path cannot be skipped over.
     const blocker = PROGRESS_STAGES.slice(0, PROGRESS_STAGES.indexOf(stage)).find((s) => done[s.id] !== true) || null;
     done[stage.id] = cleared;
@@ -2895,8 +2909,8 @@ function stageStates(row, viewerId) {
       ready: PROGRESS_READY[stage.id] === true,
       unlocked_by: blocker ? blocker.id : null,
       lock_reason: state === "locked" ? `Clear ${blocker.title} to unlock ${stage.title}.` : null,
-      cleared_by: cleared && record ? record.reviewed_by || null : null,
-      cleared_at: cleared && record ? record.reviewed_at || null : null,
+      cleared_by: cleared ? origin.by || null : null,
+      cleared_at: cleared ? origin.at || null : null,
       celebrate: cleared && !acked,
     };
   });

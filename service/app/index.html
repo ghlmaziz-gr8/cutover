@@ -588,6 +588,8 @@ pre{white-space:pre-wrap;word-break:break-word;background:var(--soft);padding:12
 .stage-facts{margin:10px 0 12px;padding-left:18px;font-size:14px;line-height:1.6}
 .stage-option{margin-top:12px;padding-top:12px;border-top:1px solid var(--line)}
 .stage-option h5{margin:0 0 4px;font-size:15px}
+.stage-card{display:flex;flex-direction:column}
+.stage-card .stage-by{margin:auto 0 0;padding-top:12px;font-size:12px;line-height:1.5;text-align:left}
 .scope-opt.unfit{opacity:.5}
 #effortCard{scroll-margin-top:16px}
 .stage-state{display:inline-flex;align-items:center;gap:7px;font:800 11px/1 var(--body);letter-spacing:.08em;text-transform:uppercase;color:var(--muted);margin:0 0 10px}
@@ -5796,8 +5798,12 @@ a{color:#6d28d9;font-weight:600}`;
         card.appendChild(download);
       }
       if (s.state === "cleared") {
-        const by = s.cleared_by ? ` by ${personLabel(s.cleared_by)}` : "";
-        card.appendChild(el("p", `Cleared${by}.`, "small"));
+        // Every cleared card says who cleared it and when, at the bottom of the card.
+        const finished = s.id === "assessment" || s.id === "deeper";
+        const who = s.cleared_by ? personLabel(s.cleared_by) : finished && cur.started_by_email ? personLabel(cur.started_by_email) : "";
+        const when = s.cleared_at ? new Date(s.cleared_at).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }) : "";
+        const verb = finished ? "Completed" : "Cleared";
+        card.appendChild(el("p", [who ? `${verb} by ${who}` : verb, when ? `on ${when}` : ""].filter(Boolean).join(" "), "stage-by"));
       } else if (s.state === "skipped") {
         card.appendChild(el("p", "Not part of the scope you chose. It does not hold up the next stage.", "stage-lock"));
         if (s.id === "approach") {
