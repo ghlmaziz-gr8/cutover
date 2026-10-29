@@ -259,6 +259,12 @@ button.danger{background:transparent;color:var(--bad);box-shadow:none;border:1.5
 .av{width:44px;height:44px;border-radius:14px;display:grid;place-items:center;font-size:17px;font-weight:800;color:#fff;margin-bottom:6px}
 .you{margin-top:18px;padding:16px;border-radius:16px;background:var(--soft);min-height:56px}
 .lock{font-size:11px;font-weight:700;background:var(--line);padding:2px 8px;border-radius:99px;justify-self:start}
+/* The role choices sit in one row where the screen is wide enough, and wrap on narrow screens. */
+#personas{grid-template-columns:repeat(auto-fit,minmax(118px,1fr));gap:10px}
+#personas .persona{padding:12px;gap:4px;border-radius:16px}
+#personas .persona b{font-size:14px;line-height:1.2}
+#personas .av{width:34px;height:34px;border-radius:11px;font-size:13px;margin-bottom:4px}
+#personas .lock{font-size:10px;padding:2px 6px}
 
 /* Form controls */
 input,select,textarea{font:500 15px var(--body);padding:12px 14px;border-radius:14px;border:1.5px solid var(--line);background:var(--card);color:var(--fg);width:100%;min-width:0}
