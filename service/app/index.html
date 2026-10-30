@@ -1548,7 +1548,19 @@ button:not(:disabled):active{transform:scale(.965)}
     .fg-cap-name:focus{background:var(--card);box-shadow:0 0 0 2px var(--accent)}
     .fg-cap-saving{font:700 11px var(--body);color:var(--ok);background:color-mix(in srgb,var(--ok) 12%,var(--card));border:1px solid color-mix(in srgb,var(--ok) 35%,var(--line));border-radius:999px;padding:4px 10px;white-space:nowrap}
     .fg-cap-count{font:700 11px var(--body);color:var(--accent);background:var(--card);border:1px solid var(--line);border-radius:999px;padding:4px 10px;white-space:nowrap}
-    .fg-cap-crm{font:700 11px var(--body);color:var(--accent2);background:var(--card);border:1px solid var(--line);border-radius:999px;padding:4px 12px;white-space:nowrap;cursor:not-allowed;opacity:.7}
+    .fg-cap-push{font:700 11px var(--body);color:var(--accent);background:var(--card);border:1px solid var(--line);border-radius:999px;padding:4px 12px;white-space:nowrap;cursor:pointer}
+    .fg-cap-push:disabled{cursor:progress;opacity:.6}
+    .fg-push-note{font:600 12px var(--body);color:var(--muted);padding:0 4px;min-height:0}
+    .fg-push-note:empty{display:none}
+    .pt-dialog{border:1px solid var(--line);border-radius:16px;background:var(--card);color:var(--fg);width:min(460px,calc(100% - 32px));padding:24px}
+    .pt-dialog::backdrop{background:rgba(0,0,0,.45)}
+    .pt-title{margin:0 0 8px}
+    .pt-steps{padding-left:20px;display:grid;gap:6px;margin:12px 0 0}
+    .pt-field{display:grid;gap:6px;margin-top:12px}
+    .pt-label{font:700 12px var(--body)}
+    .pt-input{font:14px var(--body);padding:10px 12px;border:1px solid var(--line);border-radius:10px;background:var(--card);color:var(--fg)}
+    .pt-error{color:var(--bad);font:600 13px var(--body);min-height:1em;margin:10px 0 0}
+    .pt-actions{display:flex;justify-content:flex-end;gap:10px;margin-top:14px}
     .fg-ready-groups{display:grid;gap:4px}
     .fg-cap polygon{fill:none;stroke:var(--accent);stroke-width:3;stroke-linejoin:round}
     .fg-cap-pill{fill:var(--card);stroke:var(--accent);stroke-width:1.5}
@@ -2766,6 +2778,7 @@ button:not(:disabled):active{transform:scale(.965)}
     if (!res.ok) {
       const err = new Error(body.error || `Request failed (${res.status})`);
       err.status = res.status;
+      err.body = body;
       throw err;
     }
     return body;
@@ -10991,6 +11004,143 @@ const REGION_OPTS = {
     return wrap;
   }
 
+  // ---- Project tool (Jira). The first push asks for the person's Jira account; later pushes go straight through. ----
+
+  let projectToolDialog = null;
+  let projectToolDone = null;
+
+  function finishProjectTool(ok) {
+    const done = projectToolDone;
+    projectToolDone = null;
+    if (projectToolDialog) projectToolDialog.dlg.close();
+    if (done) done(ok);
+  }
+
+  function buildProjectToolDialog() {
+    const dlg = document.createElement("dialog");
+    dlg.className = "pt-dialog";
+    dlg.setAttribute("aria-labelledby", "ptTitle");
+    const form = document.createElement("form");
+    form.noValidate = true;
+    const title = el("h3", "Connect Jira", "pt-title");
+    title.id = "ptTitle";
+    const intro = el("p", "Cutover sends the capabilities, features and user stories to your Jira project. You connect your account once. The token is stored encrypted and is never shown again.", "muted small");
+    const steps = el("ol", null, "pt-steps");
+    const first = el("li", "Open ");
+    const tokenLink = el("a", "your Atlassian API token page");
+    tokenLink.href = "https://id.atlassian.com/manage-profile/security/api-tokens";
+    tokenLink.target = "_blank";
+    tokenLink.rel = "noopener";
+    first.append(tokenLink, ". Sign in if asked.");
+    steps.append(first, el("li", "Click Create API token. Name it Cutover, and copy the token. Jira shows it only once."), el("li", "Fill in the boxes below and press Save and push."));
+    const field = (label, input, hint) => {
+      const wrap = el("label", null, "pt-field");
+      wrap.append(el("span", label, "pt-label"), input);
+      if (hint) wrap.append(el("span", hint, "muted small"));
+      return wrap;
+    };
+    const input = (id, type, placeholder, autocomplete) => {
+      const node = el("input", null, "pt-input");
+      node.id = id;
+      node.type = type;
+      node.placeholder = placeholder;
+      node.autocomplete = autocomplete;
+      node.required = true;
+      return node;
+    };
+    const site = input("ptSite", "text", "yourcompany.atlassian.net", "off");
+    const email = input("ptEmail", "email", "you@company.com", "email");
+    const token = input("ptToken", "password", "Paste the token here", "off");
+    const key = input("ptKey", "text", "CUT", "off");
+    key.maxLength = 32;
+    const error = el("p", "", "pt-error");
+    error.setAttribute("role", "alert");
+    const actions = el("div", null, "pt-actions");
+    const cancel = el("button", "Cancel", "btn ghost");
+    cancel.type = "button";
+    const save = el("button", "Save and push", "btn");
+    save.type = "submit";
+    actions.append(cancel, save);
+    form.append(
+      title,
+      intro,
+      steps,
+      field("Jira site", site, "The address you open Jira at, for example yourcompany.atlassian.net"),
+      field("Email", email, "The email you sign in to Jira with"),
+      field("API token", token),
+      field("Project key", key, "The short code before the number in your issue keys, for example CUT in CUT-12"),
+      error,
+      actions,
+    );
+    dlg.append(form);
+    document.body.append(dlg);
+    cancel.addEventListener("click", () => finishProjectTool(false));
+    dlg.addEventListener("cancel", (e) => {
+      e.preventDefault();
+      finishProjectTool(false);
+    });
+    form.addEventListener("submit", async (e) => {
+      e.preventDefault();
+      error.textContent = "";
+      if (![site, email, token, key].every((node) => node.value.trim())) {
+        error.textContent = "Fill in all four boxes.";
+        return;
+      }
+      save.disabled = true;
+      try {
+        await api("/api/project-tool", { method: "PUT", body: JSON.stringify({ site: site.value, email: email.value, token: token.value, project_key: key.value }) });
+        token.value = "";
+        finishProjectTool(true);
+      } catch (err) {
+        error.textContent = err.message;
+      } finally {
+        save.disabled = false;
+      }
+    });
+    projectToolDialog = { dlg, site, token, error };
+    return projectToolDialog;
+  }
+
+  // Resolves true once the Jira account is saved, and false when the person cancels.
+  function setupProjectTool() {
+    const d = projectToolDialog || buildProjectToolDialog();
+    d.error.textContent = "";
+    return new Promise((resolve) => {
+      projectToolDone = resolve;
+      d.dlg.showModal();
+      d.site.focus();
+    });
+  }
+
+  // Sends one capability (capIndex) of a draft grouping to the person's Jira project, asking for the account first if needed.
+  async function pushToProjectTool(groupingId, capIndex, button, note) {
+    button.disabled = true;
+    note.textContent = "Checking your Jira connection…";
+    const send = () => api(`/api/analyses/${cur.id}/groupings/push-jira`, { method: "POST", body: JSON.stringify({ grouping_id: groupingId, capability_index: capIndex }) });
+    try {
+      const status = await api("/api/project-tool");
+      if (!status.connected && !(await setupProjectTool())) {
+        note.textContent = "";
+        return;
+      }
+      note.textContent = "Sending to Jira…";
+      let res;
+      try {
+        res = await send();
+      } catch (err) {
+        // The saved connection no longer works (for example, the token was revoked): ask for it again, once.
+        if (err.status !== 409 || !(await setupProjectTool())) throw err;
+        note.textContent = "Sending to Jira…";
+        res = await send();
+      }
+      note.textContent = `Sent to Jira project ${res.project_key}: ${res.created} created, ${res.updated} updated.`;
+    } catch (err) {
+      note.textContent = err.message;
+    } finally {
+      button.disabled = false;
+    }
+  }
+
   // How ready the draft is for a vibe-coding tool to build from. Shown once the user stories are generated.
   function paintReadiness(rows) {
     const box = $("groupReadiness");
@@ -11033,13 +11183,14 @@ const REGION_OPTS = {
         input.setAttribute("aria-label", "Capability name");
         input.addEventListener("change", () => renameCapability(draft.id, ci, input.value, loadGroupings));
         head.append(capIcon(), el("span", "Capability", "fg-cap-eyebrow"), input, el("span", `${sec.features.length} ${sec.features.length === 1 ? "feature" : "features"}`, "fg-cap-count"));
-        // Placeholder: CRM push is not connected yet.
-        const crm = el("button", "Push to CRM", "fg-cap-crm");
-        crm.type = "button";
-        crm.disabled = true;
-        crm.title = "Push to CRM is not connected yet";
-        head.append(crm);
-        list.append(head);
+        const push = el("button", "Push to project tool", "fg-cap-push");
+        push.type = "button";
+        push.title = "Send this capability, its features and user stories to your Jira project";
+        const note = el("div", null, "fg-push-note");
+        note.setAttribute("role", "status");
+        push.addEventListener("click", () => pushToProjectTool(draft.id, ci, push, note));
+        head.append(push);
+        list.append(head, note);
       }
       const ul = el("ul", null, "fg-ready-list");
       for (const fi of sec.features) ul.append(rowFor(fi));

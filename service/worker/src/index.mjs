@@ -1576,6 +1576,293 @@ async function calendarDisconnect(request, env) {
   return json({ disconnected: true });
 }
 
+// ---- Project tool (Jira Cloud). Each person connects their own Jira site with an API token. The token is
+// encrypted and only the Worker reads it. The app never shows it again after saving. ----
+
+const JIRA_EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const JIRA_PROJECT_KEY_PATTERN = /^[A-Z][A-Z0-9_]{1,31}$/;
+// Each issue is one request to Jira, and a Worker run allows only so many requests, so one push is capped.
+const PROJECT_TOOL_ITEMS_MAX = 40;
+
+// Accepts "yourcompany.atlassian.net" or a pasted address such as "https://yourcompany.atlassian.net/jira".
+function normalizeJiraSite(raw) {
+  if (typeof raw !== "string") return null;
+  const host = raw.trim().toLowerCase().replace(/^https?:\/\//, "").replace(/\/.*$/, "");
+  return /^[a-z0-9-]{1,63}\.atlassian\.net$/.test(host) ? host : null;
+}
+
+function jiraAuth(email, token) {
+  return `Basic ${bytesToBase64(new TextEncoder().encode(`${email}:${token}`))}`;
+}
+
+async function jiraRequest(site, auth, path, init = {}) {
+  const headers = { authorization: auth, accept: "application/json" };
+  if (init.body) headers["content-type"] = "application/json";
+  return fetch(`https://${site}/rest/api/3${path}`, { ...init, headers });
+}
+
+// Who the token belongs to. Answers an error message for the person, never the token.
+async function jiraMyself(site, email, token) {
+  let res;
+  try {
+    res = await jiraRequest(site, jiraAuth(email, token), "/myself");
+  } catch {
+    return { error: "Could not reach that Jira site. Check the site name and try again.", status: 502 };
+  }
+  if (res.status === 401 || res.status === 403) return { error: "Jira did not accept this email and API token. Create a new token and try again.", status: 400 };
+  if (!res.ok) return { error: "Jira did not answer as expected. Check the site name and try again.", status: 502 };
+  return { ok: true };
+}
+
+// The project's issue types (Epic, Story, Subtask and so on). Answers an error when the key does not match a project.
+async function jiraProject(site, email, token, projectKey) {
+  let res;
+  try {
+    res = await jiraRequest(site, jiraAuth(email, token), `/project/${encodeURIComponent(projectKey)}`);
+  } catch {
+    return { error: "Could not reach that Jira site. Try again in a minute.", status: 502 };
+  }
+  if (res.status === 404) return { error: `Jira has no project with the key ${projectKey}. Check the key and try again.`, status: 400 };
+  if (res.status === 401 || res.status === 403) return { error: `Jira will not let this account use the project ${projectKey}.`, status: 400 };
+  if (!res.ok) return { error: "Jira did not return the project. Try again in a minute.", status: 502 };
+  const body = await res.json().catch(() => ({}));
+  return { issueTypes: Array.isArray(body.issueTypes) ? body.issueTypes : [] };
+}
+
+// Checks the account and the project together, before anything is saved.
+async function checkJira(site, email, token, projectKey) {
+  const me = await jiraMyself(site, email, token);
+  if (me.error) return me;
+  return jiraProject(site, email, token, projectKey);
+}
+
+async function projectToolStatus(request, env) {
+  const auth = await requireUser(env, request);
+  if (auth.response) return auth.response;
+  const res = await serviceRest(env, `project_tool_connections?user_id=eq.${auth.user.id}&select=site,email,project_key,connected_at`);
+  if (!res.ok) return json({ error: "Could not read your project tool connection." }, 502);
+  const row = (await res.json())[0];
+  return json({
+    connected: !!row,
+    tool: "jira",
+    site: row ? row.site : null,
+    email: row ? row.email : null,
+    project_key: row ? row.project_key : null,
+    connected_at: row ? row.connected_at : null,
+  });
+}
+
+// Saves the person's Jira account after checking it works. If the site or project changes, links to the old
+// project are forgotten, because those issues belong to the old project.
+async function projectToolSave(request, env) {
+  const auth = await requireUser(env, request);
+  if (auth.response) return auth.response;
+  const parsed = await readJson(request);
+  if (parsed.error) return json({ error: parsed.error }, 400);
+  const v = parsed.value || {};
+  const site = normalizeJiraSite(v.site);
+  if (!site) return json({ error: "Enter your Jira site, for example yourcompany.atlassian.net." }, 400);
+  const email = typeof v.email === "string" ? v.email.trim().toLowerCase() : "";
+  if (!JIRA_EMAIL_PATTERN.test(email) || email.length > 320) return json({ error: "Enter the email address you sign in to Jira with." }, 400);
+  const token = typeof v.token === "string" ? v.token.trim() : "";
+  if (token.length < 16 || token.length > 500) return json({ error: "Paste the API token you created in Jira." }, 400);
+  const projectKey = typeof v.project_key === "string" ? v.project_key.trim().toUpperCase() : "";
+  if (!JIRA_PROJECT_KEY_PATTERN.test(projectKey)) return json({ error: "Enter the project key, the short code in your Jira project, for example CUT." }, 400);
+
+  const checked = await checkJira(site, email, token, projectKey);
+  if (checked.error) return json({ error: checked.error }, checked.status);
+
+  const key = await encryptionKey(env);
+  if (!key) return json({ error: "Saving is not set up yet. Ask Cutover to set the encryption key." }, 503);
+  const sealed = await encryptModelKey(key, token);
+
+  const before = await serviceRest(env, `project_tool_connections?user_id=eq.${auth.user.id}&select=site,project_key`);
+  const previous = before.ok ? (await before.json())[0] : null;
+  if (previous && (previous.site !== site || previous.project_key !== projectKey)) {
+    await serviceRest(env, `project_tool_links?user_id=eq.${auth.user.id}`, { method: "DELETE", headers: { prefer: "return=minimal" } });
+  }
+
+  const saved = await serviceRest(env, "project_tool_connections?on_conflict=user_id", {
+    method: "POST",
+    headers: { prefer: "resolution=merge-duplicates,return=minimal" },
+    body: JSON.stringify({
+      user_id: auth.user.id,
+      tool: "jira",
+      site,
+      email,
+      project_key: projectKey,
+      ciphertext: sealed.ciphertext,
+      iv: sealed.iv,
+      connected_at: new Date().toISOString(),
+    }),
+  });
+  if (!saved.ok) return json({ error: "Could not save the Jira connection." }, 502);
+  return json({ saved: true, tool: "jira", site, email, project_key: projectKey });
+}
+
+async function projectToolDisconnect(request, env) {
+  const auth = await requireUser(env, request);
+  if (auth.response) return auth.response;
+  const links = await serviceRest(env, `project_tool_links?user_id=eq.${auth.user.id}`, { method: "DELETE", headers: { prefer: "return=minimal" } });
+  const res = await serviceRest(env, `project_tool_connections?user_id=eq.${auth.user.id}`, { method: "DELETE", headers: { prefer: "return=minimal" } });
+  if (!res.ok || !links.ok) return json({ error: "Could not disconnect the project tool." }, 502);
+  return json({ disconnected: true });
+}
+
+// The saved connection, with its token decrypted for one request. Answers a 409 when there is none yet.
+async function projectToolCredentials(env, userId) {
+  const res = await serviceRest(env, `project_tool_connections?user_id=eq.${userId}&select=site,email,project_key,ciphertext,iv`);
+  if (!res.ok) return { response: json({ error: "Could not read your project tool connection." }, 502) };
+  const row = (await res.json())[0];
+  if (!row) return { response: json({ error: "Connect your project tool first.", needs_setup: true }, 409) };
+  const key = await encryptionKey(env);
+  if (!key) return { response: json({ error: "Saving is not set up yet. Ask Cutover to set the encryption key." }, 503) };
+  let token;
+  try {
+    token = await decryptModelKey(key, row);
+  } catch {
+    return { response: json({ error: "Your saved connection could not be read. Connect it again.", needs_setup: true }, 409) };
+  }
+  return { site: row.site, email: row.email, project_key: row.project_key, token };
+}
+
+// The Jira issues for one grouping. A capability becomes an Epic, a feature a Story under its capability,
+// and each user story a Sub-task under its feature. Keys are stable, so a second push can find what it made.
+// With onlyCap set, only that capability and its features and stories are planned.
+function jiraPlan(grouping, onlyCap = null) {
+  const groups = Array.isArray(grouping.groups) ? grouping.groups : [];
+  const caps = Array.isArray(grouping.capabilities) && grouping.capabilities.length ? grouping.capabilities : null;
+  const items = [];
+  const capOf = new Map();
+  if (caps) {
+    caps.forEach((c, ci) => (c.features || []).forEach((fi) => capOf.set(fi, ci)));
+    caps.forEach((c, ci) => {
+      if (onlyCap !== null && ci !== onlyCap) return;
+      items.push({ key: `cap:${ci}`, kind: "epic", summary: c.name || `Capability ${ci + 1}`, parent: null, description: `Capability from Cutover with ${(c.features || []).length} feature(s).` });
+    });
+  }
+  groups.forEach((g, fi) => {
+    if (onlyCap !== null && capOf.get(fi) !== onlyCap) return;
+    const files = (Array.isArray(g.paths) ? g.paths : []).join("\n");
+    const parent = caps && capOf.has(fi) ? `cap:${capOf.get(fi)}` : null;
+    items.push({ key: `feat:${fi}`, kind: "story", summary: g.name || `Feature ${fi + 1}`, parent, description: [g.summary || "", files ? `Files:\n${files}` : ""].filter(Boolean).join("\n\n") });
+    (Array.isArray(g.stories) ? g.stories : []).forEach((st, si) => {
+      items.push({ key: `story:${fi}:${si}`, kind: "subtask", summary: st.story || `User story ${si + 1}`, parent: `feat:${fi}`, description: `Feature: ${g.name || `Feature ${fi + 1}`}` });
+    });
+  });
+  return items.map((it) => ({ ...it, summary: String(it.summary).slice(0, 255) }));
+}
+
+// Jira's rich text format for a plain description. Empty text becomes an empty paragraph.
+function adfDocument(text) {
+  const lines = String(text || "").split("\n").filter((line) => line.trim());
+  return {
+    type: "doc",
+    version: 1,
+    content: lines.length
+      ? lines.map((line) => ({ type: "paragraph", content: [{ type: "text", text: line.slice(0, 2000) }] }))
+      : [{ type: "paragraph", content: [] }],
+  };
+}
+
+// Sends the grouping's capabilities, features and user stories to the person's Jira project. Items already pushed
+// are updated, not created again. Links are saved even when the push stops early, so a retry does not duplicate.
+async function pushToJira(request, env, analysisId) {
+  const access = await analysisAccess(env, request, analysisId);
+  if (access.response) return access.response;
+  if (!canWorkItems(access.member)) return json({ error: "Auditors cannot push work to a project tool." }, 403);
+  const parsed = await readJson(request);
+  if (parsed.error) return json({ error: parsed.error }, 400);
+  const groupingId = parsed.value?.grouping_id;
+  if (typeof groupingId !== "string" || !UUID_PATTERN.test(groupingId)) return json({ error: "Choose a feature grouping to push." }, 400);
+
+  const creds = await projectToolCredentials(env, access.user.id);
+  if (creds.response) return creds.response;
+
+  const gres = await serviceRest(env, `feature_groupings?id=eq.${groupingId}&analysis_id=eq.${analysisId}&select=id,groups,capabilities`);
+  if (!gres.ok) return json({ error: "Could not load the feature grouping." }, 502);
+  const [grouping] = await gres.json();
+  if (!grouping) return json({ error: "Not found." }, 404);
+
+  // An optional capability_index pushes just that capability, with its features and user stories.
+  let onlyCap = null;
+  const capIndex = parsed.value?.capability_index;
+  if (capIndex !== undefined && capIndex !== null) {
+    const caps = Array.isArray(grouping.capabilities) ? grouping.capabilities : [];
+    if (!Number.isInteger(capIndex) || capIndex < 0 || capIndex >= caps.length) return json({ error: "Choose a capability that exists in this grouping." }, 400);
+    onlyCap = capIndex;
+  }
+  const plan = jiraPlan(grouping, onlyCap);
+  if (!plan.length) return json({ error: "There is nothing to push yet. Draft the features first." }, 400);
+  if (plan.length > PROJECT_TOOL_ITEMS_MAX) {
+    return json({ error: `This grouping has ${plan.length} items. Push up to ${PROJECT_TOOL_ITEMS_MAX} at a time.` }, 400);
+  }
+
+  const lres = await serviceRest(env, `project_tool_links?grouping_id=eq.${groupingId}&user_id=eq.${access.user.id}&select=item_key,jira_key`);
+  if (!lres.ok) return json({ error: "Could not read what was pushed before." }, 502);
+  const jiraKeys = new Map((await lres.json()).map((r) => [r.item_key, r.jira_key]));
+
+  const project = await jiraProject(creds.site, creds.email, creds.token, creds.project_key);
+  if (project.error) return json({ error: project.error }, project.status);
+  const typeId = (kind) => {
+    const want = { epic: "Epic", story: "Story", subtask: "Subtask" }[kind];
+    const found = project.issueTypes.find((t) => t.name === want && (kind === "subtask" ? !!t.subtask : !t.subtask));
+    if (found) return found.id;
+    if (kind === "story") return project.issueTypes.find((t) => !t.subtask && t.name !== "Epic")?.id || null;
+    return null;
+  };
+
+  const counts = { epics: 0, stories: 0, subtasks: 0, created: 0, updated: 0 };
+  const newLinks = [];
+  const auth = jiraAuth(creds.email, creds.token);
+  try {
+    for (const item of plan) {
+      const typeIdFor = typeId(item.kind);
+      if (!typeIdFor) return json({ error: `Your Jira project has no ${item.kind === "epic" ? "Epic" : item.kind === "subtask" ? "Sub-task" : "Story"} issue type.` }, 400);
+      const fields = { summary: item.summary, description: adfDocument(item.description) };
+      const existing = jiraKeys.get(item.key);
+      if (existing) {
+        const put = await jiraRequest(creds.site, auth, `/issue/${encodeURIComponent(existing)}`, { method: "PUT", body: JSON.stringify({ fields }) });
+        if (put.ok) {
+          counts.updated += 1;
+          continue;
+        }
+        if (put.status !== 404) return json({ error: `Jira did not update "${item.summary}". Try again in a minute.` }, 502);
+        // Deleted in Jira since the last push: create it again below.
+      }
+      const parentKey = item.parent ? jiraKeys.get(item.parent) || newLinks.find((l) => l.item_key === item.parent)?.jira_key : null;
+      if (item.parent && !parentKey) return json({ error: `Could not place "${item.summary}" under its parent. Push again.` }, 502);
+      const body = { fields: { ...fields, project: { key: creds.project_key }, issuetype: { id: typeIdFor } } };
+      if (parentKey) body.fields.parent = { key: parentKey };
+      const made = await jiraRequest(creds.site, auth, "/issue", { method: "POST", body: JSON.stringify(body) });
+      const madeBody = made.ok ? await made.json().catch(() => ({})) : null;
+      if (!madeBody || !madeBody.key) return json({ error: `Jira refused "${item.summary}". Check the project's issue types and settings.` }, 502);
+      jiraKeys.set(item.key, madeBody.key);
+      newLinks.push({ item_key: item.key, jira_key: madeBody.key });
+      counts.created += 1;
+      if (item.kind === "epic") counts.epics += 1;
+      else if (item.kind === "story") counts.stories += 1;
+      else counts.subtasks += 1;
+    }
+  } finally {
+    const rows = [...jiraKeys.entries()].map(([item_key, jira_key]) => ({
+      grouping_id: groupingId,
+      user_id: access.user.id,
+      item_key,
+      jira_key,
+      pushed_at: new Date().toISOString(),
+    }));
+    if (rows.length) {
+      await serviceRest(env, "project_tool_links?on_conflict=grouping_id,user_id,item_key", {
+        method: "POST",
+        headers: { prefer: "resolution=merge-duplicates,return=minimal" },
+        body: JSON.stringify(rows),
+      }).catch(() => {});
+    }
+  }
+  return json({ pushed: true, tool: "jira", project_key: creds.project_key, site: creds.site, ...counts, total: plan.length });
+}
+
 // ---- Analyses ----
 
 // ---- Operators: rename, delete and overview of workspaces ----
@@ -6060,6 +6347,9 @@ async function route(request, env) {
     if (path === "/api/calendar" && method === "DELETE") return calendarDisconnect(request, env);
     if (path === "/api/calendar/connect-url" && method === "POST") return calendarConnectUrl(request, env);
     if (path === "/api/calendar/callback" && method === "GET") return calendarCallback(request, env);
+    if (path === "/api/project-tool" && method === "GET") return projectToolStatus(request, env);
+    if (path === "/api/project-tool" && method === "PUT") return projectToolSave(request, env);
+    if (path === "/api/project-tool" && method === "DELETE") return projectToolDisconnect(request, env);
     if (path === "/api/staff/invitations" && method === "GET") return staffInvitations(request, env);
     if (path === "/api/prospects" && method === "GET") return listProspects(request, env);
     if (path === "/api/prospects" && method === "POST") return createProspect(request, env);
@@ -6215,6 +6505,8 @@ async function route(request, env) {
     if (groupingEdit && UUID_PATTERN.test(groupingEdit[1]) && method === "POST") return editGrouping(request, env, groupingEdit[1]);
     const groupingDiscard = path.match(/^\/api\/analyses\/([^/]+)\/groupings\/discard$/);
     if (groupingDiscard && UUID_PATTERN.test(groupingDiscard[1]) && method === "POST") return discardGrouping(request, env, groupingDiscard[1]);
+    const pushJira = path.match(/^\/api\/analyses\/([^/]+)\/groupings\/push-jira$/);
+    if (pushJira && UUID_PATTERN.test(pushJira[1]) && method === "POST") return pushToJira(request, env, pushJira[1]);
     const storiesStart = path.match(/^\/api\/analyses\/([^/]+)\/groupings\/stories$/);
     if (storiesStart && UUID_PATTERN.test(storiesStart[1]) && method === "POST") return startStories(request, env, storiesStart[1]);
     const storiesSources = path.match(/^\/api\/runner\/([^/]+)\/story-sources$/);
