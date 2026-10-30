@@ -164,6 +164,8 @@ function seed() {
     login_events: [],
     calendar_connections: [],
     prospects: [],
+    project_tool_connections: [],
+    project_tool_links: [],
   };
 }
 
@@ -175,6 +177,7 @@ let failLog;
 let failActivityLog;
 let resendCalls = [];
 let calendarFake = { busy: [], events: [], patched: [], deleted: [] };
+let jiraFake = { created: [], updated: [] };
 const realFetch = globalThis.fetch;
 
 const j = (body, status = 200) => new Response(body === undefined ? null : JSON.stringify(body), {
@@ -342,6 +345,7 @@ beforeEach(() => {
   failActivityLog = false;
   resendCalls = [];
   calendarFake = { busy: [], events: [], patched: [], deleted: [] };
+  jiraFake = { created: [], updated: [] };
   github = { dispatches: [], dispatchOk: true };
   globalThis.fetch = async (url, init = {}) => {
     const u = String(url);
@@ -413,6 +417,28 @@ beforeEach(() => {
       if (key === GOOD_KEY) return j({ type: "message", content: [{ type: "text", text: "OK" }] });
       if (key === BUSY_KEY) return j({ type: "error" }, 429);
       return j({ type: "error", error: { message: "invalid x-api-key" } }, 401);
+    }
+    // Jira Cloud. The fake knows one account and one project, and keeps the issues it is sent.
+    if (u.startsWith(`https://${JIRA_SITE}/rest/api/3`)) {
+      if (init.headers?.authorization !== jiraAuthFor(JIRA_EMAIL, JIRA_TOKEN)) return j({ errorMessages: ["bad credentials"] }, 401);
+      const path = u.slice(`https://${JIRA_SITE}/rest/api/3`.length);
+      if (path === "/myself") return j({ accountId: "acct-1" });
+      if (path.startsWith("/project/")) {
+        return path === "/project/CUT" ? j({ key: "CUT", issueTypes: JIRA_TYPES }) : j({ errorMessages: ["no project"] }, 404);
+      }
+      if (path === "/issue" && init.method === "POST") {
+        const body = JSON.parse(init.body);
+        const key = `CUT-${jiraFake.created.length + 1}`;
+        jiraFake.created.push({ key, ...body.fields });
+        return j({ key }, 201);
+      }
+      const existing = path.match(/^\/issue\/(CUT-\d+)$/);
+      if (existing && init.method === "PUT") {
+        if (!jiraFake.created.some((c) => c.key === existing[1])) return j({ errorMessages: ["gone"] }, 404);
+        jiraFake.updated.push({ key: existing[1], ...JSON.parse(init.body).fields });
+        return new Response(null, { status: 204 });
+      }
+      return j({ message: "unmocked jira" }, 599);
     }
     return j({ message: "unmocked" }, 599);
   };
@@ -4256,4 +4282,107 @@ test("a booked meeting has a Google Meet link, Google sends the calendar invitat
     delete env.RESEND_API_KEY;
     delete env.EMAIL_FROM;
   }
+});
+
+// ---- Project tool: Jira ----
+
+const JIRA_SITE = "acme.atlassian.net";
+const JIRA_EMAIL = "engineer@acme.test";
+const JIRA_TOKEN = "jira-test-token-abcdef123456";
+const JIRA_TYPES = [
+  { id: "10000", name: "Epic", subtask: false },
+  { id: "10001", name: "Story", subtask: false },
+  { id: "10002", name: "Task", subtask: false },
+  { id: "10003", name: "Subtask", subtask: true },
+];
+const JIRA_CONNECTION = { site: JIRA_SITE, email: JIRA_EMAIL, token: JIRA_TOKEN, project_key: "cut" };
+const jiraAuthFor = (email, token) => `Basic ${Buffer.from(`${email}:${token}`).toString("base64")}`;
+
+test("the project tool accepts only an Atlassian Cloud site", async () => {
+  const res = await call("/api/project-tool", { as: "eng_a", method: "PUT", body: { ...JIRA_CONNECTION, site: "evil.example.com" } });
+  assert.equal(res.status, 400);
+  assert.equal(state.project_tool_connections.length, 0);
+});
+
+test("a Jira connection is checked before it is saved, and the token is stored encrypted", async () => {
+  const saved = await call("/api/project-tool", { as: "eng_a", method: "PUT", body: JIRA_CONNECTION });
+  assert.equal(saved.status, 200);
+  assert.equal(saved.body.project_key, "CUT", "the project key is saved in capitals");
+  const row = state.project_tool_connections.find((r) => r.user_id === PEOPLE.eng_a.id);
+  assert.ok(row, "the connection is saved for this person");
+  assert.ok(!JSON.stringify(row).includes(JIRA_TOKEN), "the token never appears in the stored row");
+  const status = await call("/api/project-tool", { as: "eng_a" });
+  assert.equal(status.body.connected, true);
+  assert.equal(status.body.site, JIRA_SITE);
+  assert.ok(!JSON.stringify(status.body).includes(JIRA_TOKEN), "the token is never sent back to the app");
+});
+
+test("a wrong Jira token or project key is refused and nothing is saved", async () => {
+  const badToken = await call("/api/project-tool", { as: "eng_a", method: "PUT", body: { ...JIRA_CONNECTION, token: "jira-wrong-token-000000000" } });
+  assert.equal(badToken.status, 400);
+  assert.match(badToken.body.error, /did not accept/);
+  const badKey = await call("/api/project-tool", { as: "eng_a", method: "PUT", body: { ...JIRA_CONNECTION, project_key: "NOPE" } });
+  assert.equal(badKey.status, 400);
+  assert.match(badKey.body.error, /no project with the key NOPE/);
+  assert.equal(state.project_tool_connections.length, 0);
+});
+
+test("pushing a grouping makes an epic per capability, a story per feature and a sub-task per user story", async () => {
+  await call("/api/project-tool", { as: "eng_a", method: "PUT", body: JIRA_CONNECTION });
+  const stories = [{ id: "s1", story: "A buyer can place an order", rules: [] }];
+  state.feature_groupings.push({ ...groupingRow(1200, "draft", [{ name: "Ordering", summary: "Orders", paths: ["src/A.java"], stories }]), capabilities: [{ name: "Sales", features: [0] }] });
+  const res = await call(`/api/analyses/${AN_ACME}/groupings/push-jira`, { as: "eng_a", method: "POST", body: { grouping_id: uid(1200) } });
+  assert.equal(res.status, 200, JSON.stringify(res.body));
+  assert.equal(res.body.created, 3);
+  assert.equal(res.body.epics, 1);
+  assert.equal(res.body.stories, 1);
+  assert.equal(res.body.subtasks, 1);
+  const [epic, story, sub] = jiraFake.created;
+  assert.equal(epic.summary, "Sales");
+  assert.equal(epic.issuetype.id, "10000");
+  assert.equal(story.parent.key, epic.key, "the feature sits under its capability");
+  assert.equal(sub.parent.key, story.key, "the user story sits under its feature");
+  assert.equal(sub.issuetype.id, "10003");
+  assert.equal(state.project_tool_links.length, 3, "each pushed item is remembered");
+});
+
+test("pushing the same grouping again updates the issues instead of creating them again", async () => {
+  await call("/api/project-tool", { as: "eng_a", method: "PUT", body: JIRA_CONNECTION });
+  state.feature_groupings.push(groupingRow(1210, "draft"));
+  const first = await call(`/api/analyses/${AN_ACME}/groupings/push-jira`, { as: "eng_a", method: "POST", body: { grouping_id: uid(1210) } });
+  assert.equal(first.body.created, 1);
+  const second = await call(`/api/analyses/${AN_ACME}/groupings/push-jira`, { as: "eng_a", method: "POST", body: { grouping_id: uid(1210) } });
+  assert.equal(second.status, 200);
+  assert.equal(second.body.created, 0);
+  assert.equal(second.body.updated, 1);
+  assert.equal(jiraFake.created.length, 1, "no duplicate issue was made");
+  assert.equal(jiraFake.updated.length, 1);
+});
+
+test("pushing needs a saved Jira connection first, and auditors cannot push", async () => {
+  state.feature_groupings.push(groupingRow(1220, "draft"));
+  const none = await call(`/api/analyses/${AN_ACME}/groupings/push-jira`, { as: "eng_a", method: "POST", body: { grouping_id: uid(1220) } });
+  assert.equal(none.status, 409);
+  assert.equal(none.body.needs_setup, true);
+  await call("/api/project-tool", { as: "eng_a", method: "PUT", body: JIRA_CONNECTION });
+  const aud = await call(`/api/analyses/${AN_ACME}/groupings/push-jira`, { as: "aud_a", method: "POST", body: { grouping_id: uid(1220) } });
+  assert.equal(aud.status, 403);
+  assert.equal(jiraFake.created.length, 0);
+});
+
+test("pushing one capability sends only that capability, its features and its user stories", async () => {
+  await call("/api/project-tool", { as: "eng_a", method: "PUT", body: JIRA_CONNECTION });
+  const stories = [{ id: "s1", story: "A buyer can place an order", rules: [] }];
+  state.feature_groupings.push({
+    ...groupingRow(1230, "draft", [
+      { name: "Ordering", summary: "Orders", paths: ["src/A.java"], stories },
+      { name: "Returns", summary: "Returns", paths: ["src/B.java"], stories: [] },
+    ]),
+    capabilities: [{ name: "Sales", features: [0] }, { name: "Support", features: [1] }],
+  });
+  const res = await call(`/api/analyses/${AN_ACME}/groupings/push-jira`, { as: "eng_a", method: "POST", body: { grouping_id: uid(1230), capability_index: 0 } });
+  assert.equal(res.status, 200, JSON.stringify(res.body));
+  assert.deepEqual(jiraFake.created.map((c) => c.summary), ["Sales", "Ordering", "A buyer can place an order"]);
+  const bad = await call(`/api/analyses/${AN_ACME}/groupings/push-jira`, { as: "eng_a", method: "POST", body: { grouping_id: uid(1230), capability_index: 5 } });
+  assert.equal(bad.status, 400);
 });
