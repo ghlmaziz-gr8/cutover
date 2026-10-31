@@ -1560,6 +1560,11 @@ button:not(:disabled):active{transform:scale(.965)}
     .pt-label{font:700 12px var(--body)}
     .pt-input{font:14px var(--body);padding:10px 12px;border:1px solid var(--line);border-radius:10px;background:var(--card);color:var(--fg)}
     .pt-note{font:600 13px var(--body);color:var(--ok);margin:10px 0 0}
+    .pt-suggest{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-top:12px}
+    .pt-suggest .btn{padding:6px 14px;font-size:13px}
+    .pt-history-title{margin:20px 0 6px}
+    .pt-history{display:grid;gap:6px;font:13px/1.5 var(--body);color:var(--muted)}
+    .pt-history-item{padding:8px 10px;border:1px solid var(--line);border-radius:10px}
     .pt-error{color:var(--bad);font:600 13px var(--body);min-height:1em;margin:10px 0 0}
     .pt-actions{display:flex;justify-content:flex-end;gap:10px;margin-top:14px}
     .fg-ready-groups{display:grid;gap:4px}
@@ -3825,6 +3830,14 @@ button:not(:disabled):active{transform:scale(.965)}
 
   let followUpDialog = null;
   let followUpProspectId = null;
+  let followUpPerson = { first: "", company: "" };
+
+  // Suggested wording for a follow-up. Staff can edit the text before sending.
+  const FOLLOWUP_NOTES = {
+    friendly: (p) => `Hi ${p.first || "there"}, thank you for your time today. I'm glad we could show you how Cutover AI helps ${p.company || "your team"} plan its modernization or migration. Try the demo below whenever suits you, and let me know if you'd like another walkthrough.`,
+    direct: (p) => `${p.first || "There"}, thanks for the time today. Cutover AI can take ${p.company || "your team"}'s modernization or migration from legacy code to a plan you can verify. Try the demo below, and tell me the next step you'd like.`,
+    formal: (p) => `Dear ${p.first || "there"}, thank you for meeting with us today. I would be pleased to answer any further questions on how Cutover AI can support ${p.company || "your organisation"}'s modernization or migration. The demonstration below is available at your convenience.`,
+  };
 
   function buildFollowUpDialog() {
     const dlg = document.createElement("dialog");
@@ -3845,6 +3858,16 @@ button:not(:disabled):active{transform:scale(.965)}
     note.maxLength = 500;
     const noteLabel = el("label", null, "pt-field");
     noteLabel.append(el("span", "Personal note (optional)", "pt-label"), note);
+    const suggest = el("div", null, "pt-suggest");
+    suggest.append(el("span", "Suggest a note:", "muted small"));
+    for (const [key, label] of [["friendly", "Friendly"], ["direct", "Direct"], ["formal", "Formal"]]) {
+      const b = el("button", label, "btn ghost");
+      b.type = "button";
+      b.addEventListener("click", () => {
+        note.value = FOLLOWUP_NOTES[key](followUpPerson);
+      });
+      suggest.append(b);
+    }
     const message = el("p", "", "pt-error");
     message.setAttribute("role", "status");
     const actions = el("div", null, "pt-actions");
@@ -3853,7 +3876,9 @@ button:not(:disabled):active{transform:scale(.965)}
     const send = el("button", "Send follow-up", "btn");
     send.type = "submit";
     actions.append(close, send);
-    form.append(title, intro, toLabel, noteLabel, message, actions);
+    const historyTitle = el("p", "Sent follow-ups", "pt-label pt-history-title");
+    const history = el("div", null, "pt-history");
+    form.append(title, intro, toLabel, noteLabel, suggest, message, actions, historyTitle, history);
     dlg.append(form);
     document.body.append(dlg);
     close.addEventListener("click", () => dlg.close());
@@ -3875,25 +3900,50 @@ button:not(:disabled):active{transform:scale(.965)}
         const failed = res.failed && res.failed.length ? ` Could not send to: ${res.failed.join(", ")}.` : "";
         message.className = "pt-note";
         message.textContent = `Sent to ${count} ${count === 1 ? "person" : "people"}.${failed}`;
+        loadFollowUpHistory(followUpProspectId);
       } catch (err) {
         message.textContent = err.message;
       } finally {
         send.disabled = false;
       }
     });
-    followUpDialog = { dlg, to, note, message };
+    followUpDialog = { dlg, to, note, message, history };
     return followUpDialog;
+  }
+
+  // Who was sent a follow-up, when, and by whom. Newest first.
+  async function loadFollowUpHistory(id) {
+    const list = followUpDialog.history;
+    list.replaceChildren(el("p", "Loading…", "muted small"));
+    try {
+      const res = await api(`/api/prospects/${id}/followups`);
+      if (id !== followUpProspectId) return;
+      list.replaceChildren();
+      if (!res.followups.length) {
+        list.append(el("p", "No follow-ups sent yet.", "muted small"));
+        return;
+      }
+      for (const f of res.followups) {
+        const when = new Date(f.sent_at).toLocaleString([], { dateStyle: "medium", timeStyle: "short" });
+        const by = f.sent_by_name ? `${f.sent_by_name} (${f.sent_by_email})` : f.sent_by_email;
+        list.append(el("div", `${when} · to ${f.recipient_email} · by ${by}`, "pt-history-item"));
+      }
+    } catch (err) {
+      list.replaceChildren(el("p", err.message, "pt-error"));
+    }
   }
 
   function openFollowUp(p) {
     const d = followUpDialog || buildFollowUpDialog();
     followUpProspectId = p.id;
+    followUpPerson = { first: p.first_name || "", company: p.company || "" };
     d.to.value = [p.email, ...(p.extra_emails || [])].join(", ");
     d.note.value = "";
     d.message.className = "pt-error";
     d.message.textContent = "";
     d.dlg.showModal();
     d.to.focus();
+    loadFollowUpHistory(p.id);
   }
 
   // Suggested notes are fixed wording with the prospect's name and company filled in. Staff can edit them before sending.
