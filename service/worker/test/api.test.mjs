@@ -4386,3 +4386,49 @@ test("pushing one capability sends only that capability, its features and its us
   const bad = await call(`/api/analyses/${AN_ACME}/groupings/push-jira`, { as: "eng_a", method: "POST", body: { grouping_id: uid(1230), capability_index: 5 } });
   assert.equal(bad.status, 400);
 });
+
+// ---- Follow-up after a meeting ----
+
+test("a follow-up goes to the prospect and to the people added, one email each, with the game link", async () => {
+  const { id } = await invitePat();
+  const before = resendCalls.length;
+  const res = await call(`/api/prospects/${id}/follow-up`, { as: "sales", method: "POST", body: { recipients: "buyer@prospect.test, cfo@buyer.test", message: "Good talking today." } });
+  assert.equal(res.status, 200, JSON.stringify(res.body));
+  assert.deepEqual(res.body.sent, ["buyer@prospect.test", "cfo@buyer.test"]);
+  const mails = resendCalls.slice(before);
+  assert.equal(mails.length, 2, "one email per person");
+  assert.deepEqual(mails[0].to, ["buyer@prospect.test"]);
+  assert.match(mails[0].text, /^Hi Pat,/m);
+  assert.match(mails[1].text, /^Hi there,/m, "people added get a general greeting");
+  for (const mail of mails) {
+    assert.match(mail.text, /https:\/\/playground\.google\/g\/zyq07y/);
+    assert.match(mail.text, /Good talking today\./);
+    assert.match(mail.html, /Play now/);
+  }
+});
+
+test("a follow-up refuses bad addresses, too many people, a long note, and people who cannot invite", async () => {
+  const { id } = await invitePat();
+  const path = `/api/prospects/${id}/follow-up`;
+  const bad = await call(path, { as: "sales", method: "POST", body: { recipients: ["not-an-email"] } });
+  assert.equal(bad.status, 400);
+  const tooMany = Array.from({ length: 9 }, (_, i) => `person${i}@buyer.test`);
+  assert.equal((await call(path, { as: "sales", method: "POST", body: { recipients: tooMany } })).status, 400);
+  const long = await call(path, { as: "sales", method: "POST", body: { recipients: ["x@buyer.test"], message: "x".repeat(501) } });
+  assert.equal(long.status, 400);
+  const outsider = await call(path, { as: "aud_a", method: "POST", body: { recipients: ["x@buyer.test"] } });
+  assert.equal(outsider.status, 403);
+});
+
+test("a follow-up says so when email is not set up", async () => {
+  const { id } = await invitePat();
+  const saved = env.RESEND_API_KEY;
+  delete env.RESEND_API_KEY;
+  try {
+    const res = await call(`/api/prospects/${id}/follow-up`, { as: "sales", method: "POST", body: { recipients: ["x@buyer.test"] } });
+    assert.equal(res.status, 503);
+  } finally {
+    env.RESEND_API_KEY = saved;
+  }
+});
+

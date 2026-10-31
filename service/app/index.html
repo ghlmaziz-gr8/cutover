@@ -1559,6 +1559,7 @@ button:not(:disabled):active{transform:scale(.965)}
     .pt-field{display:grid;gap:6px;margin-top:12px}
     .pt-label{font:700 12px var(--body)}
     .pt-input{font:14px var(--body);padding:10px 12px;border:1px solid var(--line);border-radius:10px;background:var(--card);color:var(--fg)}
+    .pt-note{font:600 13px var(--body);color:var(--ok);margin:10px 0 0}
     .pt-error{color:var(--bad);font:600 13px var(--body);min-height:1em;margin:10px 0 0}
     .pt-actions{display:flex;justify-content:flex-end;gap:10px;margin-top:14px}
     .fg-ready-groups{display:grid;gap:4px}
@@ -3811,8 +3812,88 @@ button:not(:disabled):active{transform:scale(.965)}
       row.append(el("div", p.email, "muted small"));
       const emailState = p.last_email_at ? "invitation sent" : "invitation not sent";
       row.append(el("div", `Invited by ${p.invited_by_email} on ${new Date(p.invited_at).toLocaleDateString()} · ${emailState} · ${String(p.status).replace("_", " ")}`, "muted small"));
+      const follow = el("button", "Follow up", "btn ghost");
+      follow.type = "button";
+      follow.style.marginTop = "8px";
+      follow.addEventListener("click", () => openFollowUp(p));
+      row.append(follow);
       box.append(row);
     }
+  }
+
+  // ---- Follow-up after a meeting: one rich email per person, with screenshots and the game. Staff check the list first. ----
+
+  let followUpDialog = null;
+  let followUpProspectId = null;
+
+  function buildFollowUpDialog() {
+    const dlg = document.createElement("dialog");
+    dlg.className = "pt-dialog";
+    dlg.setAttribute("aria-labelledby", "fuTitle");
+    const form = document.createElement("form");
+    form.noValidate = true;
+    const title = el("h3", "Send a follow-up", "pt-title");
+    title.id = "fuTitle";
+    const intro = el("p", "Each person gets their own email with a few screens from the portal and a link to play Cutover Site.", "muted small");
+    const to = el("textarea", null, "pt-input");
+    to.rows = 3;
+    to.setAttribute("aria-label", "Send to");
+    const toLabel = el("label", null, "pt-field");
+    toLabel.append(el("span", "Send to", "pt-label"), to, el("span", "Separate addresses with commas. Up to 8 people.", "muted small"));
+    const note = el("textarea", null, "pt-input");
+    note.rows = 3;
+    note.maxLength = 500;
+    const noteLabel = el("label", null, "pt-field");
+    noteLabel.append(el("span", "Personal note (optional)", "pt-label"), note);
+    const message = el("p", "", "pt-error");
+    message.setAttribute("role", "status");
+    const actions = el("div", null, "pt-actions");
+    const close = el("button", "Close", "btn ghost");
+    close.type = "button";
+    const send = el("button", "Send follow-up", "btn");
+    send.type = "submit";
+    actions.append(close, send);
+    form.append(title, intro, toLabel, noteLabel, message, actions);
+    dlg.append(form);
+    document.body.append(dlg);
+    close.addEventListener("click", () => dlg.close());
+    dlg.addEventListener("cancel", (e) => {
+      e.preventDefault();
+      dlg.close();
+    });
+    form.addEventListener("submit", async (e) => {
+      e.preventDefault();
+      message.className = "pt-error";
+      message.textContent = "";
+      send.disabled = true;
+      try {
+        const res = await api(`/api/prospects/${followUpProspectId}/follow-up`, {
+          method: "POST",
+          body: JSON.stringify({ recipients: to.value, message: note.value.trim() }),
+        });
+        const count = res.sent.length;
+        const failed = res.failed && res.failed.length ? ` Could not send to: ${res.failed.join(", ")}.` : "";
+        message.className = "pt-note";
+        message.textContent = `Sent to ${count} ${count === 1 ? "person" : "people"}.${failed}`;
+      } catch (err) {
+        message.textContent = err.message;
+      } finally {
+        send.disabled = false;
+      }
+    });
+    followUpDialog = { dlg, to, note, message };
+    return followUpDialog;
+  }
+
+  function openFollowUp(p) {
+    const d = followUpDialog || buildFollowUpDialog();
+    followUpProspectId = p.id;
+    d.to.value = [p.email, ...(p.extra_emails || [])].join(", ");
+    d.note.value = "";
+    d.message.className = "pt-error";
+    d.message.textContent = "";
+    d.dlg.showModal();
+    d.to.focus();
   }
 
   // Suggested notes are fixed wording with the prospect's name and company filled in. Staff can edit them before sending.
