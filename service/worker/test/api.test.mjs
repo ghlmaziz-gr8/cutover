@@ -166,6 +166,7 @@ function seed() {
     prospects: [],
     project_tool_connections: [],
     project_tool_links: [],
+    prospect_followups: [],
   };
 }
 
@@ -4408,6 +4409,9 @@ test("a follow-up goes to the prospect and to the people added, one email each, 
     assert.match(mail.html, /A quick game for a few minutes of fun to understand how easy Cutover Site makes it for teams to modernize and migrate, while reducing the risks of delays\./, "the game line is in the email");
     assert.match(mail.html, /src="https:\/\/cutover\.site\/email\/cutover-site-hero\.jpg"/, "the homepage hero screenshot is in the email");
     assert.match(mail.html, /src="https:\/\/cutover\.site\/email\/cutover-site-security\.jpg"/, "the security screenshot is in the email");
+    assert.match(mail.html, /href="https:\/\/cutover\.site\/cutover-demo\/index\.html"/, "the demo is linked");
+    assert.match(mail.text, /https:\/\/cutover\.site\/cutover-demo\/index\.html/, "the demo is linked in the text version");
+    assert.match(mail.html, /<a href="https:\/\/cutover\.site" style="text-decoration:none"><img src="https:\/\/cutover\.site\/email\/cutover-site-hero\.jpg"/, "the homepage screenshot goes to the site");
   }
 });
 
@@ -4434,5 +4438,25 @@ test("a follow-up says so when email is not set up", async () => {
   } finally {
     env.RESEND_API_KEY = saved;
   }
+});
+
+test("each follow-up is tracked with who sent it, when, to whom, and the note; the history can be read back", async () => {
+  const { id } = await invitePat();
+  const before = Date.now();
+  const res = await call(`/api/prospects/${id}/follow-up`, { as: "sales", method: "POST", body: { recipients: "buyer@prospect.test, cfo@buyer.test", message: "Good talking today." } });
+  assert.equal(res.status, 200);
+  assert.equal(res.body.tracked, true);
+  assert.equal(state.prospect_followups.length, 2, "one row per person emailed");
+  const row = state.prospect_followups.find((r) => r.recipient_email === "cfo@buyer.test");
+  assert.equal(row.prospect_id, id);
+  assert.equal(row.sent_by_email, "sales@cutover.test");
+  assert.equal(row.message, "Good talking today.");
+  assert.ok(new Date(row.sent_at).getTime() >= before, "the send time is recorded");
+  const history = await call(`/api/prospects/${id}/followups`, { as: "sales" });
+  assert.equal(history.status, 200);
+  assert.equal(history.body.followups.length, 2);
+  assert.ok(history.body.followups.every((f) => f.sent_by_email === "sales@cutover.test"));
+  const outsider = await call(`/api/prospects/${id}/followups`, { as: "aud_a" });
+  assert.equal(outsider.status, 403);
 });
 

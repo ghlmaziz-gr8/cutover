@@ -1122,6 +1122,9 @@ function parseRecipients(value) {
   return { emails };
 }
 
+const SITE_URL = "https://cutover.site";
+const DEMO_URL = "https://cutover.site/cutover-demo/index.html";
+
 // The follow-up for one recipient. The prospect gets their first name; other people get a general greeting.
 function followUpEmail(prospect, to, senderName, note) {
   const greetingName = to === String(prospect.email).toLowerCase() ? prospect.first_name : "there";
@@ -1132,6 +1135,7 @@ function followUpEmail(prospect, to, senderName, note) {
     ["Named approvals", "Nothing moves forward without a named approver, and each approval is logged."],
     ["Proof before the cutover", "Migrations check row counts and checksums after every copy."],
   ];
+  const sign = senderName || "The Cutover team";
   const text = [
     `Hi ${greetingName},`,
     "",
@@ -1139,17 +1143,18 @@ function followUpEmail(prospect, to, senderName, note) {
     "",
     ...points.map(([head, body]) => `- ${head}: ${body}`),
     "",
+    "Try the live demo (sample data, no sign-up needed):",
+    DEMO_URL,
+    "",
     ...(note ? [note, ""] : []),
-    ...FOLLOWUP_SCREENSHOTS.map((s) => `${s.caption}: ${s.src}`),
-    ...(FOLLOWUP_SCREENSHOTS.length ? [""] : []),
+    `See it in the portal: ${SITE_URL}`,
+    ...SITE_SCREENSHOTS.map((s) => `- ${s.caption}`),
+    "",
     `Take a break and play Cutover Site: ${GAME_URL}`,
     GAME_BLURB,
     "",
-    ...SITE_SCREENSHOTS.map((s) => `${s.caption}: ${s.src}`),
-    ...(SITE_SCREENSHOTS.length ? [""] : []),
-    "",
-    `${senderName || "The Cutover team"}`,
-    "cutover.site",
+    sign,
+    SITE_URL,
     "",
     UNATTENDED_NOTICE,
   ].join("\n");
@@ -1157,14 +1162,16 @@ function followUpEmail(prospect, to, senderName, note) {
   const pointRows = points
     .map(([head, body]) => `<tr><td style="padding:0 0 14px"><p style="margin:0;font:700 15px/1.4 Arial,sans-serif;color:#1c1735">${escapeHtml(head)}</p><p style="margin:4px 0 0;font:14px/1.6 Arial,sans-serif;color:#4b4668">${escapeHtml(body)}</p></td></tr>`)
     .join("");
-  const shotRows = FOLLOWUP_SCREENSHOTS.map(
-    (s) => `<tr><td style="padding:0 0 22px"><img src="${escapeHtml(s.src)}" alt="${escapeHtml(s.alt)}" width="552" style="display:block;width:100%;max-width:552px;height:auto;border-radius:12px;border:1px solid #e4e0f6"><p style="margin:8px 0 0;font:13px/1.5 Arial,sans-serif;color:#66607f">${escapeHtml(s.caption)}</p></td></tr>`,
+  const demoBlock = `<tr><td style="padding:22px 28px 0"><table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#f5f3ff;border:1px solid #e4e0f6;border-radius:14px"><tr><td style="padding:20px 22px"><p style="margin:0;font:700 18px/1.3 Arial,sans-serif;color:#1c1735">Try the live demo</p><p style="margin:8px 0 0;font:14px/1.6 Arial,sans-serif;color:#4b4668">Walk through a sample application from sign-in to a signed plan. It runs on synthetic sample data, and no sign-up is needed.</p><p style="margin:16px 0 0"><a href="${DEMO_URL}" style="display:inline-block;padding:12px 22px;border-radius:999px;background:#7c3aed;color:#ffffff;font:700 15px Arial,sans-serif;text-decoration:none">Try the demo</a></p></td></tr></table></td></tr>`;
+  const noteHtml = note ? `<tr><td style="padding:18px 28px 0"><p style="margin:0;padding:14px 16px;border-left:3px solid #7c3aed;background:#f5f3ff;font:15px/1.6 Arial,sans-serif;color:#1c1735">${escapeHtml(note)}</p></td></tr>` : "";
+  const shotRows = SITE_SCREENSHOTS.map(
+    (s) => `<tr><td style="padding:0 0 22px"><a href="${SITE_URL}" style="text-decoration:none"><img src="${escapeHtml(s.src)}" alt="${escapeHtml(s.alt)}" width="544" style="display:block;width:100%;max-width:544px;height:auto;border-radius:12px;border:1px solid #e4e0f6"></a><p style="margin:8px 0 0;font:13px/1.5 Arial,sans-serif;color:#66607f">${escapeHtml(s.caption)} <a href="${SITE_URL}" style="color:#7c3aed;font-weight:700">Visit cutover.site</a></p></td></tr>`,
   ).join("");
-  const siteShotRows = SITE_SCREENSHOTS.length
-    ? `<tr><td style="padding:8px 28px 0"><p style="margin:0 0 14px;font:700 15px/1.4 Arial,sans-serif;color:#1c1735">See it in the portal</p><table role="presentation" width="100%" cellpadding="0" cellspacing="0">${SITE_SCREENSHOTS.map((s) => `<tr><td style="padding:0 0 22px"><img src="${escapeHtml(s.src)}" alt="${escapeHtml(s.alt)}" width="544" style="display:block;width:100%;max-width:544px;height:auto;border-radius:12px;border:1px solid #e4e0f6"><p style="margin:8px 0 0;font:13px/1.5 Arial,sans-serif;color:#66607f">${escapeHtml(s.caption)}</p></td></tr>`).join("")}</table></td></tr>`
+  const screensBlock = shotRows
+    ? `<tr><td style="padding:26px 28px 0"><p style="margin:0 0 14px;font:700 16px/1.4 Arial,sans-serif;color:#1c1735">See it in the portal</p><table role="presentation" width="100%" cellpadding="0" cellspacing="0">${shotRows}</table></td></tr>`
     : "";
-  const noteHtml = note ? `<p style="margin:0 0 18px;padding:14px 16px;border-left:3px solid #7c3aed;background:#f5f3ff;font:15px/1.6 Arial,sans-serif;color:#1c1735">${escapeHtml(note)}</p>` : "";
-  const html = `<!doctype html><html><body style="margin:0;padding:24px 12px;background:#f4f2fb"><table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr><td align="center"><table role="presentation" width="600" cellpadding="0" cellspacing="0" style="max-width:600px;width:100%;background:#ffffff;border-radius:16px;overflow:hidden;border:1px solid #e4e0f6"><tr><td style="padding:28px 28px 8px"><p style="margin:0;font:700 12px/1.4 Arial,sans-serif;letter-spacing:.08em;color:#7c3aed">CUTOVER</p><h1 style="margin:10px 0 0;font:700 26px/1.25 Arial,sans-serif;color:#1c1735">Thank you for your time, ${escapeHtml(greetingName)}.</h1><p style="margin:12px 0 0;font:15px/1.6 Arial,sans-serif;color:#4b4668">Here is what Cutover does, with a few screens from the portal.</p></td></tr><tr><td style="padding:20px 28px 0"><table role="presentation" width="100%" cellpadding="0" cellspacing="0">${pointRows}</table></td></tr>${noteHtml ? `<tr><td style="padding:0 28px">${noteHtml}</td></tr>` : ""}${shotRows ? `<tr><td style="padding:4px 28px 0"><table role="presentation" width="100%" cellpadding="0" cellspacing="0">${shotRows}</table></td></tr>` : ""}<tr><td style="padding:8px 28px 28px"><table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:linear-gradient(135deg,#7c3aed,#ec4899);border-radius:14px;overflow:hidden"><tr><td><img src="${GAME_SCREENSHOT_URL}" alt="Cutover Site, the game: a site modernization simulation" width="552" style="display:block;width:100%;max-width:552px;height:auto"></td></tr><tr><td style="padding:18px 22px"><p style="margin:0;font:700 17px/1.4 Arial,sans-serif;color:#ffffff">Take a break and play Cutover Site</p><p style="margin:6px 0 14px;font:14px/1.5 Arial,sans-serif;color:#f5f3ff">${escapeHtml(GAME_BLURB)}</p><a href="${GAME_URL}" style="display:inline-block;padding:10px 18px;border-radius:999px;background:#ffffff;color:#7c3aed;font:700 14px Arial,sans-serif;text-decoration:none">Play now</a></td></tr></table></td></tr>${siteShotRows}<tr><td style="padding:0 28px 26px"><p style="margin:0;font:15px/1.6 Arial,sans-serif;color:#1c1735">${escapeHtml(senderName || "The Cutover team")}</p><p style="margin:2px 0 0;font:13px/1.5 Arial,sans-serif;color:#66607f">cutover.site</p><p style="margin:18px 0 0;font:12px/1.5 Arial,sans-serif;color:#8a84a6">${escapeHtml(UNATTENDED_NOTICE)}</p></td></tr></table></td></tr></table></body></html>`;
+  const gameBlock = `<tr><td style="padding:8px 28px 28px"><table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:linear-gradient(135deg,#7c3aed,#ec4899);border-radius:14px;overflow:hidden"><tr><td><a href="${GAME_URL}"><img src="${GAME_SCREENSHOT_URL}" alt="Cutover Site, the game: a site modernization simulation" width="552" style="display:block;width:100%;max-width:552px;height:auto"></a></td></tr><tr><td style="padding:18px 22px"><p style="margin:0;font:700 17px/1.4 Arial,sans-serif;color:#ffffff">Take a break and play Cutover Site</p><p style="margin:6px 0 14px;font:14px/1.5 Arial,sans-serif;color:#f5f3ff">${escapeHtml(GAME_BLURB)}</p><a href="${GAME_URL}" style="display:inline-block;padding:10px 18px;border-radius:999px;background:#ffffff;color:#7c3aed;font:700 14px Arial,sans-serif;text-decoration:none">Play now</a></td></tr></table></td></tr>`;
+  const html = `<!doctype html><html><body style="margin:0;padding:24px 12px;background:#f4f2fb"><table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr><td align="center"><table role="presentation" width="600" cellpadding="0" cellspacing="0" style="max-width:600px;width:100%;background:#ffffff;border-radius:16px;overflow:hidden;border:1px solid #e4e0f6"><tr><td style="padding:28px 28px 0"><p style="margin:0;font:700 12px/1.4 Arial,sans-serif;letter-spacing:.08em;color:#7c3aed">CUTOVER</p><h1 style="margin:10px 0 0;font:700 26px/1.25 Arial,sans-serif;color:#1c1735">Thank you for your time${greetingName === "there" ? "" : `, ${escapeHtml(greetingName)}`}.</h1><p style="margin:12px 0 0;font:15px/1.6 Arial,sans-serif;color:#4b4668">Here is what Cutover does, and how you can see it for yourself in a few minutes.</p></td></tr>${demoBlock}<tr><td style="padding:22px 28px 0"><table role="presentation" width="100%" cellpadding="0" cellspacing="0">${pointRows}</table></td></tr>${noteHtml}${screensBlock}${gameBlock}<tr><td style="padding:0 28px 26px"><p style="margin:0;font:15px/1.6 Arial,sans-serif;color:#1c1735">${escapeHtml(sign)}</p><p style="margin:2px 0 14px;font:13px/1.5 Arial,sans-serif;color:#66607f"><a href="${SITE_URL}" style="color:#7c3aed;font-weight:700">cutover.site</a></p><p style="margin:0;font:12px/1.5 Arial,sans-serif;color:#8a84a6">${escapeHtml(UNATTENDED_NOTICE)}</p></td></tr></table></td></tr></table></body></html>`;
   return { subject, text, html };
 }
 
@@ -1186,20 +1193,41 @@ async function followUpProspect(request, env, id) {
   const senderName = displayName(caller.user) || caller.user.email;
   const sent = [];
   const failed = [];
+  const sentAt = new Date().toISOString();
   for (const to of recipients.emails) {
     const mail = followUpEmail(prospect, to, senderName, rawMessage);
     const ok = await sendProspectMail(env, to, mail.subject, mail.text, mail.html);
     (ok ? sent : failed).push(to);
   }
-  if (sent.length) {
-    await serviceRest(env, `prospects?id=eq.${id}`, {
-      method: "PATCH",
-      headers: { prefer: "return=minimal" },
-      body: JSON.stringify({ last_email_at: new Date().toISOString() }),
-    });
-  }
   if (!sent.length) return json({ sent, failed, error: "Could not send to anyone. Try again in a minute." }, 502);
-  return json({ sent, failed });
+  // Each person emailed is recorded: who sent it, when, to whom, and the note used.
+  const tracked = await serviceRest(env, "prospect_followups", {
+    method: "POST",
+    headers: { prefer: "return=minimal" },
+    body: JSON.stringify(sent.map((to) => ({
+      prospect_id: id,
+      recipient_email: to,
+      sent_by_email: caller.user.email,
+      sent_by_name: senderName || null,
+      message: rawMessage || null,
+      sent_at: sentAt,
+    }))),
+  });
+  await serviceRest(env, `prospects?id=eq.${id}`, {
+    method: "PATCH",
+    headers: { prefer: "return=minimal" },
+    body: JSON.stringify({ last_email_at: sentAt }),
+  });
+  return json({ sent, failed, tracked: tracked.ok });
+}
+
+// The follow-ups sent to one prospect, newest first.
+async function listFollowUps(request, env, id) {
+  const caller = await prospectCaller(request, env);
+  if (caller.response) return caller.response;
+  const res = await serviceRest(env, `prospect_followups?prospect_id=eq.${id}&select=id,recipient_email,sent_by_email,sent_by_name,message,sent_at&order=sent_at.desc&limit=200`);
+  if (!res.ok) return json({ error: "Could not load the follow-ups." }, 502);
+  return json({ followups: await res.json() });
 }
 
 // ---- Booking: a prospect picks a free time from the sender's calendar, and can move or cancel it. Public, but only with a signed link. ----
@@ -6466,6 +6494,8 @@ async function route(request, env) {
     if (path === "/api/prospects" && method === "POST") return createProspect(request, env);
     const prospectFollowUp = path.match(/^\/api\/prospects\/([^/]+)\/follow-up$/);
     if (prospectFollowUp && UUID_PATTERN.test(prospectFollowUp[1]) && method === "POST") return followUpProspect(request, env, prospectFollowUp[1]);
+    const prospectFollowUps = path.match(/^\/api\/prospects\/([^/]+)\/followups$/);
+    if (prospectFollowUps && UUID_PATTERN.test(prospectFollowUps[1]) && method === "GET") return listFollowUps(request, env, prospectFollowUps[1]);
     const bookSlots = path.match(/^\/api\/book\/([^/]+)\/slots$/);
     if (bookSlots && method === "GET") return bookingSlots(request, env, decodeURIComponent(bookSlots[1]));
     const bookOne = path.match(/^\/api\/book\/([^/]+)$/);
