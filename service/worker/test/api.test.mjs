@@ -4404,6 +4404,7 @@ test("a follow-up goes to the prospect and to the people added, one email each, 
     assert.match(mail.text, /https:\/\/playground\.google\/g\/zyq07y/);
     assert.match(mail.text, /Good talking today\./);
     assert.match(mail.html, /Play now/);
+    assert.match(mail.html, /src="https:\/\/cutover\.site\/email\/cutover-site-game\.jpg"/, "the game screenshot is in the email");
   }
 });
 
