@@ -1091,6 +1091,102 @@ async function listProspects(request, env) {
   return json({ prospects: (await res.json()).map(publicProspect) });
 }
 
+// ---- Follow-up after a meeting: one rich email per person, with screenshots and the game. Sent only when the
+// sender presses the button, and only to the addresses the sender lists. ----
+const FOLLOWUP_MAX_RECIPIENTS = 8;
+const FOLLOWUP_MESSAGE_MAX = 500;
+const FOLLOWUP_EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const GAME_URL = "https://playground.google/g/zyq07y";
+// Screenshots hosted on the marketing site: { src, alt, caption }. Add one entry per image once it is committed.
+const FOLLOWUP_SCREENSHOTS = [];
+
+function parseRecipients(value) {
+  const list = Array.isArray(value) ? value : String(value || "").split(/[,;\s]+/);
+  const emails = [];
+  for (const raw of list) {
+    const email = String(raw || "").trim().toLowerCase();
+    if (!email) continue;
+    if (!FOLLOWUP_EMAIL_PATTERN.test(email) || email.length > 320) return { error: `This address is not valid: ${email}` };
+    if (!emails.includes(email)) emails.push(email);
+  }
+  if (!emails.length) return { error: "Add at least one email address." };
+  if (emails.length > FOLLOWUP_MAX_RECIPIENTS) return { error: `Send to up to ${FOLLOWUP_MAX_RECIPIENTS} people at a time.` };
+  return { emails };
+}
+
+// The follow-up for one recipient. The prospect gets their first name; other people get a general greeting.
+function followUpEmail(prospect, to, senderName, note) {
+  const greetingName = to === String(prospect.email).toLowerCase() ? prospect.first_name : "there";
+  const subject = `${prospect.first_name}, a look at Cutover, plus a short break`;
+  const points = [
+    ["Read the code, not the docs", "Business rules come straight from the source, with the exact lines behind each one."],
+    ["Stories you can check", "Every feature and user story links back to the rules it came from."],
+    ["Named approvals", "Nothing moves forward without a named approver, and each approval is logged."],
+    ["Proof before the cutover", "Migrations check row counts and checksums after every copy."],
+  ];
+  const text = [
+    `Hi ${greetingName},`,
+    "",
+    "Thank you for your time today. Here is a short summary of what Cutover does.",
+    "",
+    ...points.map(([head, body]) => `- ${head}: ${body}`),
+    "",
+    ...(note ? [note, ""] : []),
+    ...FOLLOWUP_SCREENSHOTS.map((s) => `${s.caption}: ${s.src}`),
+    ...(FOLLOWUP_SCREENSHOTS.length ? [""] : []),
+    `Take a break and play Cutover Site: ${GAME_URL}`,
+    "",
+    `${senderName || "The Cutover team"}`,
+    "cutover.site",
+    "",
+    UNATTENDED_NOTICE,
+  ].join("\n");
+
+  const pointRows = points
+    .map(([head, body]) => `<tr><td style="padding:0 0 14px"><p style="margin:0;font:700 15px/1.4 Arial,sans-serif;color:#1c1735">${escapeHtml(head)}</p><p style="margin:4px 0 0;font:14px/1.6 Arial,sans-serif;color:#4b4668">${escapeHtml(body)}</p></td></tr>`)
+    .join("");
+  const shotRows = FOLLOWUP_SCREENSHOTS.map(
+    (s) => `<tr><td style="padding:0 0 22px"><img src="${escapeHtml(s.src)}" alt="${escapeHtml(s.alt)}" width="552" style="display:block;width:100%;max-width:552px;height:auto;border-radius:12px;border:1px solid #e4e0f6"><p style="margin:8px 0 0;font:13px/1.5 Arial,sans-serif;color:#66607f">${escapeHtml(s.caption)}</p></td></tr>`,
+  ).join("");
+  const noteHtml = note ? `<p style="margin:0 0 18px;padding:14px 16px;border-left:3px solid #7c3aed;background:#f5f3ff;font:15px/1.6 Arial,sans-serif;color:#1c1735">${escapeHtml(note)}</p>` : "";
+  const html = `<!doctype html><html><body style="margin:0;padding:24px 12px;background:#f4f2fb"><table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr><td align="center"><table role="presentation" width="600" cellpadding="0" cellspacing="0" style="max-width:600px;width:100%;background:#ffffff;border-radius:16px;overflow:hidden;border:1px solid #e4e0f6"><tr><td style="padding:28px 28px 8px"><p style="margin:0;font:700 12px/1.4 Arial,sans-serif;letter-spacing:.08em;color:#7c3aed">CUTOVER</p><h1 style="margin:10px 0 0;font:700 26px/1.25 Arial,sans-serif;color:#1c1735">Thank you for your time, ${escapeHtml(greetingName)}.</h1><p style="margin:12px 0 0;font:15px/1.6 Arial,sans-serif;color:#4b4668">Here is what Cutover does, with a few screens from the portal.</p></td></tr><tr><td style="padding:20px 28px 0"><table role="presentation" width="100%" cellpadding="0" cellspacing="0">${pointRows}</table></td></tr>${noteHtml ? `<tr><td style="padding:0 28px">${noteHtml}</td></tr>` : ""}${shotRows ? `<tr><td style="padding:4px 28px 0"><table role="presentation" width="100%" cellpadding="0" cellspacing="0">${shotRows}</table></td></tr>` : ""}<tr><td style="padding:8px 28px 28px"><table role="presentation" cellpadding="0" cellspacing="0" style="background:linear-gradient(135deg,#7c3aed,#ec4899);border-radius:14px"><tr><td style="padding:18px 22px"><p style="margin:0;font:700 17px/1.4 Arial,sans-serif;color:#ffffff">Take a break and play Cutover Site</p><p style="margin:6px 0 14px;font:14px/1.5 Arial,sans-serif;color:#f5f3ff">A quick game for a few minutes of fun.</p><a href="${GAME_URL}" style="display:inline-block;padding:10px 18px;border-radius:999px;background:#ffffff;color:#7c3aed;font:700 14px Arial,sans-serif;text-decoration:none">Play now</a></td></tr></table></td></tr><tr><td style="padding:0 28px 26px"><p style="margin:0;font:15px/1.6 Arial,sans-serif;color:#1c1735">${escapeHtml(senderName || "The Cutover team")}</p><p style="margin:2px 0 0;font:13px/1.5 Arial,sans-serif;color:#66607f">cutover.site</p><p style="margin:18px 0 0;font:12px/1.5 Arial,sans-serif;color:#8a84a6">${escapeHtml(UNATTENDED_NOTICE)}</p></td></tr></table></td></tr></table></body></html>`;
+  return { subject, text, html };
+}
+
+// Sends the follow-up to each listed address, one email each. Only prospects that exist can be followed up.
+async function followUpProspect(request, env, id) {
+  const caller = await prospectCaller(request, env);
+  if (caller.response) return caller.response;
+  const parsed = await readJson(request);
+  if (parsed.error) return json({ error: parsed.error }, 400);
+  const rawMessage = typeof parsed.value?.message === "string" ? parsed.value.message.trim() : "";
+  if (rawMessage.length > FOLLOWUP_MESSAGE_MAX) return json({ error: `Keep the personal note under ${FOLLOWUP_MESSAGE_MAX} characters.` }, 400);
+  const recipients = parseRecipients(parsed.value?.recipients);
+  if (recipients.error) return json({ error: recipients.error }, 400);
+  const found = await serviceRest(env, `prospects?id=eq.${id}&select=*`);
+  if (!found.ok) return json({ error: "Could not load the prospect." }, 502);
+  const [prospect] = await found.json();
+  if (!prospect) return json({ error: "Not found." }, 404);
+  if (!env.RESEND_API_KEY || !env.EMAIL_FROM) return json({ error: "Email is not set up yet. Ask Cutover to finish the email setup." }, 503);
+  const senderName = displayName(caller.user) || caller.user.email;
+  const sent = [];
+  const failed = [];
+  for (const to of recipients.emails) {
+    const mail = followUpEmail(prospect, to, senderName, rawMessage);
+    const ok = await sendProspectMail(env, to, mail.subject, mail.text, mail.html);
+    (ok ? sent : failed).push(to);
+  }
+  if (sent.length) {
+    await serviceRest(env, `prospects?id=eq.${id}`, {
+      method: "PATCH",
+      headers: { prefer: "return=minimal" },
+      body: JSON.stringify({ last_email_at: new Date().toISOString() }),
+    });
+  }
+  if (!sent.length) return json({ sent, failed, error: "Could not send to anyone. Try again in a minute." }, 502);
+  return json({ sent, failed });
+}
+
 // ---- Booking: a prospect picks a free time from the sender's calendar, and can move or cancel it. Public, but only with a signed link. ----
 const BOOKING_TIME_ZONE_DEFAULT = "America/New_York";
 const BOOKING_MINUTES = 30;
@@ -6353,6 +6449,8 @@ async function route(request, env) {
     if (path === "/api/staff/invitations" && method === "GET") return staffInvitations(request, env);
     if (path === "/api/prospects" && method === "GET") return listProspects(request, env);
     if (path === "/api/prospects" && method === "POST") return createProspect(request, env);
+    const prospectFollowUp = path.match(/^\/api\/prospects\/([^/]+)\/follow-up$/);
+    if (prospectFollowUp && UUID_PATTERN.test(prospectFollowUp[1]) && method === "POST") return followUpProspect(request, env, prospectFollowUp[1]);
     const bookSlots = path.match(/^\/api\/book\/([^/]+)\/slots$/);
     if (bookSlots && method === "GET") return bookingSlots(request, env, decodeURIComponent(bookSlots[1]));
     const bookOne = path.match(/^\/api\/book\/([^/]+)$/);
