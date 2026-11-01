@@ -1253,6 +1253,27 @@ async function listFollowUps(request, env, id) {
   return json({ followups: await res.json() });
 }
 
+// Removes one record from the follow-up history. The email has already been sent and cannot be recalled.
+// Only the person who sent it, or an admin, may remove it.
+async function deleteFollowUp(request, env, prospectId, followUpId) {
+  const caller = await prospectCaller(request, env);
+  if (caller.response) return caller.response;
+  const found = await serviceRest(env, `prospect_followups?id=eq.${followUpId}&prospect_id=eq.${prospectId}&select=id,sent_by_email`);
+  if (!found.ok) return json({ error: "Could not delete the follow-up." }, 502);
+  const rows = await found.json();
+  if (!rows.length) return json({ error: "Follow-up not found." }, 404);
+  const mine = normalizeEmail(rows[0].sent_by_email) === normalizeEmail(caller.user.email);
+  const roles = await platformRolesFor(env, caller.user.email);
+  const manager = roles.includes("super_user") || roles.includes("admin");
+  if (!mine && !manager) return json({ error: "Only the person who sent this follow-up, or an admin, can delete it." }, 403);
+  const res = await serviceRest(env, `prospect_followups?id=eq.${followUpId}&prospect_id=eq.${prospectId}`, {
+    method: "DELETE",
+    headers: { prefer: "return=minimal" },
+  });
+  if (!res.ok) return json({ error: "Could not delete the follow-up." }, 502);
+  return json({ deleted: true });
+}
+
 // ---- Booking: a prospect picks a free time from the sender's calendar, and can move or cancel it. Public, but only with a signed link. ----
 const BOOKING_TIME_ZONE_DEFAULT = "America/New_York";
 const BOOKING_MINUTES = 30;
@@ -6522,6 +6543,8 @@ async function route(request, env) {
     if (prospectFollowUp && UUID_PATTERN.test(prospectFollowUp[1]) && method === "POST") return followUpProspect(request, env, prospectFollowUp[1]);
     const prospectFollowUps = path.match(/^\/api\/prospects\/([^/]+)\/followups$/);
     if (prospectFollowUps && UUID_PATTERN.test(prospectFollowUps[1]) && method === "GET") return listFollowUps(request, env, prospectFollowUps[1]);
+    const prospectFollowUpOne = path.match(/^\/api\/prospects\/([^/]+)\/followups\/([^/]+)$/);
+    if (prospectFollowUpOne && UUID_PATTERN.test(prospectFollowUpOne[1]) && UUID_PATTERN.test(prospectFollowUpOne[2]) && method === "DELETE") return deleteFollowUp(request, env, prospectFollowUpOne[1], prospectFollowUpOne[2]);
     const bookSlots = path.match(/^\/api\/book\/([^/]+)\/slots$/);
     if (bookSlots && method === "GET") return bookingSlots(request, env, decodeURIComponent(bookSlots[1]));
     const bookOne = path.match(/^\/api\/book\/([^/]+)$/);

@@ -1564,7 +1564,9 @@ button:not(:disabled):active{transform:scale(.965)}
     .pt-suggest .btn{padding:6px 14px;font-size:13px}
     .pt-history-title{margin:20px 0 6px}
     .pt-history{display:grid;gap:6px;font:13px/1.5 var(--body);color:var(--muted)}
-    .pt-history-item{padding:8px 10px;border:1px solid var(--line);border-radius:10px}
+    .pt-history-item{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:8px 10px;border:1px solid var(--line);border-radius:10px}
+    .pt-history-delete{font:600 12px var(--body);padding:4px 10px;border:1px solid var(--line);border-radius:8px;background:transparent;color:var(--bad);cursor:pointer;flex:none}
+    .pt-history-delete:disabled{opacity:.5;cursor:default}
     .pt-error{color:var(--bad);font:600 13px var(--body);min-height:1em;margin:10px 0 0}
     .pt-actions{display:flex;justify-content:flex-end;gap:10px;margin-top:14px}
     .fg-ready-groups{display:grid;gap:4px}
@@ -3926,10 +3928,31 @@ button:not(:disabled):active{transform:scale(.965)}
       for (const f of res.followups) {
         const when = new Date(f.sent_at).toLocaleString([], { dateStyle: "medium", timeStyle: "short" });
         const by = f.sent_by_name ? `${f.sent_by_name} (${f.sent_by_email})` : f.sent_by_email;
-        list.append(el("div", `${when} · to ${f.recipient_email} · by ${by}`, "pt-history-item"));
+        const row = el("div", "", "pt-history-item");
+        const label = el("span", `${when} · to ${f.recipient_email} · by ${by}`);
+        const remove = el("button", "Delete", "pt-history-delete");
+        remove.type = "button";
+        remove.addEventListener("click", () => deleteFollowUpRecord(id, f, remove));
+        row.append(label, remove);
+        list.append(row);
       }
     } catch (err) {
       list.replaceChildren(el("p", err.message, "pt-error"));
+    }
+  }
+
+  // Removes one history record. The email already went out and cannot be recalled, so the warning says so.
+  async function deleteFollowUpRecord(prospectId, f, button) {
+    const sure = window.confirm("Remove this record from the follow-up history? The email was already sent and cannot be recalled.");
+    if (!sure) return;
+    button.disabled = true;
+    try {
+      await api(`/api/prospects/${prospectId}/followups/${f.id}`, { method: "DELETE" });
+      if (prospectId === followUpProspectId) loadFollowUpHistory(prospectId);
+    } catch (err) {
+      button.disabled = false;
+      followUpDialog.message.className = "pt-error";
+      followUpDialog.message.textContent = err.message;
     }
   }
 

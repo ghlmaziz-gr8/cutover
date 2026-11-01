@@ -4463,6 +4463,31 @@ test("each follow-up is tracked with who sent it, when, to whom, and the note; t
   assert.equal(outsider.status, 403);
 });
 
+test("the person who sent a follow-up can remove it from the history; others cannot, and admins can", async () => {
+  const { id } = await invitePat();
+  await call(`/api/prospects/${id}/follow-up`, { as: "sales", method: "POST", body: { recipients: "buyer@prospect.test, cfo@buyer.test", message: "Hi." } });
+  const rows = state.prospect_followups.filter((r) => r.prospect_id === id);
+  assert.equal(rows.length, 2);
+  const [first, second] = rows;
+
+  const stranger = await call(`/api/prospects/${id}/followups/${first.id}`, { as: "support", method: "DELETE" });
+  assert.equal(stranger.status, 403, "support staff did not send it");
+  assert.equal(state.prospect_followups.length, 2);
+
+  const missing = await call(`/api/prospects/${id}/followups/${uid(99)}`, { as: "sales", method: "DELETE" });
+  assert.equal(missing.status, 404);
+
+  const mine = await call(`/api/prospects/${id}/followups/${first.id}`, { as: "sales", method: "DELETE" });
+  assert.equal(mine.status, 200);
+  assert.deepEqual(mine.body, { deleted: true });
+  const history = await call(`/api/prospects/${id}/followups`, { as: "sales" });
+  assert.deepEqual(history.body.followups.map((f) => f.id), [second.id], "only the removed record is gone");
+
+  const admin = await call(`/api/prospects/${id}/followups/${second.id}`, { as: "owner", method: "DELETE" });
+  assert.equal(admin.status, 200, "an admin can remove any record");
+  assert.equal(state.prospect_followups.filter((r) => r.prospect_id === id).length, 0);
+});
+
 test("the invitation shows the portal screenshots and the game card", async () => {
   const { token } = await invitePat();
   const invite = resendCalls[0];
