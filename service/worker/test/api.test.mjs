@@ -4108,6 +4108,9 @@ test("the booking link shows the prospect, offers weekday slots from the sender'
     assert.equal(state.prospects.find((p) => p.id === id).status, "booked");
     assert.equal(state.prospects.find((p) => p.id === id).meeting_at, first.start);
     const confirmation = resendCalls.find((c) => c.to.includes("pat@prospect.test"));
+    assert.match(confirmation.html, /src="https:\/\/cutover\.site\/email\/cutover-site-game\.jpg"/, "the booking confirmation shows the game screenshot");
+    assert.match(confirmation.html, /src="https:\/\/cutover\.site\/email\/cutover-site-hero\.jpg"/, "the booking confirmation shows the portal screenshots");
+    assert.match(confirmation.text, /Take a break and play Cutover Site/, "the booking confirmation text has the game line");
     assert.equal(confirmation.subject, "Your meeting with the Cutover team is booked");
     assert.ok(confirmation.text.includes("unattended"));
     const notice = resendCalls.find((c) => c.to.includes("sales@cutover.test"));
@@ -4458,5 +4461,15 @@ test("each follow-up is tracked with who sent it, when, to whom, and the note; t
   assert.ok(history.body.followups.every((f) => f.sent_by_email === "sales@cutover.test"));
   const outsider = await call(`/api/prospects/${id}/followups`, { as: "aud_a" });
   assert.equal(outsider.status, 403);
+});
+
+test("the invitation shows the portal screenshots and the game card", async () => {
+  const { token } = await invitePat();
+  const invite = resendCalls[0];
+  assert.match(invite.html, /src="https:\/\/cutover\.site\/email\/cutover-site-hero\.jpg"/);
+  assert.match(invite.html, /src="https:\/\/cutover\.site\/email\/cutover-site-game\.jpg"/);
+  assert.match(invite.html, /See it in the portal/);
+  assert.match(invite.text, /Take a break and play Cutover Site/);
+  assert.ok(token);
 });
 

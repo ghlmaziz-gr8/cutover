@@ -894,6 +894,7 @@ function prospectInviteEmail(prospect, bookingUrl) {
     `Visit cutover.site: ${SITE_ORIGIN}`,
     `See the demo: ${SITE_ORIGIN}/cutover-demo/`,
     "",
+    ...showcaseText(),
     `Built for regulated sectors: ${sectors.join(", ")}.`,
     "",
     UNATTENDED_NOTICE,
@@ -987,6 +988,7 @@ ${noteBlock}
     </div>
   </td></tr>
 
+${showcaseRows("32px")}
   <tr><td style="padding:22px 32px 30px 32px;text-align:center;font-size:15px">
     <a href="${SITE_ORIGIN}" style="color:#6d28d9;font-weight:700;text-decoration:none">Explore cutover.site</a>
     &nbsp;&nbsp;·&nbsp;&nbsp;
@@ -1105,6 +1107,27 @@ const SITE_SCREENSHOTS = [
   { src: "https://cutover.site/email/cutover-site-security.jpg", alt: "Cutover security and governance summary", caption: "Read-only discovery, named approvals and an audit trail from day one." },
 ];
 const GAME_BLURB = "A quick game for a few minutes of fun to understand how easy Cutover Site makes it for teams to modernize and migrate, while reducing the risks of delays.";
+
+// The screenshots and the game card, shared by the invitation, the follow-up and the meeting emails.
+function showcaseRows(side) {
+  const shots = SITE_SCREENSHOTS.map(
+    (s) => `<tr><td style="padding:0 0 22px"><a href="${SITE_URL}" style="text-decoration:none"><img src="${escapeHtml(s.src)}" alt="${escapeHtml(s.alt)}" width="552" style="display:block;width:100%;max-width:552px;height:auto;border-radius:12px;border:1px solid #e4e0f6"></a><p style="margin:8px 0 0;font:13px/1.5 Arial,sans-serif;color:#66607f">${escapeHtml(s.caption)} <a href="${SITE_URL}" style="color:#6d28d9;font-weight:700">Visit cutover.site</a></p></td></tr>`,
+  ).join("");
+  const shotBlock = shots ? `<tr><td style="padding:24px ${side} 0 ${side}"><p style="margin:0 0 14px;font:700 16px/1.4 Arial,sans-serif;color:#1d1640">See it in the portal</p><table role="presentation" width="100%" cellpadding="0" cellspacing="0">${shots}</table></td></tr>` : "";
+  const gameBlock = `<tr><td style="padding:8px ${side} 28px ${side}"><table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:linear-gradient(135deg,#7c3aed,#ec4899);border-radius:14px;overflow:hidden"><tr><td><a href="${GAME_URL}"><img src="${GAME_SCREENSHOT_URL}" alt="Cutover Site, the game: a site modernization simulation" width="552" style="display:block;width:100%;max-width:552px;height:auto"></a></td></tr><tr><td style="padding:18px 22px"><p style="margin:0;font:700 17px/1.4 Arial,sans-serif;color:#ffffff">Take a break and play Cutover Site</p><p style="margin:6px 0 14px;font:14px/1.5 Arial,sans-serif;color:#f5f3ff">${escapeHtml(GAME_BLURB)}</p><a href="${GAME_URL}" style="display:inline-block;padding:10px 18px;border-radius:999px;background:#ffffff;color:#7c3aed;font:700 14px Arial,sans-serif;text-decoration:none">Play now</a></td></tr></table></td></tr>`;
+  return shotBlock + gameBlock;
+}
+
+function showcaseText() {
+  return [
+    "See it in the portal:",
+    ...SITE_SCREENSHOTS.map((s) => `- ${s.caption} ${SITE_URL}`),
+    "",
+    `Take a break and play Cutover Site: ${GAME_URL}`,
+    GAME_BLURB,
+    "",
+  ];
+}
 // Screenshots hosted on the marketing site: { src, alt, caption }. Add one entry per image once it is committed.
 const FOLLOWUP_SCREENSHOTS = [];
 
@@ -1382,7 +1405,9 @@ function prospectBookingEmail(kind, firstName, when, manageUrl, meetUrl) {
   if (when) textLines.push(`When: ${when}`);
   if (meetUrl) textLines.push(`Join on Google Meet: ${meetUrl}`);
   if (manageUrl) textLines.push("", `Change or cancel your meeting: ${manageUrl}`);
-  textLines.push("", `Learn more at ${SITE_ORIGIN}`, `See the demo: ${SITE_ORIGIN}/cutover-demo/`, "", UNATTENDED_NOTICE);
+  const showcase = kind !== "cancelled";
+  if (showcase) textLines.push("", ...showcaseText());
+  textLines.push(`Learn more at ${SITE_ORIGIN}`, `See the demo: ${SITE_ORIGIN}/cutover-demo/`, "", UNATTENDED_NOTICE);
   const action = manageUrl
     ? `<a href="${escapeHtml(manageUrl)}" style="display:inline-block;background:#1d1640;color:#ffffff;text-decoration:none;font-weight:700;padding:14px 24px;border-radius:999px">${kind === "cancelled" ? "Book a new time" : "Change or cancel my meeting"}</a>`
     : `<a href="${SITE_ORIGIN}" style="display:inline-block;background:#1d1640;color:#ffffff;text-decoration:none;font-weight:700;padding:14px 24px;border-radius:999px">Visit cutover.site</a>`;
@@ -1398,6 +1423,7 @@ function prospectBookingEmail(kind, firstName, when, manageUrl, meetUrl) {
   </td></tr>
   ${whenBlock}
   <tr><td style="padding:28px 32px;text-align:center">${action}</td></tr>
+  ${showcase ? showcaseRows("32px") : ""}
   <tr><td style="padding:0 32px 28px 32px;text-align:center;font-size:15px">
     <a href="${SITE_ORIGIN}" style="color:#6d28d9;font-weight:700">cutover.site</a> &nbsp;·&nbsp; <a href="${SITE_ORIGIN}/cutover-demo/" style="color:#db2777;font-weight:700">See the demo</a>
   </td></tr>
