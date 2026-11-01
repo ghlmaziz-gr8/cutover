@@ -841,13 +841,13 @@ async function readProspectToken(env, token) {
 }
 
 // Sends one email from the sales address. Returns false, and never throws, when email is not set up or the send fails.
-async function sendProspectMail(env, to, subject, text, html) {
+async function sendProspectMail(env, to, subject, text, html, cc = []) {
   if (!env.RESEND_API_KEY || !env.EMAIL_FROM) return false;
   try {
     const sent = await fetch("https://api.resend.com/emails", {
       method: "POST",
       headers: { authorization: `Bearer ${env.RESEND_API_KEY}`, "content-type": "application/json" },
-      body: JSON.stringify({ from: env.EMAIL_FROM, to: [to], subject: String(subject).slice(0, 200), text: String(text).slice(0, 8000), ...(html ? { html } : {}) }),
+      body: JSON.stringify({ from: env.EMAIL_FROM, to: [to], ...(cc.length ? { cc } : {}), subject: String(subject).slice(0, 200), text: String(text).slice(0, 8000), ...(html ? { html } : {}) }),
     });
     return sent.ok;
   } catch {
@@ -1214,14 +1214,16 @@ async function followUpProspect(request, env, id) {
   if (!prospect) return json({ error: "Not found." }, 404);
   if (!env.RESEND_API_KEY || !env.EMAIL_FROM) return json({ error: "Email is not set up yet. Ask Cutover to finish the email setup." }, 503);
   const senderName = displayName(caller.user) || caller.user.email;
-  const sent = [];
-  const failed = [];
   const sentAt = new Date().toISOString();
-  for (const to of recipients.emails) {
-    const mail = followUpEmail(prospect, to, senderName, rawMessage);
-    const ok = await sendProspectMail(env, to, mail.subject, mail.text, mail.html);
-    (ok ? sent : failed).push(to);
-  }
+  // One email for the whole group, so everyone can see who is on the thread: the first address is To,
+  // and the other recipients and the sender are on CC.
+  const [primary, ...others] = recipients.emails;
+  const senderEmail = normalizeEmail(caller.user.email);
+  const cc = [...new Set([...others, senderEmail].filter(Boolean))].filter((e) => e !== primary);
+  const mail = followUpEmail(prospect, primary, senderName, rawMessage);
+  const ok = await sendProspectMail(env, primary, mail.subject, mail.text, mail.html, cc);
+  const sent = ok ? recipients.emails : [];
+  const failed = ok ? [] : recipients.emails;
   if (!sent.length) return json({ sent, failed, error: "Could not send to anyone. Try again in a minute." }, 502);
   // Each person emailed is recorded: who sent it, when, to whom, and the note used.
   const tracked = await serviceRest(env, "prospect_followups", {
