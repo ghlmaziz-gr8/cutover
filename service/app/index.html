@@ -3766,6 +3766,20 @@ button:not(:disabled):active{transform:scale(.965)}
   // ---- Prospects: the people invited to a meeting. They never log in. ----
   let prospects = [];
 
+  // Removes a prospect and their follow-up history. A meeting already on the calendar stays there.
+  async function deleteProspect(p, button) {
+    const sure = window.confirm(`Delete ${p.first_name} ${p.last_name} (${p.email})? Their follow-up history is removed too. A meeting already on the calendar is not cancelled.`);
+    if (!sure) return;
+    button.disabled = true;
+    try {
+      await api(`/api/prospects/${p.id}`, { method: "DELETE" });
+      await loadProspects();
+    } catch (err) {
+      button.disabled = false;
+      setMsg("pMsg", err.message, true);
+    }
+  }
+
   async function loadProspects() {
     try {
       const data = await api("/api/prospects");
@@ -3823,7 +3837,11 @@ button:not(:disabled):active{transform:scale(.965)}
       follow.type = "button";
       follow.style.marginTop = "8px";
       follow.addEventListener("click", () => openFollowUp(p));
-      row.append(follow);
+      const remove = el("button", "Delete", "btn ghost");
+      remove.type = "button";
+      remove.style.cssText = "margin-top:8px;margin-left:8px;color:var(--bad)";
+      remove.addEventListener("click", () => deleteProspect(p, remove));
+      row.append(follow, remove);
       box.append(row);
     }
   }

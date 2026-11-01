@@ -1255,6 +1255,24 @@ async function listFollowUps(request, env, id) {
   return json({ followups: await res.json() });
 }
 
+// Removes a prospect and its follow-up history. Only the person who invited them, or an admin, may remove them.
+// A meeting already on the calendar is not cancelled by this.
+async function deleteProspect(request, env, id) {
+  const caller = await prospectCaller(request, env);
+  if (caller.response) return caller.response;
+  const found = await serviceRest(env, `prospects?id=eq.${id}&select=id,invited_by_email`);
+  if (!found.ok) return json({ error: "Could not delete the prospect." }, 502);
+  const [prospect] = await found.json();
+  if (!prospect) return json({ error: "Not found." }, 404);
+  const mine = normalizeEmail(prospect.invited_by_email) === normalizeEmail(caller.user.email);
+  const roles = await platformRolesFor(env, caller.user.email);
+  const manager = roles.includes("super_user") || roles.includes("admin");
+  if (!mine && !manager) return json({ error: "Only the person who invited this prospect, or an admin, can delete them." }, 403);
+  const res = await serviceRest(env, `prospects?id=eq.${id}`, { method: "DELETE", headers: { prefer: "return=minimal" } });
+  if (!res.ok) return json({ error: "Could not delete the prospect." }, 502);
+  return json({ deleted: true });
+}
+
 // Removes one record from the follow-up history. The email has already been sent and cannot be recalled.
 // Only the person who sent it, or an admin, may remove it.
 async function deleteFollowUp(request, env, prospectId, followUpId) {
@@ -6545,6 +6563,8 @@ async function route(request, env) {
     if (prospectFollowUp && UUID_PATTERN.test(prospectFollowUp[1]) && method === "POST") return followUpProspect(request, env, prospectFollowUp[1]);
     const prospectFollowUps = path.match(/^\/api\/prospects\/([^/]+)\/followups$/);
     if (prospectFollowUps && UUID_PATTERN.test(prospectFollowUps[1]) && method === "GET") return listFollowUps(request, env, prospectFollowUps[1]);
+    const prospectOne = path.match(/^\/api\/prospects\/([^/]+)$/);
+    if (prospectOne && UUID_PATTERN.test(prospectOne[1]) && method === "DELETE") return deleteProspect(request, env, prospectOne[1]);
     const prospectFollowUpOne = path.match(/^\/api\/prospects\/([^/]+)\/followups\/([^/]+)$/);
     if (prospectFollowUpOne && UUID_PATTERN.test(prospectFollowUpOne[1]) && UUID_PATTERN.test(prospectFollowUpOne[2]) && method === "DELETE") return deleteFollowUp(request, env, prospectFollowUpOne[1], prospectFollowUpOne[2]);
     const bookSlots = path.match(/^\/api\/book\/([^/]+)\/slots$/);

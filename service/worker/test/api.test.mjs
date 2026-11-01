@@ -4488,6 +4488,22 @@ test("the person who sent a follow-up can remove it from the history; others can
   assert.equal(state.prospect_followups.filter((r) => r.prospect_id === id).length, 0);
 });
 
+test("the person who invited a prospect, or an admin, can delete them; others cannot", async () => {
+  const { id } = await invitePat();
+  const stranger = await call(`/api/prospects/${id}`, { as: "support", method: "DELETE" });
+  assert.equal(stranger.status, 403, "support staff did not invite them");
+  assert.equal(state.prospects.filter((p) => p.id === id).length, 1);
+  const mine = await call(`/api/prospects/${id}`, { as: "sales", method: "DELETE" });
+  assert.equal(mine.status, 200);
+  assert.deepEqual(mine.body, { deleted: true });
+  assert.equal(state.prospects.filter((p) => p.id === id).length, 0);
+  assert.equal((await call(`/api/prospects/${id}`, { as: "sales", method: "DELETE" })).status, 404);
+
+  const second = await invitePat();
+  const admin = await call(`/api/prospects/${second.id}`, { as: "owner", method: "DELETE" });
+  assert.equal(admin.status, 200, "an admin can delete any prospect");
+});
+
 test("the invitation shows the portal screenshots and the game card", async () => {
   const { token } = await invitePat();
   const invite = resendCalls[0];
