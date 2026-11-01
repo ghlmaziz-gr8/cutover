@@ -4400,10 +4400,10 @@ test("a follow-up goes to the prospect and to the people added, one email each, 
   assert.equal(res.status, 200, JSON.stringify(res.body));
   assert.deepEqual(res.body.sent, ["buyer@prospect.test", "cfo@buyer.test"]);
   const mails = resendCalls.slice(before);
-  assert.equal(mails.length, 2, "one email per person");
-  assert.deepEqual(mails[0].to, ["buyer@prospect.test"]);
+  assert.equal(mails.length, 1, "one email for the whole group, so everyone sees the thread");
+  assert.deepEqual(mails[0].to, ["buyer@prospect.test"], "the first address is To");
+  assert.deepEqual(mails[0].cc, ["cfo@buyer.test", "sales@cutover.test"], "the other recipients and the sender are on CC");
   assert.match(mails[0].text, /^Hi Pat,/m);
-  assert.match(mails[1].text, /^Hi there,/m, "people added get a general greeting");
   for (const mail of mails) {
     assert.match(mail.text, /https:\/\/playground\.google\/g\/zyq07y/);
     assert.match(mail.text, /Good talking today\./);
