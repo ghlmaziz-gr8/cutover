@@ -1,7 +1,7 @@
 import { COST_RATES } from "./cost-rates.mjs";
 import { MODEL_PROVIDERS, MODEL_NAME_PATTERN, customBaseUrl } from "./model-providers.mjs";
 import { validateDbMetadata } from "./db-metadata.mjs";
-import { extractRequirements, findSensitive, STARTER_CAPABILITIES, RFP_TEXT_MAX, RFP_REQUIREMENT_MAX, RFP_REQUIREMENTS_MAX } from "./rfp.mjs";
+import { checkProjectFields, checkProjectEmail, renderProjectEmail } from "./project-email.mjs";
 
 // Cutover SaaS API (Cloudflare Worker).
 //
@@ -842,13 +842,13 @@ async function readProspectToken(env, token) {
 }
 
 // Sends one email from the sales address. Returns false, and never throws, when email is not set up or the send fails.
-async function sendProspectMail(env, to, subject, text, html, cc = []) {
+async function sendProspectMail(env, to, subject, text, html, cc = [], extra = {}) {
   if (!env.RESEND_API_KEY || !env.EMAIL_FROM) return false;
   try {
     const sent = await fetch("https://api.resend.com/emails", {
       method: "POST",
       headers: { authorization: `Bearer ${env.RESEND_API_KEY}`, "content-type": "application/json" },
-      body: JSON.stringify({ from: env.EMAIL_FROM, to: [to], ...(cc.length ? { cc } : {}), subject: String(subject).slice(0, 200), text: String(text).slice(0, 8000), ...(html ? { html } : {}) }),
+      body: JSON.stringify({ from: env.EMAIL_FROM, to: [to], ...(cc.length ? { cc } : {}), subject: String(subject).slice(0, 200), text: String(text).slice(0, 8000), ...(html ? { html } : {}), ...(extra.replyTo ? { reply_to: extra.replyTo } : {}), ...(extra.attachments?.length ? { attachments: extra.attachments } : {}) }),
     });
     return sent.ok;
   } catch {
@@ -1086,6 +1086,151 @@ async function createProspect(request, env) {
   return json({ prospect: publicProspect(row), email_sent: sent }, 201);
 }
 
+// ---- Projects under a prospect, and the emails sent about each one. Staff who can invite may use them. ----
+const PROJECT_EMAIL_MAX_BODY_BYTES = 28_000_000; // base64 of up to 20 MB of attachments, plus the text
+
+async function loadProspectRow(env, id) {
+  const res = await serviceRest(env, `prospects?id=eq.${id}&select=*`);
+  if (!res.ok) return { error: json({ error: "Could not load the prospect." }, 502) };
+  const [row] = await res.json();
+  if (!row) return { error: json({ error: "Not found." }, 404) };
+  return { row };
+}
+
+async function loadProjectRow(env, id) {
+  const res = await serviceRest(env, `prospect_projects?id=eq.${id}&select=*`);
+  if (!res.ok) return { error: json({ error: "Could not load the project." }, 502) };
+  const [row] = await res.json();
+  if (!row) return { error: json({ error: "Not found." }, 404) };
+  return { row };
+}
+
+async function listProjects(request, env, prospectId) {
+  const caller = await prospectCaller(request, env);
+  if (caller.response) return caller.response;
+  const found = await loadProspectRow(env, prospectId);
+  if (found.error) return found.error;
+  const res = await serviceRest(env, `prospect_projects?prospect_id=eq.${prospectId}&select=*&order=created_at.asc&limit=200`);
+  if (!res.ok) return json({ error: "Could not load the projects." }, 502);
+  return json({ projects: await res.json() });
+}
+
+async function createProject(request, env, prospectId) {
+  const caller = await prospectCaller(request, env);
+  if (caller.response) return caller.response;
+  const parsed = await readJson(request);
+  if (parsed.error) return json({ error: parsed.error }, 400);
+  const checked = checkProjectFields(parsed.value || {}, true);
+  if (checked.error) return json({ error: checked.error }, 400);
+  const found = await loadProspectRow(env, prospectId);
+  if (found.error) return found.error;
+  const res = await serviceRest(env, "prospect_projects", {
+    method: "POST",
+    headers: { prefer: "return=representation" },
+    body: JSON.stringify({ prospect_id: prospectId, name: checked.value.name, summary: checked.value.summary ?? null, created_by_email: normalizeEmail(caller.user.email) }),
+  });
+  if (!res.ok) return json({ error: "Could not add the project." }, 502);
+  const [row] = await res.json();
+  return json({ project: row }, 201);
+}
+
+async function updateProject(request, env, id) {
+  const caller = await prospectCaller(request, env);
+  if (caller.response) return caller.response;
+  const parsed = await readJson(request);
+  if (parsed.error) return json({ error: parsed.error }, 400);
+  const checked = checkProjectFields(parsed.value || {}, false);
+  if (checked.error) return json({ error: checked.error }, 400);
+  if (!Object.keys(checked.value).length) return json({ error: "Nothing to change." }, 400);
+  const res = await serviceRest(env, `prospect_projects?id=eq.${id}`, {
+    method: "PATCH",
+    headers: { prefer: "return=representation" },
+    body: JSON.stringify({ ...checked.value, updated_at: new Date().toISOString() }),
+  });
+  if (!res.ok) return json({ error: "Could not update the project." }, 502);
+  const rows = await res.json();
+  if (!rows.length) return json({ error: "Not found." }, 404);
+  return json({ project: rows[0] });
+}
+
+async function deleteProject(request, env, id) {
+  const caller = await prospectCaller(request, env);
+  if (caller.response) return caller.response;
+  const res = await serviceRest(env, `prospect_projects?id=eq.${id}`, { method: "DELETE", headers: { prefer: "return=representation" } });
+  if (!res.ok) return json({ error: "Could not remove the project." }, 502);
+  if (!(await res.json()).length) return json({ error: "Not found." }, 404);
+  return json({ deleted: true });
+}
+
+async function listProjectEmails(request, env, projectId) {
+  const caller = await prospectCaller(request, env);
+  if (caller.response) return caller.response;
+  const found = await loadProjectRow(env, projectId);
+  if (found.error) return found.error;
+  const res = await serviceRest(env, `project_emails?project_id=eq.${projectId}&select=*&order=sent_at.desc&limit=200`);
+  if (!res.ok) return json({ error: "Could not load the emails." }, 502);
+  return json({ emails: await res.json() });
+}
+
+// Sends one project email to a prospect. The first address is To; the other addresses and the sender are on CC.
+// Replies go to the sender. Attachments travel with the email.
+async function sendProjectEmail(request, env, projectId) {
+  const caller = await prospectCaller(request, env);
+  if (caller.response) return caller.response;
+  const parsed = await readJson(request, PROJECT_EMAIL_MAX_BODY_BYTES);
+  if (parsed.error) return json({ error: parsed.error }, 400);
+  const body = parsed.value || {};
+  const recipients = parseRecipients(body.recipients);
+  if (recipients.error) return json({ error: recipients.error }, 400);
+  const checked = checkProjectEmail(body);
+  if (checked.error) return json({ error: checked.error }, 400);
+  const projectFound = await loadProjectRow(env, projectId);
+  if (projectFound.error) return projectFound.error;
+  const project = projectFound.row;
+  const prospectFound = await loadProspectRow(env, project.prospect_id);
+  if (prospectFound.error) return prospectFound.error;
+  const prospect = prospectFound.row;
+  if (!env.RESEND_API_KEY || !env.EMAIL_FROM) return json({ error: "Email is not set up yet. Ask Cutover to finish the email setup." }, 503);
+
+  const v = checked.value;
+  const senderName = displayName(caller.user) || caller.user.email;
+  const senderEmail = normalizeEmail(caller.user.email);
+  const [primary, ...others] = recipients.emails;
+  const cc = [...new Set([...others, senderEmail].filter(Boolean))].filter((e) => e !== primary);
+  const bookingUrl = `${SITE_ORIGIN}/book/?t=${await signProspectToken(env, prospect.id)}`;
+  const mail = renderProjectEmail({
+    projectName: project.name, subject: v.subject, greetingName: prospect.first_name, note: v.note,
+    found: v.found, howHelps: v.how_helps, share: v.cutover_share, hours: v.human_hours_saved, advantages: v.advantages,
+    attachments: v.attachments, senderName, senderEmail, bookingUrl, capabilityIds: v.capability_ids,
+  });
+  const sentAt = new Date().toISOString();
+  const ok = await sendProspectMail(env, primary, mail.subject, mail.text, mail.html, cc, {
+    replyTo: senderEmail,
+    attachments: v.attachments.map((a) => ({ filename: a.filename, content: a.content_base64 })),
+  });
+  if (!ok) return json({ sent: [], failed: recipients.emails, error: "Could not send. Try again in a minute." }, 502);
+
+  // Recorded after a successful send: who sent it, when, to whom, what it said, and which files it carried.
+  const tracked = await serviceRest(env, "project_emails", {
+    method: "POST",
+    headers: { prefer: "return=representation" },
+    body: JSON.stringify({
+      project_id: project.id, prospect_id: prospect.id, subject: mail.subject, recipients: recipients.emails,
+      sent_by_email: senderEmail, sent_by_name: senderName || null, note: v.note, found: v.found, how_helps: v.how_helps,
+      cutover_share: v.cutover_share, human_hours_saved: v.human_hours_saved, advantages: v.advantages,
+      capability_ids: v.capability_ids === "all" ? null : v.capability_ids,
+      attachment_names: v.attachments.map((a) => a.filename), sent_at: sentAt,
+    }),
+  });
+  await serviceRest(env, `prospects?id=eq.${prospect.id}`, {
+    method: "PATCH",
+    headers: { prefer: "return=minimal" },
+    body: JSON.stringify({ last_email_at: sentAt }),
+  });
+  const [row] = tracked.ok ? await tracked.json() : [null];
+  return json({ email: row, sent: recipients.emails }, 201);
+}
+
 async function listProspects(request, env) {
   const caller = await prospectCaller(request, env);
   if (caller.response) return caller.response;
@@ -1292,264 +1437,6 @@ async function deleteFollowUp(request, env, prospectId, followUpId) {
     headers: { prefer: "return=minimal" },
   });
   if (!res.ok) return json({ error: "Could not delete the follow-up." }, 502);
-  return json({ deleted: true });
-}
-
-// ---- RFP reviews (Cutover staff only). A client's RFP is split into numbered requirements. Matching against the
-// capability list and the scores come in later steps. Text with personal or identifying values is refused. ----
-const RFP_STATUSES = ["draft", "approved"];
-const RFP_NAME_MAX = 120;
-const RFP_CAPABILITY_DESCRIPTION_MAX = 1000;
-const RFP_TITLE_MAX = 160;
-const RFP_CLIENT_MAX = 160;
-const RFP_SECTION_MAX = 200;
-const RFP_REQUIREMENT_TEXT_MIN = 3;
-
-async function rfpCaller(request, env) {
-  const auth = await requireUser(env, request);
-  if (auth.response) return { response: auth.response };
-  if (!canInvite(await platformRolesFor(env, auth.user.email))) return { response: json({ error: "Only Cutover staff may use RFP reviews." }, 403) };
-  return { user: auth.user };
-}
-
-function sensitiveResponse(text) {
-  const sensitive = findSensitive(text);
-  if (!sensitive.length) return null;
-  return json({ error: "This text contains personal or identifying values, which cannot be stored. Replace them with sample values and try again.", sensitive }, 422);
-}
-
-// Checks the capability fields a person can set. Returns { fields } or { error }.
-function capabilityFields(value, requireName) {
-  const fields = {};
-  if (value.name !== undefined) {
-    const name = typeof value.name === "string" ? value.name.trim() : "";
-    if (name.length < 2 || name.length > RFP_NAME_MAX) return { error: `The name must be 2 to ${RFP_NAME_MAX} characters.` };
-    fields.name = name;
-  }
-  if (value.description !== undefined) {
-    const description = typeof value.description === "string" ? value.description.trim() : "";
-    if (description.length > RFP_CAPABILITY_DESCRIPTION_MAX) return { error: `The description must be ${RFP_CAPABILITY_DESCRIPTION_MAX} characters or fewer.` };
-    fields.description = description;
-  }
-  if (value.status !== undefined) {
-    if (!RFP_STATUSES.includes(value.status)) return { error: "The status must be draft or approved." };
-    fields.status = value.status;
-  }
-  if (requireName && fields.name === undefined) return { error: "A name is required." };
-  return { fields };
-}
-
-async function listCapabilities(request, env) {
-  const caller = await rfpCaller(request, env);
-  if (caller.response) return caller.response;
-  const res = await serviceRest(env, "cutover_capabilities?select=*&order=created_at.asc&limit=500");
-  if (!res.ok) return json({ error: "Could not load the capabilities." }, 502);
-  return json({ capabilities: await res.json() });
-}
-
-async function createCapability(request, env) {
-  const caller = await rfpCaller(request, env);
-  if (caller.response) return caller.response;
-  const parsed = await readJson(request);
-  if (parsed.error) return json({ error: parsed.error }, 400);
-  const checked = capabilityFields(parsed.value || {}, true);
-  if (checked.error) return json({ error: checked.error }, 400);
-  const res = await serviceRest(env, "cutover_capabilities", {
-    method: "POST",
-    headers: { prefer: "return=representation" },
-    body: JSON.stringify({ ...checked.fields, description: checked.fields.description || "", status: "draft", updated_by_email: caller.user.email, updated_at: new Date().toISOString() }),
-  });
-  if (!res.ok) return json({ error: "Could not add the capability." }, 502);
-  const [row] = await res.json();
-  return json({ capability: row }, 201);
-}
-
-// Adds the starter list once, when the list is empty. Staff review and approve each entry afterwards.
-async function seedCapabilities(request, env) {
-  const caller = await rfpCaller(request, env);
-  if (caller.response) return caller.response;
-  const existing = await serviceRest(env, "cutover_capabilities?select=id&limit=1");
-  if (!existing.ok) return json({ error: "Could not load the capabilities." }, 502);
-  if ((await existing.json()).length) return json({ error: "The capability list already has entries." }, 409);
-  const now = new Date().toISOString();
-  const rows = STARTER_CAPABILITIES.map(([name, description]) => ({ name, description, status: "draft", updated_by_email: caller.user.email, updated_at: now }));
-  const res = await serviceRest(env, "cutover_capabilities", { method: "POST", headers: { prefer: "return=representation" }, body: JSON.stringify(rows) });
-  if (!res.ok) return json({ error: "Could not add the starter list." }, 502);
-  return json({ capabilities: await res.json() }, 201);
-}
-
-async function updateCapability(request, env, id) {
-  const caller = await rfpCaller(request, env);
-  if (caller.response) return caller.response;
-  const parsed = await readJson(request);
-  if (parsed.error) return json({ error: parsed.error }, 400);
-  const checked = capabilityFields(parsed.value || {}, false);
-  if (checked.error) return json({ error: checked.error }, 400);
-  if (!Object.keys(checked.fields).length) return json({ error: "Nothing to change." }, 400);
-  const res = await serviceRest(env, `cutover_capabilities?id=eq.${id}`, {
-    method: "PATCH",
-    headers: { prefer: "return=representation" },
-    body: JSON.stringify({ ...checked.fields, updated_by_email: caller.user.email, updated_at: new Date().toISOString() }),
-  });
-  if (!res.ok) return json({ error: "Could not update the capability." }, 502);
-  const rows = await res.json();
-  if (!rows.length) return json({ error: "Not found." }, 404);
-  return json({ capability: rows[0] });
-}
-
-async function deleteCapability(request, env, id) {
-  const caller = await rfpCaller(request, env);
-  if (caller.response) return caller.response;
-  const res = await serviceRest(env, `cutover_capabilities?id=eq.${id}`, { method: "DELETE", headers: { prefer: "return=representation" } });
-  if (!res.ok) return json({ error: "Could not remove the capability." }, 502);
-  if (!(await res.json()).length) return json({ error: "Not found." }, 404);
-  return json({ deleted: true });
-}
-
-// The review's own fields. The full text is stored for later steps, but is not returned in list or detail replies.
-function publicReview(row) {
-  return { id: row.id, title: row.title, client: row.client, created_by_email: row.created_by_email, created_at: row.created_at };
-}
-
-async function listReviews(request, env) {
-  const caller = await rfpCaller(request, env);
-  if (caller.response) return caller.response;
-  const res = await serviceRest(env, "rfp_reviews?select=id,title,client,created_by_email,created_at&order=created_at.desc&limit=200");
-  if (!res.ok) return json({ error: "Could not load the RFP reviews." }, 502);
-  return json({ reviews: await res.json() });
-}
-
-async function createReview(request, env) {
-  const caller = await rfpCaller(request, env);
-  if (caller.response) return caller.response;
-  const parsed = await readJson(request);
-  if (parsed.error) return json({ error: parsed.error }, 400);
-  const value = parsed.value || {};
-  const title = typeof value.title === "string" ? value.title.trim() : "";
-  const client = typeof value.client === "string" ? value.client.trim() : "";
-  const text = typeof value.text === "string" ? value.text.trim() : "";
-  if (title.length < 2 || title.length > RFP_TITLE_MAX) return json({ error: `The title must be 2 to ${RFP_TITLE_MAX} characters.` }, 400);
-  if (client.length > RFP_CLIENT_MAX) return json({ error: `The client must be ${RFP_CLIENT_MAX} characters or fewer.` }, 400);
-  if (!text) return json({ error: "Paste the RFP text." }, 400);
-  if (text.length > RFP_TEXT_MAX) return json({ error: `The RFP text must be ${RFP_TEXT_MAX} characters or fewer.` }, 400);
-  const blocked = sensitiveResponse(text);
-  if (blocked) return blocked;
-  const found = extractRequirements(text);
-  if (!found.length) return json({ error: "No requirements were found. Check that the text includes the requirement sections." }, 422);
-  if (found.length >= RFP_REQUIREMENTS_MAX) return json({ error: `This RFP has ${RFP_REQUIREMENTS_MAX} or more requirements, which is the most one review holds. Split it into parts and try again.` }, 422);
-  const insert = await serviceRest(env, "rfp_reviews", {
-    method: "POST",
-    headers: { prefer: "return=representation" },
-    body: JSON.stringify({ title, client, source_text: text, created_by_email: caller.user.email }),
-  });
-  if (!insert.ok) return json({ error: "Could not save the review." }, 502);
-  const [review] = await insert.json();
-  const rows = found.map((r, i) => ({ review_id: review.id, position: i + 1, ref: `R${i + 1}`, section: r.section.slice(0, RFP_SECTION_MAX), text: r.text }));
-  const saved = await serviceRest(env, "rfp_requirements", { method: "POST", headers: { prefer: "return=representation" }, body: JSON.stringify(rows) });
-  if (!saved.ok) {
-    await serviceRest(env, `rfp_reviews?id=eq.${review.id}`, { method: "DELETE", headers: { prefer: "return=minimal" } });
-    return json({ error: "Could not save the requirements. The review was not kept." }, 502);
-  }
-  return json({ review: publicReview(review), requirements: await saved.json() }, 201);
-}
-
-async function getReview(request, env, id) {
-  const caller = await rfpCaller(request, env);
-  if (caller.response) return caller.response;
-  const found = await serviceRest(env, `rfp_reviews?id=eq.${id}&select=id,title,client,created_by_email,created_at`);
-  if (!found.ok) return json({ error: "Could not load the review." }, 502);
-  const [review] = await found.json();
-  if (!review) return json({ error: "Not found." }, 404);
-  const reqs = await serviceRest(env, `rfp_requirements?review_id=eq.${id}&select=id,ref,position,section,text,edited&order=position.asc&limit=${RFP_REQUIREMENTS_MAX + 1}`);
-  if (!reqs.ok) return json({ error: "Could not load the requirements." }, 502);
-  return json({ review, requirements: await reqs.json() });
-}
-
-// Cleans a review: removes its requirements, then the review itself. Staff use this to delete a review's data.
-async function deleteReview(request, env, id) {
-  const caller = await rfpCaller(request, env);
-  if (caller.response) return caller.response;
-  const found = await serviceRest(env, `rfp_reviews?id=eq.${id}&select=id`);
-  if (!found.ok) return json({ error: "Could not load the review." }, 502);
-  const [review] = await found.json();
-  if (!review) return json({ error: "Not found." }, 404);
-  const reqs = await serviceRest(env, `rfp_requirements?review_id=eq.${id}`, { method: "DELETE" });
-  if (!reqs.ok) return json({ error: "Could not clean the review. Nothing was removed. Try again." }, 502);
-  const res = await serviceRest(env, `rfp_reviews?id=eq.${id}`, { method: "DELETE" });
-  if (!res.ok) return json({ error: "The requirements were removed, but the review could not be. Press Clean data again." }, 502);
-  return json({ deleted: true });
-}
-
-// A requirement's text and section. Any text is checked for personal or identifying values first.
-function requirementFields(value, requireText) {
-  const fields = {};
-  if (value.text !== undefined || requireText) {
-    const text = typeof value.text === "string" ? value.text.trim() : "";
-    if (text.length < RFP_REQUIREMENT_TEXT_MIN || text.length > RFP_REQUIREMENT_MAX) return { error: `A requirement must be ${RFP_REQUIREMENT_TEXT_MIN} to ${RFP_REQUIREMENT_MAX} characters.` };
-    fields.text = text;
-  }
-  if (value.section !== undefined) {
-    const section = typeof value.section === "string" ? value.section.trim() : "";
-    if (section.length > RFP_SECTION_MAX) return { error: `The section must be ${RFP_SECTION_MAX} characters or fewer.` };
-    fields.section = section;
-  }
-  return { fields };
-}
-
-async function addRequirement(request, env, reviewId) {
-  const caller = await rfpCaller(request, env);
-  if (caller.response) return caller.response;
-  const parsed = await readJson(request);
-  if (parsed.error) return json({ error: parsed.error }, 400);
-  const checked = requirementFields(parsed.value || {}, true);
-  if (checked.error) return json({ error: checked.error }, 400);
-  const blocked = sensitiveResponse(checked.fields.text);
-  if (blocked) return blocked;
-  const existing = await serviceRest(env, `rfp_requirements?review_id=eq.${reviewId}&select=position`);
-  if (!existing.ok) return json({ error: "Could not load the requirements." }, 502);
-  const rows = await existing.json();
-  if (rows.length >= RFP_REQUIREMENTS_MAX) return json({ error: `A review holds up to ${RFP_REQUIREMENTS_MAX} requirements.` }, 400);
-  const next = rows.reduce((max, r) => Math.max(max, r.position), 0) + 1;
-  const res = await serviceRest(env, "rfp_requirements", {
-    method: "POST",
-    headers: { prefer: "return=representation" },
-    body: JSON.stringify({ review_id: reviewId, position: next, ref: `R${next}`, section: checked.fields.section || "", text: checked.fields.text, edited: true }),
-  });
-  if (!res.ok) return json({ error: "Could not add the requirement." }, 502);
-  const [row] = await res.json();
-  return json({ requirement: row }, 201);
-}
-
-async function updateRequirement(request, env, id) {
-  const caller = await rfpCaller(request, env);
-  if (caller.response) return caller.response;
-  const parsed = await readJson(request);
-  if (parsed.error) return json({ error: parsed.error }, 400);
-  const checked = requirementFields(parsed.value || {}, false);
-  if (checked.error) return json({ error: checked.error }, 400);
-  if (!Object.keys(checked.fields).length) return json({ error: "Nothing to change." }, 400);
-  if (checked.fields.text !== undefined) {
-    const blocked = sensitiveResponse(checked.fields.text);
-    if (blocked) return blocked;
-  }
-  const res = await serviceRest(env, `rfp_requirements?id=eq.${id}`, {
-    method: "PATCH",
-    headers: { prefer: "return=representation" },
-    body: JSON.stringify({ ...checked.fields, edited: true }),
-  });
-  if (!res.ok) return json({ error: "Could not update the requirement." }, 502);
-  const rows = await res.json();
-  if (!rows.length) return json({ error: "Not found." }, 404);
-  return json({ requirement: rows[0] });
-}
-
-// Removes a requirement from the list. Its reference (R7, say) is never reused, so earlier references stay stable.
-async function deleteRequirement(request, env, id) {
-  const caller = await rfpCaller(request, env);
-  if (caller.response) return caller.response;
-  const res = await serviceRest(env, `rfp_requirements?id=eq.${id}`, { method: "DELETE", headers: { prefer: "return=representation" } });
-  if (!res.ok) return json({ error: "Could not remove the requirement." }, 502);
-  if (!(await res.json()).length) return json({ error: "Not found." }, 404);
   return json({ deleted: true });
 }
 
@@ -6822,26 +6709,19 @@ async function route(request, env) {
     if (prospectFollowUp && UUID_PATTERN.test(prospectFollowUp[1]) && method === "POST") return followUpProspect(request, env, prospectFollowUp[1]);
     const prospectFollowUps = path.match(/^\/api\/prospects\/([^/]+)\/followups$/);
     if (prospectFollowUps && UUID_PATTERN.test(prospectFollowUps[1]) && method === "GET") return listFollowUps(request, env, prospectFollowUps[1]);
-    if (path === "/api/rfp/capabilities" && method === "GET") return listCapabilities(request, env);
-    if (path === "/api/rfp/capabilities" && method === "POST") return createCapability(request, env);
-    if (path === "/api/rfp/capabilities/seed" && method === "POST") return seedCapabilities(request, env);
-    const rfpCapability = path.match(/^\/api\/rfp\/capabilities\/([^/]+)$/);
-    if (rfpCapability && UUID_PATTERN.test(rfpCapability[1]) && method === "PATCH") return updateCapability(request, env, rfpCapability[1]);
-    if (rfpCapability && UUID_PATTERN.test(rfpCapability[1]) && method === "DELETE") return deleteCapability(request, env, rfpCapability[1]);
-    if (path === "/api/rfp/reviews" && method === "GET") return listReviews(request, env);
-    if (path === "/api/rfp/reviews" && method === "POST") return createReview(request, env);
-    const rfpReview = path.match(/^\/api\/rfp\/reviews\/([^/]+)$/);
-    if (rfpReview && UUID_PATTERN.test(rfpReview[1]) && method === "GET") return getReview(request, env, rfpReview[1]);
-    if (rfpReview && UUID_PATTERN.test(rfpReview[1]) && method === "DELETE") return deleteReview(request, env, rfpReview[1]);
-    const rfpReviewRequirements = path.match(/^\/api\/rfp\/reviews\/([^/]+)\/requirements$/);
-    if (rfpReviewRequirements && UUID_PATTERN.test(rfpReviewRequirements[1]) && method === "POST") return addRequirement(request, env, rfpReviewRequirements[1]);
-    const rfpRequirement = path.match(/^\/api\/rfp\/requirements\/([^/]+)$/);
-    if (rfpRequirement && UUID_PATTERN.test(rfpRequirement[1]) && method === "PATCH") return updateRequirement(request, env, rfpRequirement[1]);
-    if (rfpRequirement && UUID_PATTERN.test(rfpRequirement[1]) && method === "DELETE") return deleteRequirement(request, env, rfpRequirement[1]);
     const prospectOne = path.match(/^\/api\/prospects\/([^/]+)$/);
     if (prospectOne && UUID_PATTERN.test(prospectOne[1]) && method === "DELETE") return deleteProspect(request, env, prospectOne[1]);
     const prospectFollowUpOne = path.match(/^\/api\/prospects\/([^/]+)\/followups\/([^/]+)$/);
     if (prospectFollowUpOne && UUID_PATTERN.test(prospectFollowUpOne[1]) && UUID_PATTERN.test(prospectFollowUpOne[2]) && method === "DELETE") return deleteFollowUp(request, env, prospectFollowUpOne[1], prospectFollowUpOne[2]);
+    const prospectProjects = path.match(/^\/api\/prospects\/([^/]+)\/projects$/);
+    if (prospectProjects && UUID_PATTERN.test(prospectProjects[1]) && method === "GET") return listProjects(request, env, prospectProjects[1]);
+    if (prospectProjects && UUID_PATTERN.test(prospectProjects[1]) && method === "POST") return createProject(request, env, prospectProjects[1]);
+    const projectOne = path.match(/^\/api\/projects\/([^/]+)$/);
+    if (projectOne && UUID_PATTERN.test(projectOne[1]) && method === "PATCH") return updateProject(request, env, projectOne[1]);
+    if (projectOne && UUID_PATTERN.test(projectOne[1]) && method === "DELETE") return deleteProject(request, env, projectOne[1]);
+    const projectEmails = path.match(/^\/api\/projects\/([^/]+)\/emails$/);
+    if (projectEmails && UUID_PATTERN.test(projectEmails[1]) && method === "GET") return listProjectEmails(request, env, projectEmails[1]);
+    if (projectEmails && UUID_PATTERN.test(projectEmails[1]) && method === "POST") return sendProjectEmail(request, env, projectEmails[1]);
     const bookSlots = path.match(/^\/api\/book\/([^/]+)\/slots$/);
     if (bookSlots && method === "GET") return bookingSlots(request, env, decodeURIComponent(bookSlots[1]));
     const bookOne = path.match(/^\/api\/book\/([^/]+)$/);
