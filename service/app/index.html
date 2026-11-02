@@ -1985,7 +1985,6 @@ button:not(:disabled):active{transform:scale(.965)}
         <button type="button" class="ghost small-btn" id="staffTabTracker" role="tab" aria-selected="false">Demo invitations</button>
         <button type="button" class="ghost small-btn" id="staffTabCalendar" role="tab" aria-selected="false" hidden>My calendar</button>
         <button type="button" class="ghost small-btn" id="staffTabAccess" role="tab" aria-selected="false" hidden>Staff access</button>
-        <button type="button" class="ghost small-btn" id="staffTabRfp" role="tab" aria-selected="false" hidden>RFP reviews</button>
       </div>
 
       <div id="staffProspects" hidden>
@@ -2065,25 +2064,6 @@ button:not(:disabled):active{transform:scale(.965)}
             <li><b>You want to remove the connection completely.</b> Press Disconnect here. You can also remove Cutover in your Google account under Security, then Third-party access.</li>
           </ul>
         </details>
-      </div>
-
-      <div id="staffRfp" hidden>
-        <p class="muted small hint" style="margin-top:12px">Paste a client's RFP or RFI. Cutover splits it into numbered requirements, which are then matched to the capability list. Only signed-in Cutover staff can open these reviews. Use sample values only: text with personal values is refused.</p>
-        <h3 style="margin:14px 0 6px">Capability list</h3>
-        <p class="muted small" id="rfpCapCount" style="margin:0 0 8px"></p>
-        <button type="button" class="small-btn" id="rfpSeed" hidden>Load the portal baseline</button>
-        <div id="rfpCapabilities" style="margin-top:8px"></div>
-        <h3 style="margin:22px 0 6px">RFP reviews</h3>
-        <div id="rfpReviews"></div>
-        <form id="rfpNewForm" style="display:grid;gap:8px;margin-top:12px" autocomplete="off">
-          <input id="rfpTitle" placeholder="Title, for example: Agency financial system RFI" aria-label="Review title" required maxlength="160">
-          <input id="rfpClient" placeholder="Client (optional)" aria-label="Client" maxlength="160">
-          <textarea id="rfpText" rows="8" placeholder="Paste the RFP text here" aria-label="RFP text" required style="font:inherit;padding:10px 12px;border-radius:12px;border:1px solid #d9d2ee"></textarea>
-          <label class="muted small">Or choose a text file (.txt, .md or .csv): <input id="rfpFile" type="file" accept=".txt,.md,.csv"></label>
-          <div><button type="submit" class="small-btn">Create review</button></div>
-        </form>
-        <p id="rfpMsg" class="muted small hint" style="margin-top:12px"></p>
-        <div id="rfpDetail" hidden style="margin-top:18px"></div>
       </div>
 
       <div id="staffAccess" hidden>
@@ -3438,13 +3418,6 @@ button:not(:disabled):active{transform:scale(.965)}
     const staffRoles = (me && me.staff_roles) || [];
     if (staffRoles.length) available.push("staff");
     if (!available.includes(homeTab)) homeTab = canAnalyse ? "analyses" : canWork ? "workspaces" : staffRoles.length ? "staff" : "guide";
-    // A shared RFP link opens its review for staff, after the sign-in round trip.
-    const sharedRfp = takeSharedRfpId();
-    if (sharedRfp && staffRoles.some((r) => ["super_user", "admin", "sales"].includes(r))) {
-      homeTab = "staff";
-      staffTab = "rfp";
-      rfpReviewId = sharedRfp;
-    }
     const setTab = (id, key) => {
       $(id).hidden = !available.includes(key);
       $(id).className = homeTab === key ? "small-btn" : "ghost small-btn";
@@ -3458,7 +3431,6 @@ button:not(:disabled):active{transform:scale(.965)}
     $("staffCard").hidden = !(staffRoles.length && homeTab === "staff");
     $("staffTabAccess").hidden = !staffRoles.some((r) => ["super_user", "admin", "sales"].includes(r));
     $("staffTabCalendar").hidden = !staffRoles.some((r) => ["super_user", "admin", "sales"].includes(r));
-    $("staffTabRfp").hidden = !staffRoles.some((r) => ["super_user", "admin", "sales"].includes(r));
     $("staffTabProspects").hidden = !staffRoles.some((r) => ["super_user", "admin", "sales"].includes(r));
     if (!staffRoles.some((r) => ["super_user", "admin", "sales"].includes(r)) && staffTab === "prospects") staffTab = "tracker";
     if (homeTab === "staff") showStaffTab(staffTab);
@@ -3483,7 +3455,6 @@ button:not(:disabled):active{transform:scale(.965)}
     if (homeTab === "guide") renderGuide();
   }
   let staffTab = "prospects";
-  let rfpReviewId = null;
 
   let homeTab = "analyses";
   $("tabAnalyses").addEventListener("click", () => { homeTab = "analyses"; showHome(); });
@@ -3777,7 +3748,7 @@ button:not(:disabled):active{transform:scale(.965)}
 
   function showStaffTab(which) {
     staffTab = which;
-    const tabs = { prospects: ["staffTabProspects", "staffProspects"], tracker: ["staffTabTracker", "staffTracker"], calendar: ["staffTabCalendar", "staffCalendar"], access: ["staffTabAccess", "staffAccess"], rfp: ["staffTabRfp", "staffRfp"] };
+    const tabs = { prospects: ["staffTabProspects", "staffProspects"], tracker: ["staffTabTracker", "staffTracker"], calendar: ["staffTabCalendar", "staffCalendar"], access: ["staffTabAccess", "staffAccess"] };
     for (const [key, [btn, panel]] of Object.entries(tabs)) {
       $(btn).className = key === which ? "small-btn" : "ghost small-btn";
       $(btn).setAttribute("aria-selected", String(key === which));
@@ -3787,7 +3758,6 @@ button:not(:disabled):active{transform:scale(.965)}
     if (which === "tracker") loadStaffTracker();
     if (which === "access") loadStaffAccess();
     if (which === "calendar") loadStaffCalendar();
-    if (which === "rfp") loadRfp();
   }
 
   $("staffTabTracker").addEventListener("click", () => showStaffTab("tracker"));
@@ -3872,9 +3842,364 @@ button:not(:disabled):active{transform:scale(.965)}
       remove.type = "button";
       remove.style.cssText = "margin-top:8px;margin-left:8px;color:var(--bad)";
       remove.addEventListener("click", () => deleteProspect(p, remove));
-      row.append(follow, remove);
+      const projectsBtn = el("button", "Projects", "btn ghost");
+      projectsBtn.type = "button";
+      projectsBtn.style.marginTop = "8px";
+      projectsBtn.addEventListener("click", () => openProjects(p));
+      row.append(projectsBtn, follow, remove);
       box.append(row);
     }
+  }
+
+  // ---- Projects under a prospect. Each project keeps its own emails: what we found, how Cutover helps, the share and
+  // hours, the capabilities, and the attached PDF or PowerPoint files. ----
+  const CAPABILITY_LIST = [
+    ["C01", "Legacy application assessment"], ["C02", "Business rule discovery"], ["C03", "Per-file findings"],
+    ["C04", "Deeper business, systems and data analysis"], ["C05", "Capability and feature grouping"],
+    ["C06", "Readiness checks and user stories"], ["C07", "Scope and effort ranges"],
+    ["C08", "Contingency planning and signed PDF export"], ["C09", "Modernization proposals"],
+    ["C10", "Cloud choice and Terraform draft"], ["C11", "Module specifications and build package"],
+    ["C12", "Jira push of features and stories"], ["C13", "Sample data and personal-data scanning"],
+    ["C14", "Bring-your-own language model"], ["C15", "Roles, workspace access and assessment locks"],
+  ];
+  const PROJECT_FILE_MAX_BYTES = 10 * 1024 * 1024;
+  const PROJECT_FILES_TOTAL_MAX_BYTES = 20 * 1024 * 1024;
+  const PROJECT_FILES_MAX = 5;
+  let projectsDialog = null;
+  let projectsProspect = null;
+  let composerDialog = null;
+  let composerProject = null;
+  let composerFiles = [];
+
+  function readAsBase64(file) {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(String(reader.result).split(",")[1]);
+      reader.onerror = () => reject(reader.error);
+      reader.readAsDataURL(file);
+    });
+  }
+
+  function buildProjectsDialog() {
+    const dlg = document.createElement("dialog");
+    dlg.className = "pt-dialog";
+    dlg.setAttribute("aria-labelledby", "prjTitle");
+    const form = document.createElement("form");
+    form.noValidate = true;
+    const title = el("h3", "Projects", "pt-title");
+    title.id = "prjTitle";
+    const intro = el("p", "", "muted small");
+    const list = el("div", null, "pt-history");
+    const name = document.createElement("input");
+    name.placeholder = "Project name, for example: Maryland FMIS phase 1";
+    name.maxLength = 120;
+    name.setAttribute("aria-label", "Project name");
+    const summary = document.createElement("textarea");
+    summary.rows = 2;
+    summary.maxLength = 1000;
+    summary.placeholder = "Short summary (optional)";
+    summary.setAttribute("aria-label", "Project summary");
+    const newLabel = el("label", null, "pt-field");
+    newLabel.append(el("span", "New project", "pt-label"), name, summary);
+    const message = el("p", "", "pt-error");
+    message.setAttribute("role", "status");
+    const close = el("button", "Close", "btn ghost");
+    close.type = "button";
+    const add = el("button", "Add project", "btn");
+    add.type = "submit";
+    const actions = el("div", null, "pt-actions");
+    actions.append(close, add);
+    form.append(title, intro, list, newLabel, message, actions);
+    dlg.append(form);
+    document.body.append(dlg);
+    close.addEventListener("click", () => dlg.close());
+    dlg.addEventListener("cancel", (e) => {
+      e.preventDefault();
+      dlg.close();
+    });
+    form.addEventListener("submit", async (e) => {
+      e.preventDefault();
+      message.className = "pt-error";
+      message.textContent = "";
+      add.disabled = true;
+      try {
+        await api(`/api/prospects/${projectsProspect.id}/projects`, { method: "POST", body: JSON.stringify({ name: name.value, summary: summary.value }) });
+        name.value = "";
+        summary.value = "";
+        await loadProjectList();
+      } catch (err) {
+        message.textContent = err.message;
+      } finally {
+        add.disabled = false;
+      }
+    });
+    projectsDialog = { dlg, intro, list, name, summary, message };
+    return projectsDialog;
+  }
+
+  async function loadProjectList() {
+    const d = projectsDialog;
+    d.list.replaceChildren();
+    const data = await api(`/api/prospects/${projectsProspect.id}/projects`);
+    if (!data.projects.length) d.list.append(el("p", "No projects yet. Add the first one below.", "muted small"));
+    for (const pr of data.projects) {
+      const row = el("div", null, "prospect-row");
+      row.style.cssText = "padding:10px 12px;border:1px solid var(--line);border-radius:14px;margin-bottom:8px";
+      row.append(el("strong", pr.name));
+      if (pr.summary) row.append(el("div", pr.summary, "muted small"));
+      const sentLine = el("div", "Loading emails...", "muted small");
+      row.append(sentLine);
+      const write = el("button", "Write email", "btn");
+      write.type = "button";
+      write.style.marginTop = "8px";
+      write.addEventListener("click", () => openComposer(pr));
+      const remove = el("button", "Delete", "btn ghost");
+      remove.type = "button";
+      remove.style.cssText = "margin-top:8px;margin-left:8px;color:var(--bad)";
+      remove.addEventListener("click", async () => {
+        if (!window.confirm(`Delete the project "${pr.name}"? Its sent-email record is removed too. Emails already sent are not recalled.`)) return;
+        remove.disabled = true;
+        try {
+          await api(`/api/projects/${pr.id}`, { method: "DELETE" });
+          await loadProjectList();
+        } catch (err) {
+          remove.disabled = false;
+          d.message.textContent = err.message;
+        }
+      });
+      row.append(write, remove);
+      d.list.append(row);
+      api(`/api/projects/${pr.id}/emails`).then((res) => {
+        const emails = res.emails || [];
+        sentLine.textContent = emails.length
+          ? `${emails.length} sent. Last sent ${new Date(emails[0].sent_at).toLocaleString()} to ${emails[0].recipients.join(", ")}.`
+          : "No emails sent yet.";
+      }).catch(() => {
+        sentLine.textContent = "Could not load the sent emails.";
+      });
+    }
+  }
+
+  function openProjects(p) {
+    const d = projectsDialog || buildProjectsDialog();
+    projectsProspect = p;
+    d.intro.textContent = `For ${p.first_name} ${p.last_name} at ${p.company}. Each project keeps its own emails.`;
+    d.message.className = "pt-error";
+    d.message.textContent = "";
+    d.dlg.showModal();
+    loadProjectList().catch((err) => {
+      d.message.textContent = err.message;
+    });
+  }
+
+  function buildComposer() {
+    const dlg = document.createElement("dialog");
+    dlg.className = "pt-dialog";
+    dlg.setAttribute("aria-labelledby", "pmTitle");
+    const form = document.createElement("form");
+    form.noValidate = true;
+    const title = el("h3", "Project email", "pt-title");
+    title.id = "pmTitle";
+    const intro = el("p", "", "muted small");
+    const to = document.createElement("textarea");
+    to.rows = 2;
+    to.setAttribute("aria-label", "Send to");
+    const toLabel = el("label", null, "pt-field");
+    toLabel.append(el("span", "Send to", "pt-label"), to, el("span", "Separate addresses with commas. The first is To. The others and you are on CC. Replies come to you.", "muted small"));
+    const subject = document.createElement("input");
+    subject.maxLength = 200;
+    subject.placeholder = "Subject (optional)";
+    subject.setAttribute("aria-label", "Subject");
+    const note = document.createElement("textarea");
+    note.rows = 3;
+    note.maxLength = 1000;
+    note.placeholder = "A few words in your own voice (optional)";
+    note.setAttribute("aria-label", "Personal note");
+    const found = document.createElement("textarea");
+    found.rows = 4;
+    found.maxLength = 2000;
+    found.placeholder = "What we found in their project";
+    found.setAttribute("aria-label", "What we found");
+    const how = document.createElement("textarea");
+    how.rows = 4;
+    how.maxLength = 2000;
+    how.placeholder = "How Cutover helps with it";
+    how.setAttribute("aria-label", "How Cutover helps");
+    const share = document.createElement("input");
+    share.type = "number";
+    share.min = "0";
+    share.max = "100";
+    share.placeholder = "Cutover share, %";
+    share.setAttribute("aria-label", "Cutover share, percent");
+    const hours = document.createElement("input");
+    hours.type = "number";
+    hours.min = "0";
+    hours.placeholder = "Human hours saved";
+    hours.setAttribute("aria-label", "Human hours saved");
+    const numbers = el("div", null, "pt-row");
+    numbers.style.cssText = "display:flex;gap:8px;flex-wrap:wrap";
+    numbers.append(share, hours);
+    const advantages = document.createElement("textarea");
+    advantages.rows = 4;
+    advantages.maxLength = 2000;
+    advantages.placeholder = "One advantage per line, up to 8";
+    advantages.setAttribute("aria-label", "Advantages");
+    const allCaps = document.createElement("input");
+    allCaps.type = "checkbox";
+    allCaps.checked = true;
+    const allLabel = el("label", null, "pt-field");
+    allLabel.style.flexDirection = "row";
+    allLabel.append(allCaps, el("span", "Send the full approved list (15 capabilities)", "pt-label"));
+    const capGrid = el("div", null, "pt-caps");
+    capGrid.style.cssText = "display:grid;grid-template-columns:1fr 1fr;gap:6px;font-size:13px";
+    capGrid.hidden = true;
+    for (const [id, label] of CAPABILITY_LIST) {
+      const box = document.createElement("input");
+      box.type = "checkbox";
+      box.value = id;
+      const row = el("label", null, null);
+      row.style.cssText = "display:flex;gap:6px;align-items:flex-start";
+      row.append(box, el("span", label));
+      capGrid.append(row);
+    }
+    allCaps.addEventListener("change", () => { capGrid.hidden = allCaps.checked; });
+    const files = document.createElement("input");
+    files.type = "file";
+    files.multiple = true;
+    files.accept = ".pdf,.pptx,application/pdf,application/vnd.openxmlformats-officedocument.presentationml.presentation";
+    files.setAttribute("aria-label", "Attach PDF or PowerPoint files");
+    const fileLabel = el("label", null, "pt-field");
+    fileLabel.append(el("span", "Attachments (PDF or PowerPoint, up to 5 files, 20 MB in total)", "pt-label"), files);
+    const fileList = el("div", null, "pt-history");
+    const message = el("p", "", "pt-error");
+    message.setAttribute("role", "status");
+    const close = el("button", "Close", "btn ghost");
+    close.type = "button";
+    const send = el("button", "Send email", "btn");
+    send.type = "submit";
+    const actions = el("div", null, "pt-actions");
+    actions.append(close, send);
+    form.append(title, intro, toLabel, subject, note, found, how, numbers, advantages, allLabel, capGrid, fileLabel, fileList, message, actions);
+    dlg.append(form);
+    document.body.append(dlg);
+    close.addEventListener("click", () => dlg.close());
+    dlg.addEventListener("cancel", (e) => {
+      e.preventDefault();
+      dlg.close();
+    });
+
+    function renderComposerFiles() {
+      fileList.replaceChildren();
+      composerFiles.forEach((f, i) => {
+        const row = el("div", null, "muted small");
+        row.style.cssText = "display:flex;justify-content:space-between;gap:8px;align-items:center;margin-bottom:4px";
+        row.append(el("span", `${f.filename} (${Math.round(f.bytes / 1024)} KB)`));
+        const drop = el("button", "Remove", "btn ghost");
+        drop.type = "button";
+        drop.addEventListener("click", () => {
+          composerFiles.splice(i, 1);
+          renderComposerFiles();
+        });
+        row.append(drop);
+        fileList.append(row);
+      });
+    }
+
+    files.addEventListener("change", async () => {
+      message.className = "pt-error";
+      message.textContent = "";
+      for (const file of [...files.files]) {
+        if (!/\.(pdf|pptx)$/i.test(file.name)) {
+          message.textContent = `${file.name} must be a PDF or a PowerPoint (.pptx) file.`;
+          continue;
+        }
+        if (file.size > PROJECT_FILE_MAX_BYTES) {
+          message.textContent = `${file.name} is larger than 10 MB.`;
+          continue;
+        }
+        if (composerFiles.length >= PROJECT_FILES_MAX) {
+          message.textContent = `Attach up to ${PROJECT_FILES_MAX} files.`;
+          break;
+        }
+        const total = composerFiles.reduce((sum, f) => sum + f.bytes, 0) + file.size;
+        if (total > PROJECT_FILES_TOTAL_MAX_BYTES) {
+          message.textContent = "The attachments together are larger than 20 MB.";
+          break;
+        }
+        composerFiles.push({ filename: file.name, bytes: file.size, content_base64: await readAsBase64(file) });
+      }
+      files.value = "";
+      renderComposerFiles();
+    });
+
+    form.addEventListener("submit", async (e) => {
+      e.preventDefault();
+      message.className = "pt-error";
+      message.textContent = "";
+      const picked = [...capGrid.querySelectorAll("input")].filter((b) => b.checked).map((b) => b.value);
+      if (!allCaps.checked && !picked.length) {
+        message.textContent = "Choose at least one capability, or send the full list.";
+        return;
+      }
+      if (!found.value.trim() && !how.value.trim()) {
+        message.textContent = "Write what you found, or how Cutover helps, or both.";
+        return;
+      }
+      send.disabled = true;
+      try {
+        const res = await api(`/api/projects/${composerProject.id}/emails`, {
+          method: "POST",
+          body: JSON.stringify({
+            recipients: to.value,
+            subject: subject.value,
+            note: note.value,
+            found: found.value,
+            how_helps: how.value,
+            cutover_share: share.value === "" ? null : Number(share.value),
+            human_hours_saved: hours.value === "" ? null : Number(hours.value),
+            advantages: advantages.value.split("\n").map((s) => s.trim()).filter(Boolean),
+            capability_ids: allCaps.checked ? "all" : picked,
+            attachments: composerFiles.map((f) => ({ filename: f.filename, content_base64: f.content_base64 })),
+          }),
+        });
+        const count = res.sent.length;
+        message.className = "pt-note";
+        message.textContent = `Sent to ${count} ${count === 1 ? "person" : "people"}.`;
+        composerFiles = [];
+        renderComposerFiles();
+        loadProjectList().catch(() => {});
+      } catch (err) {
+        message.textContent = err.message;
+      } finally {
+        send.disabled = false;
+      }
+    });
+
+    composerDialog = { dlg, intro, to, subject, note, found, how, share, hours, advantages, allCaps, capGrid, message, renderComposerFiles };
+    return composerDialog;
+  }
+
+  function openComposer(pr) {
+    const d = composerDialog || buildComposer();
+    composerProject = pr;
+    composerFiles = [];
+    d.intro.textContent = `Project: ${pr.name}. To ${projectsProspect.first_name} ${projectsProspect.last_name} at ${projectsProspect.company}.`;
+    d.to.value = [projectsProspect.email, ...(projectsProspect.extra_emails || [])].join(", ");
+    d.subject.value = "";
+    d.note.value = "";
+    d.found.value = "";
+    d.how.value = "";
+    d.share.value = "";
+    d.hours.value = "";
+    d.advantages.value = "";
+    d.allCaps.checked = true;
+    d.capGrid.hidden = true;
+    for (const box of d.capGrid.querySelectorAll("input")) box.checked = false;
+    d.message.className = "pt-error";
+    d.message.textContent = "";
+    d.renderComposerFiles();
+    d.dlg.showModal();
+    d.found.focus();
   }
 
   // ---- Follow-up after a meeting: one rich email per person, with screenshots and the game. Staff check the list first. ----
@@ -4068,7 +4393,6 @@ button:not(:disabled):active{transform:scale(.965)}
     }
   });
   $("staffTabCalendar").addEventListener("click", () => showStaffTab("calendar"));
-  $("staffTabRfp").addEventListener("click", () => showStaffTab("rfp"));
 
   async function loadStaffTracker() {
     setMsg("staffMsg", "Loading the invitations...", false);
@@ -4214,295 +4538,6 @@ button:not(:disabled):active{transform:scale(.965)}
     history.replaceState(null, "", location.pathname + location.search);
     homeTab = "staff";
     staffTab = "calendar";
-  }
-
-  // ---- RFP reviews (staff only). Capability list, reviews and their requirements. Matching comes in the next step. ----
-  let rfpCapabilities = [];
-
-  // Reads ?rfp=ID once, keeps it across the sign-in round trip, and returns it for the staff view to open.
-  function takeSharedRfpId() {
-    try {
-      const fromUrl = new URLSearchParams(location.search).get("rfp");
-      if (fromUrl && /^[0-9a-f-]{36}$/i.test(fromUrl)) sessionStorage.setItem("cutover.rfp", fromUrl);
-      const saved = sessionStorage.getItem("cutover.rfp");
-      sessionStorage.removeItem("cutover.rfp");
-      if (fromUrl) history.replaceState(null, "", location.pathname + location.hash);
-      return saved && /^[0-9a-f-]{36}$/i.test(saved) ? saved : null;
-    } catch {
-      return null;
-    }
-  }
-
-  function rfpError(err) {
-    const kinds = err.body && Array.isArray(err.body.sensitive) ? ` Remove: ${err.body.sensitive.map((k) => `${k.kind} (${k.count})`).join(", ")}.` : "";
-    setMsg("rfpMsg", err.message + kinds, true);
-  }
-
-  async function loadRfp() {
-    setMsg("rfpMsg", "", false);
-    try {
-      const caps = await api("/api/rfp/capabilities");
-      rfpCapabilities = caps.capabilities || [];
-      renderCapabilities();
-      await refreshReviews();
-      if (rfpReviewId) await openRfpReview(rfpReviewId);
-    } catch (err) {
-      rfpError(err);
-    }
-  }
-
-  function renderCapabilities() {
-    const box = $("rfpCapabilities");
-    box.replaceChildren();
-    $("rfpSeed").hidden = rfpCapabilities.length > 0;
-    if (!rfpCapabilities.length) {
-      $("rfpCapCount").textContent = "No capabilities yet. Load the portal baseline, then approve each entry before it is used.";
-      return;
-    }
-    const approved = rfpCapabilities.filter((c) => c.status === "approved").length;
-    $("rfpCapCount").textContent = `${approved} of ${rfpCapabilities.length} approved. Only approved entries are used for matching.`;
-    for (const c of rfpCapabilities) {
-      const row = el("div", null, "prospect-row");
-      row.style.cssText = "padding:10px 12px;border:1px solid var(--line);border-radius:12px;margin-bottom:6px";
-      row.append(el("strong", c.name), el("span", c.status === "approved" ? " · approved" : " · draft", "muted small"));
-      row.append(el("div", c.description || "", "muted small"));
-      const toggle = el("button", c.status === "approved" ? "Mark as draft" : "Approve", "ghost small-btn");
-      toggle.type = "button";
-      toggle.style.marginTop = "6px";
-      toggle.addEventListener("click", () => saveCapability(c.id, { status: c.status === "approved" ? "draft" : "approved" }));
-      const remove = el("button", "Remove", "ghost small-btn");
-      remove.type = "button";
-      remove.style.cssText = "margin:6px 0 0 8px;color:var(--bad)";
-      remove.addEventListener("click", () => removeCapability(c));
-      row.append(toggle, remove);
-      box.append(row);
-    }
-  }
-
-  async function saveCapability(id, body) {
-    try {
-      await api(`/api/rfp/capabilities/${id}`, { method: "PATCH", body: JSON.stringify(body) });
-      await loadRfp();
-    } catch (err) {
-      rfpError(err);
-    }
-  }
-
-  async function removeCapability(c) {
-    if (!window.confirm(`Remove "${c.name}" from the capability list?`)) return;
-    try {
-      await api(`/api/rfp/capabilities/${c.id}`, { method: "DELETE" });
-      await loadRfp();
-    } catch (err) {
-      rfpError(err);
-    }
-  }
-
-  $("rfpSeed").addEventListener("click", async () => {
-    try {
-      await api("/api/rfp/capabilities/seed", { method: "POST" });
-      setMsg("rfpMsg", "The portal baseline is added as drafts. Approve each entry you want used.", false);
-      await loadRfp();
-    } catch (err) {
-      rfpError(err);
-    }
-  });
-
-  async function refreshReviews() {
-    const data = await api("/api/rfp/reviews");
-    const box = $("rfpReviews");
-    box.replaceChildren();
-    const list = data.reviews || [];
-    if (!list.length) {
-      box.append(el("p", "No RFP reviews yet. Paste an RFP below to start one.", "muted small"));
-      return;
-    }
-    for (const r of list) {
-      const row = el("div", null, "prospect-row");
-      row.style.cssText = "padding:10px 12px;border:1px solid var(--line);border-radius:12px;margin-bottom:6px";
-      row.append(el("strong", r.title), el("span", r.client ? ` · ${r.client}` : "", "muted small"));
-      row.append(el("div", `Created by ${r.created_by_email} on ${new Date(r.created_at).toLocaleDateString()}`, "muted small"));
-      const open = el("button", "Open", "ghost small-btn");
-      open.type = "button";
-      open.style.marginTop = "6px";
-      open.addEventListener("click", () => openRfpReview(r.id));
-      row.append(open);
-      box.append(row);
-    }
-  }
-
-  $("rfpFile").addEventListener("change", async (e) => {
-    const file = e.target.files && e.target.files[0];
-    if (!file) return;
-    if (!/\.(txt|md|csv)$/i.test(file.name)) {
-      e.target.value = "";
-      setMsg("rfpMsg", "Only .txt, .md and .csv files can be read for now. For a Word or PDF file, open it, select all the text, copy it, and paste it into the box.", true);
-      return;
-    }
-    try {
-      const text = await file.text();
-      if (/[\u0000-\u0008\u000E-\u001F\uFFFD]/.test(text.slice(0, 5000))) {
-        e.target.value = "";
-        setMsg("rfpMsg", "This file is not plain text, so it cannot be read. Save it as .txt and try again.", true);
-        return;
-      }
-      if (text.length > 200000) {
-        setMsg("rfpMsg", "That file is too long. Keep it under 200,000 characters, or split it into parts.", true);
-        return;
-      }
-      $("rfpText").value = text;
-      if (!$("rfpTitle").value.trim()) $("rfpTitle").value = file.name.replace(/\.[^.]+$/, "").slice(0, 160);
-      setMsg("rfpMsg", "File read. Check the text, then press Create review.", false);
-    } catch {
-      setMsg("rfpMsg", "That file could not be read. Try a .txt, .md or .csv file.", true);
-    }
-  });
-
-  $("rfpNewForm").addEventListener("submit", async (e) => {
-    e.preventDefault();
-    try {
-      const res = await api("/api/rfp/reviews", { method: "POST", body: JSON.stringify({ title: $("rfpTitle").value, client: $("rfpClient").value, text: $("rfpText").value }) });
-      e.target.reset();
-      setMsg("rfpMsg", `Created with ${res.requirements.length} requirements. Check each one before matching.`, false);
-      await refreshReviews();
-      await openRfpReview(res.review.id);
-    } catch (err) {
-      rfpError(err);
-    }
-  });
-
-  async function openRfpReview(id) {
-    rfpReviewId = id;
-    const panel = $("rfpDetail");
-    panel.hidden = false;
-    panel.replaceChildren(el("p", "Loading…", "muted small"));
-    try {
-      const data = await api(`/api/rfp/reviews/${id}`);
-      renderReview(data.review, data.requirements || []);
-    } catch (err) {
-      panel.replaceChildren();
-      rfpError(err);
-    }
-  }
-
-  function renderReview(review, reqs) {
-    const panel = $("rfpDetail");
-    panel.replaceChildren();
-    panel.append(el("h3", review.title));
-    panel.append(el("p", review.client ? `Client: ${review.client}` : "Client not given", "muted small"));
-
-    const share = el("div", null, "row");
-    share.style.cssText = "gap:8px;flex-wrap:wrap;align-items:center;margin:10px 0";
-    const copy = el("button", "Copy share link", "ghost small-btn");
-    copy.type = "button";
-    copy.addEventListener("click", async () => {
-      const link = `${location.origin}/?rfp=${review.id}`;
-      try {
-        await navigator.clipboard.writeText(link);
-        setMsg("rfpMsg", "Link copied. Only signed-in Cutover staff can open it.", false);
-      } catch {
-        setMsg("rfpMsg", `Copy this link: ${link}`, false);
-      }
-    });
-    share.append(copy, el("span", "Only signed-in Cutover staff can open this link.", "muted small"));
-    const clean = el("button", "Clean data", "ghost small-btn");
-    clean.type = "button";
-    clean.style.cssText = "color:var(--bad)";
-    clean.addEventListener("click", async () => {
-      if (!window.confirm("Delete this review's text and all its requirements? This cannot be undone.")) return;
-      try {
-        await api(`/api/rfp/reviews/${review.id}`, { method: "DELETE" });
-        rfpReviewId = null;
-        $("rfpDetail").replaceChildren();
-        $("rfpDetail").hidden = true;
-        await refreshReviews();
-        setMsg("rfpMsg", "The review's data was deleted.", false);
-      } catch (err) {
-        rfpError(err);
-      }
-    });
-    share.append(clean);
-    panel.append(share);
-
-    panel.append(el("p", "Requirements are split out of the text by rule. Check each one: edit, remove or add. Matching against the capability list is the next step.", "muted small"));
-
-    const list = el("div", null, "");
-    for (const req of reqs) list.append(requirementRow(req));
-    panel.append(list);
-
-    const add = document.createElement("form");
-    add.style.cssText = "display:grid;gap:8px;margin-top:12px";
-    const text = document.createElement("textarea");
-    text.rows = 2;
-    text.maxLength = 2000;
-    text.placeholder = "Add a requirement";
-    text.setAttribute("aria-label", "New requirement");
-    text.required = true;
-    text.style.cssText = "font:inherit;padding:10px 12px;border-radius:12px;border:1px solid #d9d2ee";
-    const addBtn = el("button", "Add requirement", "ghost small-btn");
-    addBtn.type = "submit";
-    add.append(text, addBtn);
-    add.addEventListener("submit", async (e) => {
-      e.preventDefault();
-      try {
-        await api(`/api/rfp/reviews/${review.id}/requirements`, { method: "POST", body: JSON.stringify({ text: text.value }) });
-        await openRfpReview(review.id);
-      } catch (err) {
-        rfpError(err);
-      }
-    });
-    panel.append(add);
-  }
-
-  function requirementRow(req) {
-    const row = el("div", null, "");
-    row.style.cssText = "padding:10px 12px;border:1px solid var(--line);border-radius:12px;margin-bottom:6px";
-    const head = el("div", null, "muted small");
-    head.append(el("strong", req.ref), el("span", req.section ? ` · ${req.section}` : "", "muted small"));
-    row.append(head, el("p", req.text, ""));
-    row.lastChild.style.margin = "6px 0";
-    const edit = el("button", "Edit", "ghost small-btn");
-    edit.type = "button";
-    edit.addEventListener("click", () => editRequirement(req, row));
-    const remove = el("button", "Remove", "ghost small-btn");
-    remove.type = "button";
-    remove.style.cssText = "margin-left:8px;color:var(--bad)";
-    remove.addEventListener("click", async () => {
-      if (!window.confirm(`Remove ${req.ref} from this review?`)) return;
-      try {
-        await api(`/api/rfp/requirements/${req.id}`, { method: "DELETE" });
-        await openRfpReview(rfpReviewId);
-      } catch (err) {
-        rfpError(err);
-      }
-    });
-    row.append(edit, remove);
-    return row;
-  }
-
-  function editRequirement(req, row) {
-    row.replaceChildren();
-    const area = document.createElement("textarea");
-    area.rows = 3;
-    area.maxLength = 2000;
-    area.value = req.text;
-    area.setAttribute("aria-label", `Edit ${req.ref}`);
-    area.style.cssText = "font:inherit;width:100%;padding:10px 12px;border-radius:12px;border:1px solid #d9d2ee";
-    const save = el("button", "Save", "small-btn");
-    save.type = "button";
-    const cancel = el("button", "Cancel", "ghost small-btn");
-    cancel.type = "button";
-    cancel.style.marginLeft = "8px";
-    save.addEventListener("click", async () => {
-      try {
-        await api(`/api/rfp/requirements/${req.id}`, { method: "PATCH", body: JSON.stringify({ text: area.value }) });
-        await openRfpReview(rfpReviewId);
-      } catch (err) {
-        rfpError(err);
-      }
-    });
-    cancel.addEventListener("click", () => openRfpReview(rfpReviewId));
-    row.append(el("strong", req.ref), area, save, cancel);
   }
 
   async function loadStaffCalendar() {
