@@ -2079,6 +2079,7 @@ button:not(:disabled):active{transform:scale(.965)}
           <input id="rfpTitle" placeholder="Title, for example: Agency financial system RFI" aria-label="Review title" required maxlength="160">
           <input id="rfpClient" placeholder="Client (optional)" aria-label="Client" maxlength="160">
           <textarea id="rfpText" rows="8" placeholder="Paste the RFP text here" aria-label="RFP text" required style="font:inherit;padding:10px 12px;border-radius:12px;border:1px solid #d9d2ee"></textarea>
+          <label class="muted small">Or choose a text file (.txt, .md or .csv): <input id="rfpFile" type="file" accept=".txt,.md,.csv"></label>
           <div><button type="submit" class="small-btn">Create review</button></div>
         </form>
         <p id="rfpMsg" class="muted small hint" style="margin-top:12px"></p>
@@ -4330,6 +4331,23 @@ button:not(:disabled):active{transform:scale(.965)}
     }
   }
 
+  $("rfpFile").addEventListener("change", async (e) => {
+    const file = e.target.files && e.target.files[0];
+    if (!file) return;
+    try {
+      const text = await file.text();
+      if (text.length > 200000) {
+        setMsg("rfpMsg", "That file is too long. Keep it under 200,000 characters, or split it into parts.", true);
+        return;
+      }
+      $("rfpText").value = text;
+      if (!$("rfpTitle").value.trim()) $("rfpTitle").value = file.name.replace(/\.[^.]+$/, "").slice(0, 160);
+      setMsg("rfpMsg", "File read. Check the text, then press Create review.", false);
+    } catch {
+      setMsg("rfpMsg", "That file could not be read. Try a .txt, .md or .csv file.", true);
+    }
+  });
+
   $("rfpNewForm").addEventListener("submit", async (e) => {
     e.preventDefault();
     try {
@@ -4377,6 +4395,23 @@ button:not(:disabled):active{transform:scale(.965)}
       }
     });
     share.append(copy, el("span", "Only signed-in Cutover staff can open this link.", "muted small"));
+    const clean = el("button", "Clean data", "ghost small-btn");
+    clean.type = "button";
+    clean.style.cssText = "color:var(--bad)";
+    clean.addEventListener("click", async () => {
+      if (!window.confirm("Delete this review's text and all its requirements? This cannot be undone.")) return;
+      try {
+        await api(`/api/rfp/reviews/${review.id}`, { method: "DELETE" });
+        rfpReviewId = null;
+        $("rfpDetail").replaceChildren();
+        $("rfpDetail").hidden = true;
+        await refreshReviews();
+        setMsg("rfpMsg", "The review's data was deleted.", false);
+      } catch (err) {
+        rfpError(err);
+      }
+    });
+    share.append(clean);
     panel.append(share);
 
     panel.append(el("p", "Requirements are split out of the text by rule. Check each one: edit, remove or add. Matching against the capability list is the next step.", "muted small"));
