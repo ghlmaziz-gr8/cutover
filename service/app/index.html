@@ -3852,7 +3852,7 @@ button:not(:disabled):active{transform:scale(.965)}
   }
 
   // ---- Projects under a prospect. Each project keeps its own emails: what we found, how Cutover helps, the share and
-  // hours, the capabilities, and the attached PDF or PowerPoint files. ----
+  // the capabilities, and the attached PDF or PowerPoint files. ----
   const CAPABILITY_LIST = [
     ["C01", "Legacy application assessment"], ["C02", "Business rule discovery"], ["C03", "Per-file findings"],
     ["C04", "Deeper business, systems and data analysis"], ["C05", "Capability and feature grouping"],
@@ -4031,14 +4031,9 @@ button:not(:disabled):active{transform:scale(.965)}
     share.max = "100";
     share.placeholder = "Cutover share, %";
     share.setAttribute("aria-label", "Cutover share, percent");
-    const hours = document.createElement("input");
-    hours.type = "number";
-    hours.min = "0";
-    hours.placeholder = "Human hours saved";
-    hours.setAttribute("aria-label", "Human hours saved");
     const numbers = el("div", null, "pt-row");
     numbers.style.cssText = "display:flex;gap:8px;flex-wrap:wrap";
-    numbers.append(share, hours);
+    numbers.append(share);
     const advantages = document.createElement("textarea");
     advantages.rows = 4;
     advantages.maxLength = 2000;
@@ -4156,7 +4151,6 @@ button:not(:disabled):active{transform:scale(.965)}
             found: found.value,
             how_helps: how.value,
             cutover_share: share.value === "" ? null : Number(share.value),
-            human_hours_saved: hours.value === "" ? null : Number(hours.value),
             advantages: advantages.value.split("\n").map((s) => s.trim()).filter(Boolean),
             capability_ids: allCaps.checked ? "all" : picked,
             attachments: composerFiles.map((f) => ({ filename: f.filename, content_base64: f.content_base64 })),
@@ -4175,7 +4169,7 @@ button:not(:disabled):active{transform:scale(.965)}
       }
     });
 
-    composerDialog = { dlg, intro, to, subject, note, found, how, share, hours, advantages, allCaps, capGrid, message, renderComposerFiles };
+    composerDialog = { dlg, intro, to, subject, note, found, how, share, advantages, allCaps, capGrid, message, renderComposerFiles };
     return composerDialog;
   }
 
@@ -4190,7 +4184,6 @@ button:not(:disabled):active{transform:scale(.965)}
     d.found.value = "";
     d.how.value = "";
     d.share.value = "";
-    d.hours.value = "";
     d.advantages.value = "";
     d.allCaps.checked = true;
     d.capGrid.hidden = true;
