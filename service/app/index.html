@@ -1985,6 +1985,7 @@ button:not(:disabled):active{transform:scale(.965)}
         <button type="button" class="ghost small-btn" id="staffTabTracker" role="tab" aria-selected="false">Demo invitations</button>
         <button type="button" class="ghost small-btn" id="staffTabCalendar" role="tab" aria-selected="false" hidden>My calendar</button>
         <button type="button" class="ghost small-btn" id="staffTabAccess" role="tab" aria-selected="false" hidden>Staff access</button>
+        <button type="button" class="ghost small-btn" id="staffTabRfp" role="tab" aria-selected="false" hidden>RFP reviews</button>
       </div>
 
       <div id="staffProspects" hidden>
@@ -2064,6 +2065,29 @@ button:not(:disabled):active{transform:scale(.965)}
             <li><b>You want to remove the connection completely.</b> Press Disconnect here. You can also remove Cutover in your Google account under Security, then Third-party access.</li>
           </ul>
         </details>
+      </div>
+
+      <div id="staffRfp" hidden>
+        <p class="muted small hint" style="margin-top:12px">Paste a client's RFP or RFI. Cutover splits it into numbered requirements, which are then matched to the capability list. Only signed-in Cutover staff can open these reviews. Use sample values only: text with personal values is refused.</p>
+        <h3 style="margin:14px 0 6px">Capability list</h3>
+        <p class="muted small" id="rfpCapCount" style="margin:0 0 8px"></p>
+        <button type="button" class="small-btn" id="rfpSeed" hidden>Add the starter list</button>
+        <div id="rfpCapabilities" style="margin-top:8px"></div>
+        <form id="rfpCapForm" class="row" style="gap:8px;flex-wrap:wrap;margin-top:10px" autocomplete="off">
+          <input id="rfpCapName" placeholder="Capability name" aria-label="Capability name" required maxlength="120" style="min-width:240px">
+          <input id="rfpCapDesc" placeholder="What the portal does, in one or two sentences" aria-label="Capability description" maxlength="1000" style="min-width:280px;flex-basis:100%">
+          <button type="submit" class="ghost small-btn">Add capability</button>
+        </form>
+        <h3 style="margin:22px 0 6px">RFP reviews</h3>
+        <div id="rfpReviews"></div>
+        <form id="rfpNewForm" style="display:grid;gap:8px;margin-top:12px" autocomplete="off">
+          <input id="rfpTitle" placeholder="Title, for example: Agency financial system RFI" aria-label="Review title" required maxlength="160">
+          <input id="rfpClient" placeholder="Client (optional)" aria-label="Client" maxlength="160">
+          <textarea id="rfpText" rows="8" placeholder="Paste the RFP text here" aria-label="RFP text" required style="font:inherit;padding:10px 12px;border-radius:12px;border:1px solid #d9d2ee"></textarea>
+          <div><button type="submit" class="small-btn">Create review</button></div>
+        </form>
+        <p id="rfpMsg" class="muted small hint" style="margin-top:12px"></p>
+        <div id="rfpDetail" hidden style="margin-top:18px"></div>
       </div>
 
       <div id="staffAccess" hidden>
@@ -3418,6 +3442,13 @@ button:not(:disabled):active{transform:scale(.965)}
     const staffRoles = (me && me.staff_roles) || [];
     if (staffRoles.length) available.push("staff");
     if (!available.includes(homeTab)) homeTab = canAnalyse ? "analyses" : canWork ? "workspaces" : staffRoles.length ? "staff" : "guide";
+    // A shared RFP link opens its review for staff, after the sign-in round trip.
+    const sharedRfp = takeSharedRfpId();
+    if (sharedRfp && staffRoles.some((r) => ["super_user", "admin", "sales"].includes(r))) {
+      homeTab = "staff";
+      staffTab = "rfp";
+      rfpReviewId = sharedRfp;
+    }
     const setTab = (id, key) => {
       $(id).hidden = !available.includes(key);
       $(id).className = homeTab === key ? "small-btn" : "ghost small-btn";
@@ -3431,6 +3462,7 @@ button:not(:disabled):active{transform:scale(.965)}
     $("staffCard").hidden = !(staffRoles.length && homeTab === "staff");
     $("staffTabAccess").hidden = !staffRoles.some((r) => ["super_user", "admin", "sales"].includes(r));
     $("staffTabCalendar").hidden = !staffRoles.some((r) => ["super_user", "admin", "sales"].includes(r));
+    $("staffTabRfp").hidden = !staffRoles.some((r) => ["super_user", "admin", "sales"].includes(r));
     $("staffTabProspects").hidden = !staffRoles.some((r) => ["super_user", "admin", "sales"].includes(r));
     if (!staffRoles.some((r) => ["super_user", "admin", "sales"].includes(r)) && staffTab === "prospects") staffTab = "tracker";
     if (homeTab === "staff") showStaffTab(staffTab);
@@ -3455,6 +3487,7 @@ button:not(:disabled):active{transform:scale(.965)}
     if (homeTab === "guide") renderGuide();
   }
   let staffTab = "prospects";
+  let rfpReviewId = null;
 
   let homeTab = "analyses";
   $("tabAnalyses").addEventListener("click", () => { homeTab = "analyses"; showHome(); });
@@ -3748,7 +3781,7 @@ button:not(:disabled):active{transform:scale(.965)}
 
   function showStaffTab(which) {
     staffTab = which;
-    const tabs = { prospects: ["staffTabProspects", "staffProspects"], tracker: ["staffTabTracker", "staffTracker"], calendar: ["staffTabCalendar", "staffCalendar"], access: ["staffTabAccess", "staffAccess"] };
+    const tabs = { prospects: ["staffTabProspects", "staffProspects"], tracker: ["staffTabTracker", "staffTracker"], calendar: ["staffTabCalendar", "staffCalendar"], access: ["staffTabAccess", "staffAccess"], rfp: ["staffTabRfp", "staffRfp"] };
     for (const [key, [btn, panel]] of Object.entries(tabs)) {
       $(btn).className = key === which ? "small-btn" : "ghost small-btn";
       $(btn).setAttribute("aria-selected", String(key === which));
@@ -3758,6 +3791,7 @@ button:not(:disabled):active{transform:scale(.965)}
     if (which === "tracker") loadStaffTracker();
     if (which === "access") loadStaffAccess();
     if (which === "calendar") loadStaffCalendar();
+    if (which === "rfp") loadRfp();
   }
 
   $("staffTabTracker").addEventListener("click", () => showStaffTab("tracker"));
@@ -4038,6 +4072,7 @@ button:not(:disabled):active{transform:scale(.965)}
     }
   });
   $("staffTabCalendar").addEventListener("click", () => showStaffTab("calendar"));
+  $("staffTabRfp").addEventListener("click", () => showStaffTab("rfp"));
 
   async function loadStaffTracker() {
     setMsg("staffMsg", "Loading the invitations...", false);
@@ -4183,6 +4218,262 @@ button:not(:disabled):active{transform:scale(.965)}
     history.replaceState(null, "", location.pathname + location.search);
     homeTab = "staff";
     staffTab = "calendar";
+  }
+
+  // ---- RFP reviews (staff only). Capability list, reviews and their requirements. Matching comes in the next step. ----
+  let rfpCapabilities = [];
+
+  // Reads ?rfp=ID once, keeps it across the sign-in round trip, and returns it for the staff view to open.
+  function takeSharedRfpId() {
+    try {
+      const fromUrl = new URLSearchParams(location.search).get("rfp");
+      if (fromUrl && /^[0-9a-f-]{36}$/i.test(fromUrl)) sessionStorage.setItem("cutover.rfp", fromUrl);
+      const saved = sessionStorage.getItem("cutover.rfp");
+      sessionStorage.removeItem("cutover.rfp");
+      if (fromUrl) history.replaceState(null, "", location.pathname + location.hash);
+      return saved && /^[0-9a-f-]{36}$/i.test(saved) ? saved : null;
+    } catch {
+      return null;
+    }
+  }
+
+  function rfpError(err) {
+    const kinds = err.body && Array.isArray(err.body.sensitive) ? ` Remove: ${err.body.sensitive.map((k) => `${k.kind} (${k.count})`).join(", ")}.` : "";
+    setMsg("rfpMsg", err.message + kinds, true);
+  }
+
+  async function loadRfp() {
+    setMsg("rfpMsg", "", false);
+    try {
+      const caps = await api("/api/rfp/capabilities");
+      rfpCapabilities = caps.capabilities || [];
+      renderCapabilities();
+      await refreshReviews();
+      if (rfpReviewId) await openRfpReview(rfpReviewId);
+    } catch (err) {
+      rfpError(err);
+    }
+  }
+
+  function renderCapabilities() {
+    const box = $("rfpCapabilities");
+    box.replaceChildren();
+    $("rfpSeed").hidden = rfpCapabilities.length > 0;
+    if (!rfpCapabilities.length) {
+      $("rfpCapCount").textContent = "No capabilities yet. Add the starter list, then review each entry before it is used.";
+      return;
+    }
+    const approved = rfpCapabilities.filter((c) => c.status === "approved").length;
+    $("rfpCapCount").textContent = `${approved} of ${rfpCapabilities.length} approved. Only approved entries are used for matching.`;
+    for (const c of rfpCapabilities) {
+      const row = el("div", null, "prospect-row");
+      row.style.cssText = "padding:10px 12px;border:1px solid var(--line);border-radius:12px;margin-bottom:6px";
+      row.append(el("strong", c.name), el("span", c.status === "approved" ? " · approved" : " · draft", "muted small"));
+      row.append(el("div", c.description || "", "muted small"));
+      const toggle = el("button", c.status === "approved" ? "Mark as draft" : "Approve", "ghost small-btn");
+      toggle.type = "button";
+      toggle.style.marginTop = "6px";
+      toggle.addEventListener("click", () => saveCapability(c.id, { status: c.status === "approved" ? "draft" : "approved" }));
+      const remove = el("button", "Remove", "ghost small-btn");
+      remove.type = "button";
+      remove.style.cssText = "margin:6px 0 0 8px;color:var(--bad)";
+      remove.addEventListener("click", () => removeCapability(c));
+      row.append(toggle, remove);
+      box.append(row);
+    }
+  }
+
+  async function saveCapability(id, body) {
+    try {
+      await api(`/api/rfp/capabilities/${id}`, { method: "PATCH", body: JSON.stringify(body) });
+      await loadRfp();
+    } catch (err) {
+      rfpError(err);
+    }
+  }
+
+  async function removeCapability(c) {
+    if (!window.confirm(`Remove "${c.name}" from the capability list?`)) return;
+    try {
+      await api(`/api/rfp/capabilities/${c.id}`, { method: "DELETE" });
+      await loadRfp();
+    } catch (err) {
+      rfpError(err);
+    }
+  }
+
+  $("rfpSeed").addEventListener("click", async () => {
+    try {
+      await api("/api/rfp/capabilities/seed", { method: "POST" });
+      setMsg("rfpMsg", "The starter list is added as drafts. Approve each entry you want used.", false);
+      await loadRfp();
+    } catch (err) {
+      rfpError(err);
+    }
+  });
+
+  $("rfpCapForm").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    try {
+      await api("/api/rfp/capabilities", { method: "POST", body: JSON.stringify({ name: $("rfpCapName").value, description: $("rfpCapDesc").value }) });
+      e.target.reset();
+      await loadRfp();
+    } catch (err) {
+      rfpError(err);
+    }
+  });
+
+  async function refreshReviews() {
+    const data = await api("/api/rfp/reviews");
+    const box = $("rfpReviews");
+    box.replaceChildren();
+    const list = data.reviews || [];
+    if (!list.length) {
+      box.append(el("p", "No RFP reviews yet. Paste an RFP below to start one.", "muted small"));
+      return;
+    }
+    for (const r of list) {
+      const row = el("div", null, "prospect-row");
+      row.style.cssText = "padding:10px 12px;border:1px solid var(--line);border-radius:12px;margin-bottom:6px";
+      row.append(el("strong", r.title), el("span", r.client ? ` · ${r.client}` : "", "muted small"));
+      row.append(el("div", `Created by ${r.created_by_email} on ${new Date(r.created_at).toLocaleDateString()}`, "muted small"));
+      const open = el("button", "Open", "ghost small-btn");
+      open.type = "button";
+      open.style.marginTop = "6px";
+      open.addEventListener("click", () => openRfpReview(r.id));
+      row.append(open);
+      box.append(row);
+    }
+  }
+
+  $("rfpNewForm").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    try {
+      const res = await api("/api/rfp/reviews", { method: "POST", body: JSON.stringify({ title: $("rfpTitle").value, client: $("rfpClient").value, text: $("rfpText").value }) });
+      e.target.reset();
+      setMsg("rfpMsg", `Created with ${res.requirements.length} requirements. Check each one before matching.`, false);
+      await refreshReviews();
+      await openRfpReview(res.review.id);
+    } catch (err) {
+      rfpError(err);
+    }
+  });
+
+  async function openRfpReview(id) {
+    rfpReviewId = id;
+    const panel = $("rfpDetail");
+    panel.hidden = false;
+    panel.replaceChildren(el("p", "Loading…", "muted small"));
+    try {
+      const data = await api(`/api/rfp/reviews/${id}`);
+      renderReview(data.review, data.requirements || []);
+    } catch (err) {
+      panel.replaceChildren();
+      rfpError(err);
+    }
+  }
+
+  function renderReview(review, reqs) {
+    const panel = $("rfpDetail");
+    panel.replaceChildren();
+    panel.append(el("h3", review.title));
+    panel.append(el("p", review.client ? `Client: ${review.client}` : "Client not given", "muted small"));
+
+    const share = el("div", null, "row");
+    share.style.cssText = "gap:8px;flex-wrap:wrap;align-items:center;margin:10px 0";
+    const copy = el("button", "Copy share link", "ghost small-btn");
+    copy.type = "button";
+    copy.addEventListener("click", async () => {
+      const link = `${location.origin}/?rfp=${review.id}`;
+      try {
+        await navigator.clipboard.writeText(link);
+        setMsg("rfpMsg", "Link copied. Only signed-in Cutover staff can open it.", false);
+      } catch {
+        setMsg("rfpMsg", `Copy this link: ${link}`, false);
+      }
+    });
+    share.append(copy, el("span", "Only signed-in Cutover staff can open this link.", "muted small"));
+    panel.append(share);
+
+    panel.append(el("p", "Requirements are split out of the text by rule. Check each one: edit, remove or add. Matching against the capability list is the next step.", "muted small"));
+
+    const list = el("div", null, "");
+    for (const req of reqs) list.append(requirementRow(req));
+    panel.append(list);
+
+    const add = document.createElement("form");
+    add.style.cssText = "display:grid;gap:8px;margin-top:12px";
+    const text = document.createElement("textarea");
+    text.rows = 2;
+    text.maxLength = 2000;
+    text.placeholder = "Add a requirement";
+    text.setAttribute("aria-label", "New requirement");
+    text.required = true;
+    text.style.cssText = "font:inherit;padding:10px 12px;border-radius:12px;border:1px solid #d9d2ee";
+    const addBtn = el("button", "Add requirement", "ghost small-btn");
+    addBtn.type = "submit";
+    add.append(text, addBtn);
+    add.addEventListener("submit", async (e) => {
+      e.preventDefault();
+      try {
+        await api(`/api/rfp/reviews/${review.id}/requirements`, { method: "POST", body: JSON.stringify({ text: text.value }) });
+        await openRfpReview(review.id);
+      } catch (err) {
+        rfpError(err);
+      }
+    });
+    panel.append(add);
+  }
+
+  function requirementRow(req) {
+    const row = el("div", null, "");
+    row.style.cssText = "padding:10px 12px;border:1px solid var(--line);border-radius:12px;margin-bottom:6px";
+    const head = el("div", null, "muted small");
+    head.append(el("strong", req.ref), el("span", req.section ? ` · ${req.section}` : "", "muted small"));
+    row.append(head, el("p", req.text, ""));
+    row.lastChild.style.margin = "6px 0";
+    const edit = el("button", "Edit", "ghost small-btn");
+    edit.type = "button";
+    edit.addEventListener("click", () => editRequirement(req, row));
+    const remove = el("button", "Remove", "ghost small-btn");
+    remove.type = "button";
+    remove.style.cssText = "margin-left:8px;color:var(--bad)";
+    remove.addEventListener("click", async () => {
+      if (!window.confirm(`Remove ${req.ref} from this review?`)) return;
+      try {
+        await api(`/api/rfp/requirements/${req.id}`, { method: "DELETE" });
+        await openRfpReview(rfpReviewId);
+      } catch (err) {
+        rfpError(err);
+      }
+    });
+    row.append(edit, remove);
+    return row;
+  }
+
+  function editRequirement(req, row) {
+    row.replaceChildren();
+    const area = document.createElement("textarea");
+    area.rows = 3;
+    area.maxLength = 2000;
+    area.value = req.text;
+    area.setAttribute("aria-label", `Edit ${req.ref}`);
+    area.style.cssText = "font:inherit;width:100%;padding:10px 12px;border-radius:12px;border:1px solid #d9d2ee";
+    const save = el("button", "Save", "small-btn");
+    save.type = "button";
+    const cancel = el("button", "Cancel", "ghost small-btn");
+    cancel.type = "button";
+    cancel.style.marginLeft = "8px";
+    save.addEventListener("click", async () => {
+      try {
+        await api(`/api/rfp/requirements/${req.id}`, { method: "PATCH", body: JSON.stringify({ text: area.value }) });
+        await openRfpReview(rfpReviewId);
+      } catch (err) {
+        rfpError(err);
+      }
+    });
+    cancel.addEventListener("click", () => openRfpReview(rfpReviewId));
+    row.append(el("strong", req.ref), area, save, cancel);
   }
 
   async function loadStaffCalendar() {

@@ -167,6 +167,9 @@ function seed() {
     project_tool_connections: [],
     project_tool_links: [],
     prospect_followups: [],
+    cutover_capabilities: [],
+    rfp_reviews: [],
+    rfp_requirements: [],
   };
 }
 
@@ -296,8 +299,9 @@ function handleRest(url, init) {
   }
 
   if (method === "DELETE") {
+    const removed = rows.filter(hit);
     state[table] = rows.filter((r) => !hit(r));
-    return new Response(null, { status: 204 });
+    return prefer.includes("return=representation") ? j(removed) : new Response(null, { status: 204 });
   }
   return j({ message: "unsupported" }, 405);
 }
@@ -4514,3 +4518,88 @@ test("the invitation shows the portal screenshots and the game card", async () =
   assert.ok(token);
 });
 
+// ---- RFP reviews (staff only). The capability list, reviews and their requirements. ----
+const RFP_SAMPLE = `1. Scope
+The system shall record every journal entry with its approving officer.
+The vendor must provide monthly reconciliation reports to the Comptroller.
+Background: this section describes the agency.
+2. Interfaces
+- The solution shall expose a REST interface for payment files.
+- Batch files will be exchanged over a secure file transfer.`;
+
+test("only Cutover staff who can invite may use RFP reviews", async () => {
+  assert.equal((await call("/api/rfp/reviews", { as: "aud_a" })).status, 403);
+  assert.equal((await call("/api/rfp/capabilities", { as: "aud_a" })).status, 403);
+  assert.equal((await call("/api/rfp/reviews", { as: "sales" })).status, 200);
+});
+
+test("the starter capability list is added once, then refused", async () => {
+  const first = await call("/api/rfp/capabilities/seed", { as: "sales", method: "POST" });
+  assert.equal(first.status, 201);
+  assert.equal(first.body.capabilities.length, 15);
+  assert.ok(first.body.capabilities.every((c) => c.status === "draft"), "every starter entry starts as a draft");
+  assert.equal((await call("/api/rfp/capabilities/seed", { as: "sales", method: "POST" })).status, 409);
+});
+
+test("a capability can be added, changed, approved and removed", async () => {
+  const made = await call("/api/rfp/capabilities", { as: "sales", method: "POST", body: { name: "Batch scheduling", description: "Runs and monitors batch jobs." } });
+  assert.equal(made.status, 201);
+  assert.equal(made.body.capability.status, "draft");
+  const id = made.body.capability.id;
+  assert.equal((await call("/api/rfp/capabilities", { as: "sales", method: "POST", body: { name: "x" } })).status, 400, "a one-letter name is refused");
+  const changed = await call(`/api/rfp/capabilities/${id}`, { as: "sales", method: "PATCH", body: { name: "Batch job scheduling", status: "approved" } });
+  assert.equal(changed.status, 200);
+  assert.equal(changed.body.capability.status, "approved");
+  assert.equal(changed.body.capability.updated_by_email, "sales@cutover.test");
+  assert.equal((await call(`/api/rfp/capabilities/${id}`, { as: "sales", method: "PATCH", body: { status: "published" } })).status, 400);
+  assert.deepEqual((await call(`/api/rfp/capabilities/${id}`, { as: "sales", method: "DELETE" })).body, { deleted: true });
+  assert.equal((await call(`/api/rfp/capabilities/${id}`, { as: "sales", method: "DELETE" })).status, 404);
+});
+
+test("an RFP is split into numbered requirements, and text with personal values is refused", async () => {
+  const blocked = await call("/api/rfp/reviews", { as: "sales", method: "POST", body: { title: "Agency FMIS", client: "State agency", text: `${RFP_SAMPLE}\nSend questions to buyer@agency.example.gov.` } });
+  assert.equal(blocked.status, 422);
+  assert.deepEqual(blocked.body.sensitive, [{ kind: "email address", count: 1 }]);
+  assert.ok(!JSON.stringify(blocked.body).includes("buyer@agency"), "the value itself is never returned");
+  assert.equal(state.rfp_reviews.length, 0);
+
+  const made = await call("/api/rfp/reviews", { as: "sales", method: "POST", body: { title: "Agency FMIS", client: "State agency", text: RFP_SAMPLE } });
+  assert.equal(made.status, 201);
+  assert.equal(made.body.requirements.length, 4, "four requirement lines, the background sentence is not one");
+  assert.deepEqual(made.body.requirements.map((r) => r.ref), ["R1", "R2", "R3", "R4"]);
+  assert.equal(made.body.requirements[0].section, "1. Scope");
+  assert.equal(made.body.requirements[3].section, "2. Interfaces");
+  assert.ok(!("source_text" in made.body.review), "the full RFP text is not returned");
+
+  const detail = await call(`/api/rfp/reviews/${made.body.review.id}`, { as: "sales" });
+  assert.equal(detail.status, 200);
+  assert.equal(detail.body.requirements.length, 4);
+  assert.equal((await call(`/api/rfp/reviews/${made.body.review.id}`, { as: "aud_a" })).status, 403);
+  assert.equal((await call(`/api/rfp/reviews/${uid(99)}`, { as: "sales" })).status, 404);
+});
+
+test("a review with no requirements, or with a phone number in its text, is refused", async () => {
+  const none = await call("/api/rfp/reviews", { as: "sales", method: "POST", body: { title: "Notes", text: "This is a background note with no demands in it." } });
+  assert.equal(none.status, 422);
+  const phone = await call("/api/rfp/reviews", { as: "sales", method: "POST", body: { title: "Notes", text: "The system shall call 410-555-0147 for approvals." } });
+  assert.equal(phone.status, 422);
+  assert.equal((await call("/api/rfp/reviews", { as: "sales", method: "POST", body: { title: "Dates", text: "The system shall go live on 2026-11-02 and 3 November 2026." } })).status, 201, "dates are not personal values");
+});
+
+test("requirements can be added, edited and removed, and a reference is never reused", async () => {
+  const made = await call("/api/rfp/reviews", { as: "sales", method: "POST", body: { title: "Agency FMIS", text: RFP_SAMPLE } });
+  const rid = made.body.review.id;
+  const added = await call(`/api/rfp/reviews/${rid}/requirements`, { as: "sales", method: "POST", body: { text: "The solution shall keep an audit trail for seven years." } });
+  assert.equal(added.status, 201);
+  assert.equal(added.body.requirement.ref, "R5");
+  assert.equal(added.body.requirement.edited, true);
+  const rq = added.body.requirement.id;
+  assert.equal((await call(`/api/rfp/requirements/${rq}`, { as: "sales", method: "PATCH", body: { text: "Email ops@agency.example.gov for access." } })).status, 422);
+  const edited = await call(`/api/rfp/requirements/${rq}`, { as: "sales", method: "PATCH", body: { text: "The solution shall keep an audit trail for ten years." } });
+  assert.equal(edited.status, 200);
+  assert.match(edited.body.requirement.text, /ten years/);
+  assert.equal((await call(`/api/rfp/requirements/${rq}`, { as: "sales", method: "PATCH", body: {} })).status, 400);
+  assert.deepEqual((await call(`/api/rfp/requirements/${rq}`, { as: "sales", method: "DELETE" })).body, { deleted: true });
+  const after = await call(`/api/rfp/reviews/${rid}/requirements`, { as: "sales", method: "POST", body: { text: "The vendor shall train staff on the new screens." } });
+  assert.equal(after.body.requirement.ref, "R5", "the reference of the removed requirement is not reused by the next one for a different position");
+});
