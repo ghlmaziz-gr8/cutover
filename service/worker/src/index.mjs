@@ -1465,6 +1465,21 @@ async function getReview(request, env, id) {
   return json({ review, requirements: await reqs.json() });
 }
 
+// Cleans a review: removes its requirements, then the review itself. Staff use this to delete a review's data.
+async function deleteReview(request, env, id) {
+  const caller = await rfpCaller(request, env);
+  if (caller.response) return caller.response;
+  const found = await serviceRest(env, `rfp_reviews?id=eq.${id}&select=id`);
+  if (!found.ok) return json({ error: "Could not load the review." }, 502);
+  const [review] = await found.json();
+  if (!review) return json({ error: "Not found." }, 404);
+  const reqs = await serviceRest(env, `rfp_requirements?review_id=eq.${id}`, { method: "DELETE" });
+  if (!reqs.ok) return json({ error: "Could not clean the review. Nothing was removed. Try again." }, 502);
+  const res = await serviceRest(env, `rfp_reviews?id=eq.${id}`, { method: "DELETE" });
+  if (!res.ok) return json({ error: "The requirements were removed, but the review could not be. Press Clean data again." }, 502);
+  return json({ deleted: true });
+}
+
 // A requirement's text and section. Any text is checked for personal or identifying values first.
 function requirementFields(value, requireText) {
   const fields = {};
@@ -6817,6 +6832,7 @@ async function route(request, env) {
     if (path === "/api/rfp/reviews" && method === "POST") return createReview(request, env);
     const rfpReview = path.match(/^\/api\/rfp\/reviews\/([^/]+)$/);
     if (rfpReview && UUID_PATTERN.test(rfpReview[1]) && method === "GET") return getReview(request, env, rfpReview[1]);
+    if (rfpReview && UUID_PATTERN.test(rfpReview[1]) && method === "DELETE") return deleteReview(request, env, rfpReview[1]);
     const rfpReviewRequirements = path.match(/^\/api\/rfp\/reviews\/([^/]+)\/requirements$/);
     if (rfpReviewRequirements && UUID_PATTERN.test(rfpReviewRequirements[1]) && method === "POST") return addRequirement(request, env, rfpReviewRequirements[1]);
     const rfpRequirement = path.match(/^\/api\/rfp\/requirements\/([^/]+)$/);

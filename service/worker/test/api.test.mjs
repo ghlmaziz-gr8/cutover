@@ -4603,3 +4603,14 @@ test("requirements can be added, edited and removed, and a reference is never re
   const after = await call(`/api/rfp/reviews/${rid}/requirements`, { as: "sales", method: "POST", body: { text: "The vendor shall train staff on the new screens." } });
   assert.equal(after.body.requirement.ref, "R5", "the reference of the removed requirement is not reused by the next one for a different position");
 });
+
+test("staff can clean a review, which removes its text and every requirement", async () => {
+  const made = await call("/api/rfp/reviews", { as: "sales", method: "POST", body: { title: "Agency FMIS", text: RFP_SAMPLE } });
+  const rid = made.body.review.id;
+  assert.ok(state.rfp_requirements.length > 0);
+  assert.equal((await call(`/api/rfp/reviews/${rid}`, { as: "aud_a", method: "DELETE" })).status, 403, "only Cutover staff");
+  assert.deepEqual((await call(`/api/rfp/reviews/${rid}`, { as: "sales", method: "DELETE" })).body, { deleted: true });
+  assert.equal(state.rfp_reviews.length, 0);
+  assert.equal(state.rfp_requirements.length, 0, "the requirements go with the review");
+  assert.equal((await call(`/api/rfp/reviews/${rid}`, { as: "sales", method: "DELETE" })).status, 404);
+});
