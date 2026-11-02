@@ -4334,8 +4334,18 @@ button:not(:disabled):active{transform:scale(.965)}
   $("rfpFile").addEventListener("change", async (e) => {
     const file = e.target.files && e.target.files[0];
     if (!file) return;
+    if (!/\.(txt|md|csv)$/i.test(file.name)) {
+      e.target.value = "";
+      setMsg("rfpMsg", "Only .txt, .md and .csv files can be read for now. For a Word or PDF file, open it, select all the text, copy it, and paste it into the box.", true);
+      return;
+    }
     try {
       const text = await file.text();
+      if (/[\u0000-\u0008\u000E-\u001F\uFFFD]/.test(text.slice(0, 5000))) {
+        e.target.value = "";
+        setMsg("rfpMsg", "This file is not plain text, so it cannot be read. Save it as .txt and try again.", true);
+        return;
+      }
       if (text.length > 200000) {
         setMsg("rfpMsg", "That file is too long. Keep it under 200,000 characters, or split it into parts.", true);
         return;

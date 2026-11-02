@@ -4,7 +4,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
 const html = readFileSync(new URL("../index.html", import.meta.url), "utf8");
-const worker = readFileSync(new URL("../../worker/src/index.mjs", import.meta.url), "utf8");
+const worker = readFileSync(new URL("../../worker/src/index.mjs", import.meta.url), "utf8").replace(/\r\n/g, "\n");
 
 test("the page builds the name and email label for each step", () => {
   assert.ok(html.includes("function personLabel(email)"));
