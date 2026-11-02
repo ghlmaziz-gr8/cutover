@@ -3971,9 +3971,34 @@ button:not(:disabled):active{transform:scale(.965)}
       d.list.append(row);
       api(`/api/projects/${pr.id}/emails`).then((res) => {
         const emails = res.emails || [];
-        sentLine.textContent = emails.length
-          ? `${emails.length} sent. Last sent ${new Date(emails[0].sent_at).toLocaleString()} to ${emails[0].recipients.join(", ")}.`
-          : "No emails sent yet.";
+        if (!emails.length) {
+          sentLine.textContent = "No emails sent yet.";
+          return;
+        }
+        const last = emails[0];
+        sentLine.textContent = `${emails.length} sent. Last sent ${new Date(last.sent_at).toLocaleString()} to ${last.recipients.join(", ")}.`;
+        const details = document.createElement("details");
+        details.style.marginTop = "6px";
+        const summary = document.createElement("summary");
+        summary.textContent = "View the last email";
+        summary.style.cursor = "pointer";
+        const body = el("div", null, "muted small");
+        body.style.cssText = "margin-top:6px;white-space:pre-wrap";
+        const lines = [
+          `Subject: ${last.subject || "(default subject)"}`,
+          `Sent by: ${last.sent_by_name || last.sent_by_email || "(unknown)"}`,
+          `To: ${last.recipients.join(", ")}`,
+        ];
+        if (last.note) lines.push("", "Personal note:", last.note);
+        if (last.found) lines.push("", "What we found:", last.found);
+        if (last.how_helps) lines.push("", "How Cutover helps:", last.how_helps);
+        if (last.cutover_share !== null && last.cutover_share !== undefined) lines.push("", `Cutover share: ${last.cutover_share}%`);
+        if (last.advantages && last.advantages.length) lines.push("", "Advantages:", ...last.advantages.map((a) => `- ${a}`));
+        lines.push("", last.capability_ids === null ? "Capabilities: full approved list" : `Capabilities: ${last.capability_ids.join(", ")}`);
+        if (last.attachment_names && last.attachment_names.length) lines.push("", `Attached: ${last.attachment_names.join(", ")}`);
+        body.textContent = lines.join("\n");
+        details.append(summary, body);
+        sentLine.after(details);
       }).catch(() => {
         sentLine.textContent = "Could not load the sent emails.";
       });
