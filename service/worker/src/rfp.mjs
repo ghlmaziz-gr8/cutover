@@ -71,21 +71,21 @@ export function findSensitive(text) {
   return found;
 }
 
-// The starter list of what the Cutover portal does. Staff review it before any bid uses it.
+// The baseline: what the built Cutover portal does. Staff approve each entry before a review uses it.
 export const STARTER_CAPABILITIES = [
-  ["Code and business-rule discovery", "Reads source code, schemas and integration files, and lists each business rule with its file and line references."],
-  ["Per-file and whole-application assessment", "Describes each file's purpose, functions, rules, data access and tables, with a confidence score per file."],
-  ["Deeper business, systems and data assessment", "Produces business, systems and data analysis documents, workflows and an architecture diagram from the assessment."],
-  ["Feature grouping and user stories", "Proposes capabilities and features from the code, and drafts user stories that trace back to the rules they come from."],
-  ["Owner approval and named sign-off", "Only approved features and stories move on. Each approval records who signed and when, in an append-only action log."],
-  ["Feature map and module specifications", "A mind map of approved features with confidence on each branch, and a specification per feature with worked examples as acceptance tests."],
-  ["Agent-neutral build package", "A zip of Markdown and JSON, with a manifest and one module per approved feature, that any AI agent can build from."],
-  ["Modernization proposals", "Three future-state options for an application, each with its trade-offs, built from the deeper assessment."],
-  ["Cloud migration planning and Terraform drafts", "Records the chosen cloud, collects an intake form, and generates Terraform as a draft that lists the inputs used. Every version is kept."],
-  ["Sample data protection", "Outputs use sample data only. A scanner checks for personal and identifying patterns before anything is saved."],
-  ["Bring-your-own language model", "Each workspace uses its own model key, stored encrypted. Requires a current privacy sign-off before any code is sent to a provider."],
-  ["Roles and workspace access", "Platform engineers, application owners, security, informatics, CIO and CTO, and auditors each see what their role needs."],
-  ["Assessment locks and commit tracking", "One assessment runs at a time per workspace. Results are tied to the commit they read and marked out of date when it changes."],
-  ["Jira push of features and stories", "Pushes approved capabilities, features and stories to Jira, updating existing items instead of duplicating them."],
-  ["Data migration planning (planned, not built)", "Planned: inventory, schema conversion scripts, a migration strategy per system, reconciliation after each copy, and approval gates before any copy runs."],
+  ["Legacy application assessment", "Reads a repository's code, identifies the languages and frameworks (Node, Python, .NET, PHP and Java), and lists the components and any missing items."],
+  ["Business rule discovery", "Lists each business rule found in the code, with the file and line it comes from."],
+  ["Per-file findings", "Gives every file its purpose and suggested improvements, one row per file, with a confidence level."],
+  ["Deeper business, systems and data analysis", "Produces business, systems and data analysis documents, workflows and an architecture diagram from the assessment."],
+  ["Capability and feature grouping", "Groups features into business capabilities. Any signed-in user can rename a capability."],
+  ["Readiness checks and user stories", "Checks each feature for readiness and drafts user stories that trace back to the rules they come from."],
+  ["Scope and effort ranges", "Sets scope with effort ranges. Modernize and migrate stay locked until the deeper assessment is complete."],
+  ["Contingency planning and signed PDF export", "Plans contingencies after the review and exports the report as a signed PDF built from stored rows."],
+  ["Modernization proposals", "Three future-state options for a web application, each with its trade-offs, built from the deeper assessment."],
+  ["Cloud choice and Terraform draft", "Records the chosen cloud (Google Cloud, AWS or Azure) and a short intake form, then generates a Terraform draft that lists its inputs. Every version is kept."],
+  ["Module specifications and build package", "A specification per feature with worked examples, and a package of Markdown and JSON that any AI agent can build from."],
+  ["Jira push of features and stories", "Pushes approved features and stories to Jira, updating existing items instead of creating duplicates."],
+  ["Sample data and personal-data scanning", "Outputs use sample data only. A scanner checks for email addresses, phone numbers, national ID and record-number patterns before anything is saved."],
+  ["Bring-your-own language model", "Each workspace uses its own model key, stored encrypted and never shown again. Model use needs a current privacy sign-off."],
+  ["Roles, workspace access and assessment locks", "Platform engineers, application owners, security, informatics, CIO and CTO, and auditors each see what their role needs. One assessment runs at a time per workspace."],
 ];

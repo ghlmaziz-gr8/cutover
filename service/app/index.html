@@ -2071,13 +2071,8 @@ button:not(:disabled):active{transform:scale(.965)}
         <p class="muted small hint" style="margin-top:12px">Paste a client's RFP or RFI. Cutover splits it into numbered requirements, which are then matched to the capability list. Only signed-in Cutover staff can open these reviews. Use sample values only: text with personal values is refused.</p>
         <h3 style="margin:14px 0 6px">Capability list</h3>
         <p class="muted small" id="rfpCapCount" style="margin:0 0 8px"></p>
-        <button type="button" class="small-btn" id="rfpSeed" hidden>Add the starter list</button>
+        <button type="button" class="small-btn" id="rfpSeed" hidden>Load the portal baseline</button>
         <div id="rfpCapabilities" style="margin-top:8px"></div>
-        <form id="rfpCapForm" class="row" style="gap:8px;flex-wrap:wrap;margin-top:10px" autocomplete="off">
-          <input id="rfpCapName" placeholder="Capability name" aria-label="Capability name" required maxlength="120" style="min-width:240px">
-          <input id="rfpCapDesc" placeholder="What the portal does, in one or two sentences" aria-label="Capability description" maxlength="1000" style="min-width:280px;flex-basis:100%">
-          <button type="submit" class="ghost small-btn">Add capability</button>
-        </form>
         <h3 style="margin:22px 0 6px">RFP reviews</h3>
         <div id="rfpReviews"></div>
         <form id="rfpNewForm" style="display:grid;gap:8px;margin-top:12px" autocomplete="off">
@@ -4260,7 +4255,7 @@ button:not(:disabled):active{transform:scale(.965)}
     box.replaceChildren();
     $("rfpSeed").hidden = rfpCapabilities.length > 0;
     if (!rfpCapabilities.length) {
-      $("rfpCapCount").textContent = "No capabilities yet. Add the starter list, then review each entry before it is used.";
+      $("rfpCapCount").textContent = "No capabilities yet. Load the portal baseline, then approve each entry before it is used.";
       return;
     }
     const approved = rfpCapabilities.filter((c) => c.status === "approved").length;
@@ -4305,18 +4300,7 @@ button:not(:disabled):active{transform:scale(.965)}
   $("rfpSeed").addEventListener("click", async () => {
     try {
       await api("/api/rfp/capabilities/seed", { method: "POST" });
-      setMsg("rfpMsg", "The starter list is added as drafts. Approve each entry you want used.", false);
-      await loadRfp();
-    } catch (err) {
-      rfpError(err);
-    }
-  });
-
-  $("rfpCapForm").addEventListener("submit", async (e) => {
-    e.preventDefault();
-    try {
-      await api("/api/rfp/capabilities", { method: "POST", body: JSON.stringify({ name: $("rfpCapName").value, description: $("rfpCapDesc").value }) });
-      e.target.reset();
+      setMsg("rfpMsg", "The portal baseline is added as drafts. Approve each entry you want used.", false);
       await loadRfp();
     } catch (err) {
       rfpError(err);
