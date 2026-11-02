@@ -56,7 +56,8 @@ test("the email escapes what the sender typed, shows the share, hours, advantage
   assert.doesNotMatch(mail.html, /<script>/);
   assert.match(mail.html, /Cutover: 60%/);
   assert.match(mail.html, /Your team and partners: 40%/);
-  assert.match(mail.html, /1,200 hours/);
+  assert.doesNotMatch(mail.html, /Human hours saved/);
+  assert.doesNotMatch(mail.html, /1,200 hours/);
   assert.match(mail.html, /Faster discovery/);
   assert.match(mail.html, /https:\/\/cutover\.site\/book\/\?t=abc/);
   for (const c of CAPABILITY_CATALOGUE) assert.match(mail.html, new RegExp(esc(c.name)));

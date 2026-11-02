@@ -151,7 +151,6 @@ function section(title, inner) {
 export function renderProjectEmail(input) {
   const { projectName, greetingName, note, found, howHelps, senderName, senderEmail, bookingUrl } = input;
   const share = input.share ?? null;
-  const hours = input.hours ?? null;
   const advantages = input.advantages ?? [];
   const attachments = input.attachments ?? [];
   const capabilityIds = input.capabilityIds ?? "all";
@@ -169,9 +168,6 @@ export function renderProjectEmail(input) {
       `<td width="${share}%" style="background:#7c3aed;height:16px;font-size:0;line-height:0">&nbsp;</td>` +
       `<td width="${rest}%" style="background:#e5e0f3;height:16px;font-size:0;line-height:0">&nbsp;</td></tr></table>` +
       `<p style="margin:0 0 4px;font-size:14px"><b style="color:#7c3aed">Cutover: ${share}%</b> &middot; Your team and partners: ${rest}%</p>`));
-  }
-  if (hours !== null) {
-    sections.push(section("Human hours saved", `<p style="margin:0;font-size:30px;font-weight:bold;color:#db2777">${hours.toLocaleString("en-US")} hours</p><p style="margin:4px 0 0;font-size:13px;color:#6b6480">Hours of manual analysis and specification work that Cutover handles.</p>`));
   }
   if (advantages.length) {
     sections.push(section("Advantages", `<ul style="margin:0;padding-left:20px;line-height:1.6">${advantages.map((a) => `<li>${esc(a)}</li>`).join("")}</ul>`));
@@ -208,7 +204,6 @@ export function renderProjectEmail(input) {
   if (found) textLines.push("What we found", found, "");
   if (howHelps) textLines.push("How Cutover helps", howHelps, "");
   if (share !== null) textLines.push(`Where Cutover takes the work: Cutover ${share}%, your team and partners ${100 - share}%`, "");
-  if (hours !== null) textLines.push(`Human hours saved: ${hours}`, "");
   if (advantages.length) textLines.push("Advantages", ...advantages.map((a) => `- ${a}`), "");
   textLines.push(capHeading, ...caps.map((c) => `- ${c.name}: ${c.description}`), "");
   if (attachments.length) textLines.push("Attached", ...attachments.map((a) => `- ${a.filename}`), "");
