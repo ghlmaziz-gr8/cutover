@@ -4012,7 +4012,7 @@ test("sales can add a prospect; it is saved even when email is not set up yet", 
   assert.equal(resendCalls.length, 0);
 });
 
-test("the invitation is a rich email from the sales address, with a signed booking link and the unattended notice", async () => {
+test("the invitation is a rich email from the sales address, with a signed booking link and the reply notice", async () => {
   env.RESEND_API_KEY = "re_test";
   env.EMAIL_FROM = "Cutover <noreply.sales@cutover.site>";
   try {
@@ -4035,8 +4035,8 @@ test("the invitation is a rich email from the sales address, with a signed booki
     assert.ok(mail.text.includes("Modernize") || mail.text.includes("legacy"));
     assert.ok(mail.html.includes(`https://cutover.site/book/?t=${link[1]}`));
     assert.ok(mail.html.includes("https://cutover.site/cutover-demo/"));
-    assert.ok(mail.html.includes("unattended"));
-    assert.ok(mail.text.includes("unattended"));
+    assert.ok(mail.html.includes("reads every reply"));
+    assert.ok(mail.text.includes("reads every reply"));
   } finally {
     delete env.RESEND_API_KEY;
     delete env.EMAIL_FROM;
@@ -4115,7 +4115,7 @@ test("the booking link shows the prospect, offers weekday slots from the sender'
     assert.match(confirmation.html, /src="https:\/\/cutover\.site\/email\/cutover-site-hero\.jpg"/, "the booking confirmation shows the portal screenshots");
     assert.match(confirmation.text, /Take a break and play Cutover Site/, "the booking confirmation text has the game line");
     assert.equal(confirmation.subject, "Your meeting with the Cutover team is booked");
-    assert.ok(confirmation.text.includes("unattended"));
+    assert.ok(confirmation.text.includes("reads every reply"));
     const notice = resendCalls.find((c) => c.to.includes("sales@cutover.test"));
     assert.ok(notice, "the sender gets a notice in their inbox");
     assert.ok(notice.subject.startsWith("Meeting booked: Pat Buyer"));

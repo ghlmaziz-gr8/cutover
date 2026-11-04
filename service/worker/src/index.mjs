@@ -856,7 +856,7 @@ async function sendProspectMail(env, to, subject, text, html, cc = [], extra = {
   }
 }
 
-const UNATTENDED_NOTICE = "This inbox is unattended. Nobody reads or replies to messages sent here.";
+const REPLY_NOTICE = "You can reply to this email. A member of the Cutover team reads every reply and responds within one working day.";
 
 function prospectInviteEmail(prospect, bookingUrl) {
   const first = prospect.first_name;
@@ -898,7 +898,7 @@ function prospectInviteEmail(prospect, bookingUrl) {
     ...showcaseText(),
     `Built for regulated sectors: ${sectors.join(", ")}.`,
     "",
-    UNATTENDED_NOTICE,
+    REPLY_NOTICE,
   ].join("\n");
 
   const pillarCells = pillars.map(([title, body], i) => `
@@ -996,7 +996,7 @@ ${showcaseRows("32px")}
     <a href="${SITE_ORIGIN}/cutover-demo/" style="color:#db2777;font-weight:700;text-decoration:none">Watch the demo on a sample app</a>
   </td></tr>
 
-  <tr><td style="background:#faf9fd;padding:18px 32px;font-size:12px;color:#6b6585;text-align:center;line-height:1.6">${escapeHtml(UNATTENDED_NOTICE)}<br>Cutover · cutover.site</td></tr>
+  <tr><td style="background:#faf9fd;padding:18px 32px;font-size:12px;color:#6b6585;text-align:center;line-height:1.6">${escapeHtml(REPLY_NOTICE)}<br>Cutover · cutover.site</td></tr>
 </table></td></tr></table>
 </body></html>`;
   return { subject, text, html };
@@ -1325,7 +1325,7 @@ function followUpEmail(prospect, to, senderName, note) {
     sign,
     SITE_URL,
     "",
-    UNATTENDED_NOTICE,
+    REPLY_NOTICE,
   ].join("\n");
 
   const pointRows = points
@@ -1340,7 +1340,7 @@ function followUpEmail(prospect, to, senderName, note) {
     ? `<tr><td style="padding:26px 28px 0"><p style="margin:0 0 14px;font:700 16px/1.4 Arial,sans-serif;color:#1c1735">See it in the portal</p><table role="presentation" width="100%" cellpadding="0" cellspacing="0">${shotRows}</table></td></tr>`
     : "";
   const gameBlock = `<tr><td style="padding:8px 28px 28px"><table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:linear-gradient(135deg,#7c3aed,#ec4899);border-radius:14px;overflow:hidden"><tr><td><a href="${GAME_URL}"><img src="${GAME_SCREENSHOT_URL}" alt="Cutover Site, the game: a site modernization simulation" width="552" style="display:block;width:100%;max-width:552px;height:auto"></a></td></tr><tr><td style="padding:18px 22px"><p style="margin:0;font:700 17px/1.4 Arial,sans-serif;color:#ffffff">Take a break and play Cutover Site</p><p style="margin:6px 0 14px;font:14px/1.5 Arial,sans-serif;color:#f5f3ff">${escapeHtml(GAME_BLURB)}</p><a href="${GAME_URL}" style="display:inline-block;padding:10px 18px;border-radius:999px;background:#ffffff;color:#7c3aed;font:700 14px Arial,sans-serif;text-decoration:none">Play now</a></td></tr></table></td></tr>`;
-  const html = `<!doctype html><html><body style="margin:0;padding:24px 12px;background:#f4f2fb"><table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr><td align="center"><table role="presentation" width="600" cellpadding="0" cellspacing="0" style="max-width:600px;width:100%;background:#ffffff;border-radius:16px;overflow:hidden;border:1px solid #e4e0f6"><tr><td style="padding:28px 28px 0"><p style="margin:0;font:700 12px/1.4 Arial,sans-serif;letter-spacing:.08em;color:#7c3aed">CUTOVER</p><h1 style="margin:10px 0 0;font:700 26px/1.25 Arial,sans-serif;color:#1c1735">Thank you for your time${greetingName === "there" ? "" : `, ${escapeHtml(greetingName)}`}.</h1><p style="margin:12px 0 0;font:15px/1.6 Arial,sans-serif;color:#4b4668">Here is what Cutover does, and how you can see it for yourself in a few minutes.</p></td></tr>${demoBlock}<tr><td style="padding:22px 28px 0"><table role="presentation" width="100%" cellpadding="0" cellspacing="0">${pointRows}</table></td></tr>${noteHtml}${screensBlock}${gameBlock}<tr><td style="padding:0 28px 26px"><p style="margin:0;font:15px/1.6 Arial,sans-serif;color:#1c1735">${escapeHtml(sign)}</p><p style="margin:2px 0 14px;font:13px/1.5 Arial,sans-serif;color:#66607f"><a href="${SITE_URL}" style="color:#7c3aed;font-weight:700">cutover.site</a></p><p style="margin:0;font:12px/1.5 Arial,sans-serif;color:#8a84a6">${escapeHtml(UNATTENDED_NOTICE)}</p></td></tr></table></td></tr></table></body></html>`;
+  const html = `<!doctype html><html><body style="margin:0;padding:24px 12px;background:#f4f2fb"><table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr><td align="center"><table role="presentation" width="600" cellpadding="0" cellspacing="0" style="max-width:600px;width:100%;background:#ffffff;border-radius:16px;overflow:hidden;border:1px solid #e4e0f6"><tr><td style="padding:28px 28px 0"><p style="margin:0;font:700 12px/1.4 Arial,sans-serif;letter-spacing:.08em;color:#7c3aed">CUTOVER</p><h1 style="margin:10px 0 0;font:700 26px/1.25 Arial,sans-serif;color:#1c1735">Thank you for your time${greetingName === "there" ? "" : `, ${escapeHtml(greetingName)}`}.</h1><p style="margin:12px 0 0;font:15px/1.6 Arial,sans-serif;color:#4b4668">Here is what Cutover does, and how you can see it for yourself in a few minutes.</p></td></tr>${demoBlock}<tr><td style="padding:22px 28px 0"><table role="presentation" width="100%" cellpadding="0" cellspacing="0">${pointRows}</table></td></tr>${noteHtml}${screensBlock}${gameBlock}<tr><td style="padding:0 28px 26px"><p style="margin:0;font:15px/1.6 Arial,sans-serif;color:#1c1735">${escapeHtml(sign)}</p><p style="margin:2px 0 14px;font:13px/1.5 Arial,sans-serif;color:#66607f"><a href="${SITE_URL}" style="color:#7c3aed;font-weight:700">cutover.site</a></p><p style="margin:0;font:12px/1.5 Arial,sans-serif;color:#8a84a6">${escapeHtml(REPLY_NOTICE)}</p></td></tr></table></td></tr></table></body></html>`;
   return { subject, text, html };
 }
 
@@ -1594,7 +1594,7 @@ function prospectBookingEmail(kind, firstName, when, manageUrl, meetUrl) {
   if (manageUrl) textLines.push("", `Change or cancel your meeting: ${manageUrl}`);
   const showcase = kind !== "cancelled";
   if (showcase) textLines.push("", ...showcaseText());
-  textLines.push(`Learn more at ${SITE_ORIGIN}`, `See the demo: ${SITE_ORIGIN}/cutover-demo/`, "", UNATTENDED_NOTICE);
+  textLines.push(`Learn more at ${SITE_ORIGIN}`, `See the demo: ${SITE_ORIGIN}/cutover-demo/`, "", REPLY_NOTICE);
   const action = manageUrl
     ? `<a href="${escapeHtml(manageUrl)}" style="display:inline-block;background:#1d1640;color:#ffffff;text-decoration:none;font-weight:700;padding:14px 24px;border-radius:999px">${kind === "cancelled" ? "Book a new time" : "Change or cancel my meeting"}</a>`
     : `<a href="${SITE_ORIGIN}" style="display:inline-block;background:#1d1640;color:#ffffff;text-decoration:none;font-weight:700;padding:14px 24px;border-radius:999px">Visit cutover.site</a>`;
@@ -1614,7 +1614,7 @@ function prospectBookingEmail(kind, firstName, when, manageUrl, meetUrl) {
   <tr><td style="padding:0 32px 28px 32px;text-align:center;font-size:15px">
     <a href="${SITE_ORIGIN}" style="color:#6d28d9;font-weight:700">cutover.site</a> &nbsp;·&nbsp; <a href="${SITE_ORIGIN}/cutover-demo/" style="color:#db2777;font-weight:700">See the demo</a>
   </td></tr>
-  <tr><td style="background:#faf9fd;padding:18px 32px;font-size:12px;color:#6b6585;text-align:center;line-height:1.5">${escapeHtml(UNATTENDED_NOTICE)}<br>Cutover · cutover.site</td></tr>
+  <tr><td style="background:#faf9fd;padding:18px 32px;font-size:12px;color:#6b6585;text-align:center;line-height:1.5">${escapeHtml(REPLY_NOTICE)}<br>Cutover · cutover.site</td></tr>
 </table></td></tr></table></body></html>`;
   return { subject: copy.subject, text: textLines.join("\n"), html };
 }
@@ -1629,7 +1629,7 @@ function senderNotice(kind, prospect, when, meetUrl) {
   if (meetUrl) lines.push(`Google Meet: ${meetUrl}`);
   lines.push(`Email: ${prospect.email}`);
   if (prospect.phone) lines.push(`Phone: ${prospect.phone}`);
-  lines.push("", kind === "cancelled" ? "The event has been removed from your Google Calendar, and the invitation withdrawn." : "The event is on your Google Calendar, with the Google Meet link.", "", UNATTENDED_NOTICE);
+  lines.push("", kind === "cancelled" ? "The event has been removed from your Google Calendar, and the invitation withdrawn." : "The event is on your Google Calendar, with the Google Meet link.", "", REPLY_NOTICE);
   return { subject, text: lines.join("\n") };
 }
 
